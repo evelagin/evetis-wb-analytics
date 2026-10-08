@@ -78,23 +78,40 @@ DDL в production, оно проходит отдельными воротами
 Задачу инженеру создают только классы с `engineering=true`. NOT_ENGINEERING и UNCLASSIFIED не
 создают её никогда: они идут в оповещение.
 
+**Принцип: fail closed по явным спискам.** Инженерный класс по журналу отказов назначается только
+кодам из `policy.json → classifier_codes`. Списки выведены из реальных кодов `cloud/src` и журналов
+прогонов на 2026-10-08. Любой другой код — UNCLASSIFIED, даже если он повторяется. Так сделано
+после независимого ревью: первая версия делала любой повторяющийся код LOADER_DEFECT и
+классифицировала коды состояния данных как дефекты.
+
 | Правило | Условие | Класс |
 |---|---|---|
-| R1 | код бизнесового/внешнего условия (`FRESHNESS_GATE`, `SOURCE_STALE`, `NO_DATA`, `MANUAL`, `PLAN_NOT_APPROVED`, `SKIPPED` …) | NOT_ENGINEERING |
-| R2 | сигнатура временного сбоя, код сам объявил временным (`*_TRANSIENT`, `*_TIMEOUT`, `*_RATE_LIMIT`) | NOT_ENGINEERING |
-| R3 | сигнатура временного сбоя (5xx, unavailable, таймаут, 429), а код записан как детерминированный | **RETRY_CLASSIFIER_DEFECT** |
-| R4 | сигнатура/код схемы (`SCHEMA`, `PARSE`, `UNKNOWN_FIELD`) | **SCHEMA_DRIFT** |
-| R5 | сигнатура/код паритета или QA (`PARITY`, `QA`, `ASSERT`, `INTEGRITY`) | **PARITY_DEFECT** |
-| R6 | доступ или квота (401/403, quota) | NOT_ENGINEERING (токен или тариф — решение владельца) |
-| R7 | один код повторился ≥ `signals.recurrence_threshold_7d` (3) раз за 7 суток | **LOADER_DEFECT** |
+| R1 | код состояния данных или бизнеса — `business_code_patterns`: `*_EMPTY`, `*_MISSING`, `*_AUTH`, `*_STALE`, `FRESHNESS_GATE`, `*_REQUIRES_ACK`, `*_HELD*`, `*_LOCKED`, `MONTH_SECTION_*`, `RECON_*`, `SPP_*`, `LCD_*`, `PRICE_*`, `COGS_*`, `SOURCE_*`, `INTEGRITY_DATA_*` … | NOT_ENGINEERING |
+| R6 | сигнатура AUTH / QUOTA | NOT_ENGINEERING (токен или тариф — решение владельца) |
+| R2 | сигнатура временного сбоя, код сам объявил временным | NOT_ENGINEERING |
+| R3 | сигнатура временного сбоя, а обёрточный код (`retry_wrapper_codes`: `SHEETS_API`, `LOADER_ERROR`, `ENGINE_ERROR`, `FATAL_UNHANDLED`, `*_HTTP_FAILED` …) записан как детерминированный | **RETRY_CLASSIFIER_DEFECT** |
+| R3X | временная сигнатура при коде вне списка обёрток | UNCLASSIFIED |
+| R4 | код из `schema_codes` (`*_SHAPE`, `*_BAD_JSON`, `WB_T6_PARSE`, `*_SCHEMA_MISSING`, `BQ_SHAPE`) | **SCHEMA_DRIFT** |
+| R5 | код из `parity_codes` (`INVARIANT_FAIL`, `POST_COMMIT_QA_FAILED`, `FUTURE_LEAKAGE`) ≥ 3 раз за 7 суток | **PARITY_DEFECT** (однократно — UNCLASSIFIED) |
+| R7 | код из `loader_defect_codes` (`LOADER_ERROR`, `MART_ERROR`, `DUP_KEY`, `*_DUP`, `MANIFEST_FINALIZE_FAILED` …) ≥ 3 раз за 7 суток | **LOADER_DEFECT** (однократно — UNCLASSIFIED) |
 | H1 | DRO: `data_class` или `source_system` = MANUAL (ФФ, план продаж, ручные операции) | NOT_ENGINEERING |
-| H2 | DRO: `DETECTOR_STALE` / `DETECTOR_NEVER_RAN` | **DETECTOR_DEFECT** (после устойчивости) |
-| H3 | DRO: данных нет или опаздывают (`SLOT_*`, `FRESHNESS_*`, `DATA_LOSS_*`, `NO_DATA_OBSERVED`, `MISSING_DATES_RECOVERABLE`) | NOT_ENGINEERING |
+| H2 | DRO: детектор устарел или не запускался | UNCLASSIFIED: причина может быть операционной (планировщик на паузе — документированный откат DRO-1) |
+| H3 | DRO: данных нет или они опаздывают (`SLOT_*`, `FRESHNESS_*`, `DATA_LOSS_*`, `NO_DATA_OBSERVED`, `MISSING_DATES_RECOVERABLE`) | NOT_ENGINEERING |
 | H4 | DRO: `RUN_FAILED` / `RUN_PARTIAL` | UNCLASSIFIED — диагноз даёт только журнал отказов с кодом |
 | R0 / H0 | ни одно правило | UNCLASSIFIED (fail closed) |
 
-Сигнал журнала отказов — уже случившийся факт и создаёт задачу сразу. Инженерный класс по DRO
-требует `watch.persistence_threshold` (2) наблюдений подряд.
+**DETECTOR_DEFECT** автоматически не назначается. Класс доступен только цели владельца с явным
+`task_class`. Устаревший детектор даёт одно агрегированное событие `dro:detector:DETECTOR_STALE` и
+INFRA_BLOCKED, а не сигнал на каждый конвейер. Конвейеры NOT_EVALUATED сигналами не считаются.
+
+**Повторная постановка.** Сигнал журнала отказов — уже случившийся факт, поэтому задача
+создаётся сразу. Но одна и та же строка (тот же `last_seen_at`) порождает задачу один раз
+(`already_processed`). Новый отказ — новая задача. Ключ сигнала включает сигнатуру:
+`runfail:<loader>:<code>:<signature>:<fingerprint>`.
+
+**Временная сигнатура в SQL** опирается только на однозначные признаки: «status code 5xx»,
+«HTTP 5xx», «503 Service Unavailable», формулировки Google/BigQuery и сетевые коды. Голое «500» в
+тексте («получено 500 диапазонов») временной сигнатурой не считается.
 
 ## 5. Область задачи и лимит диффа
 
@@ -103,18 +120,18 @@ allowlist не расширяет.
 
 | Класс | allowed_paths | строк / файлов | профили тестов |
 |---|---|---|---|
-| RETRY_CLASSIFIER_DEFECT | `cloud/src/failure.ts`, `cloud/src/errors.ts`, `cloud/src/cli.ts`, `cloud/src/loaders/**/*.ts`, `cloud/test/**/*.test.ts`, `cloud/test/fixtures/**` | 300 / 6 | python, cloud |
-| LOADER_DEFECT | `cloud/src/**/*.ts`, `cloud/test/**`, `pipelines/ozon/runtime/**/*.py`, `pipelines/ozon/tests/**/*.py` | 400 / 8 | python, cloud, ozon |
-| SCHEMA_DRIFT | загрузчики/нормализация cloud и ozon + их тесты | 400 / 8 | python, cloud, ozon |
+| RETRY_CLASSIFIER_DEFECT | `cloud/src/failure.ts`, `cloud/src/errors.ts`, `cloud/src/cli.ts`, `cloud/src/loaders/**/*.ts`, `cloud/test/**/*.test.ts` | 300 / 6 | python, cloud |
+| LOADER_DEFECT | `cloud/src/**/*.ts`, `cloud/test/**/*.test.ts`, `cloud/test/fixtures/**/*.json`, `pipelines/ozon/runtime/**/*.py`, `pipelines/ozon/tests/**/*.py` | 400 / 8 | python, cloud, ozon |
+| SCHEMA_DRIFT | загрузчики/нормализация cloud и ozon + их тесты, JSON-фикстуры | 400 / 8 | python, cloud, ozon |
 | PARITY_DEFECT | `sql/**/*.sql`, `tools/tests/test_*.py` | 300 / 6 | python |
-| DETECTOR_DEFECT | `sql/health/dro1_01…06`, `tools/dro1_health.py`, `tools/tests/test_dro1_health.py` | 300 / 5 | python |
+| DETECTOR_DEFECT (только цель владельца) | `sql/health/dro1_01…06`, `tools/dro1_health.py`, `tools/tests/test_dro1_health.py` | 300 / 5 | python |
 | COMMISSIONING_CANARY | `tools/tests/test_ae_commissioning_canary.py` | 120 / 1 | python |
 | SYNTHETIC_FIXTURE | `synthetic/**`, `tests_synthetic/**` (только при `incident.source = synthetic`) | 200 / 4 | python |
 
-Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Поверх области действуют TCB
+Глобальный потолок `diff_limits` — 400 строк, 8 файлов. Строки считаются только внутри ханков `@@`. Бинарные изменения запрещены для любого класса. Поверх области действуют TCB
 (HUMAN_DECISION_REQUIRED) и forbidden_paths (UNSAFE). В TCB добавлены конфиги, которые
 исполняются инструментами cloud: `cloud/vitest.config.*`, `cloud/.eslintrc*`,
-`cloud/eslint.config.*`, `cloud/tsconfig*.json`, `.nvmrc`, `.node-version`. ACK плана для
+`cloud/eslint.config.*`, `cloud/tsconfig*.json`, `.nvmrc`, `.node-version`, а также `cloud/src/secrets.ts`, `cloud/src/config.ts` и `cloud/src/**/secret*.ts`. ACK плана для
 `sql/{current,mart,dash,ref,control_tower}` действует как прежде.
 
 Где проверяется:
@@ -134,8 +151,12 @@ allowlist не расширяет.
   - затем без сети: `npm run typecheck`, `npm run lint`, `vitest run --reporter=junit`.
 
 Правила профилей:
-- Статус теста = код выхода **и** валидный непустой JUnit, который пишет харнесс main. Тест, вызвавший `os._exit(0)`, не оставит отчёта и получит FAIL (`JUNIT_MISSING_OR_EMPTY`).
-- Сеть на время тестов отключается: `unshare -rn` или `sudo unshare -n` + `setpriv` с возвратом к пользователю раннера. Отключение подтверждается пробой. Если отключить нельзя, в доказательстве пишется `network_isolation: NOT_ENFORCED`.
+- Статус теста = код выхода **и** валидный непустой JUnit по пути, который задаёт харнесс main. Тест, вызвавший `os._exit(0)`, не оставит отчёта и получит FAIL (`JUNIT_MISSING_OR_EMPTY`).
+  - Сам отчёт пишет процесс тестов, т.е. код кандидата может его подделать. Это ограничение, а не гарантия.
+- Сеть на время тестов отключается, и это подтверждается двумя пробами: соединение наружу не устанавливается, и `sudo` внутри не работает.
+  - Варианты: `unshare -rn` или `sudo unshare -n`, затем `setpriv` с возвратом к пользователю раннера, `--no-new-privs`, `--inh-caps=-all`, `--bounding-set=-all`.
+  - Если отключить нельзя — `network_isolation: NOT_ENFORCED`.
+- Детектор ослабления ворот дополнен: `it/describe/test.skip|only|todo`, `xit` / `fit`, `pytest.skip(`, `importorskip`.
 - Профили выбираются по изменённым файлам и по `test_profiles` класса.
 
 Инженер получает в промпте область задачи. Его `summary`, `root_cause`, `uncertainty`,
@@ -145,8 +166,12 @@ allowlist не расширяет.
 
 Job `retest` в `autonomy-test.yml` работает без учётных данных: нет id-token (значит, нет
 `sa-ae-reader` и федерации Claude), нет токена записи. Он прогоняет те же профили на базовом
-коммите и на кандидате, харнесс — код main. Если число тестов в JUnit кандидата меньше, чем у
-базы, это FAIL с причиной `TESTS_DISAPPEARED`.
+коммите и на кандидате, харнесс — код main. Если исполненных тестов (`tests − skipped`) у
+кандидата меньше, чем у базы, это FAIL с причиной `TESTS_DISAPPEARED`.
+
+Каждый job выгружает ровно один файл (`evidence.json` / `retest.json`). Гейт скачивает retest в
+отдельный каталог и берёт из него только `retest.json`. Из недоверенных документов в состояние
+попадают только известные ключи, и только в маскированном виде.
 
 Доверенный шаг `verify` (`ReplayEvidenceRunner` → `reconcile`) проверяет sha256 обоих
 артефактов и решает так:
@@ -201,6 +226,7 @@ SHA и слияние только человеком.
 | Причины переходов в состоянии | `mask_data` |
 | Сигналы наблюдателя, инцидент, цель | только перечисления, счётчики, идентификаторы, отпечатки; текста ошибки нет вообще |
 | Итог (issue / тело PR) | метаданные; `ensure_public` — остаток данных = отказ записи |
+| **Код кандидата (дифф)** | доверенный ingest проверяет добавленные строки: e-mail, телефоны, URL с параметрами, строки BigQuery и деньги — во всех файлах; длинные числа, табличные строки и проценты — в фикстурах и не-кодовых файлах. Бинарные изменения запрещены. Совпадение → WAITING_FOR_HUMAN, патч не сохраняется. Публикатор проверяет то же повторно |
 
 `mask_data` заменяет:
 - денежные суммы (₽, руб, RUB);
@@ -212,6 +238,11 @@ SHA и слияние только человеком.
 - табличные строки.
 
 Редакция секретов (`redact.py`) остаётся отдельным обязательным слоем.
+
+**Ограничение (принято осознанно).** Текст плана инженера хранится только отпечатком. Владелец,
+дающий ACK плана (`sql/current|mart|dash|ref|control_tower`), не может прочитать план в
+публичном состоянии. До приватного хранилища (B3) такие цели требуют локального воспроизведения
+плана владельцем. ACK привязан к sha256 публичной формы плана.
 
 ## 10. Публикатор (B2)
 
@@ -234,6 +265,28 @@ SHA и слияние только человеком.
 | B5 | F-18 (`allUsers` на `evetis-wb-communications`) | отдельные ворота |
 | B6 | лимит расходов workspace Anthropic | действие владельца |
 | B7 | `roles/bigquery.dataViewer` на `evetis_health` для `sa-ae-reader` (Terraform) + DDL `V_RUN_FAILURE_LEDGER` | отдельные ворота |
+
+## 12. Независимое ревью
+
+Свежее ревью отдельным агентом по `b35b958...d2c481f` вернуло CHANGES_REQUIRED: 3 HIGH, 5 MEDIUM,
+6 LOW. Исправлено в этом же PR:
+
+| Находка | Исправление |
+|---|---|
+| H1 — бизнесовые коды классифицировались как инженерные | явные списки кодов; голое «500» не временная сигнатура |
+| H2 — `error_code`, NULL в `ARRAY_AGG` | `* EXCEPT`, `IGNORE NULLS`, `SAFE_OFFSET`; представление повторно выполнено read-only на живых данных |
+| H3 — данные в коде кандидата | скан диффа и запрет бинарных изменений |
+| M1 — побег из сетевой изоляции | флаги `setpriv` и проба sudo |
+| M2 — недоверенные доказательства в публичном состоянии | allowlist ключей, однофайловые артефакты, отдельный каталог retest |
+| M3 — ослабление тестов | новые шаблоны; учёт skipped; формулировка про JUnit исправлена |
+| M4 — устаревший детектор как множество задач | агрегирование, UNCLASSIFIED |
+| M5 — повторная постановка | дедупликация по `last_seen_at`, сигнатура в ключе |
+| L1 | `diff_size` только внутри ханков |
+| L2 | секреты и конфиг cloud — в TCB |
+| L3 | гейткипер fail closed без контекста |
+| L4 | идентификаторы vitest |
+| L6 | `test_verification` не обязателен в схеме, но без него одобрения нет |
+| L5 | оставлен как названное ограничение (§9) |
 
 Дорожная карта ввода в эксплуатацию — AE-C0 (shadow) … AE-C5, по отдельным ACK. Первый реальный
 кейс: Sheets 503 (фикстура `quality/autonomy/examples/signals.sheets_503_2026-10-07.json`).

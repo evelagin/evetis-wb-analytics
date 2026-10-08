@@ -129,7 +129,7 @@ def classify_signal(sig: dict, history: list[dict], policy: dict) -> tuple[str, 
     """Канонический сигнал → (класс наблюдения, решение классификатора)."""
     if sig["kind"] == "infra_blocked":
         return "INFRA_BLOCKED", None
-    decision = classifier.classify(sig, policy["signals"]["recurrence_threshold_7d"])
+    decision = classifier.classify(sig, policy["signals"]["recurrence_threshold_7d"], policy)
     if sig["kind"] == "dro_health" and sig.get("serving_status") == "HEALTHY":
         return "HEALTHY", decision
     if decision["task_class"] == "NOT_ENGINEERING":
@@ -192,7 +192,13 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
         row["changed"] = changed
         if cls == "KNOWN" and o.get("check_id") in known:
             row["ubr"] = known[o["check_id"]]
-        if cls in policy["watch"]["dispatch_on"]:
+        processed = canonical and o.get("kind") == "run_failure" and \
+            entry.get("dispatched_last_seen_at") == o.get("last_seen_at") and o.get("last_seen_at")
+        if cls in policy["watch"]["dispatch_on"] and processed:
+            # Та же строка журнала (тот же последний отказ) уже порождала задачу: повторно — только при
+            # новом отказе (last_seen_at сдвинулся), а не на каждом наблюдении в окне 14 суток.
+            row["dispatch"] = "already_processed"
+        elif cls in policy["watch"]["dispatch_on"]:
             active = store.active_run(o["key"])
             if active:
                 row["dispatch"] = f"already_active:{active['run_id']}"
@@ -210,6 +216,8 @@ def watch(observations: list[dict], store: StateStore, repository_sha: str, out_
                 row["dispatch"] = str(p)
                 dispatch.append({"objective_path": str(p), "deduplication_key": o["key"],
                                  "incident_id": incident["incident_id"]})
+                if canonical and o.get("kind") == "run_failure":
+                    entry["dispatched_last_seen_at"] = o.get("last_seen_at")
         if cls in policy["watch"]["notify_on"] and changed:
             notify.append(row)
         results.append(row)

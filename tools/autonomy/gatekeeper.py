@@ -18,6 +18,8 @@ AE-R1:
 """
 from __future__ import annotations
 
+import re
+
 PRIORITY = ["UNSAFE", "BLOCKED_BY_REVIEW", "BLOCKED_BY_TEST", "BLOCKED_BY_RUNTIME_ACCESS", "BLOCKED_BY_DATA",
             "HUMAN_DECISION_REQUIRED", "INCONCLUSIVE", "READY_FOR_PR"]
 TRUSTED_TEST_PROVENANCE = {"RECONCILED", "TRUSTED_LOCAL"}
@@ -75,15 +77,18 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
         hits["UNSAFE"].append(f"EVIDENCE_DISAGREEMENT: недоверенный job и независимый retest разошлись: {d[:5]}")
 
     # --- область класса задачи и размер диффа (AE-R1) ---------------------------
+    # Fail closed: контекст AE-R1 обязателен; его отсутствие — не «нарушений нет», а «не доказано».
     scope_fixable = False
-    if "scope_violations" in context:
+    if "scope_violations" not in context:
+        hits["HUMAN_DECISION_REQUIRED"].append("область задачи не проверена (нет scope_violations в контексте)")
+    else:
         for v in context["scope_violations"]:
             hits["HUMAN_DECISION_REQUIRED"].append(v)
         # Вне allowlist / слишком большой дифф — исправимо инженером; отсутствие класса — нет.
-        scope_fixable = bool(context["scope_violations"]) and context.get("scope_present", True)
-    if "test_provenance" in context and context["test_provenance"] not in TRUSTED_TEST_PROVENANCE:
+        scope_fixable = bool(context["scope_violations"]) and bool(context.get("scope_present"))
+    if context.get("test_provenance") not in TRUSTED_TEST_PROVENANCE:
         hits["INCONCLUSIVE"].append(f"тесты не подтверждены независимым повторным прогоном "
-                                    f"(provenance {context['test_provenance']})")
+                                    f"(provenance {context.get('test_provenance')})")
 
     # --- тесты и статическая проверка ------------------------------------------
     # Тесты репозитория — строго: красный тест блокирует ВСЕГДА, даже если он красный и на
@@ -172,8 +177,9 @@ def evaluate(evidence: dict, baseline: dict, review: dict | None, context: dict)
             requests_changes = True
             hits["INCONCLUSIVE"].append("test_verification NOT_APPLICABLE при изменении кода — противоречие")
         elif tv.get("status") == "VERIFIED":
-            unknown = [t for t in tv.get("relevant_tests", []) if context.get("known_test_paths") is not None
-                       and t.split("::")[0] not in context["known_test_paths"]]
+            known = context.get("known_test_paths")
+            path_of = lambda t: re.split(r"::| > | › ", t, maxsplit=1)[0].strip()  # noqa: E731 — pytest/vitest id
+            unknown = [t for t in tv.get("relevant_tests", []) if known is None or path_of(t) not in known]
             if not tv.get("relevant_tests") or unknown:
                 requests_changes = True
                 hits["INCONCLUSIVE"].append(f"ревьюер сослался на тесты, которых нет в кандидате/репозитории: "

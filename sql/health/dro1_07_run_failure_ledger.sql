@@ -57,11 +57,14 @@ normalized AS (
 signatures AS (
   SELECT n.*,
          CASE
-           WHEN REGEXP_CONTAINS(n.msg, r'currently unavailable|service unavailable|status code 5\d\d|\b50[0234]\b|bad gateway|gateway timeout|backenderror|internalerror|internal error|econnreset|etimedout|eai_again|socket hang up|deadline exceeded|retrying the job may solve')
+           -- Только однозначные признаки: HTTP-статус в контексте («status code 503», «HTTP 503»,
+           -- «503 Service Unavailable»), формулировки Google/BigQuery и сетевые коды. Голое «500» в тексте
+           -- («получено 500 диапазонов») временным сбоем НЕ считается.
+           WHEN REGEXP_CONTAINS(n.msg, r'status code 5\d\d|http(?:/[\d.]+)?[ :]+5\d\d|\b5\d\d (?:service unavailable|bad gateway|gateway timeout|internal server error)|service is currently unavailable|service unavailable|backenderror|retrying the job may solve|\beconnreset\b|\betimedout\b|\beai_again\b|socket hang up|deadline exceeded')
                 OR REGEXP_CONTAINS(n.code, r'(^|_)(TIMEOUT|RATE_LIMIT|TRANSIENT|UNAVAILABLE)(_|$)')
-                OR REGEXP_CONTAINS(n.msg, r'\b429\b|rate limit|too many requests')
+                OR REGEXP_CONTAINS(n.msg, r'status code 429|http(?:/[\d.]+)?[ :]+429|too many requests|rate limit exceeded')
              THEN 'TRANSIENT_UPSTREAM'
-           WHEN REGEXP_CONTAINS(n.msg, r'\b40[13]\b|unauthori[sz]ed|forbidden|permission denied|invalid token')
+           WHEN REGEXP_CONTAINS(n.msg, r'status code 40[13]|http(?:/[\d.]+)?[ :]+40[13]|unauthori[sz]ed|permission denied|invalid token')
              THEN 'AUTH'
            WHEN REGEXP_CONTAINS(n.msg, r'quota exceeded|quota_exceeded|billing')
              THEN 'QUOTA'
@@ -76,7 +79,9 @@ signatures AS (
          REGEXP_CONTAINS(n.code, r'(^|_)(TRANSIENT|RATE_LIMIT|TIMEOUT|RETRY|UNAVAILABLE)(_|$)') AS recorded_as_transient
   FROM normalized n),
 failures AS (
-  SELECT * FROM signatures WHERE NOT is_success AND (code <> '' OR status IN ('ERROR', 'FAILED'))),
+  -- Без исходных error_code/error_message: дальше идут только код (code), сигнатура и отпечаток.
+  SELECT * EXCEPT (error_code, error_message, msg)
+  FROM signatures WHERE NOT is_success AND (code <> '' OR status IN ('ERROR', 'FAILED'))),
 grouped AS (
   SELECT source_log, loader_name, environment,
          NULLIF(code, '') AS error_code, failure_signature, recorded_as_transient, message_fingerprint,
@@ -84,7 +89,7 @@ grouped AS (
          COUNTIF(started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)) AS occurrences_7d,
          MIN(started_at) AS first_seen_at,
          MAX(started_at) AS last_seen_at,
-         ARRAY_AGG(run_id ORDER BY started_at DESC LIMIT 1)[OFFSET(0)] AS last_run_id
+         ARRAY_AGG(run_id IGNORE NULLS ORDER BY started_at DESC LIMIT 1)[SAFE_OFFSET(0)] AS last_run_id
   FROM failures
   GROUP BY source_log, loader_name, environment, error_code, failure_signature, recorded_as_transient,
            message_fingerprint),

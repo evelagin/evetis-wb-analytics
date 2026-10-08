@@ -55,6 +55,59 @@
     "max_detector_age_minutes": 90,
     "recurrence_threshold_7d": 3
   },
+  "classifier_codes": {
+    "comment": "AE-R1 (после независимого ревью). Классификатор fail closed: инженерный класс по журналу отказов — ТОЛЬКО для кодов из явных списков ниже (выведены из реальных кодов cloud/src и журналов прогонов, 2026-10-08). Любой иной повторяющийся код — UNCLASSIFIED (оповещение владельцу), а не LOADER_DEFECT. Коды состояния данных и бизнеса (пусто, нет секции, нужен ACK, авторизация, удержание LCD, расхождение источников) — NOT_ENGINEERING.",
+    "business_code_patterns": [
+      "(^|_)(EMPTY|ZERO_ROWS|MISSING|AUTH|PATH_DENIED|STALE|FRESHNESS_GATE|REQUIRES_ACK|HELD|MANUAL|OVERRIDE|PROD_ONLY|NOT_ON_SHEET|LOCKED|SKIPPED|LOCK_UNAVAILABLE|DIVERGENCE|MISMATCH|OUT_OF_SCOPE|OUT_OF_BOUNDS|CAP_EXCEEDED|NOT_APPLICABLE|FORBIDDEN)(_|$)",
+      "^(MONTH_SECTION|NEXT_MONTH_SECTION|PREDECESSOR_SECTION|RECON|SPP|LCD|MIGRATION|ROLLBACK|CAPACITY|MONTH_PREP|STORAGE_PROD|ANCHOR|NO_FREE_SKU|NO_SAFE_EXPANSION|SHEET_TAIL|SKU_WITHOUT|BLOCK_MISSING|PRICE_|COGS_|ACTUAL_WITH|UNPROVEN_|KNOWN_COGS|OPERATIONAL_POPULATION|SOURCE_|INTEGRITY_DATA|FACT_NOT_ON_SHEET|ORDERS_SOURCE)"
+    ],
+    "retry_wrapper_codes": [
+      "SHEETS_API",
+      "LOADER_ERROR",
+      "ENGINE_ERROR",
+      "FATAL_UNHANDLED",
+      "WB_FUNNEL_HTTP_FAILED",
+      "WB_STORAGE_TASK_FAILED",
+      "WB_TARIFF_ALL_FAILED",
+      "SALES_ERROR",
+      "ORDERS_ERROR",
+      "ADS_ERROR",
+      "MART_ERROR",
+      "LEDGER_WRITE_FAILED"
+    ],
+    "schema_codes": [
+      "BQ_SHAPE",
+      "WB_PROMO_SHAPE",
+      "WB_TARIFF_SHAPE",
+      "WB_PRICES_SHAPE",
+      "WB_PROMO_BAD_JSON",
+      "WB_PRICES_BAD_JSON",
+      "WB_T6_PARSE",
+      "WB_PRICES_SCHEMA_MISSING",
+      "WB_PROMO_SCHEMA_MISSING"
+    ],
+    "parity_codes": [
+      "INVARIANT_FAIL",
+      "POST_COMMIT_QA_FAILED",
+      "FUTURE_LEAKAGE"
+    ],
+    "loader_defect_codes": [
+      "LOADER_ERROR",
+      "ENGINE_ERROR",
+      "FATAL_UNHANDLED",
+      "MART_ERROR",
+      "MANIFEST_FINALIZE_FAILED",
+      "LEDGER_WRITE_FAILED",
+      "DUP_KEY",
+      "MART_RUNS_DUP",
+      "STOCKS_POSTCOUNT_DUP",
+      "AMBIGUOUS"
+    ],
+    "recurrence_required_for": [
+      "PARITY_DEFECT",
+      "LOADER_DEFECT"
+    ]
+  },
   "task_classes": {
     "comment": "AE-R1. Детерминированный классификатор (tools/autonomy/classifier.py) присваивает сигналу класс ДО создания задачи. Инженерную задачу создают только классы с engineering=true. allowed_paths — единственные пути, которые кандидат класса вправе менять (allowlist; TCB и forbidden_paths действуют поверх). Лимиты диффа — изменённые строки (+ и −) и файлы. NOT_ENGINEERING и UNCLASSIFIED задачу не создают никогда: оповещение владельцу.",
     "classes": {
@@ -66,8 +119,7 @@
           "cloud/src/errors.ts",
           "cloud/src/cli.ts",
           "cloud/src/loaders/**/*.ts",
-          "cloud/test/**/*.test.ts",
-          "cloud/test/fixtures/**"
+          "cloud/test/**/*.test.ts"
         ],
         "max_changed_lines": 300,
         "max_files": 6,
@@ -82,7 +134,7 @@
         "allowed_paths": [
           "cloud/src/**/*.ts",
           "cloud/test/**/*.test.ts",
-          "cloud/test/fixtures/**",
+          "cloud/test/fixtures/**/*.json",
           "pipelines/ozon/runtime/**/*.py",
           "pipelines/ozon/tests/**/*.py"
         ],
@@ -101,7 +153,7 @@
           "cloud/src/loaders/**/*.ts",
           "cloud/src/**/normalize*.ts",
           "cloud/test/**/*.test.ts",
-          "cloud/test/fixtures/**",
+          "cloud/test/fixtures/**/*.json",
           "pipelines/ozon/runtime/**/*.py",
           "pipelines/ozon/tests/**/*.py"
         ],
@@ -128,7 +180,7 @@
       },
       "DETECTOR_DEFECT": {
         "engineering": true,
-        "description": "Дефект самого детектора DRO-1: снимок не пишется или устарел при живом планировщике.",
+        "description": "Дефект самого детектора DRO-1. Автоматически НЕ выводится: устаревший снимок может быть операционным (планировщик на паузе — документированный откат). Класс доступен только цели владельца с явным task_class.",
         "allowed_paths": [
           "sql/health/dro1_01_contract.sql",
           "sql/health/dro1_02_probe.sql",
@@ -335,7 +387,10 @@
         "infra/**",
         "**/*.tf",
         "**/*.tf.json",
-        "quality/runtime_identities.json"
+        "quality/runtime_identities.json",
+        "cloud/src/secrets.ts",
+        "cloud/src/config.ts",
+        "cloud/src/**/secret*.ts"
       ],
       "deployment_and_rollback": [
         "tools/*deploy*",
@@ -440,7 +495,12 @@
       "^\\+.*\"known_failing\"",
       "^\\+.*\"override\"\\s*:",
       "^\\+.*--\\s*@expect\\s+empty_ok",
-      "^\\+.*\\bexit\\s+0\\b.*#.*(skip|bypass)"
+      "^\\+.*\\bexit\\s+0\\b.*#.*(skip|bypass)",
+      "^\\+.*\\b(it|describe|test|suite)\\.(skip|only|todo|skipIf|runIf)\\b",
+      "^\\+.*\\b(xit|xdescribe|fit|fdescribe)\\(",
+      "^\\+.*\\bpytest\\.skip\\(",
+      "^\\+.*\\bimportorskip\\(",
+      "^\\+.*\\bunittest\\.skip"
     ],
     "protected_files": [
       "quality/suites.json",
@@ -564,6 +624,34 @@
       "commands_run"
     ],
     "max_public_text_chars": 600,
-    "max_tail_lines": 20
+    "max_tail_lines": 20,
+    "patch_data_scan": {
+      "comment": "Кандидат публикуется (autonomy-state, ветка ae/*, PR). До сохранения патча доверенный код ищет в ДОБАВЛЕННЫХ строках данные: e-mail, телефоны, URL с параметрами, строки BigQuery REST, денежные суммы — во всех файлах; длинные числа и табличные строки — в фикстурах и не-кодовых файлах. Бинарные изменения запрещены. Совпадение — WAITING_FOR_HUMAN, патч не сохраняется.",
+      "all_files_kinds": [
+        "email",
+        "phone",
+        "url_query",
+        "bq_row",
+        "money"
+      ],
+      "data_file_kinds": [
+        "email",
+        "phone",
+        "url_query",
+        "bq_row",
+        "money",
+        "long_number",
+        "table_row",
+        "percent"
+      ],
+      "data_file_globs": [
+        "**/fixtures/**",
+        "**/*.json",
+        "**/*.csv",
+        "**/*.tsv",
+        "**/*.txt",
+        "**/*.ndjson"
+      ]
+    }
   }
 }

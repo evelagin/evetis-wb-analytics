@@ -87,7 +87,7 @@ def health_signal(row: dict, incident: dict | None = None) -> dict:
 def ledger_signal(row: dict) -> dict:
     sig = {"kind": "run_failure",
            "key": f"runfail:{_slug(row.get('loader_name'), 60)}:{_slug(row.get('error_code') or 'NO_CODE', 60)}:"
-                  f"{_slug(row.get('message_fingerprint'), 16)}"}
+                  f"{_slug(row.get('failure_signature') or 'OTHER', 24)}:{_slug(row.get('message_fingerprint'), 16)}"}
     for f in LEDGER_FIELDS:
         if f in row and row[f] not in (None, ""):
             sig[f] = row[f]
@@ -116,19 +116,22 @@ def canonical_signals(fetch, policy: dict) -> list[dict]:
         out.append(infra_blocked("dro_incidents", type(e).__name__))
     try:
         rows = fetch(HEALTH_SQL.format(health_view=s["health_view"]))
+        rows = [r for r in rows if r.get("evaluation_mode") == "EVALUATED"]   # NOT_EVALUATED — не сигнал
         if not rows:
             out.append(infra_blocked("dro_health", "EMPTY_SNAPSHOT"))
-        stale = [r for r in rows if (_int(r.get("detector_age_minutes")) or 0) > s["max_detector_age_minutes"]
+        stale = [r for r in rows if r.get("reason_code") in ("DETECTOR_STALE", "DETECTOR_NEVER_RAN")
+                 or (_int(r.get("detector_age_minutes")) or 0) > s["max_detector_age_minutes"]
                  or r.get("evaluated_at") in (None, "")]
-        if rows and len(stale) == len(rows):
-            # Весь снимок старше допуска: здоровье неизвестно, но сам детектор — кандидат DETECTOR_DEFECT
-            # через reason_code DETECTOR_STALE, который V_DATA_HEALTH_CURRENT уже подставил.
+        if stale:
+            # Устаревший детектор — одно событие, а не по сигналу на конвейер (иначе пауза планировщика
+            # размножилась бы в десятки задач). Здоровье неизвестно → INFRA_BLOCKED + один агрегат.
             out.append(infra_blocked("dro_health", "DETECTOR_STALE"))
-        for r in rows:
-            if r.get("evaluation_mode") != "EVALUATED" and r.get("reason_code") not in ("DETECTOR_STALE",
-                                                                                        "DETECTOR_NEVER_RAN"):
-                continue
-            out.append(health_signal(r, incidents.get(r["pipeline_id"])))
+            out.append({"kind": "dro_health", "key": "dro:detector:DETECTOR_STALE", "pipeline_id": "dro_detector",
+                        "serving_status": "UNKNOWN", "reason_code": "DETECTOR_STALE", "data_class": "DERIVED",
+                        "stale_pipelines": len(stale)})
+        else:
+            for r in rows:
+                out.append(health_signal(r, incidents.get(r["pipeline_id"])))
     except Exception as e:  # noqa: BLE001
         out.append(infra_blocked("dro_health", type(e).__name__))
     try:

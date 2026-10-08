@@ -21,7 +21,8 @@ from tools.autonomy.evidence import EvidenceRunner, Sandbox
 from tools.autonomy.redact import RedactionError, diff_added_secrets, ensure_clean, redact_obj, redact_text, safe_dumps, safe_text
 from tools.autonomy.output_policy import mask_data, public_obj, public_tail, sanitize_engineer_report
 from tools.autonomy.policy import (detect_gate_weakening, forbidden_paths, load_policy, normalize_verdict, out_of_scope,
-                                   plan_requires_ack, scope_violations, task_scope, tcb_globs, tcb_paths)
+                                   patch_data_findings, plan_requires_ack, scope_violations, task_scope, tcb_globs,
+                                   tcb_paths)
 from tools.autonomy.schema import load_schema, require_valid
 from tools.autonomy.state import PARKED, TERMINAL, StateStore, TransitionError
 
@@ -385,6 +386,16 @@ class Orchestrator:
         if leaked_secrets:
             # Секретоподобный материал в диффе — не решение человека, а инцидент; дифф не сохраняется.
             return self._unsafe(run, files, f"секретоподобный материал в диффе кандидата: {leaked_secrets}")
+        data_hits = patch_data_findings(patch, self.policy)
+        if data_hits:
+            # Политика вывода B3: патч с данными (или бинарный) НЕ сохраняется — ни в состояние, ни в
+            # артефакт; наружу — только вид находки и отпечаток патча.
+            from tools.autonomy.output_policy import fingerprint
+            self._put(run, "engineer_report.json", report)
+            return self.store.transition(run, "WAITING_FOR_HUMAN",
+                                         f"PATCH_DATA: кандидат содержит данные или бинарные изменения "
+                                         f"{data_hits[:3]}; патч {fingerprint(patch)} не сохранён",
+                                         last_gate={"verdict": "HUMAN_DECISION_REQUIRED", "reason": "PATCH_DATA"})
         self._put(run, "engineer_report.json", report)
         self._put(run, "candidate.patch", patch)
         bad = forbidden_paths(files)

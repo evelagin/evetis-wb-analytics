@@ -71,26 +71,39 @@ def health(**over) -> dict:
 @pytest.mark.parametrize("sig, expected", [
     (ledger(), "RETRY_CLASSIFIER_DEFECT"),                                         # кейс 07.10
     (ledger(error_code="LOADER_ERROR"), "RETRY_CLASSIFIER_DEFECT"),                 # обёртка без классификации
+    (ledger(error_code="MONTH_SECTION_INVALID"), "NOT_ENGINEERING"),                # временная сигнатура, код бизнеса
+    (ledger(error_code="SOME_NEW_CODE"), "UNCLASSIFIED"),                           # временная сигнатура, код вне списка
     (ledger(error_code="ADS_TIMEOUT", recorded_as_transient=True), "NOT_ENGINEERING"),  # распознан правильно
     (ledger(error_code="SHEETS_API_TRANSIENT"), "NOT_ENGINEERING"),                 # код сам объявил временным
     (ledger(error_code="FRESHNESS_GATE", failure_signature="OTHER"), "NOT_ENGINEERING"),   # бизнесовый гейт
     (ledger(error_code="SOURCE_STALE", failure_signature="OTHER"), "NOT_ENGINEERING"),
-    (ledger(error_code="PLAN_NOT_APPROVED", failure_signature="OTHER"), "NOT_ENGINEERING"),
     (ledger(error_code="X", failure_signature="AUTH"), "NOT_ENGINEERING"),
     (ledger(error_code="X", failure_signature="QUOTA"), "NOT_ENGINEERING"),
-    (ledger(error_code="WB_SCHEMA_UNKNOWN_FIELD", failure_signature="OTHER"), "SCHEMA_DRIFT"),
-    (ledger(error_code="X", failure_signature="SCHEMA"), "SCHEMA_DRIFT"),
-    (ledger(error_code="S4_PARITY", failure_signature="OTHER"), "PARITY_DEFECT"),
+    (ledger(error_code="WB_PRICES_SHAPE", failure_signature="OTHER"), "SCHEMA_DRIFT"),
+    (ledger(error_code="WB_T6_PARSE", failure_signature="SCHEMA"), "SCHEMA_DRIFT"),
+    (ledger(error_code="X", failure_signature="SCHEMA"), "UNCLASSIFIED"),           # сигнатура без кода из списка
+    (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=3), "PARITY_DEFECT"),
+    (ledger(error_code="INVARIANT_FAIL", failure_signature="OTHER", occurrences_7d=1), "UNCLASSIFIED"),
     (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=3), "LOADER_DEFECT"),
     (ledger(error_code="MART_ERROR", failure_signature="OTHER", occurrences_7d=2), "UNCLASSIFIED"),
+    (ledger(error_code="SOME_NEW_CODE", failure_signature="OTHER", occurrences_7d=9), "UNCLASSIFIED"),  # fail closed
     (ledger(error_code=None, failure_signature="OTHER"), "UNCLASSIFIED"),
+    # реальные коды состояния данных/бизнеса — никогда не инженерные, даже повторяясь (независимое ревью H1)
+    (ledger(error_code="WB_PRICES_EMPTY", failure_signature="OTHER", occurrences_7d=3), "NOT_ENGINEERING"),
+    (ledger(error_code="NEXT_MONTH_SECTION_MISSING", failure_signature="OTHER", occurrences_7d=3), "NOT_ENGINEERING"),
+    (ledger(error_code="STOCK_SNAPSHOT_MISSING", failure_signature="OTHER", occurrences_7d=5), "NOT_ENGINEERING"),
+    (ledger(error_code="WB_PROMO_AUTH", failure_signature="OTHER", occurrences_7d=3), "NOT_ENGINEERING"),
+    (ledger(error_code="INTEGRITY_DATA_ERROR", failure_signature="PARITY_QA", occurrences_7d=4), "NOT_ENGINEERING"),
+    (ledger(error_code="RECON_CANCELS_DECREASE_REQUIRES_ACK", failure_signature="OTHER", occurrences_7d=4), "NOT_ENGINEERING"),
+    (ledger(error_code="LCD_HELD_BY_COVERAGE_GAP", failure_signature="OTHER", occurrences_7d=4), "NOT_ENGINEERING"),
+    (ledger(error_code="RETRY_LOCK_UNAVAILABLE", failure_signature="OTHER", occurrences_7d=4), "NOT_ENGINEERING"),
     (health(), "NOT_ENGINEERING"),                                                  # данных нет (SLOT_MISSED)
     (health(reason_code="DATA_LOSS_CONFIRMED", serving_status="BLOCKED"), "NOT_ENGINEERING"),
     (health(reason_code="NO_DATA_OBSERVED", serving_status="UNKNOWN"), "NOT_ENGINEERING"),
     (health(reason_code="FRESHNESS_STALE", data_class="MANUAL", source_system="MANUAL"), "NOT_ENGINEERING"),  # ФФ
     (health(reason_code="RUN_PARTIAL", data_class="MANUAL"), "NOT_ENGINEERING"),    # план продаж / ручная операция
     (health(reason_code="RUN_FAILED"), "UNCLASSIFIED"),                             # диагноз — только по журналу
-    (health(reason_code="DETECTOR_STALE", serving_status="UNKNOWN"), "DETECTOR_DEFECT"),
+    (health(reason_code="DETECTOR_STALE", serving_status="UNKNOWN"), "UNCLASSIFIED"),  # может быть паузой планировщика
     (health(reason_code="SOMETHING_NEW"), "UNCLASSIFIED"),
     ({"kind": "mystery"}, "UNCLASSIFIED"),
 ])
@@ -105,7 +118,8 @@ def test_business_and_marketplace_conditions_never_become_engineering():
                 health(pipeline_id="ff_stock", data_class="MANUAL", reason_code="FRESHNESS_STALE"),
                 health(pipeline_id="sales_plan", data_class="MANUAL", reason_code="RUN_FAILED"),
                 ledger(error_code="FRESHNESS_GATE", failure_signature="OTHER"),
-                ledger(error_code="MANUAL_UPLOAD_REQUIRED", failure_signature="TRANSIENT_UPSTREAM")):
+                ledger(error_code="MANUAL_OVERRIDE_ACTIVE", failure_signature="TRANSIENT_UPSTREAM"),
+                ledger(error_code="WB_PRICES_POSTCOUNT_EMPTY", failure_signature="OTHER", occurrences_7d=10)):
         assert not classifier.classify(sig)["engineering"], sig
 
 
@@ -160,18 +174,31 @@ def test_stale_detector_snapshot_is_infra_blocked(tmp_path):
     assert rep["status"] == "INFRA_BLOCKED" and rep["dispatch"] == []
 
 
-def test_dro_detector_defect_waits_for_persistence(tmp_path):
-    doc = {"health": [{"pipeline_id": "unitka_wb", "serving_status": "UNKNOWN", "reason_code": "DETECTOR_STALE",
-                       "evaluation_mode": "EVALUATED", "data_class": "DERIVED", "detector_age_minutes": 30,
-                       "evaluated_at": "2026-10-07T10:00:01Z"}],
-           "ledger": [], "incidents": []}
+def test_stale_detector_is_one_aggregated_signal_and_never_a_task(tmp_path):
+    """Пауза планировщика DRO (документированный откат) не размножается в задачи по конвейерам."""
+    doc = json.loads(FIXTURE.read_text())
+    for r in doc["health"]:
+        r["reason_code"], r["serving_status"] = "DETECTOR_STALE", "UNKNOWN"
+    doc["health"].append({**doc["health"][0], "pipeline_id": "x_not_evaluated", "evaluation_mode": "NOT_EVALUATED"})
+    doc["ledger"] = []
     store = StateStore(tmp_path / "state")
-    first = watch(signals(doc), store, SHA, tmp_path / "out")
-    row = lambda rep: next(r for r in rep["results"] if r["key"].startswith("dro:"))  # noqa: E731
-    assert first["dispatch"] == [] and row(first)["class"] == "OBSERVING"
-    second = watch(signals(doc), store, SHA, tmp_path / "out")
-    assert row(second)["class"] == "ENGINEERING_CANDIDATE" and len(second["dispatch"]) == 1
-    assert row(second)["task_class"] == "DETECTOR_DEFECT"
+    for _ in range(3):
+        rep = watch(signals(doc), store, SHA, tmp_path / "out")
+    dro = [r for r in rep["results"] if r["key"].startswith("dro:")]
+    assert [r["key"] for r in dro] == ["dro:detector:DETECTOR_STALE"] and dro[0]["class"] == "UNCLASSIFIED"
+    assert rep["dispatch"] == [] and "INFRA_BLOCKED" in {r["class"] for r in rep["results"]}
+
+
+def test_same_ledger_row_is_dispatched_once(tmp_path):
+    store = StateStore(tmp_path / "state")
+    first = watch(signals(), store, SHA, tmp_path / "out")
+    second = watch(signals(), store, SHA, tmp_path / "out")
+    assert len(first["dispatch"]) == 1 and second["dispatch"] == []
+    row = next(r for r in second["results"] if r["class"] == "ENGINEERING_CANDIDATE")
+    assert row["dispatch"] in ("already_processed",) or row["dispatch"].startswith("already_active")
+    doc = json.loads(FIXTURE.read_text())
+    doc["ledger"][0]["last_seen_at"] = "2026-10-09T09:30:47Z"          # новый отказ — новая задача
+    assert len(watch(signals(doc), store, SHA, tmp_path / "out")["dispatch"]) == 1
 
 
 def test_legacy_check_failure_without_classification_is_not_dispatched(tmp_path):
@@ -208,8 +235,13 @@ def test_out_of_allowlist_and_oversized_diff_are_violations():
     s = task_scope({"task_class": "RETRY_CLASSIFIER_DEFECT"})
     assert out_of_scope(["cloud/src/failure.ts", "cloud/test/failure.test.ts"], s) == []
     assert out_of_scope(["cloud/src/failure.ts", "sql/mart/x.sql"], s) == ["sql/mart/x.sql"]
-    patch = "diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n--- a/x\n+++ b/x\n" + "+x\n" * 400
-    assert diff_size(patch) == {"changed_lines": 400, "files": 1}
+    patch = "diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n" + "+x\n" * 400
+    assert diff_size(patch) == {"changed_lines": 400, "files": 1, "binary": 0}
+    # удалённые SQL-комментарии внутри ханка («--- …» в диффе) считаются, а не принимаются за заголовок
+    sql = "diff --git a/sql/a.sql b/sql/a.sql\n--- a/sql/a.sql\n+++ b/sql/a.sql\n@@ -1,500 +1 @@\n" + "--- old\n" * 500
+    assert diff_size(sql)["changed_lines"] == 500
+    binary = "diff --git a/cloud/test/fixtures/x.bin b/cloud/test/fixtures/x.bin\nGIT binary patch\nliteral 3\n"
+    assert any(v.startswith("BINARY_CHANGE") for v in scope_violations(["cloud/test/fixtures/x.bin"], binary, s))
     v = scope_violations(["cloud/src/failure.ts"], patch, s)
     assert any(x.startswith("DIFF_TOO_LARGE") for x in v)
     assert scope_violations(["docs/x.md"], "", s)[0].startswith("SCOPE_OUT_OF_ALLOWLIST")
@@ -256,12 +288,15 @@ def finding(sev):
     (review("BLOCKED"), ctx(), "INCONCLUSIVE", False),                                # устаревшее → UNPROVEN
     (review(tv="INSUFFICIENT"), ctx(), "INCONCLUSIVE", True),
     (review(tests=("cloud/test/nonexistent.test.ts",)), ctx(), "INCONCLUSIVE", True),
+    (review(tests=("cloud/test/cli_retry.test.ts > retries 503 > once",)), ctx(), "READY_FOR_PR", False),  # id vitest
+    ({k: v for k, v in review().items() if k != "test_verification"}, ctx(), "INCONCLUSIVE", True),  # старый вердикт
     (review(tv="NOT_APPLICABLE"), ctx(), "INCONCLUSIVE", True),
     (review(), ctx(scope_violations=["SCOPE_OUT_OF_ALLOWLIST (X): ['sql/x.sql']"]), "HUMAN_DECISION_REQUIRED", True),
     (review(), ctx(scope_violations=["DIFF_TOO_LARGE: 900 > 300"]), "HUMAN_DECISION_REQUIRED", True),
     (review(), ctx(scope_violations=["класс задачи не определён"], scope_present=False), "HUMAN_DECISION_REQUIRED", False),
     (review(), ctx(test_provenance="UNTRUSTED_ONLY"), "INCONCLUSIVE", False),
     (review(), ctx(evidence_disagreement=["python: недоверенный PASS ≠ retest FAIL"]), "UNSAFE", False),
+    (review(), {}, "HUMAN_DECISION_REQUIRED", True),                                 # нет контекста — fail closed
 ])
 def test_gatekeeper_r1_semantics(rev, c, verdict, fixable):
     r = G.evaluate(GOOD, GOOD, rev, c)
@@ -492,3 +527,73 @@ def test_fixture_is_public_safe():
     text = FIXTURE.read_text(encoding="utf-8")
     ensure_public(json.dumps(json.loads(text)["ledger"], ensure_ascii=False))
     assert "spreadsheets" not in text and "ZZ_CONFIG" not in text
+
+
+# ========================================== находки независимого ревью (повторный проход) ===
+def test_legacy_review_without_test_verification_is_schema_valid():
+    legacy = {k: v for k, v in review("PASS").items() if k != "test_verification"}
+    require_valid(legacy, "review_verdict")
+
+
+@pytest.mark.parametrize("line", ["+  it.only('x', () => {})", "+  describe.skip('x', () => {})", "+  test.todo('x')",
+                                  "+    pytest.skip('later')", "+np = pytest.importorskip('numpy')", "+  xit('x', f)"])
+def test_new_test_weakening_patterns(line):
+    from tools.autonomy.policy import detect_gate_weakening
+    patch = f"diff --git a/cloud/test/a.test.ts b/cloud/test/a.test.ts\n+++ b/cloud/test/a.test.ts\n{line}\n"
+    assert detect_gate_weakening(patch, ["cloud/test/a.test.ts"])
+
+
+def test_patch_data_scan():
+    from tools.autonomy.policy import patch_data_findings
+    code = ("diff --git a/cloud/src/failure.ts b/cloud/src/failure.ts\n@@ -1 +1 @@\n"
+            "+const TIMEOUT_MS = 120000; // 50% запаса\n")
+    assert patch_data_findings(code) == []                          # число и процент в КОДЕ — не данные
+    fixture = ("diff --git a/cloud/test/fixtures/r.json b/cloud/test/fixtures/r.json\n@@ -0,0 +1 @@\n"
+               '+{"nm_id": 438775437, "revenue": "12 345 ₽"}\n')
+    hits = patch_data_findings(fixture)
+    assert hits and "long_number" in hits[0] and "money" in hits[0]
+    mail = "diff --git a/cloud/src/x.ts b/cloud/src/x.ts\n@@ -0,0 +1 @@\n+const who = 'buyer@mail.ru';\n"
+    assert patch_data_findings(mail)
+    assert patch_data_findings("diff --git a/a b/a\nBinary files a/a and b/a differ\n")[0].startswith("BINARY")
+
+
+def edit_with_data_fixture(ws: Path) -> None:
+    F.edit_fix_with_extra_test(ws)
+    (ws / "tests_synthetic" / "fixture.json").write_text('{"revenue": "12 345 ₽", "nm_id": 438775437}\n')
+
+
+def test_candidate_with_data_is_not_persisted(env):
+    eng = ScriptedAdapter({"engineer_plan": [{"respond": F.plan(files=("synthetic/calc.py", "tests_synthetic/test_calc.py",
+                                                                       "tests_synthetic/fixture.json"))}],
+                           "engineer_implement": [{"edit": edit_with_data_fixture, "respond": F.implemented()}]})
+    o = orch(env, eng, ScriptedAdapter({}))
+    run = o.advance(o.submit(synthetic_objective(env))[0]["run_id"])
+    assert run["state"] == "WAITING_FOR_HUMAN" and "PATCH_DATA" in run["transitions"][-1]["reason"]
+    art = env["store"].root / "artifacts" / run["run_id"]
+    assert not (art / "candidate.patch").exists()
+    state_text = "".join(p.read_text(encoding="utf-8") for p in env["store"].root.rglob("*.json"))
+    assert "438775437" not in state_text and "12 345" not in state_text
+
+
+def test_replayed_evidence_keeps_only_known_keys(tmp_path):
+    from tools.autonomy.agents import sha256_file
+    from tools.autonomy.evidence import ReplayEvidenceRunner
+    ev = {**GOOD, "changed_files": ["a.py"], "leak": {"rows": [{"revenue": 1}]},
+          "sql_validation": {"status": "PASS", "tail": "выручка 12 345 ₽"}}
+    f = tmp_path / "evidence.json"; f.write_text(json.dumps(ev, ensure_ascii=False))
+
+    class Imp:
+        def impact(self, repo, files):
+            return {"risk_tier": None}
+    out = ReplayEvidenceRunner(f, sha256_file(f), Imp(), tmp_path).collect(tmp_path, ["a.py"], {})
+    assert "leak" not in out and "12 345" not in json.dumps(out, ensure_ascii=False)
+    assert out["test_provenance"] == "UNTRUSTED_ONLY"
+
+
+def test_isolation_prefix_drops_privileges():
+    import inspect
+    from tools.autonomy import evidence as E
+    src = inspect.getsource(E.offline_prefix)
+    for flag in ("--no-new-privs", "--inh-caps=-all", "--bounding-set=-all"):
+        assert flag in src
+    assert "_PROBE_NO_SUDO" in src

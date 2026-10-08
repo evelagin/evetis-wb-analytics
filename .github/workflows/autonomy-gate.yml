@@ -90,7 +90,15 @@ jobs:
         if: inputs.retest_artifact != '' && inputs.expect != ''
         with:
           name: ${{ inputs.retest_artifact }}
-          path: ${{ runner.temp }}/ae-pending
+          # Отдельный каталог: архив retest не может перезаписать evidence.json. Берётся ровно retest.json.
+          path: ${{ runner.temp }}/ae-retest
+      - name: take retest.json only
+        if: inputs.retest_artifact != '' && inputs.expect != ''
+        run: |
+          [ -f "$RUNNER_TEMP/ae-retest/retest.json" ] && [ ! -L "$RUNNER_TEMP/ae-retest/retest.json" ] \
+            || { echo "::error::нет retest.json"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ae-pending"
+          cp "$RUNNER_TEMP/ae-retest/retest.json" "$RUNNER_TEMP/ae-pending/retest.json"
       - name: deterministic transition
         id: run
         env:

@@ -9,8 +9,10 @@
 
 AE-R1:
   * тесты кандидата — по профилям `policy.json` (`test_profiles`): python, ozon, cloud (npm ci
-    без lifecycle-скриптов, typecheck, lint, vitest). Статус теста = код выхода И JUnit-отчёт,
-    который пишет харнесс main: `os._exit(0)` без отчёта или пустой отчёт — FAIL, а не PASS;
+    без lifecycle-скриптов, typecheck, lint, vitest). Статус теста = код выхода И JUnit-отчёт, путь
+    которому задаёт харнесс main: `os._exit(0)` без отчёта или пустой отчёт — FAIL, а не PASS.
+    Сам отчёт пишет процесс тестов, т.е. код кандидата может его подделать — это ограничение,
+    а не гарантия (последние рубежи — ревьюер, обязательный CI и слияние человеком);
   * на время тестов сеть отключается (`unshare`), где это возможно; иначе в доказательстве
     честно записано `network_isolation = NOT_ENFORCED`;
   * `RetestRunner` — то же самое в job'е БЕЗ учётных данных, на базе и на кандидате (число тестов
@@ -125,22 +127,30 @@ def _run(cmd: list[str], cwd: Path, timeout: int = 1800, env: dict | None = None
 # ------------------------------------------------ тестовые профили (AE-R1) ---
 _PROBE = ("import socket, sys\ns = socket.socket(); s.settimeout(3)\n"
           "try:\n    s.connect(('1.1.1.1', 53))\nexcept OSError:\n    sys.exit(0)\nsys.exit(1)\n")
+# Вторая проба: внутри изоляции sudo обязан НЕ работать — иначе код кандидата вернул бы себе сеть
+# (`sudo nsenter -t 1 -n`). no_new_privs и пустой bounding set делают setuid-бинарники бессильными.
+_PROBE_NO_SUDO = ("import subprocess, sys\n"
+                  "try:\n    r = subprocess.run(['sudo', '-n', 'true'], capture_output=True, timeout=10)\n"
+                  "except (OSError, subprocess.SubprocessError):\n    sys.exit(0)\n"
+                  "sys.exit(1 if r.returncode == 0 else 0)\n")
 
 
 def offline_prefix(env: dict | None = None) -> tuple[list[str], str]:
-    """Префикс команды без сети и его вид. Отключение проверяется пробой, а не предполагается."""
+    """Префикс команды без сети и его вид. Отключение проверяется пробами, а не предполагается:
+    (1) соединение наружу не устанавливается; (2) sudo внутри изоляции не работает."""
     if os.environ.get("AE_FORCE_NETWORK_ISOLATION") == "off":
         return [], "NOT_ENFORCED"
-    candidates = [("UNSHARE_USERNS", ["unshare", "-rn", "--"])]
+    candidates = [("UNSHARE_USERNS", ["unshare", "-rn", "--", "setpriv", "--no-new-privs", "--"])]
     if shutil.which("sudo") and shutil.which("setpriv"):
         candidates.append(("SUDO_UNSHARE", ["sudo", "-n", "unshare", "-n", "--", "setpriv",
                                             f"--reuid={os.getuid()}", f"--regid={os.getgid()}", "--init-groups",
-                                            "--"]))
+                                            "--no-new-privs", "--inh-caps=-all", "--bounding-set=-all", "--"]))
     for name, pfx in candidates:
-        if not shutil.which(pfx[0]):
+        if not shutil.which(pfx[0]) or not shutil.which("setpriv"):
             continue
-        r = _run([sys.executable, "-c", _PROBE], Path.cwd(), timeout=30, env=env, prefix=pfx)
-        if r["exit_code"] == 0:
+        net = _run([sys.executable, "-c", _PROBE], Path.cwd(), timeout=30, env=env, prefix=pfx)
+        nosudo = _run([sys.executable, "-c", _PROBE_NO_SUDO], Path.cwd(), timeout=30, env=env, prefix=pfx)
+        if net["exit_code"] == 0 and nosudo["exit_code"] == 0:
             return pfx, name
     return [], "NOT_ENFORCED"
 
@@ -316,8 +326,10 @@ class RetestRunner:
             base = {t["name"]: t for t in run_profile(name, prof, base_ws, self.python, prefix)}
             for t in run_profile(name, prof, cand_ws, self.python, prefix):
                 b = base.get(t["name"], {}).get("junit")
-                if b and t.get("junit") and t["junit"]["tests"] < b["tests"]:
-                    t = {**t, "status": "FAIL", "reason": f"TESTS_DISAPPEARED: {t['junit']['tests']} < {b['tests']}"}
+                ran = lambda j: j["tests"] - j.get("skipped", 0)  # noqa: E731 — пропущенный тест не исполнялся
+                if b and t.get("junit") and ran(t["junit"]) < ran(b):
+                    t = {**t, "status": "FAIL",
+                         "reason": f"TESTS_DISAPPEARED: исполнено {ran(t['junit'])} < {ran(b)} на базе"}
                 if b:
                     t["base_junit"] = b
                 tests.append(t)
@@ -381,13 +393,17 @@ class ReplayEvidenceRunner:
             raise IntegrityError(f"нет недоверенных доказательств {self.file}")
         if sha256_file(self.file) != self.expect:
             raise IntegrityError("доказательства кандидата: sha256 не совпал с объявленным производителем")
-        ev = json.loads(self.file.read_text(encoding="utf-8"))
-        missing = [k for k in self.REQUIRED if k not in ev]
+        raw = json.loads(self.file.read_text(encoding="utf-8"))
+        missing = [k for k in self.REQUIRED if k not in raw]
         if missing:
             raise IntegrityError(f"доказательства кандидата неполны: нет {missing}")
-        declared = sorted(ev.get("changed_files", changed_files))
+        declared = sorted(raw.get("changed_files", changed_files))
         if declared != sorted(changed_files):
             raise IntegrityError(f"доказательства собраны не по этому кандидату: {declared} != {sorted(changed_files)}")
+        # Недоверенный документ — только известные ключи и маскированные значения (B3): лишние поля,
+        # подброшенные кодом кандидата, в доверенное и публичное состояние не попадают.
+        from tools.autonomy.output_policy import public_obj
+        ev = {k: public_obj(raw[k], 400) for k in self.REQUIRED + ("changed_files", "network_isolation") if k in raw}
         ev["impact"] = {k: v for k, v in self.impact(workdir, changed_files).items()
                         if k in ("risk_tier", "affected_total", "required_contracts", "assets_without_contract",
                                  "flags", "downstream_assets")}
@@ -398,4 +414,8 @@ class ReplayEvidenceRunner:
             retest = json.loads(self.retest_file.read_text(encoding="utf-8"))
             if retest.get("schema") != "ae_retest/1" or sorted(retest.get("changed_files", [])) != sorted(changed_files):
                 raise IntegrityError("retest собран не по этому кандидату или не той схемой")
+            from tools.autonomy.output_policy import public_obj
+            retest = {"schema": retest["schema"], "changed_files": retest["changed_files"],
+                      "tests": public_obj(retest.get("tests", []), 400),
+                      "network_isolation": str(retest.get("network_isolation", "NOT_ENFORCED"))[:40]}
         return reconcile(ev, retest)

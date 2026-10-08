@@ -77,7 +77,8 @@ jobs:
         if: steps.collect.outputs.evidence_sha != ''
         with:
           name: ae-${{ inputs.run_id }}-test-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pending
+          path: ${{ runner.temp }}/pending/evidence.json   # ровно один файл: код кандидата не подложит лишнего
+          if-no-files-found: error
           retention-days: 30
 
   retest:
@@ -129,5 +130,6 @@ jobs:
         if: steps.retest.outputs.retest_sha != ''
         with:
           name: ae-${{ inputs.run_id }}-retest-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/retest
+          path: ${{ runner.temp }}/retest/retest.json      # ровно один файл
+          if-no-files-found: error
           retention-days: 30

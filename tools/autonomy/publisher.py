@@ -28,8 +28,8 @@ from pathlib import Path
 
 from tools.autonomy.audit import zero_mutations_proven
 from tools.autonomy.output_policy import ensure_public
-from tools.autonomy.policy import (branch_allowed, detect_gate_weakening, forbidden_paths, scope_violations,
-                                   task_scope, tcb_paths)
+from tools.autonomy.policy import (branch_allowed, detect_gate_weakening, forbidden_paths, patch_data_findings,
+                                   scope_violations, task_scope, tcb_paths)
 from tools.autonomy.redact import diff_added_secrets, redact_text, safe_text
 from tools.autonomy.report import render_report
 
@@ -127,6 +127,9 @@ class GitPublisher:
         violations = scope_violations(files, patch, task_scope(objective))
         if violations:
             raise PublishRefused(f"кандидат вне области задачи: {violations[:3]}")
+        data = patch_data_findings(patch)
+        if data:
+            raise PublishRefused(f"данные или бинарные изменения в диффе (политика вывода B3): {data[:3]}")
         return files
 
     def _gh(self, args: list[str], cwd: Path, mutating: bool = False) -> str:
