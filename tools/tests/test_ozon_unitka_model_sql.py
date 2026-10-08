@@ -103,7 +103,7 @@ def test_actual_completeness_case_executes_with_cis_signature(unproven, expected
         assert result == expected
 
 
-def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52):
+def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52, cpo=()):
     """Execute both repository view bodies against local persisted-evidence fixtures.
 
     SQLGlot translates BigQuery syntax only. Table identifiers and the clock are
@@ -132,7 +132,10 @@ def operational_db(*, payout=0, status="delivered", price=1287, tariff=.52):
       INSERT INTO V_OZON_COMMISSION_POLICY VALUES('EVT-FS-MOIST-30', '2026-07-15', '2026-08-27', .41);
       CREATE TABLE V_OZON_LOGISTICS_ESTIMATOR(internal_sku TEXT, logistics_per_unit_rub REAL, estimator_method TEXT);
       INSERT INTO V_OZON_LOGISTICS_ESTIMATOR VALUES('EVT-FS-MOIST-30', 99, 'SKU_P70_120D');
+      CREATE TABLE V_OZON_ADS_CPO_ORDERS(business_date TEXT, ordered_internal_sku TEXT, expense_rub REAL,
+        ordered_mapping_status TEXT, campaign_status TEXT);
     """)
+    db.executemany("INSERT INTO V_OZON_ADS_CPO_ORDERS VALUES(?, ?, ?, ?, ?)", cpo)
     db.create_function("BQ_DATE_TZ", 2, bq_date_tz)
     db.execute(f"INSERT INTO RAW_OZON_POSTINGS_FBO VALUES(?, '1991772098', ?, '2026-09-20', 1, ?, ?, '2026-09-20{NOON}')",
                ("92767357-0024-1", status, price, payout))
@@ -256,6 +259,7 @@ def adapter_row(db):
     db.execute("ALTER TABLE RAW_OZON_FINANCE_ACCRUAL ADD COLUMN buyer_paid_price_rub REAL")
     text = (ROOT / "cloud/src/loaders/unitka/ozon/bq.ts").read_text().split("return `", 1)[1].split("`.trim();", 1)[0]
     text = text.replace("\\`", "`").replace("${project}", "project-fa311fc0-4d87-4781-986")
+    text = text.replace("${cpoCol}", "f.cpo_expense_rub")  # Phase B: путь с включённым флагом
     text = business_date_sql(text.replace("${from}", "2026-09-20").replace("${to}", "2026-09-20"))
     text = re.sub(r"`project-fa311fc0-4d87-4781-986\.[^.]+\.([^`]+)`", r"\1", text)
     tree = sqlglot.parse_one(text, read="bigquery")
@@ -610,3 +614,38 @@ def test_adapter_price_population_uses_the_business_day():
         assert row["operational_expected_qty"] == 2
         witness = {u["posting_number"] for u in json.loads(row["operational_basis_units_json"])}
         assert witness == {"92767357-0024-1", "early-msk"}
+
+
+# ── Phase B (2026-10-08): «Оплата за заказ» в суточном факте ────────────────────────────────────
+CPO_ROW = ("2026-09-20", "EVT-FS-MOIST-30", 72.5, "MAPPED", "RESOLVED")
+
+
+def test_cpo_reaches_fact_and_operational_once_without_touching_contribution():
+    with operational_db() as base, operational_db(cpo=[CPO_ROW]) as db:
+        before, after = operational_row(base), operational_row(db)
+        assert before["cpo_expense_rub"] == 0 and after["cpo_expense_rub"] == 72.5
+        # CPC-атрибуция и все вклады — прежние: CPO складывает с CPC только Юнитка (month.ts)
+        for col in ("ad_spend_attributed_rub", "contribution_before_ads_rub", "contribution_after_attributed_ads_rub",
+                    "operational_contribution_before_ads_rub", "operational_contribution_after_ads_rub"):
+            assert after[col] == before[col], col
+        fct = db.execute("SELECT SUM(cpo_expense_rub) FROM FCT_OZON_SKU_PNL_DAILY").fetchone()[0]
+        assert fct == 72.5
+
+
+@pytest.mark.parametrize("mapping,campaign", [("UNMAPPED", "RESOLVED"), ("AMBIGUOUS", "RESOLVED"), ("MAPPED", "AMBIGUOUS"), ("MAPPED", "NO_CPO_CAMPAIGN")])
+def test_unresolved_cpo_stays_out_of_sku_layer(mapping, campaign):
+    # Несопоставленная строка не теряется: она остаётся в V_OZON_ADS_CPO_ORDERS и уходит в уровень магазина
+    # (V_OZON_ADS_CPO_RESIDUAL_DAILY.unmapped_rub / residual_rub), но не в SKU.
+    with operational_db(cpo=[("2026-09-20", "EVT-FS-MOIST-30", 72.5, mapping, campaign)]) as db:
+        assert operational_row(db)["cpo_expense_rub"] == 0
+
+
+def test_cpo_on_a_day_without_other_activity_creates_its_row():
+    with operational_db(cpo=[("2026-09-25", "EVT-FS-MOIST-30", 40.0, "MAPPED", "RESOLVED")]) as db:
+        row = db.execute("SELECT * FROM FCT_OZON_SKU_PNL_DAILY WHERE fact_date='2026-09-25'").fetchone()
+        assert row["cpo_expense_rub"] == 40.0 and row["gross_qty"] == 0 and row["ad_spend_attributed_rub"] == 0
+
+
+def test_cpo_resolved_by_billing_day_reaches_fact():
+    with operational_db(cpo=[("2026-09-20", "EVT-FS-MOIST-30", 72.5, "MAPPED", "RESOLVED_BY_BILLING_DAY")]) as db:
+        assert operational_row(db)["cpo_expense_rub"] == 72.5

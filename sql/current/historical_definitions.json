@@ -114,6 +114,18 @@
       "definitions": {
         "ozon_mart.V_OZON_SKU_FORWARD_ECONOMICS_CURRENT": 1
       }
+    },
+    {
+      "path": "sql/ozon/cpo_orders_2026-10-08/rollback_FCT_OZON_SKU_PNL_DAILY.sql",
+      "definitions": {
+        "ozon_mart.FCT_OZON_SKU_PNL_DAILY": 1
+      }
+    },
+    {
+      "path": "sql/ozon/cpo_orders_2026-10-08/rollback_V_OZON_SKU_PNL_DAILY_OPERATIONAL.sql",
+      "definitions": {
+        "ozon_mart.V_OZON_SKU_PNL_DAILY_OPERATIONAL": 1
+      }
     }
   ]
 }

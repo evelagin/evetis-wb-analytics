@@ -84,6 +84,8 @@ export interface OzonFactRow {
   acquiring?: number | null; storage?: number | null; other_direct?: number | null;
   promo?: number | null; cogs_amt?: number | null;
   ads_spend?: number | null; impr?: number | null; clicks?: number | null;
+  /** Phase B: «Оплата за заказ» (CPO) на заказанном SKU по суткам МСК заказа (FCT.cpo_expense_rub). */
+  cpo_spend?: number | null;
   buyer_amt?: number | null; seller_amt?: number | null;
   /** Независимая цена заказа: допустима только при полном покрытии ожидаемых единиц. */
   order_reference_price?: number | null;
@@ -186,6 +188,11 @@ export interface OzonMonthComposition {
   /** Ячейки, в которых стоит ОЦЕНКА, а не факт. Основание для пометки в листе. */
   provenance: CellProvenance[];
   partialEconomics: Array<{ row: number; offerId: string; date: string }>;
+  /**
+   * Phase B: ячейки «Реклама внутренняя», в которых есть «Оплата за заказ». Значение ячейки =
+   * CPC-атрибуция + CPO; разложение уходит в управляемую заметку (monthplan.ts, adsSplitNoteText).
+   */
+  adsSplit: Array<{ row: number; offerId: string; date: string; cpc: number; cpo: number }>;
   totals: OzonMonthTotals;
 }
 
@@ -252,6 +259,7 @@ export function composeMonth(
   const audit: OzonMonthComposition['audit'] = [];
   const provenance: CellProvenance[] = [];
   const partialEconomics: OzonMonthComposition['partialEconomics'] = [];
+  const adsSplit: OzonMonthComposition['adsSplit'] = [];
   const T: OzonMonthTotals = { orders: 0, cancel: 0, realized: 0, revenue: 0, cogs: 0, comm: 0, acq: 0,
     acqComm: 0, acqOther: 0, logRepr: 0, logUnrepr: 0, otherFees: 0, other: 0, ads: 0, tax: 0,
     storage: 0, promo: 0, canonical: 0, calculatorRevenue: 0 };
@@ -278,7 +286,11 @@ export function composeMonth(
       const cg = rec?.provisional_cogs_rub ?? n(rec?.cogs_amt);
       const stor = n(rec?.storage), promo = n(rec?.promo);
       const hasAds = !!rec && rec.impr !== null && rec.impr !== undefined;
-      const ads = hasAds ? n(rec?.ads_spend) : 0;
+      // Phase B: «Реклама внутренняя» = CPC-атрибуция (при наличии статистики показов) + «Оплата за заказ».
+      // CPO-кампаний в RAW_OZON_ADS_SKU_DAILY нет, поэтому сумма не считает один рубль дважды.
+      const cpc = hasAds ? n(rec?.ads_spend) : 0;
+      const cpo = n(rec?.cpo_spend);
+      const ads = cpc + cpo;
       const acqC = basis !== undefined && basis > 0 ? acq : 0;
       const acqO = acq - acqC;            // ровно один раз, на полной базе того же населения
       const logR = eq > 0 ? log : 0;
@@ -288,7 +300,9 @@ export function composeMonth(
       const od = oth + logU + acqO + promo;
       const c: OzonDayCell = { orders, cancel };
       if (stor) c.stor = r6(stor);
-      if (hasAds) { c.shows = n(rec?.impr); c.clicks = n(rec?.clicks); c.adin = r6(ads); }
+      if (hasAds) { c.shows = n(rec?.impr); c.clicks = n(rec?.clicks); }
+      if (hasAds || cpo !== 0) c.adin = r6(ads);
+      if (cpo !== 0) adsSplit.push({ row, offerId: o, date: ds, cpc: r6(cpc), cpo: r6(cpo) });
       if (eq > 0) {
         const price = basis !== undefined ? basis / eq : undefined;
         if (price !== undefined) {
@@ -354,7 +368,7 @@ export function composeMonth(
   }
   T.canonical = T.calculatorRevenue - T.cogs - (T.comm + T.acqComm) - T.logRepr - T.storage - T.other - T.ads - T.tax;
   if (Math.abs(T.acqComm + T.acqOther - T.acq) > 1e-6) throw new Error('эквайринг посчитан не один раз');
-  return { cells, cogs, other, audit, provenance, partialEconomics, totals: T };
+  return { cells, cogs, other, audit, provenance, partialEconomics, adsSplit, totals: T };
 }
 
 export type CellValue = string | number | null;

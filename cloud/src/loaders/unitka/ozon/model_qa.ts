@@ -203,7 +203,7 @@ export function verifyOzonModel(a: {
             const unit = afterCommission === 0 ? undefined : afterCommission - round((f.logistics ?? 0) / qty, 6)
               - displayPrice * MANAGEMENT_TAX_RESERVE_RATE - round((cg ?? 0) / qty, 6);
             const external = a.effectiveRead(row, base + 12);
-            const ads = f.impr === null || f.impr === undefined ? 0 : round(f.ads_spend ?? 0, 6);
+            const ads = round((f.impr === null || f.impr === undefined ? 0 : f.ads_spend ?? 0) + (f.cpo_spend ?? 0), 6);
             const direct = round((f.other_direct ?? 0) + (f.promo ?? 0) + (basis !== undefined && basis > 0 ? 0 : acq), 6);
             const total = qty * (unit ?? 0) - ads - round(f.storage ?? 0, 6) - direct
               + (typeof external === 'number' ? external : 0);
@@ -216,6 +216,14 @@ export function verifyOzonModel(a: {
               });
             }
           }
+        }
+        // Phase B: «Реклама внутренняя» = CPC-атрибуция + «Оплата за заказ», каждый рубль ровно один раз.
+        // Независимо от сборщика: из фактов, а не из ячеек composeMonth.
+        if (f) {
+          const cpc = f.impr === null || f.impr === undefined ? undefined : f.ads_spend ?? 0;
+          const cpo = f.cpo_spend ?? 0;
+          const want = cpc === undefined && cpo === 0 ? undefined : Math.round(((cpc ?? 0) + cpo) * 1e6) / 1e6;
+          if (a.mode === 'PLAN') check('ADS_IN_NOT_CPC_PLUS_CPO', row, base + 11, want);
         }
         for (const [off, code, want] of [
           [1, 'BLOGGERS_OVERWRITTEN', sec.sheetInputs?.bloggers?.[key]],

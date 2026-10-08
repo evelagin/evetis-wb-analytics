@@ -49,7 +49,11 @@ export function normalizeBqRow<T>(raw: Record<string, unknown>): T {
   return out as T;
 }
 
-export interface OzonFactsQuery { project: string; from: string; to: string }
+export interface OzonFactsQuery {
+  project: string; from: string; to: string;
+  /** Phase B: читать cpo_expense_rub. Выключено — колонка не упоминается вовсе: образ работает и на вью до Phase B. */
+  cpo?: boolean;
+}
 
 /**
  * Бизнес-дата заказа Ozon — календарные сутки МОСКВЫ, в которые создано отправление.
@@ -63,10 +67,11 @@ export const OZON_ORDER_BUSINESS_DATE_SQL = "DATE(p.created_at, 'Europe/Moscow')
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** SQL фактов месяца. Даты валидируются: в текст запроса попадает только ISO-дата. */
-export function ozonMonthFactsSql({ project, from, to }: OzonFactsQuery): string {
+export function ozonMonthFactsSql({ project, from, to, cpo = false }: OzonFactsQuery): string {
   if (!ISO.test(from) || !ISO.test(to)) throw new Error('границы периода: ожидается YYYY-MM-DD');
   if (from > to) throw new Error('границы периода: начало позже конца');
   if (!/^[A-Za-z0-9-]+$/.test(project)) throw new Error('идентификатор проекта');
+  const cpoCol = cpo ? 'f.cpo_expense_rub' : 'CAST(NULL AS NUMERIC)';
   return `
 WITH m AS (
   SELECT DISTINCT internal_sku, marketplace_sku, offer_id
@@ -161,6 +166,8 @@ SELECT CAST(f.fact_date AS STRING) d, m.offer_id,
   f.cogs_missing_qty, f.commission_missing_qty,
   f.commission_not_applicable_qty, f.buyout_revenue_unproven_qty, f.buyout_revenue_unproven_rub,
   f.ad_spend_attributed_rub ads_spend, f.contribution_after_attributed_ads_rub contrib_after,
+  -- Phase B: «Оплата за заказ» на заказанном SKU (сутки МСК заказа). Отдельно от CPC: склеивает month.ts.
+  ${cpoCol} cpo_spend,
   a.impr, a.clicks, b.buyer_amt, b.seller_amt,
   CASE WHEN op.units = f.expected_realized_qty AND op.covered_units = op.units
        THEN op.price END order_reference_price,
@@ -258,4 +265,18 @@ SELECT s.d, m.offer_id, s.units
 FROM s JOIN m ON m.marketplace_sku = s.sku
 WHERE s.extracted_day = s.d           -- снимок доказан только своей датой съёма
 ORDER BY 1,2`.trim();
+}
+
+/**
+ * Phase B: свежесть «Оплаты за заказ». Последний ПОЛНЫЙ прогон загрузчика ozon-cpo-orders и его граница
+ * (дата списания). Юнитку это НЕ блокирует никогда: отставание CPO — предупреждение и пометка в заметке,
+ * а не отказ записи. Таблицы журнала может ещё не быть (до развёртывания Phase B) — тогда null.
+ */
+export function ozonCpoFreshnessSql(project: string): string {
+  if (!/^[A-Za-z0-9-]+$/.test(project)) throw new Error('идентификатор проекта');
+  return `SELECT CAST(MAX(window_to) AS STRING) covered_through, CAST(MAX(completed_at) AS STRING) completed_at,
+  (SELECT COUNT(*) FROM \`${project}.ozon_mart.V_OZON_ADS_CPO_ORDERS\`
+   WHERE campaign_status NOT IN ('RESOLVED', 'RESOLVED_BY_BILLING_DAY') OR ordered_mapping_status != 'MAPPED') unresolved_rows
+FROM \`${project}.ozon_raw.OZON_CPO_ORDER_RUNS\`
+WHERE record_type = 'RUN' AND status = 'COMPLETE'`;
 }

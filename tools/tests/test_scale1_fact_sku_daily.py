@@ -149,6 +149,8 @@ def test_buyout_repair_objects_are_deployed_and_read_back():
     ubr010_pending = set()
     # 2026-10-06: Git-first смена даты заказа на сутки МСК — тело опережает production, снимок не переписан.
     order_date_msk_pending = set()  # развёрнуто 2026-10-06 из main 6428919, сняты R2C: captured_live
+    # Phase B (2026-10-08): FCT_OZON_SKU_PNL_DAILY получил хвостовую cpo_expense_rub — Git-first, снимок не переписан.
+    order_date_msk_pending |= {"FCT_OZON_SKU_PNL_DAILY"}
     for dataset, name in (("ozon_mart", "V_OZON_CIS_BUYOUT"), ("ozon_mart", "FCT_OZON_SKU_PNL_DAILY"),
                           ("ozon_mart", "FCT_OZON_SKU_PNL_MONTHLY"), ("ozon_mart", "FCT_OZON_PNL_MONTHLY"),
                           ("evetis_mart", "FACT_SKU_DAILY")):
@@ -320,7 +322,9 @@ def test_ozon_daily_fact_is_full_precision_and_deterministic():
 def test_ozon_daily_fact_uses_the_same_sources_as_the_monthly_pnl():
     daily = {(d, n) for _, d, n in facts(DAILY).references}
     monthly = {(d, n) for _, d, n in facts(MONTHLY_SKU).references}
-    assert daily - monthly == set()  # Gate 5K: both read the same buyout ledger
+    # Gate 5K: both read the same buyout ledger. Phase B (2026-10-08): суточный факт дополнительно несёт
+    # cpo_expense_rub (отдельная колонка, в contribution_* не входит); месячный SKU P&L не менялся.
+    assert daily - monthly == {("ozon_mart", "V_OZON_ADS_CPO_ORDERS")}
     assert monthly - daily == {("evetis_ref", "REF_PRODUCT_MASTER")}  # names live in the neutral fact, not here
     assert not any(d.startswith("wb_") for d, _ in daily)
 
@@ -426,7 +430,9 @@ def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
     # PR-PROMO-2 (2026-09-23) добавил 11 объектов Git-first; их предразвёртывание проверяет
     # tools/promo_canonical_render.py, объекты SCALE 1 по-прежнему не pending.
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
-    assert pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS - ORDER_DATE_MSK_OBJECTS == set()
+    cpo_objects = {"V_OZON_ADS_CPO_ORDERS", "V_OZON_ADS_CPO_RESIDUAL_DAILY", "V_OZON_ADS_CPO_PROMOTED_DAILY",
+                   "FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}  # Phase B, Git-first
+    assert pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS - ORDER_DATE_MSK_OBJECTS - cpo_objects == set()
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.

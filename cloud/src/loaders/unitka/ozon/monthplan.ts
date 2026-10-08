@@ -88,6 +88,25 @@ export function ozonDrrBases(spec: OzonMonthSpec, comp: { cells: OzonMonthCompos
   return { estimated, actual };
 }
 
+/**
+ * Phase B: управляемая строка заметки «Реклама внутренняя». Значение ячейки = CPC-атрибуция + «Оплата за
+ * заказ»; разложение — этой строкой. Заметка владельца сохраняется ДОСЛОВНО: движок снимает и ставит только
+ * свои строки (узнаёт их по форме), чужой текст не трогает.
+ */
+export const ADS_SPLIT_LINE = /^CPC \/ attributed Ads: -?[\d ]+,\d{2} \/ Оплата за заказ: -?[\d ]+,\d{2} \/ Итого: -?[\d ]+,\d{2}$/;
+const rub2 = (x: number): string => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
+export function adsSplitLine(cpc: number, cpo: number): string {
+  return `CPC / attributed Ads: ${rub2(cpc)} / Оплата за заказ: ${rub2(cpo)} / Итого: ${rub2(cpc + cpo)}`;
+}
+/** Заметка после замены управляемой строки. line = null — управляемую строку снять. */
+export function mergeAdsNote(before: string, line: string | null): string {
+  const lines = before.split('\n');
+  const kept = lines.filter((l) => !ADS_SPLIT_LINE.test(l));
+  if (kept.length === lines.length && line === null) return before;   // своей строки не было — ничего не меняем
+  const owner = kept.length === lines.length ? before : kept.join('\n');
+  return line === null ? owner : owner === '' ? line : `${owner}\n${line}`;
+}
+
 /** Текст заметки дневной ДРР SKU по оценке. */
 export function drrDayEstimateNote(est: SppEstimate): string {
   return `ESTIMATED: цена покупателя оценена по СПП ${r6e(est.pct).toFixed(1)} % (${est.level === 'SKU' ? 'SKU 30 дн' : 'магазин 30 дн'}), `
@@ -186,6 +205,11 @@ export interface OzonPlanInput {
   readonly existingCfRules?: number;
   readonly lcdRef: string;
   readonly blocks: number;
+  /**
+   * Phase B: текущие заметки ячеек «Реклама внутренняя» записываемой области (ключ `строка|колонка`, пустые
+   * не приходят). Нет поля — заметки рекламы не управляются (прежнее поведение).
+   */
+  readonly adsNotes?: ReadonlyMap<string, string>;
 }
 
 export interface ValueWrite { range: string; values: CellValue[][] }
@@ -292,6 +316,17 @@ export function buildOzonPlan(input: OzonPlanInput): OzonWritePlan {
       const t = drrShareNote(est, ix.actDay.get(d) ?? 0); if (t) note(spec.firstRow + d - 1, OZON_SUMMARY.drr, t);
     }
     { const t = drrShareNote(ix.estAll, ix.actAll); if (t) note(spec.mtdRow, OZON_SUMMARY.drr, t); }
+    // Phase B: разложение «Реклама внутренняя» = CPC + «Оплата за заказ» — управляемой строкой заметки,
+    // по всей записываемой области (там, где CPO ушёл, строка снимается; заметка владельца остаётся).
+    if (input.adsNotes) {
+      const split = new Map(comp.adsSplit.map((a) => [`${a.row}|${spec.anchor[a.offerId]! + OZON_OFFSET.adsIn}`, a]));
+      for (const o of spec.blocks) for (let d = from; d <= spec.days; d++) {
+        const row = spec.firstRow + d - 1, col = spec.anchor[o]! + OZON_OFFSET.adsIn, k = `${row}|${col}`;
+        const a = split.get(k), before = input.adsNotes.get(k) ?? '';
+        const want = mergeAdsNote(before, a ? adsSplitLine(a.cpc, a.cpo) : null);
+        if (want !== before) note(row, col, want);
+      }
+    }
     for (const o of new Set(comp.partialEconomics.map((p) => p.offerId))) for (const off of [9, 10, 23]) notesForEconomics.push({
       repeatCell: { range: { sheetId: input.sheetId, startRowIndex: spec.mtdRow - 1, endRowIndex: spec.mtdRow,
         startColumnIndex: spec.anchor[o]! + off - 1, endColumnIndex: spec.anchor[o]! + off },

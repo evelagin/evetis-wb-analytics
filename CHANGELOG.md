@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-10-08 — Ozon «Оплата за заказ» (CPO): загрузчик, канон, Юнитка (Phase B; лист — по флагу, ВЫКЛЮЧЕН)
+
+Док: `docs/finance/OZON_CPO_PHASE_B_2026-10-08.md` (+ обновлённая фаза A `docs/finance/UNITKA_FIN_COMPLETENESS_PHASE_A_2026-10-08.md`).
+
+- Новый загрузчик `ozon-cpo-orders` (`cloud/src/loaders/ozon_cpo/`), Job `ozon-cpo-orders-prod`, SA `sa-ozon-cpo-loader`,
+  Scheduler 05:40 UTC (на паузе), алерт (`infra/terraform/ozon_cpo_orders.tf`; `iam.tf` — actAs для apply;
+  `deploy-prod.yml` — тот же digest). Performance API только на чтение (белый список 5 маршрутов).
+- Новые таблицы `ozon_raw`: `RAW_OZON_ADS_CPO_ORDERS` (+`__STAGE`), журнал `OZON_CPO_ORDER_RUNS`, аренда `LOADER_RUNS`.
+- Новые вью `ozon_mart`: `V_OZON_ADS_CPO_ORDERS`, `V_OZON_ADS_CPO_RESIDUAL_DAILY`, `V_OZON_ADS_CPO_PROMOTED_DAILY`.
+- **Колонки:** `ozon_mart.FCT_OZON_SKU_PNL_DAILY` и `V_OZON_SKU_PNL_DAILY_OPERATIONAL` — новая колонка
+  `cpo_expense_rub` в хвосте (CPO на заказанном SKU по суткам МСК заказа). Прежние колонки и все `contribution_*` не
+  меняются; `FCT_OZON_PNL_MONTHLY` (магазин уже вычитает весь биллинг кампаний) не меняется.
+- Лист `OZON_Юнит_2025`: «Реклама внутренняя» = CPC + CPO с управляемой строкой заметки — только при
+  `OZON_UNITKA_CPO=1` (по умолчанию `0`: запись побайтно прежняя). Колонки листа не меняются.
+- QA `sql/ozon/qa_cpo_orders_v1.sql` (инварианты 1–11); вью — `tools/ozon_cpo_views_deploy.py` (откат `--rollback`,
+  тела до изменения — `sql/ozon/cpo_orders_2026-10-08/`).
+
 ## 2026-10-07 — Безопасность публичного репозитория: закрепление actions, входы через env, проверки
 
 Только CI/CD и политика; листы, витрины и экономика не затрагиваются, колонки не меняются.
