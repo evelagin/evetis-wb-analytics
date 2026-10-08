@@ -132,9 +132,49 @@ def test_identity_cannot_be_smuggled_into_the_descriptor(key):
     assert "schema" in _rules(doc)
 
 
-def test_client_001_descriptor_carries_no_inn_like_or_client_id_like_numbers():
-    text = CLIENT.read_text(encoding="utf-8")
+def _assert_no_account_identifiers(doc):
+    # A registered immutable Git SHA may contain a decimal substring. Exempt
+    # only this exact schema field after verifying the release provenance;
+    # identical numbers in any business/free-text field must still fail.
+    assert not V.validate_tenant(doc, "client_001/tenant.json")
+    scan = copy.deepcopy(doc)
+    profile = scan.get("historical_orchestration")
+    if profile is not None:
+        sha = profile["release"]
+        assert isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha)
+        release = json.loads((REPO / "infra/tenant/releases/backfill" / (sha + ".json")).read_text())
+        assert release["source_sha"] == sha
+        profile["release"] = "REGISTERED_IMMUTABLE_SOURCE"
+    text = json.dumps(scan, ensure_ascii=False)
     assert not re.search(r"(?<![0-9])[0-9]{10}(?:[0-9]{2}|[0-9]{3})?(?![0-9])", text)
+
+
+def test_client_001_descriptor_carries_no_inn_like_or_client_id_like_numbers():
+    _assert_no_account_identifiers(_doc())
+
+
+@pytest.mark.parametrize("identifier", ["7700000000", "770000000000", "7700000000000"])
+def test_numeric_identifier_in_free_text_remains_forbidden(identifier):
+    # Synthetic identifiers, never a live account value.
+    doc = _doc()
+    doc["legal_name"] += " " + identifier
+    with pytest.raises(AssertionError):
+        _assert_no_account_identifiers(doc)
+
+
+def test_source_hash_numeric_substring_is_not_exempt_in_free_text():
+    doc = _doc()
+    doc["legal_name"] += " synthetic 6108982142"
+    with pytest.raises(AssertionError):
+        _assert_no_account_identifiers(doc)
+
+
+@pytest.mark.parametrize("source", ["7700000000", "f" * 39, "../" + "f" * 40, "f" * 40])
+def test_unregistered_or_invalid_source_cannot_hide_identity(source):
+    doc = _doc()
+    doc["historical_orchestration"]["release"] = source
+    with pytest.raises((AssertionError, FileNotFoundError)):
+        _assert_no_account_identifiers(doc)
 
 
 # ═══════════════════════════════════════ таблицы платформы
