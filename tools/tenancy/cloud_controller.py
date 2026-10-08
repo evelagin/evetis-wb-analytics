@@ -15,8 +15,7 @@ from tools.tenancy import cloud_access as A, cloud_tick as T, orchestration_cont
 from tools.tenancy.validation import parse_tenant_json
 
 
-class SourceDispatchPaused(BF.B.EvidenceError):
-    """A staged/draining controller may reconcile, but cannot create source work."""
+SourceDispatchPaused = T.SourceDispatchPaused
 
 
 def timestamp(value):

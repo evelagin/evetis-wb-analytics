@@ -31,6 +31,41 @@ def monitoring_check(store, base, manifest, now):
     return 'PASS'
 
 
+def paused_entrypoint_check():
+    """Reproduce -m/import module identity without network or recovery authority."""
+    import contextlib
+    import io
+    import runpy
+    import warnings
+    from types import SimpleNamespace
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning, message=".*found in sys.modules.*")
+        entry = runpy.run_module('tools.tenancy.cloud_controller', run_name='offline_qualified_entrypoint')
+    backend = object.__new__(H.Backend)
+    backend.c = {'orchestration': {'job': {'env': {'HISTORICAL_SCHEDULER_STATE': 'PAUSED'}}}}
+    backend.current_execution = 'offline'
+    backend.clock = lambda: None
+    writes = []
+    backend.store = SimpleNamespace(commit=lambda *a: writes.append(a))
+    namespace = entry['main'].__globals__
+    namespace['bootstrap'] = lambda env: (backend, 'a' * 64)
+    namespace['bounded_wake'] = lambda root, b: b.start({}, lambda *a: None, lambda *a: None)
+    original = BF.start
+    def denied(*args, **kwargs):
+        raise AssertionError('paused entrypoint reached source/lease boundary')
+    BF.start = denied
+    try:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = entry['main']()
+        assert result == 0 and not writes
+        assert __import__('json').loads(output.getvalue()) == {'status': 'QUIESCENT_PAUSED', 'source_dispatches': 0}
+        assert entry['SourceDispatchPaused'] is H.C.SourceDispatchPaused
+        return 'PASS'
+    finally:
+        BF.start = original
+
+
 def check(store, base, now, source):
     day=now.astimezone(BF.B.MSK).date();cutover=day-timedelta(days=1)
     starts={e:cutover for e in BF.B.DATED}
@@ -51,6 +86,7 @@ def check(store, base, now, source):
     original=(H.verify_authority,H.Backend.preflight,H.Backend.state,H.Backend.quota,
               H.Backend.active_runtime_execution,H.Backend.start,H.Backend.reconcile)
     posts=[]
+    paused_entrypoint=paused_entrypoint_check()
     def scope(b,m):
         assert m['project']==b.c['project_id'] and m['tenant']==b.c['tenant_id']
         return b.c
@@ -80,6 +116,7 @@ def check(store, base, now, source):
         return {'full_history_adapter':'PASS','full_history_program_contract':'PASS',
                 'full_history_restart_protocol':'PASS','full_history_no_false_complete':'PASS',
                 'full_history_monitoring_watermark':watermark,
+                'full_history_paused_entrypoint':paused_entrypoint,
                 'full_history_live_go':'UNPROVEN'}
     finally:
         (H.verify_authority,H.Backend.preflight,H.Backend.state,H.Backend.quota,

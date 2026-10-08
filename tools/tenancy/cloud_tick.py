@@ -6,6 +6,15 @@ Full-history activation requires a separate proven gate; qualification is not GO
 """
 from datetime import datetime, timezone
 from tools.tenancy import durable_plan as D
+from tools.tenancy import tenant_backfill as BF
+
+
+class SourceDispatchPaused(BF.B.EvidenceError):
+    """A staged/draining controller may reconcile, but cannot create source work.
+
+    Shared by imported backends and the ``python -m`` entrypoint: an exception
+    defined in the entrypoint itself would have two distinct class identities.
+    """
 
 
 class Tick:
