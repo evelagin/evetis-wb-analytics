@@ -220,6 +220,9 @@ def test_canonical_observer_rejects_live_counterexamples(monkeypatch,fault):
 def test_publication_adds_only_owner_marker_and_record_preserving_originals(monkeypatch):
     from tools.tests.test_durable_plan import Backend,NOW
     b,p,rows,_=terminal_fixture();memory=Backend()
+    from tools.tenancy import orchestration_contract as O
+    p['implementation_sha']=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];seal(p)
+    monkeypatch.setattr(O,'verify_artifact_source',lambda *args:None)
     for r in rows:memory.store.commit(p['root_hash'],r['kind'],r['sequence'],r['payload'],NOW)
     memory.store.commit(p['root_hash'],'MANIFEST',0,BF.QF.manifest(),NOW)
     b.store=memory.store;b.tables=memory.meta;b.preflight=lambda *args,**kw:None;b.active_runtime_execution=lambda:False
@@ -239,6 +242,9 @@ def test_publication_adds_only_owner_marker_and_record_preserving_originals(monk
 def test_failed_fresh_observation_cannot_write_even_owner_marker(monkeypatch):
     from tools.tests.test_durable_plan import Backend,NOW
     b,p,rows,_=terminal_fixture();memory=Backend()
+    from tools.tenancy import orchestration_contract as O
+    p['implementation_sha']=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];seal(p)
+    monkeypatch.setattr(O,'verify_artifact_source',lambda *args:None)
     for r in rows:memory.store.commit(p['root_hash'],r['kind'],r['sequence'],r['payload'],NOW)
     memory.store.commit(p['root_hash'],'MANIFEST',0,BF.QF.manifest(),NOW)
     b.store=memory.store;b.tables=memory.meta;b.preflight=lambda *args,**kw:None;b.active_runtime_execution=lambda:False
@@ -265,3 +271,10 @@ def test_runtime_explicit_foreign_tenant_or_dataset_is_rejected():
 def test_boolean_is_not_a_recovery_schema_version():
     p,_=fixture();p['version']=True;p['authorization']['version']=True;seal(p)
     with pytest.raises(BF.B.EvidenceError):R.validate(p)
+
+
+def test_publication_rejects_unknown_implementation_before_any_write():
+    from tools.tests.test_durable_plan import NOW
+    b,p,rows,_=terminal_fixture()
+    with pytest.raises(BF.B.EvidenceError,match='implementation'):
+        R.publish(b,p,NOW)

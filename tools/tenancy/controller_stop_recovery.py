@@ -170,6 +170,12 @@ def publish(backend,proof,now):
     exact owner scope and confirmed predicates.
     """
     validate(proof)
+    from tools.tenancy import orchestration_contract as O
+    source=backend.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
+    if proof['implementation_sha']!=source:
+        fail('recovery implementation differs from qualified deployed source')
+    release=parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/(source+'.json')).read_text())
+    O.verify_artifact_source(release,BF.REPO)
     records=backend.store.history(proof['root_hash'])
     verify_records(proof,records,proof['root_hash'],backend.c['tenant_id'],publishing=True)
     manifest=next(r['payload'] for r in records if r['kind']=='MANIFEST')
