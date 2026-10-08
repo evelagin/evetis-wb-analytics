@@ -44,7 +44,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "p31", "s31", "edit", "regen", "skip", "show", "ov", "oc"}
+ACTIONS = {"pub", "p31", "s31", "sv2", "u2", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -152,7 +152,19 @@ _POLL_STARTED = contextvars.ContextVar("poll_started", default=None)
 
 
 def _operator_draft_enabled(deps):
-    return getattr(deps.settings, "v31_operator_draft_enabled", False)
+    return getattr(deps.settings, "v31_operator_draft_enabled", False) or _primary_enabled(deps)
+
+
+def _primary_enabled(deps):
+    """R2.1: v3.1E is the operator's primary draft (V2 only a secondary fallback)."""
+    return getattr(deps.settings, "v31_primary_operator_enabled", False)
+
+
+def _v31_generation(draft):
+    from app.domain.models import GenerationResult
+    from app.response_quality import VERSION
+    return GenerationResult(text=draft["text"], model="v3.1E:" + str(draft.get("model") or ""),
+                            prompt_version=VERSION, usage={}, latency_ms=0, request_id="")
 
 
 def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
@@ -176,14 +188,18 @@ def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
         snap = load_snapshot(getattr(deps.settings, "v3_knowledge_snapshot_id", None))
         renderer = renderer_for_client(deps.openai) if hasattr(deps.openai, "structured") else None
         msg = message_from_doc(doc_id, doc)
-        result = prepare(msg, doc.get("ai_answer") or "", snap, render=renderer, force_generation=True)
+        result = prepare(msg, doc.get("ai_answer") or "", snap, render=renderer, force_generation=True,
+                         moderate_safety=_primary_enabled(deps))
         usable = result.status == "READY" and bool(result.text) and result.final_policy.get("verdict") != "BLOCK"
+        human = getattr(result.plan, "human_reason", None)
         draft = {"status": "READY" if usable else "HUMAN_REVIEW", "text": result.text if usable else None,
                  "text_sha256": hashlib.sha256(result.text.encode()).hexdigest() if usable else None,
                  "route": result.plan.route, "hard_verdict": result.final_policy.get("verdict"),
                  "quality_verdict": result.quality.verdict, "version": VERSION,
                  "model": renderer.model if renderer and renderer.calls else "deterministic",
                  "llm_calls": renderer.calls if renderer else 0,
+                 "attention": getattr(result.plan, "attention", None), "human_reason": human,
+                 "restriction": "SERIOUS_SAFETY" if human == "SAFETY_ESCALATION" else None,
                  "latency_ms": int((time.monotonic() - t0) * 1000), "created_at": _now_iso()}
     except Exception as exc:  # noqa: BLE001 — the v2 card must still go out
         log_event(logger, "warning", "v3.1 operator draft failed (isolated)", error_class=type(exc).__name__)
@@ -215,6 +231,136 @@ def _v31_section(doc) -> list[str]:
     return []
 
 
+# --------------------------------------------------------------------------- #
+# R2.1: v3.1E as the primary operator draft
+# --------------------------------------------------------------------------- #
+_PRIMARY = "v31_primary"
+_V2_LABEL = "🗂 <b>Старый вариант V2</b> (резервный, правила V2):\n"
+_FALLBACK_REASON = {"ERROR": "3.1E временно недоступен",
+                    "SKIPPED_BUDGET": "3.1E не успел подготовиться — нажмите «🔄 Перегенерировать»",
+                    "HUMAN_REVIEW": "3.1E: нужна проверка человеком"}
+
+
+def _is_primary(doc) -> bool:
+    return (doc or {}).get("operator_mode") == _PRIMARY
+
+
+def _answer_source(doc):
+    versions = (doc or {}).get("answer_versions") or []
+    return versions[-1].get("source") if versions else None
+
+
+def answer_lineage(doc) -> str:
+    """Policy family of the active answer: the latest machine draft it descends from.
+    A manual edit inherits it — an edited 3.1E answer stays on the 3.1E policy, an
+    edited V2 answer on LIVE_V2."""
+    for version in reversed((doc or {}).get("answer_versions") or []):
+        if version.get("source") != "manual":
+            return "v31" if version.get("source") == "v31e" else "live_v2"
+    return "live_v2"
+
+
+def _serious_unreviewed(doc) -> bool:
+    """Serious safety: no machine answer may be published; only the operator's own text."""
+    return ((doc or {}).get("v31_draft") or {}).get("restriction") == "SERIOUS_SAFETY" \
+        and _answer_source(doc) != "manual"
+
+
+def _primary_answer_block(doc) -> str | None:
+    text = doc.get("final_answer") or doc.get("ai_answer")
+    if _serious_unreviewed(doc) or not text:
+        return None
+    source = _answer_source(doc)
+    if source == "v31e":
+        label = "✨ <b>Рекомендуемый ответ 3.1E:</b>"
+    elif source == "manual":
+        label = "✏️ <b>Ответ оператора</b> (правила " + ("3.1E" if answer_lineage(doc) == "v31" else "V2") + "):"
+    elif source == "v2_fallback":
+        label = "✍️ <b>Вариант V2</b> (выбран оператором):"
+    else:
+        reason = _FALLBACK_REASON.get((doc.get("v31_draft") or {}).get("status"), "3.1E недоступен")
+        label = f"✍️ <b>Резервный ответ V2</b> ({reason}):"
+    return label + "\n" + escape_html(str(text))
+
+
+def _primary_badges(doc) -> list[str]:
+    draft = doc.get("v31_draft") or {}
+    if draft.get("restriction") == "SERIOUS_SAFETY":
+        return ["⛔ <b>Нужна проверка человеком:</b> покупатель сообщает о возможной серьёзной реакции. "
+                "Готовый ответ не публикуется — напишите свой через «✏️ Изменить».", ""]
+    if draft.get("attention") == "MODERATE_DISCOMFORT":
+        return ["⚠️ <b>Требует внимания оператора:</b> покупатель связывает самочувствие с ароматом. "
+                "Проверьте ответ перед публикацией.", ""]
+    if draft.get("attention") == "SAFETY_TEMPLATE":
+        return ["⚠️ <b>Требует внимания оператора:</b> реакция кожи, утверждённый ответ безопасности.", ""]
+    return []
+
+
+def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str, bool]:
+    """3.1E leads. The answer is never cut: customer fields shrink to fit Telegram."""
+    def e(value) -> str:
+        return escape_html("" if value is None else str(value))
+    answer = _primary_answer_block(doc)
+
+    def compose(cap):
+        cut = False
+
+        def fit(value):
+            nonlocal cut
+            value = str(value or "")
+            if cap is not None and len(value) > cap:
+                cut = True
+                return truncate(value, cap)
+            return value
+        lines = ["<b>EVETIS / WB — новый вопрос</b>" if question else "<b>EVETIS / WB — новый отзыв</b>", "",
+                 *_primary_badges(doc),
+                 f"<b>Товар:</b> {e(doc.get('product_name') or '—')}",
+                 f"<b>Артикул продавца:</b> {e(doc.get('supplier_article') or '—')}",
+                 f"<b>nmId:</b> {e(doc.get('nm_id') or '—')}"]
+        if question:
+            lines += [f"<b>Дата:</b> {e(doc.get('source_created_at') or '—')}", "",
+                      f"❓ <b>Вопрос покупателя:</b>\n{e(fit(doc.get('text')) or '—')}"]
+        else:
+            lines += [f"<b>Оценка:</b> {e(doc.get('rating') or '—')} / 5",
+                      f"<b>Покупатель:</b> {e(doc.get('buyer_name') or 'Не указано')}",
+                      f"<b>Дата:</b> {e(doc.get('source_created_at') or '—')}",
+                      f"<b>Достоинства:</b> {e(fit(doc.get('pros')) or '—')}",
+                      f"<b>Недостатки:</b> {e(fit(doc.get('cons')) or '—')}",
+                      *([f"<b>Теги покупателя:</b> {e(', '.join(doc.get('bables')))}"] if doc.get('bables') else []),
+                      f"<b>Комментарий:</b> {e(fit(doc.get('text')) or '—')}"]
+        lines += ["", answer or "✨ <i>Ответ не предложен.</i>", "",
+                  f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>"]
+        return "\n".join(lines), cut
+
+    cap = None if full else _REVIEW_TEXT_CARD_LIMIT
+    text, cut = compose(cap)
+    while len(text) > TELEGRAM_MSG_SOFT_LIMIT and (cap is None or cap > 40):
+        cap = int((cap or max(len(str(doc.get(k) or "")) for k in ("text", "pros", "cons"))) * 0.7)
+        text, cut = compose(cap)
+    return truncate(text, TELEGRAM_MSG_SOFT_LIMIT), cut
+
+
+def _primary_keyboard(deps, doc_id, doc, *, show_full=False, card_text=None):
+    gen = doc.get("generation_number", 0)
+    serious = _serious_unreviewed(doc)
+    answer = _primary_answer_block(doc)
+    visible = bool(answer and card_text and answer in card_text)
+    first = []
+    if not serious:
+        # Never a publish button for an answer the operator cannot see in full.
+        first.append({"text": "✅ Опубликовать", "callback_data": f"pub:{doc_id}:{gen}"} if visible else
+                     {"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"})
+    first.append({"text": "✏️ Изменить", "callback_data": f"edit:{doc_id}"})
+    second = ([] if serious else [{"text": "🔄 Перегенерировать", "callback_data": f"regen:{doc_id}"}]) + \
+        [{"text": "⏭ Пропустить", "callback_data": f"skip:{doc_id}"}]
+    rows = [first, second]
+    if show_full and (serious or visible):
+        rows.append([{"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}])
+    if doc.get("ai_answer") and (serious or answer_lineage(doc) == "v31"):
+        rows.append([{"text": "🗂 Старый вариант V2", "callback_data": f"sv2:{doc_id}:{gen}"}])
+    return {"inline_keyboard": rows}
+
+
 def _prepare_response(deps, doc, text):
     if not _recovery_enabled(deps):
         return None, None
@@ -243,6 +389,8 @@ def _prepare_response(deps, doc, text):
 
 
 def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False, card_text=None):
+    if _is_primary(doc):
+        return _primary_keyboard(deps, doc_id, doc, show_full=show_full, card_text=card_text)
     bind = _recovery_enabled(deps) or _operator_draft_enabled(deps)
     k = build_keyboard(doc_id, show_full=show_full, retry=retry,
                        generation=doc.get("generation_number", 0) if bind else None)
@@ -293,6 +441,9 @@ def _recovery_note(text, doc):
 
 
 def build_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool]:
+    if _is_primary(doc):
+        return _build_primary_card(doc, doc_id, full=full)
+
     def e(value) -> str:
         return escape_html("" if value is None else str(value))
 
@@ -324,6 +475,9 @@ def build_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool
 def build_question_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool]:
     """Telegram card for a WB buyer question — no rating/pros/cons; the buyer's
     question and the draft answer."""
+    if _is_primary(doc):
+        return _build_primary_card(doc, doc_id, full=full, question=True)
+
     def e(value) -> str:
         return escape_html("" if value is None else str(value))
 
@@ -631,7 +785,13 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
                                 "response_review_required": recovery["status"] != "READY"})
         doc = deps.repo.get(doc_id)
     if _operator_draft_enabled(deps):
-        _v31_draft(deps, doc_id, doc)
+        draft = _v31_draft(deps, doc_id, doc)
+        if _primary_enabled(deps):
+            # R2.1: a READY 3.1E answer becomes the active answer; V2 stays as fallback.
+            deps.repo.update(doc_id, {"operator_mode": _PRIMARY})
+            if draft and draft.get("status") == "READY" and draft.get("text"):
+                deps.repo.save_generation(doc_id, _v31_generation(draft), source="v31e", set_pending=False)
+                v2_meta = None  # V2 flags describe a draft the card no longer leads with
         doc = deps.repo.get(doc_id)
     _emit_event(deps, doc, doc_id, EventType.AI_GENERATED,
                 status_after=Status.PROCESSING.value, answer_version=doc.get("generation_number"))
@@ -984,6 +1144,13 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
         if action == "s31":
             return _show_v31(deps, doc_id, int(version), chat)
         return _publish_v31(deps, doc_id, int(version), chat, message_id, user_id)
+    if action in {"sv2", "u2"}:
+        doc_id, _, version = doc_id.partition(":")
+        if not version.isdigit() or len(version) > 9:
+            return {"status": "bad_request"}
+        if action == "sv2":
+            return _show_v2(deps, doc_id, int(version), chat)
+        return _use_v2(deps, doc_id, int(version), chat)
     if action == "skip":
         return _skip(deps, doc_id, chat, message_id)
     if action == "regen":
@@ -1055,6 +1222,45 @@ def _show_v31(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
     return {"status": "v31_shown"}
 
 
+def _show_v2(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
+    """R2.1 secondary diagnostic: the old V2 draft in its own message."""
+    doc = deps.repo.get(doc_id)
+    text = (doc or {}).get("ai_answer")
+    if not doc or not text or doc.get("generation_number", 0) != expected_generation:
+        return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
+    message = f"{_V2_LABEL}{escape_html(text)}\n\n<i>id: {escape_html(doc_id)}</i>"
+    rows = [] if _serious_unreviewed(doc) or _V2_LABEL + escape_html(text) not in message else \
+        [[{"text": "↩️ Использовать вариант V2", "callback_data": f"u2:{doc_id}:{expected_generation}"}]]
+    deps.telegram.send_message(chat, message, {"inline_keyboard": rows})
+    return {"status": "v2_shown"}
+
+
+def _use_v2(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
+    """The operator explicitly switches to the fallback V2 draft (LIVE_V2 policy lineage)."""
+    from app.domain.models import GenerationResult
+    doc = deps.repo.get(doc_id)
+    if not doc or not doc.get("ai_answer") or _serious_unreviewed(doc):
+        return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
+    model = ((doc.get("answer_versions") or [{}])[0] or {}).get("openai_model") or "v2"
+    gen = GenerationResult(text=doc["ai_answer"], model=model, prompt_version=doc.get("prompt_version") or "",
+                           usage={}, latency_ms=0, request_id="")
+    try:
+        doc = deps.repo.adopt_v2_fallback(doc_id, expected_generation, gen)
+    except InvalidTransition:
+        return _stale(deps, chat, "⚠️ Карточка устарела или отзыв уже обрабатывается. Откройте актуальную карточку.")
+    _sync_current(deps, doc_id, doc)
+    _emit_event(deps, doc, doc_id, EventType.MANUALLY_EDITED, best_effort=True,
+                answer_version=doc.get("generation_number"))
+    card_text, truncated = _card_builder_for(doc)(doc, doc_id)
+    msg = deps.telegram.send_message(chat, card_text,
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text))
+    new_id = str((msg or {}).get("message_id", ""))
+    if new_id:
+        deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id})
+        _retire_card(deps, chat, doc.get("telegram_message_id"), new_id)
+    return {"status": "v2_adopted", "generation_number": doc.get("generation_number")}
+
+
 def _stale(deps: Deps, chat, message: str = "⚠️ Действие недоступно: отзыв уже обработан."):
     deps.telegram.send_message(chat, message)
     return {"status": "stale"}
@@ -1071,7 +1277,7 @@ def _publication_validator(deps, publication_mode: str):
 
 
 def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None,
-             publication_mode: str = "live_v2") -> dict:
+             publication_mode: str | None = None) -> dict:
     # Entity-aware, independent fail-closed publish gates. Questions and reviews
     # each have their own WB_*_PUBLISH_ENABLED flag and their own WB endpoint.
     peek = deps.repo.get(doc_id)
@@ -1093,6 +1299,11 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
     if not gate_open:
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
+    if not override_confirmation and _serious_unreviewed(peek):
+        # Serious safety: only the operator's own text may go out, never a machine draft.
+        deps.telegram.send_message(chat, "⛔ Нужна проверка человеком: напишите ответ через «✏️ Изменить». "
+                                         "Ничего не опубликовано.")
+        return {"status": "human_review_required"}
     try:
         if override_confirmation:
             from app.services.owner_override import allowed, safety_fixed
@@ -1123,7 +1334,8 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
     trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(write_attempted=False, write="not_attempted")
     try:
-        # The policy is chosen by the publication context, never by the R2 flag alone.
+        # The policy follows the answer's lineage (an explicit p31 says v31), never a flag alone.
+        publication_mode = publication_mode or answer_lineage(doc)
         trace["publication_mode"] = publication_mode
         policy = _publication_validator(deps, publication_mode)(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
@@ -1183,7 +1395,8 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
                    if status == "policy_blocked" else
                    "⛔ Проверка ответа временно недоступна. Публикация не выполнялась.")
         keyboard = _operator_keyboard(deps, doc_id, doc)
-        keyboard["inline_keyboard"][0] = [keyboard["inline_keyboard"][0][1]]
+        keyboard["inline_keyboard"][0] = [b for b in keyboard["inline_keyboard"][0]
+                                          if not b["callback_data"].startswith(("pub:", "show:"))]
         if _recovery_enabled(deps):
             card, _ = _card_builder_for(after)(after, doc_id)
             message = card + "\n\n" + escape_html("⛔ Требуется проверка оператора. " +
@@ -1463,6 +1676,16 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
         return {"status": "not_found"}
 
     subject, communication_type = _subject_from_doc(doc)
+    primary_draft = None
+    if _is_primary(doc) and _primary_enabled(deps):
+        # R2.1: regenerate the primary 3.1E answer; V2 only when 3.1E has nothing usable.
+        primary_draft = _v31_draft(deps, doc_id, doc, budgeted=False)
+        if primary_draft and primary_draft.get("status") == "READY" and primary_draft.get("text"):
+            try:
+                doc = deps.repo.commit_regenerate(doc_id, _v31_generation(primary_draft), token, source="v31e")
+            except InvalidTransition:
+                return _stale(deps, chat, "⚠️ Перегенерация неактуальна: отзыв уже изменён.")
+            return _after_regenerate(deps, doc_id, doc, chat, message_id, None)
     try:
         gen, v2_meta = _generate_answer(deps, subject, communication_type)
     except Exception as exc:  # noqa: BLE001
@@ -1478,9 +1701,13 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
                if recovery is not None else deps.repo.commit_regenerate(doc_id, gen, token))
     except InvalidTransition:
         return _stale(deps, chat, "⚠️ Перегенерация неактуальна: отзыв уже изменён.")
-    if _operator_draft_enabled(deps) and not (doc.get("v31_draft") or {}).get("text"):
+    if _operator_draft_enabled(deps) and primary_draft is None and not (doc.get("v31_draft") or {}).get("text"):
         _v31_draft(deps, doc_id, doc, budgeted=False)  # e.g. skipped by the poll budget
         doc = deps.repo.get(doc_id) or doc
+    return _after_regenerate(deps, doc_id, doc, chat, message_id, v2_meta)
+
+
+def _after_regenerate(deps, doc_id, doc, chat, message_id, v2_meta) -> dict:
     _sync_current(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.REGENERATED, best_effort=False,
                 answer_version=doc.get("generation_number"))

@@ -172,6 +172,12 @@ class Settings:
     v31_operator_draft_enabled: bool = field(
         default_factory=lambda: os.environ.get("V31_OPERATOR_DRAFT_ENABLED", "false").lower() == "true"
     )
+    # R2.1: v3.1E is THE operator draft. A READY 3.1E answer becomes the active answer, «✅
+    # Опубликовать» publishes it under the v3.1E policy, edits inherit that policy, and V2 is
+    # only a secondary fallback. Implies 3.1E drafts. false = R2 behaviour. Never auto-publish.
+    v31_primary_operator_enabled: bool = field(
+        default_factory=lambda: os.environ.get("V31_PRIMARY_OPERATOR_ENABLED", "false").lower() == "true"
+    )
     # Seconds since poll start after which new cards go out without a 3.1E draft.
     v31_operator_draft_budget_seconds: float = field(
         default_factory=lambda: float(os.environ.get("V31_OPERATOR_DRAFT_BUDGET_SECONDS", "100") or 100)

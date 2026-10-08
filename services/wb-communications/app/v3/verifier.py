@@ -382,8 +382,11 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
     if len(raw) > int(vp.get("max_len", 1000)):
         add("V-LEN", "BLOCK", raw[:40], f"{len(raw)} chars > WB limit")
     from app.v3.safety import assess as assess_safety
+    from app.v3.safety import moderate_discomfort
     safety=assess_safety(ctx.customer_experience,policy)
-    if safety.route in {'HUMAN_REVIEW','SAFETY_URGENT'}:
+    # R2.1: a moderate fragrance discomfort is answered by an operator-reviewed text; every
+    # other human/urgent route still forbids ordinary publication.
+    if safety.route in {'HUMAN_REVIEW','SAFETY_URGENT'} and not moderate_discomfort(ctx.customer_experience,safety):
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'customer safety event requires human; ordinary publication is forbidden')
     elif safety.route=='S2' and normalize(snapshot.template('T-S2')) not in norm:
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'severe/persistent reaction requires approved safety branch')
