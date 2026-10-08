@@ -31,8 +31,10 @@ def fb(text="Очень хороший крем для рук. Руки мягк
 
 
 def deps(on=True, feedback=None, **extra):
-    flags = dict(v31_operator_draft_enabled=True, v31_enforce_live_publication_policy=True) if on else {}
-    d = make_deps([feedback or fb()], openai=FixedV2(), **flags, **extra)
+    # First R2 release: V31_ENFORCE_LIVE_PUBLICATION_POLICY stays OFF (v2 publication unchanged).
+    flags = dict(v31_operator_draft_enabled=True) if on else {}
+    extra.setdefault("openai", FixedV2())
+    d = make_deps([feedback or fb()], **flags, **extra)
     d.publication_validator = None          # the real production adapter (live_publication_validator)
     return d
 
@@ -49,8 +51,42 @@ def tap(d, data, n=1):
     return handle_update(d, {"update_id": n, "callback_query": cq})
 
 
-def buttons(d):
-    return [b["callback_data"] for row in d.telegram.sent[-1][2]["inline_keyboard"] for b in row]
+def buttons(d, keyboard=None):
+    keyboard = keyboard or d.telegram.sent[-1][2]
+    return [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+
+
+def last_trace(d):
+    return doc_of(d)[1]["publish_trace"][-1]
+
+
+def frozen(doc):
+    return {k: copy.deepcopy(doc.get(k)) for k in ("final_answer", "generation_number", "status",
+                                                    "answer_versions", "publication_state")}
+
+
+class Recorder:
+    """Wraps a real policy function and records every call (publication text included)."""
+    def __init__(self, fn, verdicts=None):
+        self.fn, self.calls, self.verdicts = fn, [], list(verdicts or [])
+
+    def __call__(self, text, doc, settings, **kw):
+        self.calls.append(text)
+        if self.verdicts:
+            verdict = self.verdicts.pop(0)
+            if isinstance(verdict, Exception):
+                raise verdict
+            return {"verdict": verdict, "violations": [], "text_sha256": "x"}
+        return self.fn(text, doc, settings, **kw)
+
+
+@pytest.fixture
+def policies(monkeypatch):
+    import app.services.publication_policy as pp
+    live, v31 = Recorder(pp.validate_live_publication), Recorder(pp.validate_for_publication)
+    monkeypatch.setattr(pp, "validate_live_publication", live)
+    monkeypatch.setattr(pp, "validate_for_publication", v31)
+    return SimpleNamespace(live=live, v31=v31)
 
 # default OFF ------------------------------------------------------------------------------
 def test_default_off_card_and_keyboard_unchanged(monkeypatch):
@@ -227,7 +263,7 @@ def test_question_card_and_publish_via_question_publisher(monkeypatch):
                             "imtId": 1, "brandName": "EVETIS"}}
     d = make_deps(feedbacks=[], questions=[q], wb_questions_enabled=True, wb_question_publish_enabled=True,
                   openai=FixedV2("Страна — Китай, крем лечит акне."),
-                  v31_operator_draft_enabled=True, v31_enforce_live_publication_policy=True)
+                  v31_operator_draft_enabled=True)
     d.publication_validator = None
     run_poll(d)
     doc_id, doc = doc_of(d)
@@ -245,3 +281,154 @@ def test_closed_publish_gate_changes_nothing():
     assert tap(d, f"p31:{doc_id}:{doc['generation_number']}")["status"] == "publish_disabled"
     after = d.repo.get(doc_id)
     assert after["final_answer"] == V2_TEXT and after["generation_number"] == doc["generation_number"]
+
+
+# policy isolation: the action decides the policy, never the R2 flag -------------------------
+def test_enforce_flag_stays_off_for_first_r2_release(monkeypatch):
+    monkeypatch.delenv("V31_ENFORCE_LIVE_PUBLICATION_POLICY", raising=False)
+    assert Settings().v31_enforce_live_publication_policy is False
+    assert deps().settings.v31_enforce_live_publication_policy is False
+
+
+def test_v2_button_uses_live_v2_gate_only(policies):
+    d = deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    tap(d, f"pub:{doc_id}:{doc['generation_number']}")
+    trace = last_trace(d)
+    assert trace["publication_mode"] == "live_v2" and trace["policy"]["gate"] == "LIVE_V2"
+    assert policies.live.calls == [V2_TEXT] and policies.v31.calls == []
+
+
+def test_manual_edit_uses_live_v2_gate_only(policies):
+    d = deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert tap(d, f"edit:{doc_id}")["status"] == "editing_started"
+    edited = "Людмила, спасибо за отзыв! Рады, что крем понравился."
+    reply = {"update_id": 9, "message": {"chat": {"id": 302044578}, "from": {"id": 302044578}, "text": edited,
+                                         "reply_to_message": {"message_id": d.telegram._id}}}
+    assert handle_update(d, reply)["status"] == "edited"
+    doc = d.repo.get(doc_id)
+    tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=10)
+    trace = last_trace(d)
+    assert trace["publication_mode"] == "live_v2" and trace["policy"]["gate"] == "LIVE_V2"
+    assert policies.live.calls == [edited] and policies.v31.calls == []
+
+
+def test_p31_uses_v31_policy_in_preflight_and_again_in_publisher(policies):
+    d = deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    v31_text = doc["v31_draft"]["text"]
+    policies.v31.calls.clear()                                # generation-time checks are not publication
+    assert tap(d, f"p31:{doc_id}:{doc['generation_number']}")["status"] == "published"
+    assert policies.v31.calls == [v31_text, v31_text]         # preflight + publisher re-check
+    assert policies.live.calls == []
+    trace = last_trace(d)
+    assert trace["publication_mode"] == "v31" and "gate" not in trace["policy"]
+
+
+# preflight: a draft the current policy blocks is never adopted -------------------------------
+@pytest.mark.parametrize("verdict, status", [("BLOCK", "v31_preflight_blocked"),
+                                             (RuntimeError("policy down"), "v31_preflight_failed"),
+                                             ("NONSENSE", "v31_preflight_failed")])
+def test_preflight_block_changes_nothing(policies, verdict, status):
+    d = deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    assert doc["v31_draft"]["status"] == "READY"              # READY when it was generated
+    before, sent = frozen(d.repo.get(doc_id)), len(d.telegram.sent)
+    policies.v31.verdicts = [verdict]                         # ...but the current policy says no
+    assert tap(d, f"p31:{doc_id}:{doc['generation_number']}")["status"] == status
+    after = d.repo.get(doc_id)
+    assert frozen(after) == before and "publish_trace" not in after
+    assert d.wb.published == [] and d.telegram.edits == []
+    assert len(d.telegram.sent) == sent + 1 and "не проходит правила" in d.telegram.sent[-1][1]
+    # the card stays usable: same generation, the V2 button still works on the live gate
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}", n=2)["status"] == "policy_blocked"
+
+
+def test_publisher_rechecks_policy_before_wb_write(policies):
+    d = deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    policies.v31.verdicts = ["PASS", "BLOCK"]                 # preflight passes, the publisher's check blocks
+    assert tap(d, f"p31:{doc_id}:{doc['generation_number']}")["status"] == "policy_blocked"
+    assert d.wb.published == []
+
+
+# visibility: never a publish button for text the operator cannot see ------------------------
+LONG_V31 = ("Людмила, спасибо за подробный отзыв! " + "Нам очень приятно, что крем стал частью ухода. " * 20)[:990].strip()
+
+
+class _Plan:
+    route = "STANDARD"
+
+
+def _long_prepare(*a, **k):
+    return SimpleNamespace(status="READY", text=LONG_V31, final_policy={"verdict": "PASS"}, plan=_Plan(),
+                           quality=SimpleNamespace(verdict="PASS"))
+
+
+def long_deps(monkeypatch, policies):
+    import app.response_quality.core as core
+    monkeypatch.setattr(core, "prepare", _long_prepare)
+    policies.v31.verdicts = ["PASS", "PASS"]                  # isolate visibility from policy content
+    review = fb(text="Пользуюсь кремом уже месяц, впечатления подробные. " * 60)
+    review.update(pros="Мягкость, запах, тюбик. " * 25, cons="Хотелось бы объём побольше. " * 20)
+    return deps(feedback=review, openai=FixedV2(("Людмила, спасибо! " + "Рады, что крем подошёл. " * 60)[:990]))
+
+
+def test_long_card_has_no_publish_button_for_invisible_text(monkeypatch, policies):
+    d = long_deps(monkeypatch, policies)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    card, keyboard = d.telegram.sent[-1][1], d.telegram.sent[-1][2]
+    assert len(card) <= 3800 and LONG_V31 not in card       # 3.1E cut by the Telegram limit
+    gen = doc["generation_number"]
+    assert f"s31:{doc_id}:{gen}" in buttons(d, keyboard)
+    assert not any(c.startswith("p31:") for c in buttons(d, keyboard))
+    # «Показать полностью» (full review) still cannot fit the 3.1E text: still no publish button
+    tap(d, f"show:{doc_id}")
+    shown, markup = d.telegram.edits[-1][1], d.telegram.edit_markups[-1][1]
+    assert LONG_V31 not in shown and not any(c.startswith("p31:") for c in buttons(d, markup))
+
+
+def test_full_view_shows_exact_text_then_publishes(monkeypatch, policies):
+    d = long_deps(monkeypatch, policies)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    gen = doc["generation_number"]
+    assert tap(d, f"s31:{doc_id}:{gen}")["status"] == "v31_shown"
+    full = d.telegram.sent[-1][1]
+    assert "Вариант 3.1E полностью" in full and LONG_V31 in full
+    assert buttons(d) == [f"p31:{doc_id}:{gen}"]               # publish bound to the same generation
+    assert d.repo.get(doc_id)["final_answer"] != LONG_V31     # viewing changes nothing
+    full_view = {"id": "cq7", "from": {"id": 302044578}, "data": f"p31:{doc_id}:{gen}",
+                 "message": {"message_id": d.telegram._id, "chat": {"id": 302044578}}}
+    assert handle_update(d, {"update_id": 7, "callback_query": full_view})["status"] == "published"
+    assert [t for _, t in d.wb.published] == [LONG_V31]
+
+
+def test_full_view_rejects_stale_generation(monkeypatch, policies):
+    d = long_deps(monkeypatch, policies)
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    gen = doc["generation_number"]
+    assert tap(d, f"s31:{doc_id}:{gen - 1}")["status"] == "stale"
+    assert tap(d, f"s31:{doc_id}:{gen}", n=2)["status"] == "v31_shown"
+    tap(d, f"regen:{doc_id}", n=3)                            # the card moves on
+    assert d.repo.get(doc_id)["generation_number"] > gen
+    assert tap(d, f"p31:{doc_id}:{gen}", n=4)["status"] == "stale"   # the full view is now stale
+    assert tap(d, f"s31:{doc_id}:{gen}", n=5)["status"] == "stale"
+    assert d.wb.published == []
+
+
+def test_short_card_publish_button_only_when_text_visible():
+    from app.services.pipeline import _v31_visible
+    text = "Спасибо & до встречи!"
+    assert _v31_visible("✨ <b>Вариант 3.1E:</b>\nСпасибо &amp; до встречи!\n\n<i>id</i>", text)
+    assert not _v31_visible("✨ <b>Вариант 3.1E:</b>\nСпасибо &amp; до вс…", text)
+    assert not _v31_visible("Комментарий: Спасибо &amp; до встречи!", text)   # not under its own label
+    assert not _v31_visible(None, text)

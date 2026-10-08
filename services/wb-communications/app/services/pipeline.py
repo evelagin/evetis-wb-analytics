@@ -44,7 +44,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "p31", "edit", "regen", "skip", "show", "ov", "oc"}
+ACTIONS = {"pub", "p31", "s31", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -194,10 +194,22 @@ def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
     return draft
 
 
+_V31_CARD_LABEL = "✨ <b>Вариант 3.1E:</b>\n"
+_V31_FULL_LABEL = "✨ <b>Вариант 3.1E полностью:</b>\n"
+
+
+def _v31_visible(message_text, draft_text) -> bool:
+    """The exact, complete 3.1E draft sits under its own label in the message being sent
+    (not cut by card truncation, not merely somewhere else in the card)."""
+    shown = escape_html(str(draft_text))
+    return bool(message_text) and any(label + shown in message_text
+                                      for label in (_V31_CARD_LABEL, _V31_FULL_LABEL))
+
+
 def _v31_section(doc) -> list[str]:
     draft = doc.get("v31_draft") or {}
     if draft.get("text"):
-        return ["", f"✨ <b>Вариант 3.1E:</b>\n{escape_html(str(draft['text']))}"]
+        return ["", _V31_CARD_LABEL + escape_html(str(draft["text"]))]
     if draft.get("status") == "HUMAN_REVIEW":
         return ["", "✨ <i>Вариант 3.1E не предложен: нужна проверка человеком.</i>"]
     return []
@@ -230,13 +242,17 @@ def _prepare_response(deps, doc, text):
                       "reasons": ["REPAIR_ERROR:" + type(exc).__name__]}
 
 
-def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False):
+def _operator_keyboard(deps, doc_id, doc, *, show_full=False, retry=False, card_text=None):
     bind = _recovery_enabled(deps) or _operator_draft_enabled(deps)
     k = build_keyboard(doc_id, show_full=show_full, retry=retry,
                        generation=doc.get("generation_number", 0) if bind else None)
-    if _operator_draft_enabled(deps) and (doc.get("v31_draft") or {}).get("text"):
-        k["inline_keyboard"].insert(1, [{"text": "✨ Опубликовать 3.1E",
-                                         "callback_data": f"p31:{doc_id}:{doc.get('generation_number', 0)}"}])
+    draft_text = (doc.get("v31_draft") or {}).get("text")
+    if _operator_draft_enabled(deps) and draft_text:
+        # Never offer to publish text the operator cannot see in full in this message.
+        gen = doc.get("generation_number", 0)
+        k["inline_keyboard"].insert(1, [{"text": "✨ Опубликовать 3.1E", "callback_data": f"p31:{doc_id}:{gen}"}]
+                                    if _v31_visible(card_text, draft_text) else
+                                    [{"text": "✨ Показать 3.1E полностью", "callback_data": f"s31:{doc_id}:{gen}"}])
     if _recovery_enabled(deps) and doc.get("response_review_required"):
         k["inline_keyboard"][0] = [k["inline_keyboard"][0][1]]
     from app.services.owner_override import enabled as override_enabled
@@ -623,7 +639,7 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
     card_text, truncated = card_builder(doc, doc_id)
     card_text = _card_with_flags(card_text, v2_meta)
     card_text = _recovery_note(card_text, doc)
-    keyboard = _operator_keyboard(deps, doc_id, doc, show_full=truncated)
+    keyboard = _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text)
     msg = deps.telegram.send_message(deps.settings.telegram_chat_id, card_text, keyboard)
     deps.repo.update(doc_id, {
         "telegram_message_id": str(msg.get("message_id", "")),
@@ -890,7 +906,8 @@ def _send_recovery_card(deps: Deps, doc_id: str) -> str:
     chat = doc.get("telegram_chat_id") or deps.settings.telegram_chat_id
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     msg = deps.telegram.send_message(chat, _Q_RECOVERY_HEAD + card_text,
-                                     _operator_keyboard(deps, doc_id, doc, show_full=truncated, retry=True))
+                                     _operator_keyboard(deps, doc_id, doc, show_full=truncated, retry=True,
+                                                        card_text=_Q_RECOVERY_HEAD + card_text))
     new_id = str((msg or {}).get("message_id", ""))
     deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id,
                               "recovery_card_sent_at": _now_iso()})
@@ -960,10 +977,12 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
                 return {"status": "bad_request"}
             expected_generation = int(version)
         return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=expected_generation)
-    if action == "p31":
+    if action in {"p31", "s31"}:
         doc_id, _, version = doc_id.partition(":")
         if not version.isdigit() or len(version) > 9:
             return {"status": "bad_request"}
+        if action == "s31":
+            return _show_v31(deps, doc_id, int(version), chat)
         return _publish_v31(deps, doc_id, int(version), chat, message_id, user_id)
     if action == "skip":
         return _skip(deps, doc_id, chat, message_id)
@@ -995,6 +1014,18 @@ def _publish_v31(deps: Deps, doc_id, expected_generation: int, chat, message_id,
     if not gate_open:
         deps.telegram.send_message(chat, "🚫 Публикация в WB сейчас отключена.")
         return {"status": "publish_disabled"}
+    # Current v3.1E policy on the exact stored text BEFORE anything changes. A block leaves
+    # the answer, generation, status and WB untouched. The publisher re-checks before writing.
+    try:
+        pre = _publication_validator(deps, "v31")(text, doc, deps.settings)
+        verdict = pre.get("verdict") if isinstance(pre, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        log_event(logger, "warning", "v3.1 publish preflight failed", error_class=type(exc).__name__)
+        verdict = "ERROR"
+    if verdict not in ("PASS", "INFO", "WARNING"):
+        deps.telegram.send_message(chat, "⛔ Вариант 3.1E сейчас не проходит правила публикации и не опубликован. "
+                                         "Ответ в карточке не изменён: отредактируйте его или перегенерируйте.")
+        return {"status": "v31_preflight_blocked" if verdict == "BLOCK" else "v31_preflight_failed"}
     from app.domain.models import GenerationResult
     from app.response_quality import VERSION
     gen = GenerationResult(text=text, model="v3.1E:" + str((doc.get("v31_draft") or {}).get("model") or ""),
@@ -1005,7 +1036,23 @@ def _publish_v31(deps: Deps, doc_id, expected_generation: int, chat, message_id,
         return _stale(deps, chat, "⚠️ Карточка устарела или отзыв уже обрабатывается. Откройте актуальную карточку.")
     _emit_event(deps, adopted, doc_id, EventType.MANUALLY_EDITED, best_effort=True,
                 answer_version=adopted.get("generation_number"))
-    return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=adopted.get("generation_number"))
+    return _publish(deps, doc_id, chat, message_id, user_id, expected_generation=adopted.get("generation_number"),
+                    publication_mode="v31")
+
+
+def _show_v31(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
+    """Full exact 3.1E text in its own message; only there the publish button appears."""
+    doc = deps.repo.get(doc_id)
+    text = ((doc or {}).get("v31_draft") or {}).get("text")
+    if not doc or not text or not _operator_draft_enabled(deps) or doc.get("generation_number", 0) != expected_generation:
+        return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
+    message = f"{_V31_FULL_LABEL}{escape_html(text)}\n\n<i>id: {escape_html(doc_id)}</i>"
+    # Only the 3.1E action here: this message shows the 3.1E text, not the v2 draft.
+    keyboard = {"inline_keyboard": [[{"text": "✨ Опубликовать 3.1E",
+                                      "callback_data": f"p31:{doc_id}:{expected_generation}"}]]
+                if _v31_visible(message, text) else []}
+    deps.telegram.send_message(chat, message, keyboard)
+    return {"status": "v31_shown"}
 
 
 def _stale(deps: Deps, chat, message: str = "⚠️ Действие недоступно: отзыв уже обработан."):
@@ -1013,7 +1060,18 @@ def _stale(deps: Deps, chat, message: str = "⚠️ Действие недос�
     return {"status": "stale"}
 
 
-def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None) -> dict:
+def _publication_validator(deps, publication_mode: str):
+    """Policy for one publication context. «live_v2» (✅ / manual edit): the production-
+    compatible live gate (unless V31_ENFORCE_LIVE_PUBLICATION_POLICY migrates everything).
+    «v31» (✨ Опубликовать 3.1E): the v3.1E policy that produced the draft."""
+    if deps.publication_validator:
+        return deps.publication_validator
+    from app.services.publication_policy import live_publication_validator, validate_for_publication
+    return validate_for_publication if publication_mode == "v31" else live_publication_validator(deps.settings)
+
+
+def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None,
+             publication_mode: str = "live_v2") -> dict:
     # Entity-aware, independent fail-closed publish gates. Questions and reviews
     # each have their own WB_*_PUBLISH_ENABLED flag and their own WB endpoint.
     peek = deps.repo.get(doc_id)
@@ -1064,11 +1122,10 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
 
     trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(write_attempted=False, write="not_attempted")
-    from app.services.publication_policy import live_publication_validator
     try:
-        # Live v2 publication: production-compatible gate; v3.1E policy stays shadow-only (R1).
-        validator = deps.publication_validator or live_publication_validator(deps.settings)
-        policy = validator(text, doc, deps.settings)
+        # The policy is chosen by the publication context, never by the R2 flag alone.
+        trace["publication_mode"] = publication_mode
+        policy = _publication_validator(deps, publication_mode)(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
             raise ValueError("invalid policy verdict")
         trace["policy"] = policy
@@ -1111,8 +1168,9 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
                 _emit_event(deps, after, doc_id, EventType.REGENERATED, best_effort=False,
                             answer_version=version, payload=trace)
                 card, trunc = _card_builder_for(after)(after, doc_id)
-                deps.telegram.edit_message_text(chat, message_id, _recovery_note(card, after),
-                    _operator_keyboard(deps, doc_id, after, show_full=trunc))
+                card = _recovery_note(card, after)
+                deps.telegram.edit_message_text(chat, message_id, card,
+                    _operator_keyboard(deps, doc_id, after, show_full=trunc, card_text=card))
                 return {"status": "policy_repaired", "requires_new_publish": True}
         trace.update(final_publication_state=status, local_state_after=status,
                      telegram_state=status, finished_at=_now_iso())
@@ -1427,9 +1485,9 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
     _emit_event(deps, doc, doc_id, EventType.REGENERATED, best_effort=False,
                 answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
-    card_text = _card_with_flags(card_text, v2_meta)
-    deps.telegram.edit_message_text(chat, message_id, _recovery_note(card_text, doc),
-        _operator_keyboard(deps, doc_id, doc, show_full=truncated))
+    card_text = _recovery_note(_card_with_flags(card_text, v2_meta), doc)
+    deps.telegram.edit_message_text(chat, message_id, card_text,
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text))
     return {"status": "regenerated", "generation_number": doc.get("generation_number")}
 
 
@@ -1465,7 +1523,8 @@ def _show_full(deps: Deps, doc_id, chat, message_id) -> dict:
     if not doc:
         return {"status": "not_found"}
     card_text, _ = _card_builder_for(doc)(doc, doc_id, full=True)
-    deps.telegram.edit_message_text(chat, message_id, _recovery_note(card_text, doc), _operator_keyboard(deps, doc_id, doc))
+    card_text = _recovery_note(card_text, doc)
+    deps.telegram.edit_message_text(chat, message_id, card_text, _operator_keyboard(deps, doc_id, doc, card_text=card_text))
     return {"status": "shown"}
 
 
@@ -1546,9 +1605,9 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     _emit_event(deps, doc, doc_id, EventType.MANUALLY_EDITED, best_effort=False,
                 telegram_user_id=user_id, answer_version=doc.get("generation_number"))
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
-    card_text = _card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)})
-    msg = deps.telegram.send_message(chat, _recovery_note(card_text, doc),
-        _operator_keyboard(deps, doc_id, doc, show_full=truncated))
+    card_text = _recovery_note(_card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)}), doc)
+    msg = deps.telegram.send_message(chat, card_text,
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text))
     _v3_manual_shadow_check(deps, doc_id, doc, new_text)
     # The new card supersedes the stored one: without this, later background updates
     # (reconcile / re-verify) edit the OLD message and the operator never sees them.
