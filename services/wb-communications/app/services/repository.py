@@ -245,6 +245,15 @@ def _check_v31_adoptable(doc, expected_generation, gen) -> None:
         raise InvalidTransition("v31 draft not adoptable from this card state")
 
 
+def _check_v2_adoptable(doc, expected_generation, gen) -> None:
+    """«Использовать вариант V2» (R2.1 fallback): same card generation, a draftable status and
+    exactly the stored V2 draft."""
+    if (doc.get("status") not in DRAFTABLE_FROM
+            or doc.get("generation_number", 0) != expected_generation
+            or not doc.get("ai_answer") or doc.get("ai_answer") != gen.text):
+        raise InvalidTransition("v2 draft not adoptable from this card state")
+
+
 def _draft_commit_fields(doc):
     return {k: doc[k] for k in ("generation_number", "answer_versions", "final_answer", "ai_answer",
         "openai_model", "prompt_version", "openai_usage", "openai_latency_ms", "updated_at",
@@ -361,6 +370,14 @@ class MemoryRepository:
         _apply_generation(doc, gen, "v31e")
         return copy.deepcopy(doc)
 
+    def adopt_v2_fallback(self, doc_id: str, expected_generation: int, gen) -> dict:
+        doc = self.docs.get(doc_id)
+        if doc is None:
+            raise NotFound(doc_id)
+        _check_v2_adoptable(doc, expected_generation, gen)
+        _apply_generation(doc, gen, "v2_fallback")
+        return copy.deepcopy(doc)
+
     # --- non-publish action state machine (skip/restore/show) ---
     def begin_action(self, doc_id: str, action: str) -> dict:
         doc = self.docs.get(doc_id)
@@ -383,13 +400,14 @@ class MemoryRepository:
                     "lock_expires_at": _expiry(self._lease), "updated_at": _now()})
         return copy.deepcopy(doc), tok
 
-    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None) -> dict:
+    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None,
+                          source: str = "regenerated") -> dict:
         doc = self.docs.get(doc_id)
         if doc is None:
             raise NotFound(doc_id)
         if doc.get("status") != Status.REGENERATING.value or doc.get("lock_token") != lock_token:
             raise InvalidTransition("regenerate lock lost or superseded")
-        _apply_generation(doc, gen, "regenerated")
+        _apply_generation(doc, gen, source)
         doc.update({"status": Status.PENDING_APPROVAL.value, "lock_token": None, "lock_expires_at": None})
         _apply_response_recovery(doc, prepared_gen, recovery)
         return copy.deepcopy(doc)
@@ -721,6 +739,29 @@ class FirestoreRepository:
         return txn(client.transaction())
 
     @translate_fs_errors
+    def adopt_v2_fallback(self, doc_id: str, expected_generation: int, gen) -> dict:
+        """Same check and version append as the memory repo, in one transaction."""
+        from google.cloud import firestore
+
+        client = self._lazy()
+        ref = self._doc(doc_id)
+
+        @firestore.transactional
+        def txn(transaction):
+            snap = ref.get(transaction=transaction)
+            if not snap.exists:
+                raise NotFound(doc_id)
+            doc = snap.to_dict()
+            _check_v2_adoptable(doc, expected_generation, gen)
+            _apply_generation(doc, gen, "v2_fallback")
+            transaction.update(ref, {k: doc[k] for k in ("generation_number", "answer_versions", "final_answer",
+                                                         "openai_model", "prompt_version", "openai_usage",
+                                                         "openai_latency_ms", "updated_at") if k in doc})
+            return doc
+
+        return txn(client.transaction())
+
+    @translate_fs_errors
     def begin_action(self, doc_id: str, action: str) -> dict:
         from google.cloud import firestore
 
@@ -763,7 +804,8 @@ class FirestoreRepository:
         return txn(client.transaction()), tok
 
     @translate_fs_errors
-    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None) -> dict:
+    def commit_regenerate(self, doc_id: str, gen, lock_token: str, *, prepared_gen=None, recovery=None,
+                          source: str = "regenerated") -> dict:
         from google.cloud import firestore
         client = self._lazy()
         ref = self._doc(doc_id)
@@ -776,7 +818,7 @@ class FirestoreRepository:
             doc = snap.to_dict()
             if doc.get("status") != Status.REGENERATING.value or doc.get("lock_token") != lock_token:
                 raise InvalidTransition("regenerate lock lost or superseded")
-            _apply_generation(doc, gen, "regenerated")
+            _apply_generation(doc, gen, source)
             doc.update(status=Status.PENDING_APPROVAL.value, lock_token=None, lock_expires_at=None)
             _apply_response_recovery(doc, prepared_gen, recovery)
             transaction.update(ref, _draft_commit_fields(doc))

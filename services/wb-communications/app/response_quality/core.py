@@ -42,6 +42,8 @@ class VoicePlan:
     product_capabilities: dict = field(default_factory=dict)
     service_premises: list = field(default_factory=list)
     question_targets: list = field(default_factory=list)
+    attention: str | None = None     # operator badge: MODERATE_DISCOMFORT | SAFETY_TEMPLATE
+    moderate_signals: list = field(default_factory=list)
 
 
 @dataclass
@@ -175,7 +177,7 @@ def rating_only_aspects(msg, res, snap):
                    (r"жаль|сожале",))]
 
 
-def make_plan(msg, snap, *, hard_plan=None):
+def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False):
     res = resolver.resolve(snap, nm_id=msg.get("nm_id"), supplier_article=msg.get("supplier_article"),
                            barcode=msg.get("barcode"), marketplace=msg.get("channel") or msg.get("marketplace") or "WB")
     cls = classifier.classify_rules(msg, snap)
@@ -195,12 +197,21 @@ def make_plan(msg, snap, *, hard_plan=None):
                          or hard_plan.failure_code == "UNCLASSIFIED_QUESTION"):
         hard = local_hard
     p = VoicePlan(hard.strategy, "P1", 0, aspects_of(msg))
+    if moderate_safety:
+        # R2.1 operator assist only: fragrance discomfort without a serious marker gets a
+        # cautious draft and an attention badge instead of an empty human-review card.
+        from app.response_quality import moderate
+        found = moderate.signals(msg, cls, hard, _raw(msg))
+        if found:
+            return moderate.apply(msg, res, snap, p, found)
     # Hard routes dominate the voice layer, regardless of stars or friendliness.
     if hard.strategy == "HUMAN_REVIEW":
         p.human_reason = hard.failure_code or "HUMAN_REVIEW"
         return p
     if hard.strategy == "SAFETY_TEMPLATE":
         p.direct_answer = hard.deterministic_text  # no mild-discomfort recalibration
+        if moderate_safety:
+            p.attention = "SAFETY_TEMPLATE"
         return p
     if hard.strategy == "SERVICE":
         p.service_premises=hard.service_premises
@@ -356,7 +367,8 @@ def evaluate(text, msg, p, hard_policy, *, previous_answers=()):
     return assess(text,msg,p,hard_policy,previous_answers=previous_answers)
 
 
-def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=None, force_generation=False):
+def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=None, force_generation=False,
+            moderate_safety=False):
     """At most one corrected candidate from the injected language pass (or offline renderer).
 
     Final policy is checked independently again. Corpus force_generation evaluates
@@ -367,7 +379,7 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
     """
     from app.response_quality.brand_voice import render as default_render
     render = render or default_render
-    p = make_plan(msg, snap, hard_plan=hard_plan)
+    p = make_plan(msg, snap, hard_plan=hard_plan, moderate_safety=moderate_safety)
     st = SimpleNamespace(v3_knowledge_snapshot_id=snap.snapshot_id)
     first = validate_for_publication(original or "", msg, st, include_spans=True)
     q = evaluate(original, msg, p, first)
@@ -401,8 +413,9 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
         if fallback_policy['verdict'] != 'BLOCK' and fallback_missing < old_missing:
             return PreparedResponse('READY', fallback, fallback != original, first, fallback_policy,
                                     fallback_quality,p,reasons+['CUSTOMER_SIGNALS_SAFE_FALLBACK'])
-    if not ready and first["verdict"] != "BLOCK":
+    if not ready and first["verdict"] != "BLOCK" and p.route != "MODERATE_DISCOMFORT":
         # A failed STYLE improvement may never block the already safe operator candidate.
+        # A blocked moderate-safety answer goes to a human, never back to the original.
         return PreparedResponse("READY", original, False, first, first, q, p, reasons)
     return PreparedResponse("READY" if ready else "HUMAN_REVIEW", candidate if ready else None,
                             ready and candidate != original, first, final, fq, p, reasons)

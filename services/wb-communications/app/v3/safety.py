@@ -281,3 +281,44 @@ def merge_llm_events(assessment: SafetyAssessment, llm_events: list[dict], text:
     if order[merged.risk_level] < order[assessment.risk_level]:
         return assessment  # never lower
     return merged
+
+
+# --- R2.1 operator assist: split the HUMAN_REVIEW safety class -------------------------------
+# A fragrance-attributed sensation (dizziness, headache, nausea) with no serious marker is
+# MODERATE: the operator gets a cautious draft and an attention badge, publication stays manual.
+# Everything else that routes to a human (breathing, swelling, fainting, emergency care, eye,
+# ingestion, vomiting, cutaneous injury, children, pregnancy, mixed skin events) is unchanged.
+MODERATE_DISCOMFORT = "MODERATE_DISCOMFORT"
+_FRAGRANCE = r"запах|аромат|отдушк|пахн|\bпах\b|воня|вонь|парфюм"
+_SENSATIONS = {
+    "dizziness": r"голов\w*\s+(?:\w+\s+)?(?:кружит|кружил|закружил)|(?:кружит|кружил|закружил)\w*\s+(?:\w+\s+)?голов|головокруж",
+    "headache": (r"голов\w*\s+(?:\w+\s+)?(?:болит|болел|разболел|заболел|раскалыва)"
+                 r"|(?:болит|болел|разболел|заболел|раскалыва)\w*\s+(?:\w+\s+)?голов|головн\w*\s+бол\w*|мигрен"),
+    "nausea": r"\bтошн|\bмутит\b",
+}
+_SERIOUS_CONTEXT = (r"\bрвот|\bвырвал|\bстошнил|сознани|\bобморок|\bупал[аи]?\b|давлени|\bскор(?:ую|ая|ой)\b"
+                    r"|\bврач\w*\s+(?:вызва|приезжа)|\bреб[её]н|\bдет(?:и|ей|ям|ский|ская)\b|\bмалыш|\bсын\w*|\bдоч\w*"
+                    r"|беремен|корм\w*\s+грудь|грудн\w*\s+вскармлив")
+
+
+def sensations(text: str) -> list[str]:
+    n = normalize(text)
+    return [k for k, rx in _SENSATIONS.items() if re.search(rx, n)]
+
+
+def moderate_discomfort(text: str, assessment: "SafetyAssessment") -> list[str] | None:
+    """The sensations when this is a MODERATE fragrance discomfort, else None.
+
+    Never lowers SAFETY_URGENT, an emergency marker, a cutaneous injury or any event
+    other than nausea; vomiting and vulnerable-person context stay serious."""
+    n = normalize(text)
+    found = sensations(text)
+    if not found or not re.search(_FRAGRANCE, n) or re.search(_SERIOUS_CONTEXT, n):
+        return None
+    if assessment.emergency_markers or assessment.route == "SAFETY_URGENT":
+        return None
+    if any(e.cutaneous_injury for e in assessment.events):
+        return None
+    if any(e.type != "nausea" for e in assessment.events if e.active or e.temporal_state == "resolved"):
+        return None
+    return found

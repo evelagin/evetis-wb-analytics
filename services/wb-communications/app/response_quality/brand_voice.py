@@ -85,7 +85,7 @@ def assess(text,msg,p,hard_policy,*,previous_answers=()):
     if mixed_texture and not positive_texture_experience(text) and 'texture' not in missing:missing.append('texture')
     negative=bool({a.key for a in p.aspects}&{'fragrance_harsh','fragrance_disliked','sticky','drying','no_effect',
                   'product_disliked','price','service_damage','packaging_inconvenient','dispenser_inconvenient'})
-    direct=p.level=='DIRECT'; hard=p.route in {'SAFETY_TEMPLATE','HUMAN_REVIEW'}
+    direct=p.level=='DIRECT'; hard=p.route in {'SAFETY_TEMPLATE','HUMAN_REVIEW','MODERATE_DISCOMFORT'}
     answered = not p.direct_answer or normalize(p.direct_answer) in n
     from app.v3.direct_questions import diagnostics
     from app.v3.service_premise import unsupported_statement
@@ -141,7 +141,17 @@ def assess(text,msg,p,hard_policy,*,previous_answers=()):
         checks['naturalness']=False  # a bare data fragment is not a natural answer
         reasons.append('FACT_FRAGMENT_ONLY')
     reasons.extend(relevance)
-    return QualityReport('GOOD' if all(checks.values()) else 'NEEDS_IMPROVEMENT',
+    # A mixed review: the customer's own praise must survive next to the complaint.
+    praise={'product_liked','softness','texture','non_sticky','fragrance_liked','convenience','result_liked'}
+    complaint=negative or p.route in {'MODERATE_DISCOMFORT','SAFETY_TEMPLATE'}
+    if complaint and set(missing)&praise:
+        reasons.append('POSITIVE_CUSTOMER_SIGNAL_IGNORED')
+    extra=[]
+    if p.route=='MODERATE_DISCOMFORT':
+        from app.response_quality.moderate import diagnostics as moderate_diagnostics
+        extra=moderate_diagnostics(text)
+        reasons.extend(extra)
+    return QualityReport('GOOD' if all(checks.values()) and not extra else 'NEEDS_IMPROVEMENT',
                          {k:'GOOD' if v else 'NEEDS_IMPROVEMENT' for k,v in checks.items()},reasons)
 
 
