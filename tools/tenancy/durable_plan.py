@@ -14,7 +14,7 @@ from tools.tenancy.validation import parse_tenant_json
 
 VERSION = "CLOUD_BACKFILL_V1"
 HASH = re.compile(r"^[0-9a-f]{64}$")
-KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE", "FULL_MANIFEST", "CHUNK_PLAN", "CHUNK_COMPLETE", "FULL_COMPLETE", "T5_PARENT_COMPLETE", "CHUNK_SUPERSEDED"})
+KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE", "CONTROLLER_STOP_RECOVERED", "FULL_MANIFEST", "CHUNK_PLAN", "CHUNK_COMPLETE", "FULL_COMPLETE", "T5_PARENT_COMPLETE", "CHUNK_SUPERSEDED"})
 MAX_RECORD_BYTES = 900000
 
 
@@ -271,7 +271,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
-def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=()):
+def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
     Never dispatch after an intent lacking a receipt. Reconcile terminal receipts
@@ -287,6 +287,12 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
     approved_stops={h for p in verified_failures for h in p['stop_hashes']}
     if any(r['root_hash']!=p['root_hash'] for p in verified_failures for r in current):
         raise BF.B.EvidenceError('foreign recovery root')
+    for proof in verified_controller_recoveries:
+        from tools.tenancy import controller_stop_recovery as CR
+        CR.verify_records(proof,current,plan_hash,proof['tenant'])
+        if not any(r['kind']==CR.KIND and r['payload']==proof and r['sequence']==proof['predecessor_sequence'] for r in current):
+            raise BF.B.EvidenceError('verified controller recovery lacks immutable record')
+        approved_stops.add(proof['stop_hash'])
     if any(r["kind"] == "STOPPED" and digest(r) not in approved_stops for r in current):
         return {"action": "STOPPED"}
     intents = {r["sequence"]: r for r in current if r["kind"] == "DISPATCH_INTENT"}
