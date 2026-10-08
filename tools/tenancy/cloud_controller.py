@@ -273,8 +273,10 @@ class Backend:
         records=self.store.history(root)
         manifests=[r['payload'] for r in records if r['kind']=='MANIFEST']
         if len(manifests)!=1:raise BF.B.EvidenceError('monitoring manifest ambiguous')
-        manifest=manifests[0];scopes=[];now=self.clock()
+        manifest=manifests[0];scopes=[];observed_start=self.clock();watermark=observed_start
         for doc in manifest['plans']:
+            read_start=self.clock()
+            if read_start < watermark:raise BF.B.EvidenceError('monitoring clock/order anomaly')
             p=doc['runtime_plan'];state=self.state(doc)
             params={'pid':('STRING',p['plan_id']),'origin':('TIMESTAMP',p['origin']),'entity':('STRING',p['entity'])}
             # Failed aggregate runtime rows can omit backfill_plan_id. Attribute
@@ -285,10 +287,13 @@ class Backend:
             scope='backfill_plan_id=@pid'
             if runs:scope+=' OR ingestion_run_id IN ('+','.join('@run'+str(i) for i in range(len(runs)))+')'
             stats=self.select(f"SELECT MAX(IF(status='OK',completed_at,NULL)) AS last_success,MAX(IF(status='FAILED',completed_at,NULL)) AS last_failure,COUNT(DISTINCT IF(status='FAILED',ingestion_run_id,NULL)) AS failed_attempts FROM `{self.journal}` WHERE started_at>=@origin AND ({scope}) AND entity=@entity",params)
+            observed_end=self.clock()
+            if observed_end < read_start:raise BF.B.EvidenceError('monitoring clock/order anomaly')
+            watermark=observed_end
             if len(stats)!=1:raise BF.B.EvidenceError('monitoring checkpoint provenance ambiguous')
             success=timestamp(stats[0]['last_success']) if stats[0]['last_success'] is not None else None
             failure=timestamp(stats[0]['last_failure']) if stats[0]['last_failure'] is not None else None
-            if any(t and t>now for t in (success,failure)):raise BF.B.EvidenceError('monitoring checkpoint in future')
+            if any(t and t>observed_end for t in (success,failure)):raise BF.B.EvidenceError('monitoring checkpoint in future')
             pending=state['progress'].get('pending')
             scopes.append({'plan_id':p['plan_id'],'entity':p['entity'],'from':p['from'],'to':p['to'],
                            'sequence':state['sequence'],'source_complete':state['complete'],
@@ -296,10 +301,12 @@ class Backend:
                            'failed_attempts':stats[0]['failed_attempts'],
                            'pending_campaigns':len(pending) if isinstance(pending,list) else None,
                            'last_success':success.isoformat() if success else None,
-                           'checkpoint_age_seconds':int((now-success).total_seconds()) if success else None,
+                           'checkpoint_age_seconds':int((observed_end-success).total_seconds()) if success else None,
+                           'observed_at':observed_end.isoformat(),
                            'state_bytes':len(D.encoded(state).encode())})
         incomplete=sum(not s['source_complete'] for s in scopes)
-        return {'root_hash':root,'purpose':manifest['purpose'],'chunk_grain':'FROZEN_QUALIFICATION_SCOPE',
+        return {'root_hash':root,'purpose':manifest['purpose'],'observation_start':observed_start.isoformat(),
+                'observation_end':watermark.isoformat(),'chunk_grain':'FROZEN_QUALIFICATION_SCOPE',
                 'total_chunks':len(scopes),'completed_chunks':len(scopes)-incomplete,
                 'failed_chunks':sum(s['failed'] for s in scopes),
                 'waiting_chunks':incomplete if result['status']=='WAITING' else 0,
