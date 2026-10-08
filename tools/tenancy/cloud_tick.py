@@ -36,9 +36,11 @@ class Tick:
             return {'status':'QUALIFICATION_COMPLETE','source_dispatches':0}
         from tools.tenancy import pre_source_recovery as PR
         recoveries=PR.load(self.backend,records,self.root) if any(r['kind']==PR.KIND for r in records) else []
+        from tools.tenancy import controller_stop_recovery as CR
+        controller_recoveries=CR.load(self.backend,records,self.root) if any(r['kind']==CR.KIND for r in records) else []
         self.backend.verified_pre_source_failures=recoveries
         quota = self.backend.quota(manifest, self.clock())
-        decision = D.decide_tick(records, self.root, quota, active, recoveries)
+        decision = D.decide_tick(records, self.root, quota, active, recoveries, controller_recoveries)
         action = decision['action']
         if action == 'MONITOR':
             return {'status':'MONITORING','source_dispatches':0}
