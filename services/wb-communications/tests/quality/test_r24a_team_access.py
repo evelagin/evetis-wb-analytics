@@ -25,9 +25,10 @@ class Exploding:
 
 
 def team_deps(enabled=True, feedback=None, **extra):
+    extra.setdefault("telegram_allowed_user_ids", {OWNER, OWNER2})
     d = make_deps([feedback or fb()], openai=FixedV2(), v31_only_operator_enabled=True,
                   v31_owner_override_enabled=True, telegram_chat_id=GROUP,
-                  telegram_allowed_user_ids={OWNER, OWNER2}, telegram_dynamic_access_enabled=enabled, **extra)
+                  telegram_dynamic_access_enabled=enabled, **extra)
     d.settings.v31_owner_override_user_ids = {OWNER, OWNER2}
     d.publication_validator = None
     return d
@@ -361,3 +362,73 @@ def test_team_pagination_is_bounded():
     assert say(d, "/team", OWNER)["page"] == 0
     assert "tl:1" in buttons(d) and len([c for c in buttons(d) if c.startswith("tm:")]) <= 8
     assert press(d, "tl:1", OWNER)["page"] == 1
+
+
+# Security hardening: dynamic mode never falls through the legacy fail-open allowlist ----------
+def seeded_operator(d, user=MARIA):
+    d.repo.team.transition("apply", GROUP, user, profile={"first_name": "Мария"})
+    d.repo.team.transition("approve", GROUP, user, actor="seed")
+
+
+def empty_legacy(enabled=True):
+    d = team_deps(enabled=enabled, telegram_allowed_user_ids=set())
+    d.settings.v31_owner_override_user_ids = set()
+    return d
+
+
+def test_A_dynamic_on_empty_legacy_list_unknown_user_denied():
+    d = empty_legacy()
+    run_poll(d)
+    doc_id, current = doc(d)
+    assert press(d, f"pub:{doc_id}:{current['generation_number']}", STRANGER)["status"] == "unauthorized"
+    assert d.wb.published == []
+
+
+def test_B_dynamic_on_empty_legacy_list_active_operator_allowed():
+    d = empty_legacy()
+    seeded_operator(d)
+    run_poll(d)
+    doc_id, current = doc(d)
+    assert press(d, f"pub:{doc_id}:{current['generation_number']}", MARIA)["status"] == "published"
+
+
+def test_C_dynamic_on_bootstrap_needs_no_firestore():
+    d = team_deps()
+    run_poll(d)
+    doc_id, current = doc(d)
+    d.repo.team = Exploding()
+    assert press(d, f"pub:{doc_id}:{current['generation_number']}", OWNER2)["status"] == "published"
+
+
+def test_D_dynamic_on_firestore_outage_non_bootstrap_denied():
+    d = empty_legacy()
+    seeded_operator(d)
+    run_poll(d)
+    doc_id, current = doc(d)
+    d.repo.team = Exploding()
+    assert press(d, f"pub:{doc_id}:{current['generation_number']}", MARIA)["status"] == "unauthorized"
+    assert d.wb.published == []
+
+
+@pytest.mark.parametrize("chats, users, chat, user", [
+    (set(), set(), "-1", "1"), ({GROUP}, set(), GROUP, "1"), ({GROUP}, set(), "-2", "1"),
+    (set(), {OWNER}, "-1", OWNER), (set(), {OWNER}, "-1", STRANGER), ({GROUP}, {OWNER}, GROUP, STRANGER)])
+def test_E_flag_off_legacy_authorization_is_unchanged(chats, users, chat, user):
+    from types import SimpleNamespace
+    from app.services.pipeline import _allowed
+    from app.utils.security import is_allowed
+    settings = SimpleNamespace(allowed_chat_ids=chats, telegram_allowed_user_ids=users,
+                               telegram_dynamic_access_enabled=False)
+    deps = SimpleNamespace(settings=settings, repo=SimpleNamespace(team=Exploding()))
+    assert _allowed(deps, chat, user) == is_allowed(chat, user, chats, users)
+
+
+def test_E_flag_off_empty_lists_keep_historical_open_behaviour():
+    d = empty_legacy(enabled=False)
+    d.settings.telegram_chat_id = ""
+    d.repo.team = Exploding()
+    run_poll(d)
+    doc_id, current = doc(d)
+    q = {"id": "cqE", "from": {"id": int(STRANGER)}, "data": f"pub:{doc_id}:{current['generation_number']}",
+         "message": {"message_id": 1, "chat": {"id": -42}}}
+    assert handle_update(d, {"update_id": 1, "callback_query": q})["status"] == "published"   # as on main

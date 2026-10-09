@@ -1386,17 +1386,19 @@ def _actor() -> dict | None:
 
 
 def _allowed(deps: Deps, chat_id, user_id) -> bool:
+    from app.services import team_access
+    if team_access.enabled(deps.settings):
+        # R2.4A: ONE source (bootstrap ∪ ACTIVE team members of the moderation chat). Never the
+        # legacy allowlist, which fails OPEN on empty lists. Unknown/REVOKED/UNAVAILABLE: deny.
+        principal = team_access.resolve(deps, chat_id, user_id)
+        audit_event("auth_ok" if principal.can_moderate else "auth_denied", route="/telegram-webhook",
+                    mechanism="telegram_team",
+                    principal_class=principal.source if principal.can_moderate else "unknown",
+                    result="ok" if principal.can_moderate else principal.status.lower())
+        return principal.can_moderate
     ok = is_allowed(
         chat_id, user_id, deps.settings.allowed_chat_ids, deps.settings.telegram_allowed_user_ids
     )
-    from app.services import team_access
-    if not ok and team_access.enabled(deps.settings):
-        # R2.4A: an ACTIVE team member of the moderation chat (re-read on every update).
-        principal = team_access.resolve(deps, chat_id, user_id)
-        if principal.can_moderate:
-            audit_event("auth_ok", route="/telegram-webhook", mechanism="telegram_team",
-                        principal_class="team_member", result="ok")
-            return True
     if not deps.settings.allowed_chat_ids and not deps.settings.telegram_allowed_user_ids:
         # is_allowed fails OPEN with no lists configured: record it as such, never as a real allow-list pass
         audit_event("auth_ok", route="/telegram-webhook", mechanism="telegram_allowlist",
