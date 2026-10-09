@@ -1,5 +1,16 @@
 # CHANGELOG.md
 
+## 2026-10-09 — P&L магазина WB: автопубликация вкладки «WB Магазин P&L» (ВЫКЛЮЧЕНА по умолчанию)
+
+Док: `docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md` §11.
+
+- Загрузчик `unitka-store-pnl`: при `UNITKA_STORE_PNL_PUBLISH=1` публикует план P&L только во вкладку
+  `UNITKA_STORE_PNL_SHEET_ID` (989153123): идемпотентно, ручные правки → отказ `STORE_PNL_TAB_EDITED`, отпечаток
+  публикации — developer metadata вкладки, перечитывание после записи. Без флага — как раньше (лист только чтение).
+- `SheetsRest.readSheetMetadata` — чтение developer metadata листа (новый метод, существующие не меняются).
+- Журнал: предупреждение о PENDING-операциях только для активного горизонта (с 2026-08); новые операции — всегда.
+- Terraform: значения env при пересоздании Job'а (`UNITKA_STORE_PNL_PUBLISH=0`, sheetId); живой env — под ignore_changes.
+
 ## 2026-10-09 — P&L магазина WB (Phase C, C1–C4): снимок листа, мост категорий, состояния (вкладка НЕ создаётся)
 
 Док: `docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md` (доказательства — `WB_STORE_PNL_PHASE_C_EVIDENCE_2026-10-09.md`).

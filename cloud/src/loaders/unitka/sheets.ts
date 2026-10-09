@@ -316,6 +316,19 @@ export class SheetsRest implements SheetsGateway {
     return out.map((v) => v.values ?? []);
   }
 
+  /**
+   * WB Store P&L: свойства листа и его developer metadata по sheetId (отпечаток последней публикации).
+   * null — листа с таким sheetId нет.
+   */
+  async readSheetMetadata(sheetId: number): Promise<{ title: string; metadata: Array<{ id: number; key: string; value: string }> } | null> {
+    const fields = 'sheets(properties(sheetId,title),developerMetadata(metadataId,metadataKey,metadataValue))';
+    const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
+    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string }; developerMetadata?: Array<{ metadataId?: number; metadataKey?: string; metadataValue?: string }> }> }>('GET', url);
+    const s = (data.sheets ?? []).find((x) => x.properties?.sheetId === sheetId);
+    if (!s) return null;
+    return { title: s.properties?.title ?? '', metadata: (s.developerMetadata ?? []).map((m) => ({ id: Number(m.metadataId), key: String(m.metadataKey ?? ''), value: String(m.metadataValue ?? '') })) };
+  }
+
   async readFormulas(range: string): Promise<CellValue[][]> {
     const url = `${API}/${this.spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMULA&dateTimeRenderOption=SERIAL_NUMBER`;
     const data = await this.request<ValueRangeResp>('GET', url);
