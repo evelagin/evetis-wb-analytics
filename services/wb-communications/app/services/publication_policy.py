@@ -123,6 +123,19 @@ def validate_human_safety_publication(text, communication, settings, *, include_
     return result
 
 
+def validator_for(publication_mode, settings):
+    """The policy of one publication context: v31, v31_human_safety, else the live gate."""
+    if publication_mode == "v31_human_safety":
+        return validate_human_safety_publication
+    return validate_for_publication if publication_mode == "v31" else live_publication_validator(settings)
+
+
+def error_policy(text, exc):
+    """The recorded result when the policy itself could not run. Never a PASS."""
+    return {"verdict": "ERROR", "error_class": type(exc).__name__, "violations": [],
+            "text_sha256": hashlib.sha256((text or "").encode()).hexdigest()}
+
+
 def live_publication_validator(settings):
     """Gate for operator publication of v2 drafts; never chosen by the R1 shadow flags."""
     if getattr(settings, "v31_enforce_live_publication_policy", False):

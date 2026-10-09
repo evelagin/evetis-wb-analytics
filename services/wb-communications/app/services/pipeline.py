@@ -273,8 +273,16 @@ def _no_v31_answer(doc) -> bool:
 
 
 def _answer_source(doc):
+    """Source of the active answer. An owner-confirmed version keeps the source of the exact
+    version it confirmed (an operator text stays «manual», a 3.1E answer «v31e»)."""
     versions = (doc or {}).get("answer_versions") or []
-    return versions[-1].get("source") if versions else None
+    if not versions:
+        return None
+    last = versions[-1]
+    if last.get("source") == "owner_override":
+        confirmed = [v for v in versions if v.get("generation_number") == last.get("source_version")]
+        return confirmed[0].get("source") if confirmed else "owner_override"
+    return last.get("source")
 
 
 def answer_lineage(doc) -> str:
@@ -388,7 +396,15 @@ def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str
     return truncate(text, TELEGRAM_MSG_SOFT_LIMIT), cut
 
 
-def _v31_only_keyboard(doc_id, doc, *, show_full=False, card_text=None):
+def _owner_decision_available(deps, doc) -> bool:
+    """R2.3: an owner may publish this card's exact answer past a content BLOCK / policy outage."""
+    if not _is_v31_only(doc) or doc.get("status") not in ("policy_blocked", "policy_check_failed"):
+        return False
+    from app.services.owner_override import offer
+    return offer(doc, deps.settings) is not None
+
+
+def _v31_only_keyboard(deps, doc_id, doc, *, show_full=False, card_text=None):
     """R2.2: no V2 anywhere. With an answer: the normal four; without: retry/write/skip."""
     gen = doc.get("generation_number", 0)
     answer = _primary_answer_block(doc)
@@ -401,6 +417,10 @@ def _v31_only_keyboard(doc_id, doc, *, show_full=False, card_text=None):
                 [{"text": "🔄 Перегенерировать", "callback_data": f"regen:{doc_id}"}, skip]]
         if show_full and visible:
             rows.append([{"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}])
+        if _owner_decision_available(deps, doc):
+            # Shown to the chat, usable only by the listed owner (checked on the tap).
+            rows.append([{"text": "⚠️ Решение владельца: опубликовать",
+                          "callback_data": f"ov:{doc_id}:{gen}:{doc['answer_versions'][-1]['generation_number']}"}])
         return {"inline_keyboard": rows}
     write = {"text": "✏️ Написать вручную", "callback_data": f"edit:{doc_id}"}
     draft = doc.get("v31_draft") or {}
@@ -411,7 +431,7 @@ def _v31_only_keyboard(doc_id, doc, *, show_full=False, card_text=None):
 
 def _primary_keyboard(deps, doc_id, doc, *, show_full=False, card_text=None):
     if _is_v31_only(doc):
-        return _v31_only_keyboard(doc_id, doc, show_full=show_full, card_text=card_text)
+        return _v31_only_keyboard(deps, doc_id, doc, show_full=show_full, card_text=card_text)
     gen = doc.get("generation_number", 0)
     serious = _serious_unreviewed(doc)
     answer = _primary_answer_block(doc)
@@ -1136,6 +1156,56 @@ _Q_RECOVERY_HEAD = ("⚠️ <b>Публикация не подтвержден�
 _CARD_SUPERSEDED = "ℹ️ Карточка устарела — актуальная отправлена ниже."
 
 
+MIGRATION_EXCLUDED = ("published", "publishing", "publish_accepted", "publish_unknown",
+                      "answered_externally", "skipped", "editing", "regenerating")
+
+
+def migration_plan(doc) -> str:
+    """R2.3: why an OLD pending card may (or may not) move into the R2.2 operator flow."""
+    from app.domain.statuses import DRAFTABLE_FROM
+    if _is_v31_only(doc):
+        return "ALREADY_V31_ONLY"
+    if doc.get("status") not in DRAFTABLE_FROM:
+        return "EXCLUDED_STATUS:" + str(doc.get("status"))
+    if doc.get("verified_at") or doc.get("published_at") or doc.get("wb_answer_verified_at"):
+        return "EXCLUDED_ALREADY_ANSWERED"
+    return "ELIGIBLE"
+
+
+def migrate_to_v31_only(deps: Deps, doc_id: str) -> dict:
+    """R2.3: move ONE old pending card (R2/R2.1) into the R2.2 flow. Owner-run only (no route
+    is wired). Never touches a published/publishing/unknown/skipped record, never calls WB or
+    V2, holds the regenerate lease for the switch, then sends a fresh card and retires the old.
+    Publication afterwards is the normal verified publisher (read-before-write, one write)."""
+    doc = deps.repo.get(doc_id)
+    if not doc:
+        return {"status": "not_found"}
+    plan = migration_plan(doc)
+    if plan != "ELIGIBLE":
+        return {"status": "not_eligible", "reason": plan}
+    try:
+        doc, token = deps.repo.begin_regenerate(doc_id)
+    except InvalidTransition:
+        return {"status": "not_eligible", "reason": "LOCKED_OR_CHANGED"}
+    deps.repo.update(doc_id, {"operator_mode": _V31_ONLY})
+    draft = _v31_draft(deps, doc_id, deps.repo.get(doc_id) or doc, budgeted=False) or {}
+    if draft.get("status") == "READY" and draft.get("text"):
+        doc = deps.repo.commit_regenerate(doc_id, _v31_generation(draft), token, source="v31e")
+    else:
+        deps.repo.cancel_draft(doc_id, token)
+        doc = deps.repo.get(doc_id) or doc
+    _sync_current(deps, doc_id, doc)
+    chat = deps.settings.telegram_chat_id
+    card_text, truncated = _card_builder_for(doc)(doc, doc_id)
+    msg = deps.telegram.send_message(chat, card_text,
+        _operator_keyboard(deps, doc_id, doc, show_full=truncated, card_text=card_text))
+    new_id = str((msg or {}).get("message_id", ""))
+    if new_id:
+        deps.repo.update(doc_id, {"telegram_chat_id": str(chat), "telegram_message_id": new_id})
+        _retire_card(deps, doc.get("telegram_chat_id") or chat, doc.get("telegram_message_id"), new_id)
+    return {"status": "migrated", "v31_status": draft.get("status"), "generation_number": doc.get("generation_number")}
+
+
 def _retire_card(deps: Deps, chat, old_message_id, new_message_id) -> None:
     """Strip the buttons from a superseded card (best effort: the old message may
     be gone or already identical — the new card is what matters)."""
@@ -1361,11 +1431,8 @@ def _publication_validator(deps, publication_mode: str):
     «v31» (✨ Опубликовать 3.1E): the v3.1E policy that produced the draft."""
     if deps.publication_validator:
         return deps.publication_validator
-    from app.services.publication_policy import (live_publication_validator, validate_for_publication,
-                                                 validate_human_safety_publication)
-    if publication_mode == "v31_human_safety":
-        return validate_human_safety_publication
-    return validate_for_publication if publication_mode == "v31" else live_publication_validator(deps.settings)
+    from app.services.publication_policy import validator_for
+    return validator_for(publication_mode, deps.settings)
 
 
 def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generation=None, override_confirmation=None,
@@ -1391,12 +1458,12 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
     if not gate_open:
         deps.telegram.send_message(chat, disabled_msg)
         return {"status": "publish_disabled"}
-    if not override_confirmation and _serious_unreviewed(peek):
+    if _serious_unreviewed(peek):
         # Serious safety: only the operator's own text may go out, never a machine draft.
         deps.telegram.send_message(chat, "⛔ Нужна проверка человеком: напишите ответ через «✏️ Изменить». "
                                          "Ничего не опубликовано.")
         return {"status": "human_review_required"}
-    if not override_confirmation and _no_v31_answer(peek):
+    if _no_v31_answer(peek):
         # R2.2: a stored V2 draft is never published; only a 3.1E or operator answer.
         deps.telegram.send_message(chat, "⛔ Нет ответа 3.1E для публикации: нажмите «🔄 Повторить» или "
                                          "напишите ответ через «✏️ Написать вручную». Ничего не опубликовано.")
@@ -1404,7 +1471,10 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
     try:
         if override_confirmation:
             from app.services.owner_override import allowed, safety_fixed
-            if not allowed(deps,chat,user_id) or safety_fixed(peek,deps.settings):
+            # R2.2 cards: a listed owner, and on any safety case only operator-written text.
+            unsafe = (safety_fixed(peek, deps.settings) and _answer_source(peek) != "manual"
+                      if _is_v31_only(peek) else safety_fixed(peek, deps.settings))
+            if not allowed(deps, chat, user_id, peek if _is_v31_only(peek) else None) or unsafe:
                 return {'status':'unauthorized'}
             doc = deps.repo.begin_publish(doc_id, expected_generation=expected_generation,
                                          override_confirmation=override_confirmation)
@@ -1430,28 +1500,29 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
 
     trace = _new_trace(doc_id, doc, phase="publish", state_before=Status.PUBLISHING.value)
     trace.update(write_attempted=False, write="not_attempted")
+    # The policy follows the answer's lineage (an explicit p31 says v31), never a flag alone.
+    publication_mode = publication_mode or publication_mode_for(doc)
+    trace["publication_mode"] = publication_mode
     try:
-        # The policy follows the answer's lineage (an explicit p31 says v31), never a flag alone.
-        publication_mode = publication_mode or publication_mode_for(doc)
-        trace["publication_mode"] = publication_mode
         policy = _publication_validator(deps, publication_mode)(text, doc, deps.settings)
         if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
             raise ValueError("invalid policy verdict")
-        trace["policy"] = policy
-        status = "policy_blocked" if policy["verdict"] == "BLOCK" else None
-        if override_confirmation:
-            from app.services.owner_override import fingerprint
-            if fingerprint(policy)!=override_confirmation['policy_fingerprint'] or policy['text_sha256']!=override_confirmation['answer_hash']:
-                status='policy_check_failed'
-            else:
-                status=None
-                trace['owner_override']={k:override_confirmation[k] for k in ('override_by','override_at',
-                    'answer_hash','source_version','policy_version','knowledge_snapshot')}
-                trace['owner_override']['override']=True
-                trace['owner_override']['override_confirmed_at']=_now_iso()
     except Exception as exc:
-        trace["policy"] = {"verdict": "ERROR", "error_class": type(exc).__name__}
-        status = "policy_check_failed"
+        from app.services.publication_policy import error_policy
+        policy = error_policy(text, exc)
+    # The real verdict is always recorded, also when the owner publishes past it.
+    trace["policy"] = policy
+    status = {"BLOCK": "policy_blocked", "ERROR": "policy_check_failed"}.get(policy["verdict"])
+    if override_confirmation:
+        from app.services.owner_override import fingerprint
+        if fingerprint(policy)!=override_confirmation['policy_fingerprint'] or policy.get('text_sha256')!=override_confirmation['answer_hash']:
+            status='policy_check_failed'
+        else:
+            status=None
+            trace['owner_override']={k:override_confirmation[k] for k in ('override_by','override_at',
+                'answer_hash','source_version','policy_version','knowledge_snapshot')}
+            trace['owner_override']['override']=True
+            trace['owner_override']['override_confirmed_at']=_now_iso()
     if not override_confirmation and _recovery_enabled(deps) and status is None:
         _, route_check = _prepare_response(deps, doc, text)
         if route_check and route_check["status"] == "HUMAN_REVIEW":
@@ -1491,7 +1562,16 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
         message = ("⛔ Ответ нельзя опубликовать.\nОтвет создан по устаревшей политике и требует обновления."
                    if status == "policy_blocked" else
                    "⛔ Проверка ответа временно недоступна. Публикация не выполнялась.")
-        keyboard = _operator_keyboard(deps, doc_id, doc)
+        if _is_v31_only(after):
+            rules = "; ".join(sorted({v.get("rule_id", "") for v in trace["policy"].get("violations") or []})) or "—"
+            message = (f"⛔ Ответ не прошёл правила 3.1E ({rules}). Ничего не опубликовано.\n"
+                       "Отредактируйте ответ" + ("; владелец может опубликовать его под свою ответственность."
+                                                if _owner_decision_available(deps, after) else ".")
+                       if status == "policy_blocked" else
+                       "⛔ Проверка правил 3.1E сейчас недоступна. Ничего не опубликовано." +
+                       (" Владелец может опубликовать ответ под свою ответственность."
+                        if _owner_decision_available(deps, after) else ""))
+        keyboard = _operator_keyboard(deps, doc_id, after if _is_v31_only(after) else doc)
         keyboard["inline_keyboard"][0] = [b for b in keyboard["inline_keyboard"][0]
                                           if not b["callback_data"].startswith(("pub:", "show:"))]
         if _recovery_enabled(deps):
