@@ -362,6 +362,12 @@ def test_rendered_artifacts_contain_secret_names_only(tmp_path):
                     facts |= {g["role"] for g in block["matrix"]} | {g["resource"] for g in block["matrix"]}
                     facts |= {block["job"]["image"], block["scheduler"]["uri"],
                               block["job"]["env"]["BACKFILL_ROOT_HASH"], block["job"]["env"]["CONTROLLER_SOURCE_SHA"]}
+                    if block.get("cadence"):
+                        # Public owner-ACK and policy hashes are trusted only
+                        # after exact comparison with the qualified release.
+                        facts |= {block["cadence"]["profile"],
+                                  block["cadence"]["owner_ack_sha256"],
+                                  block["job"]["env"]["HISTORICAL_CADENCE_POLICY"]}
                 assert values <= facts, finding
     contract = json.loads((tmp_path / TI.CONTRACT_FILE).read_text())["contract"]
     assert contract["marketplaces"]["ozon"]["secret_ids"] == N.DEDICATED_OZON_SECRET_IDS
