@@ -36,10 +36,18 @@ class FakeWB:
         self.get_question_error = None
         self.get_question_calls = 0
         self.feedback_answers = {}
+        self.answered_feedbacks = []   # R2.4A.1: WB isAnswered=true feed (rating-only lives here)
+        self.answered_feed_calls = 0
         self.get_feedback_calls = 0
 
     def iter_unanswered_feedbacks(self):
         return list(self._feedbacks)
+
+    def iter_recent_answered_feedbacks(self, date_from, max_items=300):
+        from datetime import datetime
+        self.answered_feed_calls += 1
+        return [f for f in self.answered_feedbacks
+                if datetime.fromisoformat(f["createdDate"].replace("Z", "+00:00")).timestamp() >= date_from][:max_items]
 
     def get_unanswered_feedbacks(self, take=None, skip=0):
         return list(self._feedbacks)

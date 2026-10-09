@@ -276,6 +276,29 @@ class Settings:
     wb_questions_first_run_max: int = field(
         default_factory=lambda: int(os.environ.get("WB_QUESTIONS_FIRST_RUN_MAX", "20"))
     )
+    # R2.4A.1: WB marks a rating-only review (no text/pros/cons/tags) isAnswered=true without
+    # any seller answer, so it never appears in the unanswered feed. When on, a bounded recent
+    # window of the answered feed is read and ONLY rating-only reviews with no seller answer
+    # enter the normal pipeline. Off = unanswered feed only.
+    wb_rating_only_ingest_enabled: bool = field(
+        default_factory=lambda: os.environ.get("WB_RATING_ONLY_INGEST_ENABLED", "false").lower() == "true"
+    )
+    wb_rating_only_lookback_hours: int = field(
+        default_factory=lambda: int(os.environ.get("WB_RATING_ONLY_LOOKBACK_HOURS", "48"))
+    )
+    wb_rating_only_max_per_poll: int = field(
+        default_factory=lambda: int(os.environ.get("WB_RATING_ONLY_MAX_PER_POLL", "20"))
+    )
+    # R2.4A.1: close cards already answered in the WB cabinet (read-only WB GET per card,
+    # bounded per poll). Off = no reconciliation.
+    wb_reconcile_external_answers_enabled: bool = field(
+        default_factory=lambda: os.environ.get("WB_RECONCILE_EXTERNAL_ANSWERS_ENABLED", "false").lower() == "true"
+    )
+    wb_reconcile_max_per_poll: int = field(
+        default_factory=lambda: int(os.environ.get("WB_RECONCILE_MAX_PER_POLL", "10"))
+    )
+    # Scheduler hours (Europe/Moscow) used only to show the next poll in /status.
+    wb_poll_hours: str = field(default_factory=lambda: os.environ.get("WB_POLL_HOURS", "8-23"))
     # Single-question read used to VERIFY a publish (GET /api/v1/question?id=).
     wb_question_path: str = field(
         default_factory=lambda: os.environ.get("WB_QUESTION_PATH", "/api/v1/question")
