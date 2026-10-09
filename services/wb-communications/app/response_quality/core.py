@@ -156,9 +156,33 @@ _PRODUCT_CHOSEN = {"hand_cream": "наш крем для рук", "body_cream": 
                    "serum": "нашу сыворотку", "tonic": "наш тоник", "powder": "нашу пудру", "bundle": "наш набор"}
 
 
+# R2.4A.2: several approved, claim-free structures for a high rating without words. The choice
+# is a stable function of the communication id: a retry gets the same text, different reviews
+# do not all read the same. {chosen} is the verified product in the accusative (or EVETIS).
+RATING_ONLY_VARIANTS = (
+    "Спасибо за высокую оценку! Нам очень приятно, что Вы выбрали {chosen}.",
+    "Очень рады Вашей высокой оценке! Спасибо, что выбрали {chosen}.",
+    "Нам очень приятно получить Вашу высокую оценку. Спасибо, что выбрали {chosen}!",
+    "Спасибо за высокую оценку и за то, что выбрали {chosen}! Желаем приятного использования.",
+    "Благодарим за высокую оценку! Рады, что Вы выбрали {chosen}.",
+    "Как приятно видеть Вашу высокую оценку! Спасибо, что выбрали {chosen}.",
+)
+# Thanks or joy + the rating + one warm element. The product name is welcome, not mandatory.
+RATING_ONLY_COVERAGE = (r"спасиб|благодар|рад[ыа]?\b|радост|приятн|признательн",
+                        r"оценк|звезд|пят[её]рк",
+                        r"приятн|рад[ыа]?\b|радуе|радост|выбрал|выбор|желаем|evetis")
+
+
+def stable_variant(msg, n: int) -> int:
+    """Stable index from the communication id (never random: a retry keeps the same text)."""
+    import hashlib as _h
+    key = str(msg.get("communication_id") or msg.get("source_id") or msg.get("id") or _raw(msg) or "")
+    return int(_h.sha256(key.encode()).hexdigest()[:8], 16) % n
+
+
 def rating_only_aspects(msg, res, snap):
-    """A rating with no words at all. High: thanks + the verified product + one warm brand
-    sentence, no product claims. Low: regret + an invitation to tell what went wrong."""
+    """A rating with no words at all. High: a short warm thanks, varied by a stable choice of
+    approved structures, no product claims. Low: regret + an invitation to tell what went wrong."""
     try:
         rating = int(msg.get("rating"))
     except (TypeError, ValueError):
@@ -167,11 +191,9 @@ def rating_only_aspects(msg, res, snap):
         product = (snap.product(res.product_id) or {}) if res.product_id else {}
         ptype = product.get("product_type") or product.get("kind")
         verified = res.status == "VERIFIED" and not res.restricted_components
-        noun = _PRODUCT_NOUN.get(ptype) if verified else None
-        coverage = (r"спасиб|благодар", r"оценк", r"приятн|рад[ыа]?\b|радуе") + ((noun,) if noun else ())
-        chosen = _PRODUCT_CHOSEN.get(ptype) if noun else None
-        return [Aspect("rating_only_thanks", "MUST_ADDRESS",
-                       f"Спасибо за высокую оценку! Нам очень приятно, что Вы выбрали {chosen or 'EVETIS'}.", coverage)]
+        chosen = _PRODUCT_CHOSEN.get(ptype) if verified and _PRODUCT_NOUN.get(ptype) else None
+        response = RATING_ONLY_VARIANTS[stable_variant(msg, len(RATING_ONLY_VARIANTS))].format(chosen=chosen or "EVETIS")
+        return [Aspect("rating_only_thanks", "MUST_ADDRESS", response, RATING_ONLY_COVERAGE)]
     return [Aspect("rating_only_low", "MUST_ADDRESS",
                    "Жаль, что покупка не оправдала ожиданий. Расскажите, пожалуйста, что именно не понравилось.",
                    (r"жаль|сожале",))]
