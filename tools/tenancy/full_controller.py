@@ -13,6 +13,7 @@ import re
 from tools.tenancy import full_history as F, cloud_controller as C
 from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy import pre_source_recovery as R
+from tools.tenancy.controller_diagnostics import gate, GateFailure
 
 KINDS = frozenset({'FULL_MANIFEST', 'CHUNK_PLAN', 'CHUNK_COMPLETE', 'FULL_COMPLETE', 'T5_PARENT_COMPLETE'})
 # Matches the last existing Seller transport BACKOFF interval. Controller wakes
@@ -84,7 +85,8 @@ def verify_authority(backend, manifest):
     if not expected:
         raise BF.B.EvidenceError('full canonical deployment contract absent')
     env = expected['job']['env']
-    settings = {'release': manifest['controller_source_sha'],
+    active_source=env['CONTROLLER_SOURCE_SHA']
+    settings = {'release': active_source,
                 'root_hash': manifest['hash'],
                 'scheduler_state': env.get('HISTORICAL_SCHEDULER_STATE')}
     marker = backend.tables.get_table(c['datasets']['tenant_locks'], C.descriptor_name(
@@ -99,12 +101,20 @@ def verify_authority(backend, manifest):
     if canonical != expected:
         raise BF.B.EvidenceError('full canonical deployment contract differs')
     c = dict(c, orchestration=canonical)
-    if env['BACKFILL_ROOT_HASH'] != manifest['hash'] or env['CONTROLLER_SOURCE_SHA'] != manifest['controller_source_sha']:
+    if env['BACKFILL_ROOT_HASH'] != manifest['hash']:
         raise BF.B.EvidenceError('full descriptor/root/source differs')
-    if expected['job']['image'] != manifest['controller_image'] or c['marketplaces']['ozon']['runtime_image'] != manifest['runtime_image']:
+    if c['marketplaces']['ozon']['runtime_image'] != manifest['runtime_image']:
         raise BF.B.EvidenceError('full exact image differs')
-    if manifest['controller_implementation_hash'] != C.O.implementation_hash(BF.REPO):
-        raise BF.B.EvidenceError('full packaged controller implementation differs')
+    if active_source==manifest['controller_source_sha']:
+        if expected['job']['image']!=manifest['controller_image'] or manifest['controller_implementation_hash']!=C.O.implementation_hash(BF.REPO):
+            raise BF.B.EvidenceError('full packaged controller implementation differs')
+    else:
+        # Owner-only provenance handoff retains the exact immutable semantic
+        # manifest, GO and every existing source shard. It exempts no STOP.
+        from tools.tenancy import full_leaf_recovery as FL
+        FL.policy(backend,manifest,release)
+        if release['image']!=expected['job']['image']:
+            raise BF.B.EvidenceError('replacement controller image differs')
     from tools.tenancy import platform as PL
     runtimes=[parse_tenant_json(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
     runtimes=[r for r in runtimes if r.get('image')==manifest['runtime_image']]
@@ -125,9 +135,10 @@ def verify_authority(backend, manifest):
     events = [e for e in L.ordered(chain) if e.get('to_state') == L.BACKFILLING]
     if not events or decisions.get(events[-1]['seq'], {}).get('plan_hash') != ph:
         raise BF.B.EvidenceError('full exact operator plan approval absent')
-    bindings, credentials = BF.TL.operator_binding(c, backend.tables, backend.clock(), ['ads_sku_daily'])
-    if bindings != {'seller':'BOUND','performance':'BOUND'} or {k:v['status'] for k,v in credentials.items()} != {'seller':'PASS','performance':'PASS'}:
-        raise BF.B.EvidenceError('full live binding/credential gate denied')
+    with gate('BINDING'):
+        bindings, credentials = BF.TL.operator_binding(c, backend.tables, backend.clock(), ['ads_sku_daily'])
+        if bindings != {'seller':'BOUND','performance':'BOUND'} or {k:v['status'] for k,v in credentials.items()} != {'seller':'PASS','performance':'PASS'}:
+            raise BF.B.EvidenceError('full live binding/credential gate denied')
     backend.binding_status = bindings
     backend.canonical_ledger = ledger
     verify_capabilities(backend,c)
@@ -211,7 +222,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -232,14 +243,15 @@ class Backend(C.Backend):
 
     def reconcile(self, payload):
         doc = payload['plan']; receipt = payload['receipt']
-        operation = self.request('GET', f"{BF.RUN_API}/{receipt['operation']}")
-        if not operation.get('done'):
-            return None
-        if operation.get('error'):
-            return self.reconcile_failed(doc, receipt, operation)
-        result = BF.reconcile(doc, doc['ack_hash'], receipt, backend=self)
-        result['coverage_readback'] = BF.verify_coverage(doc, doc['ack_hash'], backend=self)
-        state = self.state(doc)
+        with gate('RUNTIME_TERMINAL'):
+            operation = self.request('GET', f"{BF.RUN_API}/{receipt['operation']}")
+            if not operation.get('done'):return None
+            if operation.get('error'):return self.reconcile_failed(doc, receipt, operation)
+        with gate('CHECKPOINT'):
+            result = BF.reconcile(doc, doc['ack_hash'], receipt, backend=self)
+        with gate('PERSISTED_SOURCE_RECONCILIATION'):
+            result['coverage_readback'] = BF.verify_coverage(doc, doc['ack_hash'], backend=self)
+            state = self.state(doc)
         result['source_complete'] = state['complete']
         result['persisted_reconciled'] = True
         result['state_hash'] = D.digest(state)
@@ -326,7 +338,7 @@ def _dispatch(backend, manifest, index, doc, root, sequence):
             raise BF.B.EvidenceError('full receipt exact intent linkage differs')
         backend.store.commit(root,'DISPATCH_RECEIPT',sequence,{'plan':doc,'receipt':receipt},backend.clock())
         received.append(receipt)
-    backend.start(doc,before,after)
+    with gate('SOURCE_DISPATCH_BOUNDARY'):backend.start(doc,before,after)
     if len(prepared)!=1 or len(received)!=1:
         raise BF.B.EvidenceError('full dispatch receipt unproven; never repeat Run POST')
     return {'status':'DISPATCHED','index':index,'sequence':sequence,'source_dispatches':1,
@@ -364,13 +376,22 @@ def reconstruct_plans(records, manifest, now):
 
 
 def wake(base, root):
-    records = base.store.history(root)
-    manifest = only_manifest(records)
-    if manifest['hash'] != root:
-        raise BF.B.EvidenceError('full root differs')
-    backend = Backend(base,manifest); verify_authority(backend,manifest)
+    with gate('MANIFEST_ROOT'):
+        records = base.store.history(root)
+        manifest = only_manifest(records)
+        if manifest['hash'] != root:
+            raise BF.B.EvidenceError('full root differs')
+    backend = Backend(base,manifest)
+    with gate('MANIFEST_ROOT'):verify_authority(backend,manifest)
     if any(r['kind']=='STOPPED' for r in records):
-        return {'status':'STOPPED','source_dispatches':0}, backend
+        from tools.tenancy import full_leaf_recovery as FL
+        approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
+        unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
+        if unresolved:
+            # No source in a recovery wake; a later independent wake resumes.
+            recovered=FL.recover_pending(backend,manifest,records) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
+            if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},backend
+            return {'status':'STOPPED','source_dispatches':0}, backend
     done = completed(records,manifest)
     repair_t5_completions(backend, manifest, records, done)
     if len(done)==len(manifest['programs']):
@@ -451,7 +472,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     history=backend.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
     if manifest['programs'][index].get('accepted_qualification_plan'):
         return import_accepted_sku90(backend,manifest,index,item,records,history),backend
-    quota=backend.quota(leaf,backend.clock())
+    with gate('QUOTA'):quota=backend.quota(leaf,backend.clock())
     decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution())
     action=decision['action'];sequence=decision.get('sequence')
     if action=='MONITOR':return {'status':'MONITORING','source_dispatches':0,'index':index},backend
@@ -461,10 +482,17 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action=='RECONCILE':
         payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence)
         if payload['plan']!=doc:raise BF.B.EvidenceError('full terminal receipt scope differs')
-        result=backend.reconcile(payload)
-        if result is None:return {'status':'MONITORING','source_dispatches':0,'index':index},backend
-        if reconciled:raise BF.B.EvidenceError('multiple terminal receipts in one full wake')
-        backend.store.commit(shard,'RECONCILED',sequence,result,backend.clock())
+        intent=next(r for r in history if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence)
+        receipt=next(r for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence)
+        try:
+            result=backend.reconcile(payload)
+            if result is None:return {'status':'MONITORING','source_dispatches':0,'index':index},backend
+            if reconciled:raise BF.B.EvidenceError('multiple terminal receipts in one full wake')
+            with gate('RECONCILIATION_APPEND'):
+                backend.store.commit(shard,'RECONCILED',sequence,result,backend.clock())
+        except GateFailure as error:
+            error.diagnostic['context']={'index':index,'shard':shard,'sequence':sequence,'intent_hash':D.digest(intent),'receipt_hash':D.digest(receipt)}
+            raise
         return leaf_wake(backend,manifest,index,item,records,dependency=dependency,reconciled=True)
     state=backend.state(doc)
     if state['complete']:

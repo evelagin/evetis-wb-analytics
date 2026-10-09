@@ -174,6 +174,10 @@ def execution_inventory(request, job_name):
 
 def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False):
     if backend is not None:
+        from tools.tenancy.full_leaf_recovery import SourceFreeObservation
+        if isinstance(backend,SourceFreeObservation) and backend.current_execution is None:
+            owner_observation=True
+    if backend is not None:
         base_contract={k:v for k,v in backend.c.items() if k!='orchestration'}
         if base_contract!={k:v for k,v in c.items() if k!='orchestration'}:
             raise B.EvidenceError("cloud controller base registry contract drift")
@@ -191,9 +195,11 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
             raise B.EvidenceError("qualified full program authority required")
     elif state not in {L.VALIDATING, L.CAPABILITY_DISCOVERY}:
         raise B.EvidenceError("pilot lifecycle/hold gate denied")
-    binding, creds = TL.operator_binding(c, tables, now, [doc["runtime_plan"]["entity"]])
-    if any(v != "BOUND" for v in binding.values()) or any(v["status"] != "PASS" for v in creds.values()):
-        raise B.EvidenceError("pilot requires verified binding/credential evidence")
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('BINDING'):
+        binding, creds = TL.operator_binding(c, tables, now, [doc["runtime_plan"]["entity"]])
+        if any(v != "BOUND" for v in binding.values()) or any(v["status"] != "PASS" for v in creds.values()):
+            raise B.EvidenceError("pilot requires verified binding/credential evidence")
     base, expected = resources(c)
     orchestration = c.get("orchestration")
     expected_names = set(expected) | {"tenant-control"}
@@ -336,10 +342,12 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     tables, ledger = preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
     request = backend.append_request if backend is not None else TT._req
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
-    leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
-    generation=pilot_lease_generation(ledger,leases,cid,now,
-                lambda name:tables.get_table(c["datasets"]["tenant_locks"],name),
-                failed_reader=(lambda generation,labels:any(p['lease_generation']==generation and p['run_id']==labels.get('owner') for p in getattr(backend,'verified_pre_source_failures',[]))) if backend is not None else None)
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('LEASE'):
+        leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
+        generation=pilot_lease_generation(ledger,leases,cid,now,
+                    lambda name:tables.get_table(c["datasets"]["tenant_locks"],name),
+                    failed_reader=(lambda generation,labels:any(p['lease_generation']==generation and p['run_id']==labels.get('owner') for p in getattr(backend,'verified_pre_source_failures',[]))) if backend is not None else None)
     run_id=f"bf-{uuid.uuid4()}"
     lease=CK.lease_name(cid,generation)
     body={"tableReference":{"projectId":c["project_id"],"datasetId":c["datasets"]["tenant_locks"],"tableId":lease},
@@ -347,8 +355,12 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
           "labels":{"until":str(int((now+CK.LEASE_TTL).timestamp())),"owner":run_id},
           "description":json.dumps({"mode":"BOUNDED_PILOT","ack_hash":ack_hash}),
           "expirationTime":str(int((now+CK.LEASE_TTL+CK.LEASE_TABLE_KEEP).timestamp()*1000))}
-    request("POST",f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables",body)
-    tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",[checkpoint(doc,run_id,"RUNNING",generation,now)])
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('LEASE'):
+        request("POST",f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables",body)
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('CHECKPOINT'):
+        tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",[checkpoint(doc,run_id,"RUNNING",generation,now)])
     base,jobs=resources(c)
     name=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
     overrides={"ENTITIES":p["entity"],"SINCE":p["from"],"UNTIL":p["to"],"INGESTION_RUN_ID":run_id,
@@ -493,23 +505,29 @@ def reconcile(doc,ack_hash,receipt, *, backend=None):
             owner_observation=backend.authorize_reconciliation(doc,receipt)
     now=datetime.now(timezone.utc);tables,ledger=preflight(c,doc,now,backend=backend,owner_observation=owner_observation) if backend is not None else preflight(c,doc,now)
     cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
-    lease=tables.get_table(c["datasets"]["tenant_locks"],CK.lease_name(cid,receipt["lease_generation"]))
-    if not lease or lease[0].get("owner")!=receipt["run_id"] or parse_tenant_json(lease[1] or "{}").get("ack_hash")!=ack_hash:
-        raise B.EvidenceError("terminal execution lease/ACK provenance mismatch")
-    proof=read_proof(c,doc,receipt["run_id"],request=request) if backend is not None else read_proof(c,doc,receipt["run_id"])
-    # Persist traversal checkpoint. DQ/coverage remain separate; no blanket COMPLETE coverage.
-    status="DONE" if proof["state"]["complete"] else "RUNNING"
-    tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",
-                  [checkpoint(doc,receipt["run_id"],status,receipt["lease_generation"],now,proof)])
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('LEASE'):
+        lease=tables.get_table(c["datasets"]["tenant_locks"],CK.lease_name(cid,receipt["lease_generation"]))
+        if not lease or lease[0].get("owner")!=receipt["run_id"] or parse_tenant_json(lease[1] or "{}").get("ack_hash")!=ack_hash:
+            raise B.EvidenceError("terminal execution lease/ACK provenance mismatch")
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('CHECKPOINT'):
+        proof=read_proof(c,doc,receipt["run_id"],request=request) if backend is not None else read_proof(c,doc,receipt["run_id"])
+        # Persist traversal checkpoint. DQ/coverage remain separate; no blanket COMPLETE coverage.
+        status="DONE" if proof["state"]["complete"] else "RUNNING"
+        tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",
+                      [checkpoint(doc,receipt["run_id"],status,receipt["lease_generation"],now,proof)])
     cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     # Terminal completion sign permits only the next CAS generation in this pilot namespace.
-    marker=f"LD_{cid}_{receipt['lease_generation']:04d}"
-    created=tables.create_marker(c["datasets"]["tenant_locks"],marker,
-                         {"owner":receipt["run_id"]},json.dumps({"operation":receipt["operation"],"ack_hash":ack_hash}))
-    if not created:
-        existing=tables.get_table(c["datasets"]["tenant_locks"],marker)
-        if not existing or existing[0].get("owner")!=receipt["run_id"] or parse_tenant_json(existing[1] or "{}").get("ack_hash")!=ack_hash:
-            raise B.EvidenceError("pilot release marker belongs to a different lease owner")
+    from tools.tenancy.controller_diagnostics import gate
+    with gate('LEASE'):
+        marker=f"LD_{cid}_{receipt['lease_generation']:04d}"
+        created=tables.create_marker(c["datasets"]["tenant_locks"],marker,
+                             {"owner":receipt["run_id"]},json.dumps({"operation":receipt["operation"],"ack_hash":ack_hash}))
+        if not created:
+            existing=tables.get_table(c["datasets"]["tenant_locks"],marker)
+            if not existing or existing[0].get("owner")!=receipt["run_id"] or parse_tenant_json(existing[1] or "{}").get("ack_hash")!=ack_hash:
+                raise B.EvidenceError("pilot release marker belongs to a different lease owner")
     return {**({"deployment_handoff":"EXACT_PAUSED_PRE_STAGING_SUPPLIES", "reconciled_execution_image":containers[0]["image"]} if handoff else {}),"checkpoint":status,"sequence":proof["state"]["sequence"],"rows_observed":proof["state"]["rows"],
             "orders":proof["state"]["orders"],"supplies":proof["state"]["supplies"],"bundles":proof["state"]["bundles"],
             "coverage":"UNPROVEN_PENDING_DQ", "lifecycle_changed":False,"scheduler_changed":False}
