@@ -1,25 +1,29 @@
 /**
  * WB STORE P&L AUTO-PUBLISH — публикация плана P&L магазина во вкладку «WB Магазин P&L».
  *
- * BigQuery (wb_mart.V_WB_STORE_PNL_MONTHLY) — источник истины; вкладка — только представление.
- * Модуль чистый: решение «писать / ничего / отказ» и запросы записи. I/O — в index.ts.
+ * F-18 (OWNER ACK 2026-10-09, узкое исключение): автоматическая запись разрешена ТОЛЬКО в эту вкладку
+ * (sheetId из UNITKA_STORE_PNL_SHEET_ID) и только представлением wb_mart.V_WB_STORE_PNL_MONTHLY.
+ * BigQuery — источник истины; вкладка — представление. Модуль чистый: гейт, решение, запросы. I/O — в index.ts.
  *
- * Защита от затирания ручных правок: после каждой публикации отпечаток записанного содержимого
- * (sha256 значений A1:Q) кладётся в developer metadata вкладки. Следующий прогон пишет, только если
- * текущее содержимое вкладки равно последнему опубликованному (или, при первом подключении, отпечатку,
- * утверждённому владельцем, — ADOPT). Иначе отказ STORE_PNL_TAB_EDITED: кто-то правил вкладку руками.
- * Идемпотентность: содержимое уже равно плану → NOOP (ничего не пишется).
+ * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Q (sha256)
+ * лежит в developer metadata вкладки. Писать можно, только если текущее содержимое равно последнему
+ * опубликованному, либо явно принятому владельцем UNITKA_STORE_PNL_ADOPT_SHA (первое подключение или
+ * восстановление: владелец проверил вкладку и подтверждает ровно это содержимое). Иначе — отказ
+ * STORE_PNL_TAB_EDITED. Содержимое уже равно плану → NOOP.
  *
- * Все запросы ограничены sheetId вкладки — запись в любой другой лист книги невозможна по построению
- * (assertOnlyTab). Заголовок и заметки строки 1 не переписываются, форматы — только строк данных.
+ * Атомарность: значения (updateCells), форматы строк данных и отпечаток — ОДИН spreadsheets.batchUpdate:
+ * либо легло всё, либо ничего (иначе отпечаток мог бы разойтись со значениями навсегда).
+ * Что перезаписывается: значения A1:Q{n+1} (заголовок — теми же значениями), формат чисел B:O/Q и фон P
+ * строк данных; ручные правки ФОРМАТА строк данных не обнаруживаются и перезаписываются. Заметки
+ * строки 1 и всё вне A:Q не трогаются. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
  */
 import { createHash } from 'node:crypto';
 import type { CellValue } from '../model.js';
-import type { TabPlan } from './tabplan.js';
+import { STATE_LABEL, toNum, type TabPlan } from './tabplan.js';
+import type { PnlRow } from './bq.js';
 
 export const PUBLISH_META_KEY = 'evetis.store_pnl.published_sha';
-/** Читаемая ширина вкладки: строк с запасом, чтобы увидеть и чужие строки ниже плана. */
-export const TAB_READ_ROWS = 200;
+export const TAB_COLS = 17;
 
 export function contentSha(values: readonly (readonly CellValue[])[]): string {
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -36,9 +40,37 @@ export function normalizeGrid(values: readonly (readonly CellValue[])[]): CellVa
   return rows;
 }
 
+/**
+ * Гейт публикации (ревью #303, P1): вкладка не публикуется, если сломана МОДЕЛЬ — строка не складывается,
+ * тождество формы нарушено, состояние неизвестно или «закрыт» при открытых условиях (= QA STATE_CONSISTENCY,
+ * FORMULA_IDENTITY, ROW_IDENTITY). Проблемы ДАННЫХ (новая операция, непрочитанные деньги, неклассифицированное)
+ * публикуются: месяц честно показывается красным состоянием — это и есть сигнал владельцу.
+ */
+export function publishGate(pnl: readonly PnlRow[]): string[] {
+  const out: string[] = [];
+  const b = (v: unknown): boolean => v === true || v === 'true';
+  for (const p of pnl) {
+    const m = String(p.month ?? '');
+    const st = String(p.financial_state ?? '');
+    const n = (k: string): number => toNum(p[k]);
+    if (!STATE_LABEL[st]) out.push(`${m}: неизвестное состояние ${st}`);
+    const legacy = String(p.service_month && typeof p.service_month === 'object' && 'value' in p.service_month ? (p.service_month as { value: unknown }).value : p.service_month) < '2026-09-01';
+    if (legacy !== (st === 'LEGACY_PARTIAL_KNOWN_DEFECTS')) out.push(`${m}: состояние наследия не совпадает с месяцем`);
+    if (st.startsWith('FINANCIAL_COMPLETE')) {
+      const open = n('pending_rows') > 0 || n('unknown_rub') > 0.5 || n('unconsumed_finance_rub') > 0.5 || n('deduction_source_gap_rub') > 0.5
+        || n('orphan_finance_base_rub') !== 0 || n('orphan_finance_logistics_rub') !== 0 || !b(p.sku_month_closed) || !b(p.month_finance_final)
+        || n('ads_days') === 0 || n('ads_final_days') !== n('ads_days')
+        || !(b(p.account_invoice_window_closed) || (n('minimum_payment_invoices') > 0 && n('utilization_invoices') > 0));
+      if (open) out.push(`${m}: «${st}» при открытых условиях`);
+    }
+    if (Math.abs(n('double_count_residual_rub')) >= 0.01) out.push(`${m}: тождество формы ${n('double_count_residual_rub')}`);
+  }
+  return out;
+}
+
 export type PublishDecision =
   | { action: 'NOOP'; sha: string; setMeta: boolean }
-  | { action: 'WRITE'; sha: string; previousSha: string; clearRows: number }
+  | { action: 'WRITE'; sha: string; previousSha: string; clearRows: number; adopted: boolean }
   | { action: 'REFUSE'; code: 'STORE_PNL_TAB_EDITED' | 'STORE_PNL_TAB_UNTRACKED'; message: string };
 
 export function decidePublish(input: { current: readonly (readonly CellValue[])[]; publishedSha?: string; adoptSha?: string; plan: TabPlan }): PublishDecision {
@@ -47,14 +79,13 @@ export function decidePublish(input: { current: readonly (readonly CellValue[])[
   const cur = contentSha(current);
   const wantSha = contentSha(want);
   if (cur === wantSha) return { action: 'NOOP', sha: wantSha, setMeta: input.publishedSha !== wantSha };
-  const baseline = input.publishedSha ?? input.adoptSha;
-  if (!baseline) {
+  const clearRows = Math.max(0, current.length - want.length);
+  if (input.publishedSha !== undefined && cur === input.publishedSha) return { action: 'WRITE', sha: wantSha, previousSha: cur, clearRows, adopted: false };
+  if (input.adoptSha !== undefined && cur === input.adoptSha) return { action: 'WRITE', sha: wantSha, previousSha: cur, clearRows, adopted: true };
+  if (input.publishedSha === undefined && input.adoptSha === undefined) {
     return { action: 'REFUSE', code: 'STORE_PNL_TAB_UNTRACKED', message: `у вкладки нет отпечатка публикации и не задан UNITKA_STORE_PNL_ADOPT_SHA (текущее содержимое ${cur})` };
   }
-  if (cur !== baseline) {
-    return { action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED', message: `вкладку правили вручную: содержимое ${cur} ≠ опубликованному ${baseline}; запись остановлена, нужна проверка владельца` };
-  }
-  return { action: 'WRITE', sha: wantSha, previousSha: cur, clearRows: Math.max(0, current.length - want.length) };
+  return { action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED', message: `вкладку правили вручную: содержимое ${cur} ≠ опубликованному ${input.publishedSha ?? '—'}; запись остановлена. Восстановление: владелец проверяет вкладку и задаёт UNITKA_STORE_PNL_ADOPT_SHA=${cur}` };
 }
 
 const rgb = (h: string): { red: number; green: number; blue: number } =>
@@ -70,49 +101,64 @@ export const STATE_BG: Readonly<Record<string, string>> = {
   'Закрыт, когорта дозревает': 'D9EAD3',
 };
 
-export interface PublishWrite {
-  values: { range: string; values: CellValue[][] }[];
-  requests: Record<string, unknown>[];
+const cellOf = (v: CellValue): Record<string, unknown> =>
+  typeof v === 'number' ? { userEnteredValue: { numberValue: v } } : v === '' || v === null ? {} : { userEnteredValue: { stringValue: String(v) } };
+
+function metaRequest(sheetId: number, sha: string, metaId?: number): Record<string, unknown> {
+  return metaId === undefined
+    ? { createDeveloperMetadata: { developerMetadata: { metadataKey: PUBLISH_META_KEY, metadataValue: sha, location: { sheetId }, visibility: 'DOCUMENT' } } }
+    : { updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: metaId, metadataKey: PUBLISH_META_KEY, metadataLocation: { sheetId } } }],
+        developerMetadata: { metadataValue: sha }, fields: 'metadataValue' } };
 }
 
-/** Значения A1:Q{n+1} (RAW) + очистка лишних строк + форматы строк данных + отпечаток в metadata. */
-export function publishWrite(plan: TabPlan, sheetId: number, d: Extract<PublishDecision, { action: 'WRITE' }>, metaId?: number): PublishWrite {
+/** Один атомарный batchUpdate: [расширение сетки] + значения + очистка + форматы строк данных + отпечаток. */
+export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number, d: Extract<PublishDecision, { action: 'WRITE' }>, metaId?: number): Record<string, unknown>[] {
   const n = plan.rows.length;
-  const q = `'${plan.tab}'`;
-  const values: PublishWrite['values'] = [{ range: `${q}!A1:Q${n + 1}`, values: [[...plan.header], ...plan.rows.map((r) => [...r])] }];
-  if (d.clearRows > 0) {
-    values.push({ range: `${q}!A${n + 2}:Q${n + 1 + d.clearRows}`, values: Array.from({ length: d.clearRows }, () => Array<CellValue>(17).fill('')) });
-  }
+  const grid: CellValue[][] = [[...plan.header], ...plan.rows.map((r) => [...r])];
+  if (grid.some((r) => r.length !== TAB_COLS)) throw new Error(`план не ${TAB_COLS} колонок`);
+  for (let i = 0; i < d.clearRows; i++) grid.push(Array<CellValue>(TAB_COLS).fill(''));
   const R = (r0: number, r1: number, c0: number, c1: number): Record<string, number> =>
     ({ sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 });
-  const requests: Record<string, unknown>[] = [
+  const requests: Record<string, unknown>[] = [];
+  if (grid.length > gridRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: grid.length - gridRows + 10 } });
+  requests.push(
+    { updateCells: { range: R(0, grid.length, 0, TAB_COLS), rows: grid.map((r) => ({ values: r.map(cellOf) })), fields: 'userEnteredValue' } },
     { repeatCell: { range: R(1, n + 1, 1, 14), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: R(1, n + 1, 14, 15), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: R(1, n + 1, 16, 17), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' }, textFormat: { foregroundColor: rgb('666666') } } }, fields: 'userEnteredFormat(numberFormat,textFormat.foregroundColor)' } },
     ...plan.rows.map((row, i) => ({ repeatCell: { range: R(i + 1, i + 2, 15, 16), cell: { userEnteredFormat: { backgroundColor: rgb(STATE_BG[String(row[15])] ?? 'F4CCCC') } }, fields: 'userEnteredFormat.backgroundColor' } })),
-    metaId === undefined
-      ? { createDeveloperMetadata: { developerMetadata: { metadataKey: PUBLISH_META_KEY, metadataValue: d.sha, location: { sheetId }, visibility: 'DOCUMENT' } } }
-      : { updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: metaId } }], developerMetadata: { metadataValue: d.sha }, fields: 'metadataValue' } },
-  ];
-  assertOnlyTab(plan.tab, sheetId, values, requests, metaId);
-  return { values, requests };
+    metaRequest(sheetId, d.sha, metaId),
+  );
+  assertOnlyTab(sheetId, requests, metaId);
+  return requests;
 }
 
-/** Запись metadata без записи значений (NOOP с отсутствующим отпечатком). */
+/** NOOP без отпечатка: дописать только metadata. */
 export function metaOnly(sheetId: number, sha: string, metaId?: number): Record<string, unknown>[] {
-  return [metaId === undefined
-    ? { createDeveloperMetadata: { developerMetadata: { metadataKey: PUBLISH_META_KEY, metadataValue: sha, location: { sheetId }, visibility: 'DOCUMENT' } } }
-    : { updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: metaId } }], developerMetadata: { metadataValue: sha }, fields: 'metadataValue' } }];
+  const r = [metaRequest(sheetId, sha, metaId)];
+  assertOnlyTab(sheetId, r, metaId);
+  return r;
 }
 
-/** Ни один диапазон и ни один запрос не выходит за вкладку P&L. */
-export function assertOnlyTab(tab: string, sheetId: number, values: PublishWrite['values'], requests: Record<string, unknown>[], metaId?: number): void {
-  for (const v of values) if (!v.range.startsWith(`'${tab}'!`)) throw new Error(`диапазон вне вкладки: ${v.range}`);
+/** Разрешённые типы запросов, и каждый — только про sheetId вкладки. Всё остальное — отказ. */
+export function assertOnlyTab(sheetId: number, requests: readonly Record<string, unknown>[], metaId?: number): void {
   for (const r of requests) {
-    const body = Object.values(r)[0] as { range?: { sheetId?: number }; developerMetadata?: { location?: { sheetId?: number } }; dataFilters?: Array<{ developerMetadataLookup?: { metadataId?: number } }> };
-    const sid = body.range?.sheetId ?? body.developerMetadata?.location?.sheetId;
-    const lookup = body.dataFilters?.[0]?.developerMetadataLookup?.metadataId;
-    const ok = sid !== undefined ? sid === sheetId : lookup !== undefined && lookup === metaId;
+    const keys = Object.keys(r);
+    if (keys.length !== 1) throw new Error(`запрос вне вкладки: ${keys.join(',')}`);
+    const kind = keys[0]!;
+    const body = r[kind] as {
+      range?: { sheetId?: number }; sheetId?: number; developerMetadata?: { location?: { sheetId?: number } };
+      dataFilters?: Array<{ developerMetadataLookup?: { metadataId?: number; metadataLocation?: { sheetId?: number } } }>;
+    };
+    let ok = false;
+    if (kind === 'updateCells' || kind === 'repeatCell') ok = body.range?.sheetId === sheetId;
+    else if (kind === 'appendDimension') ok = body.sheetId === sheetId;
+    else if (kind === 'createDeveloperMetadata') ok = body.developerMetadata?.location?.sheetId === sheetId;
+    else if (kind === 'updateDeveloperMetadata') {
+      const f = body.dataFilters ?? [];
+      ok = f.length > 0 && f.every((x) => x.developerMetadataLookup?.metadataId === metaId && metaId !== undefined
+        && x.developerMetadataLookup?.metadataLocation?.sheetId === sheetId);
+    }
     if (!ok) throw new Error(`запрос вне вкладки: ${JSON.stringify(r).slice(0, 200)}`);
   }
 }

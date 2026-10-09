@@ -21,7 +21,7 @@ import { quoteSheet } from '../section.js';
 import { parseUnitkaComponents } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan } from './tabplan.js';
-import { decidePublish, publishWrite, metaOnly, PUBLISH_META_KEY, TAB_READ_ROWS } from './publish.js';
+import { decidePublish, publishRequests, publishGate, metaOnly, PUBLISH_META_KEY, TAB_COLS } from './publish.js';
 import { STORE_PNL_FROM } from './parse.js';
 import type { NewOperationRow } from './bq.js';
 
@@ -47,7 +47,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 }
 
 export interface StorePnlDeps {
-  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'batchWrite' | 'structureWrite'>
+  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'structureWrite'>
     & Pick<SheetsRest, 'readSheetMetadata'>;
   makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
   now: () => Date;
@@ -115,29 +115,40 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
     snapshotId: snap.snapshotId, write: pub.enabled ? 'ENABLED' : 'DISABLED' });
 
   if (pub.enabled) {
+    const gate = publishGate(pnl);
+    if (gate.length) throw new LoaderError(`публикация остановлена гейтом модели: ${gate.join('; ')}`, 'STORE_PNL_PUBLISH_GATE');
     const sheetId = pub.sheetId!;
-    const tab = await sheets.readSheetMetadata(sheetId);
-    if (!tab || tab.title !== plan.tab) {
-      throw new LoaderError(`вкладка sheetId=${sheetId} ${tab ? `называется «${tab.title}»` : 'не найдена'}, ожидалась «${plan.tab}»`, 'STORE_PNL_TAB_MISSING');
-    }
-    const metas = tab.metadata.filter((m) => m.key === PUBLISH_META_KEY);
-    if (metas.length > 1) throw new LoaderError(`${metas.length} отпечатков публикации у вкладки`, 'STORE_PNL_TAB_EDITED');
-    const [current] = await sheets.readValues([`'${plan.tab}'!A1:Q${TAB_READ_ROWS}`]);
-    const d = decidePublish({ current: current ?? [], publishedSha: metas[0]?.value, adoptSha: pub.adoptSha, plan });
+    const readTab = async (): Promise<{ title: string; rowCount: number; metas: Array<{ id: number; key: string; value: string }>; values: CellValue[][] }> => {
+      const tab = await sheets.readSheetMetadata(sheetId);
+      if (!tab || tab.title !== plan.tab) {
+        throw new LoaderError(`вкладка sheetId=${sheetId} ${tab ? `называется «${tab.title}»` : 'не найдена'}, ожидалась «${plan.tab}»`, 'STORE_PNL_TAB_MISSING');
+      }
+      const metas = tab.metadata.filter((m) => m.key === PUBLISH_META_KEY);
+      if (metas.length > 1) throw new LoaderError(`${metas.length} отпечатков публикации у вкладки`, 'STORE_PNL_TAB_EDITED');
+      // Вся сетка вкладки в колонках A:Q (чтение за пределом сетки Sheets обрезает сам).
+      const [values] = await sheets.readValues([`'${plan.tab}'!A1:${colA1(TAB_COLS)}${Math.max(tab.rowCount, 1)}`]);
+      return { title: tab.title, rowCount: tab.rowCount, metas, values: values ?? [] };
+    };
+    const t = await readTab();
+    const d = decidePublish({ current: t.values, publishedSha: t.metas[0]?.value, adoptSha: pub.adoptSha, plan });
     if (d.action === 'REFUSE') throw new LoaderError(d.message, d.code);
     if (d.action === 'NOOP') {
-      if (d.setMeta) await sheets.structureWrite(metaOnly(sheetId, d.sha, metas[0]?.id));
+      if (d.setMeta) await sheets.structureWrite(metaOnly(sheetId, d.sha, t.metas[0]?.id));
       logger.info('store_pnl_tab_published', { action: 'NOOP', sheetId, sha: d.sha, fingerprint: plan.fingerprint, metaUpdated: d.setMeta });
     } else {
-      const w = publishWrite(plan, sheetId, d, metas[0]?.id);
-      await sheets.batchWrite(w.values, 'RAW');
-      await sheets.structureWrite(w.requests);
-      // Перечитывание: на вкладке ровно опубликованное
-      const [after] = await sheets.readValues([`'${plan.tab}'!A1:Q${TAB_READ_ROWS}`]);
-      const check = decidePublish({ current: after ?? [], publishedSha: d.sha, plan });
-      if (check.action !== 'NOOP') throw new LoaderError('перечитанная вкладка не равна опубликованному плану', 'STORE_PNL_PUBLISH_READBACK');
-      logger.info('store_pnl_tab_published', { action: 'WRITE', sheetId, sha: d.sha, previousSha: d.previousSha, fingerprint: plan.fingerprint, rows: plan.rows.length + 1 });
+      await sheets.structureWrite(publishRequests(plan, sheetId, t.rowCount, d, t.metas[0]?.id));
+      logger.info('store_pnl_tab_published', { action: 'WRITE', sheetId, sha: d.sha, previousSha: d.previousSha, adopted: d.adopted,
+        fingerprint: plan.fingerprint, rows: plan.rows.length + 1, clearedRows: d.clearRows });
     }
+    // Перечитывание: на вкладке ровно план, и ровно один отпечаток, равный ему.
+    const after = await readTab();
+    const check = decidePublish({ current: after.values, publishedSha: after.metas[0]?.value, plan });
+    if (check.action !== 'NOOP' || check.setMeta) {
+      throw new LoaderError('перечитанная вкладка или её отпечаток не равны опубликованному плану', 'STORE_PNL_PUBLISH_READBACK');
+    }
+  } else {
+    const gate = publishGate(pnl);
+    if (gate.length) logger.warn('store_pnl_publish_gate', { failures: gate });
   }
   return { rowsFetched: parsed.rows.length, rowsLoaded: parsed.rows.length };
 }
