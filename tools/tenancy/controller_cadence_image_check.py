@@ -65,11 +65,11 @@ def check():
     observer=backend(2);output=io.StringIO()
     with patch.object(C,'bootstrap',lambda env:(observer,m['hash'])),patch.object(C,'bounded_wake',lambda *a:(_ for _ in ()).throw(T.OverlapWait('WAIT_ACTIVE_CONTROLLER'))),contextlib.redirect_stdout(output):
         assert C.main()==0
-    assert json.loads(output.getvalue())==dict(status='WAIT_ACTIVE_CONTROLLER',source_dispatches=0) and not commits
+    assert CC.parse(output.getvalue())==dict(status='WAIT_ACTIVE_CONTROLLER',source_dispatches=0) and not commits
     output=io.StringIO()
     with patch.object(C,'bootstrap',lambda env:(observer,m['hash'])),patch.object(C,'bounded_wake',lambda *a:(_ for _ in ()).throw(BF.B.EvidenceError('synthetic unknown'))),contextlib.redirect_stdout(output):
         assert C.main()==2
-    assert json.loads(output.getvalue())['status']=='STOPPED' and len(commits)==1
+    assert CC.parse(output.getvalue())['status']=='STOPPED' and len(commits)==1
     return dict(cadence_owner_closed='PASS',cadence_atomic_overlap='PASS',cadence_two_waiters_one_authority='PASS',
                 cadence_shared_entrypoint_wait='PASS',cadence_unknown_stops='PASS',cadence_source_transport_zero='PASS')
 
