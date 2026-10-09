@@ -60,7 +60,7 @@ def validate_policy(p,manifest,release,*,historical=False):
     if p['initial_unit_end']<p['initial_unit_start'] or p['automatic_class_c'] is not True:fail('closed class authority required')
     from tools.tenancy import orchestration_contract as O
     if not historical:O.verify_artifact_source(release,BF.REPO)
-    if release['schema_version'] not in {2,3} or release['verification']['full_history_adapter']!='PASS':fail('full artifact not qualified')
+    if release['schema_version'] not in {2,3,4} or release['verification']['full_history_adapter']!='PASS':fail('full artifact not qualified')
     return p
 
 

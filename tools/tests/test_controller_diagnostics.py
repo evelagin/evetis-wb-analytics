@@ -23,7 +23,7 @@ def test_nested_gate_retains_precise_inner_failure():
 
 
 def test_paused_and_transient_wait_remain_distinct_from_stop():
-    for exception in (cloud_tick.SourceDispatchPaused('paused'),cloud_access.TransientReadError('retry')):
+    for exception in (cloud_tick.SourceDispatchPaused('paused'),cloud_access.TransientReadError('retry'),cloud_tick.OverlapWait('WAIT_ACTIVE_CONTROLLER')):
         with pytest.raises(type(exception)) as caught:
             with D.gate('SOURCE_DISPATCH_BOUNDARY'):raise exception
         assert caught.value is exception and D.safe(exception) is None

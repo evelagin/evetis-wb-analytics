@@ -96,7 +96,7 @@ def verify_authority(backend, manifest):
     release = descriptor.get('release', {})
     if set(descriptor) != {'settings', 'release'} or descriptor['settings'] != settings:
         raise BF.B.EvidenceError('full deployment descriptor settings differ')
-    if release.get('schema_version') not in {2,3} or release.get('verification',{}).get('full_history_adapter')!='PASS':
+    if release.get('schema_version') not in {2,3,4} or release.get('verification',{}).get('full_history_adapter')!='PASS':
         raise BF.B.EvidenceError('exact controller image has no full-adapter qualification')
     canonical = C.O.block(c, settings, BF.REPO, release=release)
     if canonical != expected:
@@ -384,12 +384,26 @@ def wake(base, root):
             raise BF.B.EvidenceError('full root differs')
     backend = Backend(base,manifest)
     with gate('MANIFEST_ROOT'):verify_authority(backend,manifest)
+    from tools.tenancy import controller_cadence as CC
+    with gate('MANIFEST_ROOT'):
+        claim=CC.acquire(backend)
+        if claim is not None:
+            base.wake_claim=claim
+            # A preceding holder may have committed completion/STOP while this
+            # wake was reading authority. Reconstruct AFTER the atomic claim.
+            records=base.store.history(root)
+            if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
     if any(r['kind']=='STOPPED' for r in records):
         from tools.tenancy import full_leaf_recovery as FL
         approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
+            if CC.enabled(backend) and len(CC.inventory(backend))>1:
+                # Defer the existing recovery rather than falsifying its strict
+                # no-conflicting-execution predicate while a known peer waits.
+                from tools.tenancy.cloud_tick import OverlapWait
+                raise OverlapWait('WAIT_ACTIVE_CONTROLLER')
             recovered=FL.recover_pending(backend,manifest,records) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
             if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},backend
             return {'status':'STOPPED','source_dispatches':0}, backend

@@ -160,6 +160,18 @@ class CloudAccess:
                     ref = (body or {}).get("tableReference", {})
                     marker = ref.get("tableId", "")
                     permitted = ref == {"projectId": c["project_id"], "datasetId": match[1], "tableId": marker} and bool(re.fullmatch(r"BFFLR_[0-9a-f]{64}_[0-9a-f]{64}|BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|L_[0-9a-f]{16}_[0-9]{4,10}|LD_[0-9a-f]{16}_[0-9]{4,10}", marker)) and not set(body) - {"tableReference", "schema", "labels", "description", "expirationTime"}
+                    # The registered overlap profile adds only immutable wake
+                    # claim/closure markers in this same append-only dataset.
+                    # It grants no SOURCE lease, owner authority or wider IAM.
+                    if not permitted and c.get('orchestration',{}).get('cadence'):
+                        from tools.tenancy import controller_cadence as CC
+                        from types import SimpleNamespace
+                        CC.enabled(SimpleNamespace(c=c))
+                        root=c['orchestration']['cadence']['root']
+                        permitted=(ref=={'projectId':c['project_id'],'datasetId':match[1],'tableId':marker}
+                            and re.fullmatch(r'BFC[WX]_'+re.escape(root)+r'_[0-9]{10}',marker) is not None
+                            and set(body)=={'tableReference','schema','labels','description'}
+                            and body['schema']=={'fields':[{'name':'marker','type':'STRING'}]})
         elif authority == "reader" and method == "GET" and body is None:
             jobs = set(c["marketplaces"]["ozon"]["jobs"]) | {"tenant-control", "tenant-backfill-controller"}
             if parsed.netloc == "run.googleapis.com":

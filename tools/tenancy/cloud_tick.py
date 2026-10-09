@@ -17,6 +17,15 @@ class SourceDispatchPaused(BF.B.EvidenceError):
     """
 
 
+class OverlapWait(BF.B.EvidenceError):
+    """Proven coordination wait, shared across imported and -m entrypoints."""
+    def __init__(self,status):
+        from tools.tenancy.controller_cadence import WAITS
+        if status not in WAITS:raise ValueError('unknown overlap status')
+        self.status=status
+        super().__init__('proven controller overlap wait')
+
+
 class Tick:
     def __init__(self, root_hash, store, backend, clock=None):
         self.root = D.check_hash(root_hash)

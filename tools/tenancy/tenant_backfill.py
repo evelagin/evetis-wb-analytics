@@ -182,6 +182,9 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
         if base_contract!={k:v for k,v in c.items() if k!='orchestration'}:
             raise B.EvidenceError("cloud controller base registry contract drift")
         c=backend.c
+    from tools.tenancy import controller_cadence as CC
+    cadence=backend is not None and CC.enabled(backend) and not owner_observation
+    if cadence:CC.ensure(backend)
     tables = backend.tables if backend is not None else TT.Tables(c["project_id"])
     request = backend.request if backend is not None else TT._req
     chain, decisions, ledger, rows, hold = TL.read_state(c, tables)
@@ -215,18 +218,22 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
         job = jobs[name]
         canonical_template(job,cfg["env"],execution_image(doc,c),
                            f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com")
-        if job.get("runningCount", 0) and not allow_active:
+        if job.get("runningCount", 0) and not allow_active and not cadence:
             raise B.EvidenceError("tenant ingestion execution already active")
         executions = execution_inventory(request,job['name'])
         active=[e for e in executions.get('executions',[]) if not e.get('completionTime')]
-        if executions.get('nextPageToken') or (active and not allow_active) or job.get('runningCount',0)>len(active):
+        if executions.get('nextPageToken') or (active and not allow_active and not cadence) or job.get('runningCount',0)>len(active):
             raise B.EvidenceError('active/unproven tenant execution')
         for execution in active:
+            if cadence:CC.runtime(backend,doc,execution,name)
             t=execution.get('template') or {};containers=t.get('containers') or []
             envs=containers[0].get('env',[]) if len(containers)==1 else []
             env={v['name']:v.get('value') for v in envs}
             if len(containers)!=1 or containers[0].get('image')!=execution_image(doc,c) or t.get('serviceAccount')!=f"{c['marketplaces']['ozon']['service_accounts']['runtime']}@{c['project_id']}.iam.gserviceaccount.com" or len(env)!=len(envs) or env.get('TENANT_BINDING_REQUIRED')!='1' or env.get('STRICT_PAGE_CAPS')!='1':
                 raise B.EvidenceError('active runtime execution security provenance drift')
+        if cadence and active and not allow_active:
+            from tools.tenancy.cloud_tick import OverlapWait
+            raise OverlapWait('WAIT_ACTIVE_RUNTIME')
         if backend is not None and active:
             backend.active=True
     control = jobs["tenant-control"]
@@ -240,6 +247,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
         if len(containers)!=1 or containers[0].get('image')!=execution_image(doc,c) or task.get('serviceAccount')!=c['control']['email']:
             raise B.EvidenceError('active control execution security provenance drift')
     if backend is not None and active_control:
+        if cadence:raise B.EvidenceError('control execution conflicts with full source authority')
         backend.active=True
     if orchestration:
         from tools.tenancy import orchestration_contract as OC
@@ -252,7 +260,11 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
                 raise B.EvidenceError('owner observation requires no controller execution')
         elif not isinstance(own,str) or not own.startswith(controller['name']+'/executions/'):
             raise B.EvidenceError('own registered controller execution identity missing')
-        if executions.get('nextPageToken') or any(not e.get('completionTime') and e.get('name')!=own for e in executions.get('executions',[])):
+        peers=[e for e in executions.get('executions',[]) if not e.get('completionTime') and e.get('name')!=own]
+        if cadence:
+            CC.ensure(backend)
+            for peer in peers:CC.execution(backend,peer,active=True)
+        if executions.get('nextPageToken') or (peers and not cadence):
             raise B.EvidenceError('another controller execution active/unproven')
         if not owner_observation and not any(e.get('name')==own for e in executions.get('executions',[])):
             raise B.EvidenceError('own controller execution not visible')
@@ -268,7 +280,7 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
         schedule=names[orchestration['scheduler']['name']]
         target=schedule.get('httpTarget') or {}
         token=target.get('oauthToken') or {}
-        if schedule.get('schedule')!=orchestration['scheduler']['schedule'] or schedule.get('timeZone')!=orchestration['scheduler']['time_zone'] or target.get('body') not in (None,'','e30=') or schedule.get('state')!=orchestration['scheduler']['state'] or target.get('uri')!=orchestration['scheduler']['uri'] or target.get('httpMethod')!='POST' or token.get('serviceAccountEmail')!=orchestration['accounts']['wake']['email'] or token.get('scope')!='https://www.googleapis.com/auth/cloud-platform':
+        if not CC.schedule_allowed(orchestration,schedule.get('schedule')) or schedule.get('timeZone')!=orchestration['scheduler']['time_zone'] or target.get('body') not in (None,'','e30=') or schedule.get('state')!=orchestration['scheduler']['state'] or target.get('uri')!=orchestration['scheduler']['uri'] or target.get('httpMethod')!='POST' or token.get('serviceAccountEmail')!=orchestration['accounts']['wake']['email'] or token.get('scope')!='https://www.googleapis.com/auth/cloud-platform':
             raise B.EvidenceError('historical Scheduler target/identity/state drift')
     return tables, ledger
 
