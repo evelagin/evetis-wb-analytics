@@ -44,11 +44,33 @@ def rating_only_without_seller_answer(fb: dict) -> bool:
 
 
 # --- rating-only ingestion ---------------------------------------------------------------------
+def authoritative_no_seller_answer(deps, fb: dict) -> str:
+    """The direct single-review WB read (the verified publisher's GET) decides — never the
+    answered-feed list item alone. 'ok' only when the direct object is this review, is still
+    rating-only and has NO seller answer text; 'answered' / 'not_rating_only' / 'read_error'
+    otherwise. Any doubt fails closed: no card now, a later poll looks again."""
+    try:
+        direct = deps.wb.get_feedback(fb["id"], retries=1, timeout_seconds=5.0)
+    except Exception as exc:  # noqa: BLE001
+        log_event(logger, "warning", "rating-only direct read failed", error=type(exc).__name__)
+        return "read_error"
+    if not isinstance(direct, dict) or str(direct.get("id")) != str(fb["id"]) or "answer" not in direct:
+        return "read_error"
+    if seller_answer_text(direct):
+        return "answered"
+    if any(str(direct.get(k) or "").strip() for k in ("text", "pros", "cons")) or direct.get("bables"):
+        return "not_rating_only"
+    return "ok"
+
+
 def ingest_rating_only(deps, ingest_one) -> dict:
-    """Bounded recent window of the answered feed → rating-only reviews without a seller
-    answer → the SAME per-review pipeline (claim dedupe by review id → 3.1E → card)."""
+    """Bounded recent window of the answered feed → rating-only reviews → local dedupe →
+    AUTHORITATIVE direct WB read proving no seller answer → the SAME per-review pipeline
+    (claim by review id → 3.1E → preflight → card). The list item is only a candidate."""
+    from app.domain.models import make_doc_id
     s = deps.settings
-    counts = {"fetched": 0, "eligible": 0, "processed": 0, "skipped": 0, "errors": 0, "capped": False}
+    counts = {"fetched": 0, "eligible": 0, "processed": 0, "skipped": 0, "errors": 0, "capped": False,
+              "known": 0, "answered_on_wb": 0, "not_rating_only": 0, "read_errors": 0}
     cutoff = _now() - timedelta(hours=int(s.wb_rating_only_lookback_hours))
     raw = deps.wb.iter_recent_answered_feedbacks(int(cutoff.timestamp()))
     counts["fetched"] = len(raw)
@@ -57,12 +79,19 @@ def ingest_rating_only(deps, ingest_one) -> dict:
             created = datetime.fromisoformat(str(fb.get("createdDate") or "").replace("Z", "+00:00"))
         except ValueError:
             continue
-        if created < cutoff or not rating_only_without_seller_answer(fb):
+        if created < cutoff or not fb.get("id") or not rating_only_without_seller_answer(fb):
             continue
         counts["eligible"] += 1
+        if deps.repo.get(make_doc_id("wb", "review", fb["id"])) is not None:
+            counts["known"] += 1          # one WB review id → one EVETIS communication, ever
+            continue
         if counts["processed"] >= int(s.wb_rating_only_max_per_poll):
             counts["capped"] = True
             break
+        verdict = authoritative_no_seller_answer(deps, fb)
+        if verdict != "ok":
+            counts[{"answered": "answered_on_wb", "not_rating_only": "not_rating_only"}.get(verdict, "read_errors")] += 1
+            continue
         outcome = ingest_one(fb)
         counts[outcome] = counts.get(outcome, 0) + 1
     return counts
