@@ -39,7 +39,7 @@ def policy_name(root,source):return 'BFFLR_AUTH_'+D.check_hash(root)+'_'+source
 def policy_value(p):return {'kind':'full_leaf_recovery','root':p['root'][:16]},D.encoded(p)
 
 
-def validate_policy(p,manifest,release):
+def validate_policy(p,manifest,release,*,historical=False):
     F.validate_manifest(manifest)
     if not isinstance(p,dict) or set(p)!=POLICY_FIELDS:fail('closed owner policy required')
     if p['version']!=VERSION or type(p['version']) is not int or p['type']!=TYPE:fail('unsupported policy')
@@ -59,8 +59,8 @@ def validate_policy(p,manifest,release):
         if type(p[k]) is not int or p[k]<1:fail('invalid initial scope')
     if p['initial_unit_end']<p['initial_unit_start'] or p['automatic_class_c'] is not True:fail('closed class authority required')
     from tools.tenancy import orchestration_contract as O
-    O.verify_artifact_source(release,BF.REPO)
-    if release['schema_version']!=2 or release['verification']['full_history_adapter']!='PASS':fail('full artifact not qualified')
+    if not historical:O.verify_artifact_source(release,BF.REPO)
+    if release['schema_version'] not in {2,3} or release['verification']['full_history_adapter']!='PASS':fail('full artifact not qualified')
     return p
 
 
@@ -304,7 +304,11 @@ def load(backend,manifest,records):
         if r['kind']!=KIND:continue
         proof=r['payload'];sh=backend.store.history(proof['shard'],max_records=F.MAX_LEAF_RECORDS)
         prefix=[x for x in sh if x['sequence']<=proof['receipt_sequence']]
-        validate(proof,manifest,p,records,prefix,final=True)
+        authority=p
+        if proof['implementation_source']!=p['controller_source']:
+            from tools.tenancy import recent_priority as RP
+            authority=RP.historical_policy(backend,manifest,p,proof['implementation_source'])
+        validate(proof,manifest,authority,records,prefix,final=True)
         if r['root_hash']!=manifest['hash'] or r['sequence']!=proof['index']:fail('recovery record scope differs')
         fence=backend.tables.get_table(backend.c['datasets']['tenant_locks'],f"BFFLR_{proof['root']}_{proof['stop_hash']}")
         if fence!=({'kind':'full_leaf_recovery','root':proof['root'][:16]},D.encoded(proof)):fail('certificate fence absent/conflicting')

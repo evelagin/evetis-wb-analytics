@@ -14,6 +14,7 @@ from tools.tenancy import full_history as F, cloud_controller as C
 from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy import pre_source_recovery as R
 from tools.tenancy.controller_diagnostics import gate, GateFailure
+from tools.tenancy import recent_priority as RP
 
 KINDS = frozenset({'FULL_MANIFEST', 'CHUNK_PLAN', 'CHUNK_COMPLETE', 'FULL_COMPLETE', 'T5_PARENT_COMPLETE'})
 # Matches the last existing Seller transport BACKOFF interval. Controller wakes
@@ -95,7 +96,7 @@ def verify_authority(backend, manifest):
     release = descriptor.get('release', {})
     if set(descriptor) != {'settings', 'release'} or descriptor['settings'] != settings:
         raise BF.B.EvidenceError('full deployment descriptor settings differ')
-    if release.get('schema_version')!=2 or release.get('verification',{}).get('full_history_adapter')!='PASS':
+    if release.get('schema_version') not in {2,3} or release.get('verification',{}).get('full_history_adapter')!='PASS':
         raise BF.B.EvidenceError('exact controller image has no full-adapter qualification')
     canonical = C.O.block(c, settings, BF.REPO, release=release)
     if canonical != expected:
@@ -399,13 +400,23 @@ def wake(base, root):
             'completed_chunks':len(done),'total_chunks':len(manifest['programs']),'ready':'UNPROVEN_FINAL_DQ_REQUIRED'},backend.clock())
         return {'status':'FULL_HISTORY_COMPLETE','source_dispatches':0},backend
     plans = reconstruct_plans(records, manifest, backend.clock())
+    overlay=RP.load(backend,manifest)
+    if overlay:
+        # Drain any immutable elected intent/receipt BEFORE queue reordering.
+        # No inference from lease TTL, runtime snapshot or local progress.
+        drain=RP.pending_receipts(backend,{i:item for i,item in plans.items() if i not in done})
+        if len(drain)>1:raise BF.B.EvidenceError('multiple pending full receipt authorities')
+        if drain:
+            i,item=drain[0]
+            result,backend=leaf_wake(backend,manifest,i,item,records,defer_next=True)
+            if result['status']!='RECONCILED_BOUNDARY':return result,backend
+            records=backend.store.history(root);done=completed(records,manifest)
+            plans=reconstruct_plans(records,manifest,backend.clock())
     pending=[i for i in range(len(manifest['programs'])) if i not in done]
     # Existing async scope always precedes any new report intent.
     reports=[i for i,p in plans.items() if i not in done and backend.state(p['plan'])['progress'].get('report')]
     if len(reports)>1:raise BF.B.EvidenceError('multiple full async scopes')
-    priority={'catalog':0,'seller_info':1,'clusters':2,'prices':3,'stocks':4,'supplies':5,
-              'ads_campaigns':6,'fbo_postings':7,'finance_accrual':8,'ads_expense_daily':9,'ads_sku_daily':10}
-    pending=reports+[i for i in sorted(pending,key=lambda i:(-1 if manifest['programs'][i].get('accepted_qualification_plan') else priority[manifest['programs'][i]['entity']],i)) if i not in reports]
+    pending=reports+[i for i in RP.ordered(manifest,done,overlay) if i not in reports]
     day=str(backend.clock().astimezone(BF.B.MSK).date())
     certs=[r['payload'] for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
     catalog=next(i for i,p in enumerate(manifest['programs']) if p['entity']=='catalog')
@@ -444,6 +455,7 @@ def wake(base, root):
                 backend.store.commit(root,'DEPENDENCY_PLAN',0,item,backend.clock())
             return leaf_wake(backend,manifest,catalog,item,records,dependency=True)
         pending=[catalog]+[i for i in pending if i!=catalog]
+    waits=[]
     for index in pending:
         backend.index=index
         item=plans.get(index)
@@ -459,12 +471,18 @@ def wake(base, root):
                 'previous_state_hash':D.digest(backend.state(item['plan'])),'reason':'PRESERVED_PARTIAL_DAY_ROLLOVER'}
             backend.store.commit(root,'CHUNK_SUPERSEDED',index,transition,backend.clock())
             backend.store.commit(root,'CHUNK_PLAN',index,{'index':index,'plan':fresh,'shard_root':F.shard_root(manifest,index,fresh)},backend.clock())
+        if overlay and result['status']=='WAITING':
+            # A proven temporary WAIT is not a STOP and does not consume source
+            # quota. Another eligible FULL leaf may run; no async intent replay.
+            waits.append(result)
+            continue
         return result,backend
+    if waits:return waits[0],backend
     return {'status':'WAITING','source_dispatches':0,'basis':'FROZEN_SOURCE_BUDGET'},backend
 
 
 
-def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=False):
+def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=False,defer_next=False):
     root=manifest["hash"]
     backend.index=index
     doc=item['plan'];shard=item['shard_root'];leaf={'hash':root,'plans':[doc]}
@@ -493,7 +511,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
         except GateFailure as error:
             error.diagnostic['context']={'index':index,'shard':shard,'sequence':sequence,'intent_hash':D.digest(intent),'receipt_hash':D.digest(receipt)}
             raise
-        return leaf_wake(backend,manifest,index,item,records,dependency=dependency,reconciled=True)
+        return leaf_wake(backend,manifest,index,item,records,dependency=dependency,reconciled=True,defer_next=defer_next)
     state=backend.state(doc)
     if state['complete']:
         proof=BF.verify_coverage(doc,doc['ack_hash'],backend=backend)
@@ -512,9 +530,13 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     observed=doc['runtime_plan'].get('observation_date')
     if observed and observed < str(backend.clock().astimezone(BF.B.MSK).date()):
         return {'status':'SNAPSHOT_DAY_ROLLOVER','source_dispatches':0,'index':index},backend
+    if defer_next and reconciled:
+        return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
     if action=='WAITING':
         return {'status':'WAITING','source_dispatches':0,'eligible_at':decision['eligible_at'],'index':index},backend
     if action!='PREPARE_NEXT':raise BF.B.EvidenceError('unhandled full tick decision')
+    if defer_next:
+        return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
     terminal=[r for r in history if r['kind']=='RECONCILED']
     if terminal:
         last=max(terminal,key=lambda r:r['sequence'])['payload']
@@ -608,6 +630,9 @@ def monitoring(backend, root, result):
                 'observed_at':observed_end.isoformat(),
                 'async_phase':(state['progress'].get('report') or {}).get('phase')}
     if latest and C.timestamp(latest)>watermark:raise BF.B.EvidenceError('full completed telemetry in future')
+    recent=None
+    overlay=RP.load(backend,manifest)
+    if overlay:recent=RP.monitoring(backend,manifest,records,done,overlay,backend.clock())
     return {'root_hash':root,'purpose':'FULL_HISTORY','t5_plan_hash':manifest['t5_plan_hash'],
         'observation_start':observed_start.isoformat(),'observation_end':watermark.isoformat(),
         'chunk_grain':'BOUNDED_SOURCE_LEAF_WITH_CANONICAL_T5_PARENT',
@@ -622,7 +647,8 @@ def monitoring(backend, root, result):
         'checkpoint_age_seconds':int((watermark-C.timestamp(latest)).total_seconds()) if latest else None,
         'bindings':backend.binding_status,'quota_wait_until':result.get('eligible_at'),
         'dq_reconciliation':'VERIFIED_FOR_COMPLETED_LEAVES_PENDING_FOR_REMAINDER',
-        'finance_economic_finality':'PROVISIONAL','ready':'UNPROVEN_FINAL_DQ_REQUIRED'}
+        'finance_economic_finality':'PROVISIONAL','ready':'UNPROVEN_FINAL_DQ_REQUIRED',
+        **({'recent_priority':recent} if recent else {})}
 
 
 def repair_t5_completions(backend, manifest, records, done):
