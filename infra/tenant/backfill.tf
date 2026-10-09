@@ -2,6 +2,26 @@
 # no ordinary Scheduler invocation grants, no RAW/ref mutation permission.
 locals {
   backfill = var.contract.orchestration
+  # This is the exact owner-registered client_001 profile, not a general cron
+  # allowlist. Legacy contracts remain hourly/10-minute only.
+  backfill_cadence_3 = {
+    version          = 1
+    profile          = "CLIENT001_HISTORICAL_3_STABLE_10_V1"
+    tenant           = "client_001"
+    project          = "mpa-t-client-001"
+    root             = "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+    preferred        = "*/3 * * * *"
+    stable_fallback  = "*/10 * * * *"
+    owner_ack_sha256 = "f0f3f8bf6b5266b1271c9693e818adc00827525d72d09adce3a63b36560ada64"
+  }
+  backfill_cadence_3_authorized = try(
+    jsonencode(local.backfill.cadence) == jsonencode(local.backfill_cadence_3) &&
+    var.contract.tenant_id == local.backfill_cadence_3.tenant &&
+    var.contract.project_id == local.backfill_cadence_3.project &&
+    local.backfill.job.env["BACKFILL_ROOT_HASH"] == local.backfill_cadence_3.root &&
+    local.backfill.job.env["HISTORICAL_CADENCE_POLICY"] == sha256(jsonencode(local.backfill_cadence_3)),
+    false
+  )
   backfill_project_grants = local.backfill == null ? {} : {
     for g in local.backfill.matrix : g.role => g
     if g.resource == "projects/${var.contract.project_id}"
@@ -187,11 +207,14 @@ resource "terraform_data" "backfill_guard" {
       condition = var.contract.orchestration == null ? true : (
         var.contract.orchestration.scheduler.name == "tenant-backfill-tick" &&
         contains(["PAUSED", "ENABLED"], var.contract.orchestration.scheduler.state) &&
-        contains(["0 * * * *", "*/10 * * * *"], var.contract.orchestration.scheduler.schedule) &&
+        (local.backfill_cadence_3_authorized ?
+          contains([local.backfill_cadence_3.preferred, local.backfill_cadence_3.stable_fallback], var.contract.orchestration.scheduler.schedule) :
+          try(local.backfill.cadence, null) == null && contains(["0 * * * *", "*/10 * * * *"], var.contract.orchestration.scheduler.schedule)
+        ) &&
         var.contract.orchestration.scheduler.time_zone == "Europe/Moscow" &&
         var.contract.orchestration.scheduler.uri == "https://run.googleapis.com/v2/projects/${var.contract.project_id}/locations/${var.contract.region}/jobs/tenant-backfill-controller:run"
       )
-      error_message = "Backfill: only the dedicated reviewed hourly/10-minute historical Scheduler is permitted."
+      error_message = "Backfill: legacy hourly/10-minute or exact owner-registered client_001 3/10-minute cadence required."
     }
 
   }

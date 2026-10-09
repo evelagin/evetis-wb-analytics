@@ -38,6 +38,9 @@ variable "contract" {
       matrix         = list(object({ principal = string, role = string, resource = string, permissions = list(string) }))
       job            = object({ name = string, image = string, env = map(string), timeout = string })
       scheduler      = object({ name = string, schedule = string, time_zone = string, state = string, uri = string })
+      # Preserve the closed policy exactly, including version type and unknown
+      # fields, so backfill_guard can reject anything outside owner authority.
+      cadence = optional(any)
     }))
     marketplaces = object({
       ozon = optional(object({
