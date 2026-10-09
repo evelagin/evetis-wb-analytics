@@ -13,6 +13,7 @@ from decimal import Decimal
 from tools.tenancy import tenant_backfill as BF, durable_plan as D
 from tools.tenancy import cloud_access as A, cloud_tick as T, orchestration_contract as O
 from tools.tenancy.validation import parse_tenant_json
+from tools.tenancy.controller_diagnostics import gate, safe
 
 
 SourceDispatchPaused = T.SourceDispatchPaused
@@ -111,7 +112,7 @@ class Backend:
         if table.get('expirationTime') or (table.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_')) and expiry:
                 raise BF.B.EvidenceError('authoritative commit/deployment marker expires')
 
     def active_runtime_execution(self):return self.active
@@ -343,7 +344,7 @@ def bounded_wake(root, backend):
         if any(r['kind']=='FULL_MANIFEST' for r in records):
             from tools.tenancy import full_controller as FH
             result,full_backend=FH.wake(backend,root)
-            result['progress']=FH.monitoring(full_backend,root,result)
+            with gate('MONITORING_WATERMARK'):result['progress']=FH.monitoring(full_backend,root,result)
             return result
     started=backend.clock()
     result=T.Tick(root,backend.store,backend,backend.clock).run()
@@ -358,9 +359,10 @@ def bounded_wake(root, backend):
 def main():
     backend=None;root=None
     try:
-        backend,root=bootstrap(os.environ)
+        with gate('MANIFEST_ROOT'):backend,root=bootstrap(os.environ)
         result=bounded_wake(root,backend)
-        if 'progress' not in result:result['progress']=backend.monitoring(root,result)
+        if 'progress' not in result:
+            with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
         print(json.dumps(result,sort_keys=True))
         return 0 if result['status']!='STOPPED' else 2
     except SourceDispatchPaused:
@@ -369,18 +371,21 @@ def main():
     except A.TransientReadError:
         print(json.dumps({'status':'WAITING_READ_RETRY','reason':'TRANSIENT_READ_TRANSPORT'}))
         return 1
-    except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,OSError) as error:
+    except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:
         if isinstance(error,BF.B.EvidenceError) and str(error)=='pilot lease held; reconcile terminal execution before continuation':
             print(json.dumps({'status':'WAITING_LEASE','reason':'CANONICAL_LEASE_NOT_YET_RECLAIMABLE'}))
             return 1
         # No exception repr/response/header/env dumps: even a malformed upstream
         # diagnostic might contain identifiers or credential material.
+        diagnostic=safe(error)
+        payload={'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':backend.current_execution if backend else None}
+        if diagnostic:payload['diagnostic']=diagnostic
         if backend is not None and root is not None:
             try:
-                backend.store.commit(root,'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':backend.current_execution},backend.clock())
-            except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,OSError):
+                backend.store.commit(root,'STOPPED',0,payload,backend.clock())
+            except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):
                 pass # Failure to publish STOP cannot authorize another dispatch.
-        print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE'}))
+        print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE',**({'diagnostic':diagnostic} if diagnostic else {})}))
         return 2
 
 
