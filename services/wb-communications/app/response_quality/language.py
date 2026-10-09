@@ -24,9 +24,13 @@ customer.tags — теги, которые покупатель отметил �
 WB не сообщает, плюс это или минус: опирайтесь только на явный смысл фразы
 («Хорошо пахнет» — понравился аромат, «Плохо пахнет» — нет) и на оценку. Нейтральный тег
 («Цена», «Качество», «Запах») не называйте ни похвалой, ни жалобой.
-must_address rating_only_thanks: высокая оценка без единого слова. Поблагодарите за
-оценку, назовите товар по public_identity в правильном падеже и добавьте одну тёплую
-фразу бренда о том, что покупатель выбрал именно его, — без свойств, состава и результата.
+must_address rating_only_thanks: высокая оценка без единого слова. 1–3 коротких живых
+предложения: благодарность за оценку или радость от неё, тёплое слово о выборе EVETIS или
+товара (по public_identity в правильном падеже; называть товар не обязательно), по желанию —
+пожелание приятного использования. Следуйте rating_only_style_hint: он задаёт начало и порядок,
+чтобы ответы разным покупателям не звучали как один шаблон. Не начинайте механически с
+«благодарим за высокую оценку» и не заканчивайте всегда «выбрали именно его». Без свойств,
+состава, результата, повторной покупки, аромата и выдуманных подробностей.
 must_address rating_only_low: низкая оценка без слов — сожаление и вежливая просьба
 рассказать, что не понравилось; без советов и обещаний.
 
@@ -142,6 +146,8 @@ class LanguageRenderer:
         payload = {"case_contract":case_contract,"product_capabilities":product_capabilities,"customer_reported": {"provenance":"CUSTOMER_REPORTED", "features":reported_features(_raw(msg))}, "customer": {**{k: msg.get(k) for k in
                    ("text", "pros", "cons", "rating", "buyer_name")}, "tags": customer_tags(msg)},
                    "must_address": [a.key for a in plan.aspects],
+                   **({"rating_only_style_hint": rating_only_style_hint(msg)}
+                      if any(a.key == "rating_only_thanks" for a in plan.aspects) else {}),
                    "facts": [{"text":f['text']} for f in plan.facts],
                    "verified_product_types": plan.product_types,
                    "selected_expertise": selected,
@@ -160,6 +166,22 @@ class LanguageRenderer:
         from app.response_quality.clarification import check_questions
         text,self.question_checks=check_questions(text,plan.clarifications)
         return text
+
+
+RATING_ONLY_STYLE_HINTS = (
+    "Начните с радости от высокой оценки, затем коротко поблагодарите за выбор.",
+    "Начните с благодарности за выбор EVETIS, оценку упомяните во второй части.",
+    "Поблагодарите за оценку и закончите пожеланием приятного использования.",
+    "Два коротких предложения; не используйте слово «выбрали».",
+    "Начните с «Как приятно…» или похожего тёплого возгласа, без повторения шаблона «благодарим за высокую оценку».",
+    "Очень коротко и тепло: одно-два предложения, товар можно назвать категорией.",
+)
+
+
+def rating_only_style_hint(msg) -> str:
+    """Stable per communication: a retry gets the same hint, different reviews get different ones."""
+    from app.response_quality.core import stable_variant
+    return RATING_ONLY_STYLE_HINTS[stable_variant(msg, len(RATING_ONLY_STYLE_HINTS))]
 
 
 def renderer_for_client(client):
