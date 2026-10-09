@@ -115,4 +115,6 @@ class EventType(str, Enum):
     ANSWERED_EXTERNALLY = "answered_externally"
     SKIPPED = "skipped"
     RESTORED = "restored"
+    EDIT_STARTED = "edit_started"            # R2.4A operator identity: who opened an edit
+    OVERRIDE_REQUESTED = "override_requested"  # R2.4A: first step of a RED owner decision
     FAILED = "failed"

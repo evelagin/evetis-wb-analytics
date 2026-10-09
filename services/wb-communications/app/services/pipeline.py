@@ -44,7 +44,8 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "p31", "s31", "sv2", "u2", "pa", "sa", "edit", "regen", "skip", "show", "ov", "oc"}
+ACTIONS = {"pub", "p31", "s31", "sv2", "u2", "pa", "sa", "edit", "regen", "skip", "show", "ov", "oc",
+           "ta", "tr", "tm", "tv", "tx", "tl", "tq"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -149,6 +150,11 @@ def _recovery_enabled(deps):
 # R2 operator assist: a v3.1E draft next to the v2 draft (never auto-published)
 # --------------------------------------------------------------------------- #
 _POLL_STARTED = contextvars.ContextVar("poll_started", default=None)
+# R2.4A operator identity: the Telegram actor and the action of the update being handled.
+_ACTOR = contextvars.ContextVar("telegram_actor", default=None)
+_ACTION_NAMES = {"pub": "publish", "pa": "publish_as_is", "oc": "red_confirmation", "ov": "red_confirmation_request",
+                 "edit": "edit_start", "regen": "regenerate", "sa": "safe_alternative", "skip": "skip",
+                 "show": "show", "p31": "publish_v31", "s31": "show_v31", "sv2": "show_v2", "u2": "use_v2"}
 
 
 def _operator_draft_enabled(deps):
@@ -757,6 +763,10 @@ def _emit_event(deps: Deps, doc: dict, doc_id: str, event_type: EventType,
         )).encode()
     ).hexdigest()
     usage = doc.get("openai_usage") or {}
+    actor = _actor()
+    if actor:
+        extra.setdefault("telegram_user_id", actor["user_id"])
+        extra["payload"] = {**(extra.get("payload") or {}), "actor": actor}
     payload = {
         "event_id": event_id, "event_at": _now().isoformat(),
         "channel": doc.get("channel", "wb"), "entity_type": doc.get("entity_type", "review"),
@@ -1338,13 +1348,54 @@ def _send_recovery_card(deps: Deps, doc_id: str) -> str:
 # --------------------------------------------------------------------------- #
 def handle_update(deps: Deps, update: dict) -> dict:
     if "callback_query" in update:
-        return _handle_callback(deps, update["callback_query"])
+        cq = update["callback_query"]
+        action, _ = parse_callback(cq.get("data", ""))
+        token = _set_actor(deps, ((cq.get("message") or {}).get("chat") or {}).get("id"),
+                           (cq.get("from") or {}).get("id"), _ACTION_NAMES.get(action, action))
+        try:
+            return _handle_callback(deps, cq)
+        finally:
+            _ACTOR.reset(token)
     if "message" in update:
-        return _handle_message(deps, update["message"])
+        message = update["message"]
+        token = _set_actor(deps, (message.get("chat") or {}).get("id"), (message.get("from") or {}).get("id"),
+                           "edit_commit")
+        try:
+            return _handle_message(deps, message)
+        finally:
+            _ACTOR.reset(token)
     return {"status": "ignored"}
 
 
+def _set_actor(deps, chat_id, user_id, action):
+    """Who acts. Resolved lazily, only when an event or trace is actually written."""
+    return _ACTOR.set({"chat_id": chat_id, "user_id": user_id, "action": action, "_deps": deps})
+
+
+def _actor() -> dict | None:
+    current = _ACTOR.get()
+    if not current or not current.get("user_id"):
+        return None
+    if "resolved" not in current:
+        from app.services.team_access import actor_for
+        try:
+            current["resolved"] = actor_for(current["_deps"], current["chat_id"], current["user_id"])
+        except Exception:  # noqa: BLE001 — identity metadata must never break moderation
+            current["resolved"] = {"user_id": str(current["user_id"]), "role": None, "source": "unknown"}
+    return {**current["resolved"], "action": current.get("action")}
+
+
 def _allowed(deps: Deps, chat_id, user_id) -> bool:
+    from app.services import team_access
+    if team_access.enabled(deps.settings):
+        # R2.4A: ONE source (bootstrap ∪ ACTIVE team members of the moderation chat). Never the
+        # legacy allowlist, which fails OPEN on empty lists. Unknown/REVOKED/UNAVAILABLE: deny.
+        principal = team_access.resolve(deps, chat_id, user_id)
+        audit_event("auth_ok" if principal.can_moderate else "auth_denied", route="/telegram-webhook",
+                    mechanism="telegram_team",
+                    principal_class=principal.source if principal.can_moderate else "unknown",
+                    result="ok" if principal.can_moderate else principal.status.lower())
+        return principal.can_moderate
     ok = is_allowed(
         chat_id, user_id, deps.settings.allowed_chat_ids, deps.settings.telegram_allowed_user_ids
     )
@@ -1385,6 +1436,9 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
     if action in {'ov','oc'}:
         from app.services.owner_override import handle
         return handle(deps,action,doc_id,chat,message_id,user_id)
+    from app.services.team_access import TEAM_ACTIONS, handle_callback as team_callback
+    if action in TEAM_ACTIONS:
+        return team_callback(deps, action, doc_id, chat, message_id, user_id)
     if action == "pub":
         expected_generation = None
         if ":" in doc_id:
@@ -1782,6 +1836,7 @@ def _new_trace(doc_id: str, doc: dict, *, phase: str, state_before: str) -> dict
         "verification_result": None,
         "final_publication_state": None,
         "error_class": None,
+        "actor": _actor(),
     }
 
 
@@ -2057,12 +2112,14 @@ def _after_regenerate(deps, doc_id, doc, chat, message_id, v2_meta) -> dict:
 def _start_edit(deps: Deps, doc_id, chat, user_id) -> dict:
     # Lock the record in EDITING with a token + capture the current version.
     try:
-        _, token, expected_gen = deps.repo.begin_edit(doc_id)
+        edit_doc, token, expected_gen = deps.repo.begin_edit(doc_id)
     except InvalidTransition:
         return _stale(deps, chat)
     except NotFound:
         deps.telegram.send_message(chat, "⚠️ Запись не найдена.")
         return {"status": "not_found"}
+    _emit_event(deps, edit_doc or {}, doc_id, EventType.EDIT_STARTED, best_effort=True,
+                answer_version=expected_gen, telegram_user_id=user_id)
 
     # If prompting or persisting the session fails, the record must NOT stay
     # stuck in EDITING — roll the lock back to pending_approval, then re-raise so
@@ -2109,6 +2166,13 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     user_id = (message.get("from", {}) or {}).get("id")
     text = (message.get("text") or "").strip()
     reply_to = ((message.get("reply_to_message") or {}) or {}).get("message_id")
+
+    from app.services import team_access
+    if team_access.enabled(deps.settings):
+        # /apply and /me work for an unknown user of the moderation chat; /team, /requests: OWNER.
+        handled = team_access.handle_command(deps, message)
+        if handled is not None:
+            return handled
 
     if not _allowed(deps, chat, user_id):
         return {"status": "unauthorized"}

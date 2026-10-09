@@ -200,6 +200,11 @@ class Settings:
     v31_owner_override_enabled: bool = field(
         default_factory=lambda: os.environ.get("V31_OWNER_OVERRIDE_ENABLED", "false").lower() == "true"
     )
+    # R2.4A: Telegram team access. On: ACTIVE Firestore team members of the moderation chat are
+    # authorised in addition to the bootstrap env users (who stay OWNER). Off: env lists only.
+    telegram_dynamic_access_enabled: bool = field(
+        default_factory=lambda: os.environ.get("TELEGRAM_DYNAMIC_ACCESS_ENABLED", "false").lower() == "true"
+    )
     # R2.3 owner final authority on R2.2 cards: ONLY these Telegram users may publish past a
     # content-policy BLOCK/ERROR (two explicit taps). Empty = nobody (fail closed).
     v31_owner_override_user_ids: set = field(
