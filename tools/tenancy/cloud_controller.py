@@ -17,6 +17,7 @@ from tools.tenancy.controller_diagnostics import gate, safe
 
 
 SourceDispatchPaused = T.SourceDispatchPaused
+OverlapWait = T.OverlapWait
 
 
 def timestamp(value):
@@ -78,12 +79,17 @@ class Backend:
         self.current_execution=current_execution
         self.clock=clock or (lambda:datetime.now(timezone.utc))
         self.active=False
+        self.wake_activity={'dispatch_attempts':0}
         self.store=access.durable_records()
     @property
     def tables(self):return self.access.tables
     def request(self,*args):return self.access.request(*args)
     def append_request(self,*args):return self.access.append_request(*args)
-    def dispatch(self,*args):return self.access.dispatch(*args)
+    def dispatch(self,*args):
+        self.wake_activity['dispatch_attempts']+=1
+        if self.wake_activity['dispatch_attempts']>1:
+            raise BF.B.EvidenceError('one source dispatch per controller wake')
+        return self.access.dispatch(*args)
     def select(self,sql,params):return BF.select(self.c,sql,params,request=self.request)
     @property
     def journal(self):return f"{self.c['project_id']}.{self.c['datasets']['ozon_raw']}.OZON_INGESTION_RUNS"
@@ -358,21 +364,31 @@ def bounded_wake(root, backend):
 
 def main():
     backend=None;root=None
+    from tools.tenancy import controller_cadence as CC
     try:
-        with gate('MANIFEST_ROOT'):backend,root=bootstrap(os.environ)
-        result=bounded_wake(root,backend)
-        if 'progress' not in result:
-            with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
+        rc=None
+        try:
+            with gate('MANIFEST_ROOT'):backend,root=bootstrap(os.environ)
+            result=bounded_wake(root,backend)
+            if 'progress' not in result:
+                with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
+        except SourceDispatchPaused:
+            result={'status':'QUIESCENT_PAUSED','source_dispatches':0};rc=0
+        except OverlapWait as wait:
+            if not CC.enabled(backend):raise BF.B.EvidenceError('overlap wait outside qualified profile')
+            result={'status':wait.status,'source_dispatches':0};rc=0
+        except A.TransientReadError:
+            result={'status':'WAITING_READ_RETRY','reason':'TRANSIENT_READ_TRANSPORT'};rc=1
+        # Closure failure is a real error handled below, never an uncaught
+        # exception in a special waiting handler or an assumed authority release.
+        closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else result
+        closure=dict(closure,source_dispatches=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0)))
+        with gate('MANIFEST_ROOT'):CC.close(backend,closure)
         print(json.dumps(result,sort_keys=True))
-        return 0 if result['status']!='STOPPED' else 2
-    except SourceDispatchPaused:
-        print(json.dumps({'status':'QUIESCENT_PAUSED','source_dispatches':0}))
-        return 0
-    except A.TransientReadError:
-        print(json.dumps({'status':'WAITING_READ_RETRY','reason':'TRANSIENT_READ_TRANSPORT'}))
-        return 1
+        return rc if rc is not None else (0 if result['status']!='STOPPED' else 2)
     except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:
-        if isinstance(error,BF.B.EvidenceError) and str(error)=='pilot lease held; reconcile terminal execution before continuation':
+        cadence_present=bool(getattr(backend,'c',{}).get('orchestration',{}).get('cadence'))
+        if not cadence_present and isinstance(error,BF.B.EvidenceError) and str(error)=='pilot lease held; reconcile terminal execution before continuation':
             print(json.dumps({'status':'WAITING_LEASE','reason':'CANONICAL_LEASE_NOT_YET_RECLAIMABLE'}))
             return 1
         # No exception repr/response/header/env dumps: even a malformed upstream
@@ -385,6 +401,8 @@ def main():
                 backend.store.commit(root,'STOPPED',0,payload,backend.clock())
             except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):
                 pass # Failure to publish STOP cannot authorize another dispatch.
+            try:CC.close(backend,{'status':'STOPPED','source_dispatches':getattr(backend,'wake_activity',{}).get('dispatch_attempts',0)})
+            except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):pass
         print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE',**({'diagnostic':diagnostic} if diagnostic else {})}))
         return 2
 

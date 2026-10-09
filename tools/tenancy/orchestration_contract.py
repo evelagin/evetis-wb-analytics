@@ -12,6 +12,7 @@ SOURCE_FILES = (
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
     'full_leaf_recovery.py','full_leaf_image_check.py','controller_diagnostics.py',
     'recent_priority.py','recent_priority_image_check.py',
+    'controller_cadence.py','controller_cadence_image_check.py',
 )
 
 
@@ -30,7 +31,8 @@ def block(c, settings, repo, release=None):
         raise ValueError('explicit historical Scheduler state required')
     release=release or parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{settings['release']}.json").read_text())
     expected={'schema_version','image','source_sha','runtime_image','runtime_implementation_hash','controller_implementation_hash','verification'}
-    if set(release)!=expected or type(release['schema_version']) is not int or release['schema_version'] not in {1,2,3} or release['source_sha']!=settings['release']:
+    if release.get('schema_version')==4:expected.add('cadence_policy')
+    if set(release)!=expected or type(release['schema_version']) is not int or release['schema_version'] not in {1,2,3,4} or release['source_sha']!=settings['release']:
         raise ValueError('controller release schema/provenance mismatch')
     if not re.fullmatch(r'europe-west1-docker\.pkg\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}',release['image']):
         raise ValueError('immutable canonical controller image required')
@@ -38,7 +40,8 @@ def block(c, settings, repo, release=None):
         raise ValueError('controller/runtime implementation qualification differs')
     required={'ci','exact_image','offline_restart','lost_post_no_repeat','quota_wait_no_source','tenant_isolation','reader_append_separation'}
     if release['schema_version']>=2:required.add('full_history_adapter')
-    if release['schema_version']==3:required.add('recent_priority_adapter')
+    if release['schema_version']>=3:required.add('recent_priority_adapter')
+    if release['schema_version']==4:required.add('cadence_overlap_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
@@ -54,11 +57,20 @@ def block(c, settings, repo, release=None):
          'BQ_REF_DATASET':c['datasets']['ref'],'BQ_LOCATION':'EU','TENANT_BINDING_REQUIRED':'1','STRICT_PAGE_CAPS':'1',
          'BACKFILL_ROOT_HASH':settings['root_hash'],'CONTROLLER_IMAGE':release['image'],
          'CONTROLLER_SOURCE_SHA':release['source_sha'],'HISTORICAL_SCHEDULER_STATE':settings['scheduler_state']}
-    return {'accounts':accounts,'roles':{n:list(v) for n,v in I.ROLE_PERMISSIONS.items()},
+    cadence=None
+    if release['schema_version']==4:
+        from tools.tenancy import controller_cadence as CC,durable_plan as D
+        cadence=CC.policy(release['cadence_policy'],c,settings['root_hash'])
+        env['HISTORICAL_CADENCE_POLICY']=D.digest(cadence)
+    out={'accounts':accounts,'roles':{n:list(v) for n,v in I.ROLE_PERMISSIONS.items()},
             'dataset_grants':grants,'matrix':I.matrix_for_contract(c),
             'job':{'name':JOB,'image':release['image'],'env':env,'timeout':'600s'},
             'scheduler':{'name':SCHEDULER,'schedule':'0 * * * *' if release['runtime_implementation_hash']==BF.QF.accepted_doc(BF.QF.SKU)['runtime_plan']['implementation_hash'] else '*/10 * * * *','time_zone':'Europe/Moscow','state':settings['scheduler_state'],
                          'uri':f'https://run.googleapis.com/v2/{base}/jobs/{JOB}:run'}}
+    if cadence:
+        out['cadence']=dict(cadence)
+        out['scheduler']['schedule']=cadence['preferred']
+    return out
 
 
 def paused_contract(c, repo):

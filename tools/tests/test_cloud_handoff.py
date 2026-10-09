@@ -14,6 +14,12 @@ def handoff():
     c=copy.deepcopy(B.target('client_001'))
     source=c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
     release=json.loads((B.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text())
+    # This is the legacy qualification-root handoff, outside the owner-pinned
+    # FULL cadence root. The cadence suite tests registered v4 independently.
+    if release['schema_version']>=4:
+        release['schema_version']=3
+        release.pop('cadence_policy')
+        release['verification'].pop('cadence_overlap_adapter')
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
     settings={'release':source,'root_hash':B.QF.ROOT,'scheduler_state':'PAUSED'}

@@ -21,8 +21,8 @@ def gate(stage):
     try:yield
     except GateFailure:raise
     except BF.B.EvidenceError as error:
-        from tools.tenancy.cloud_tick import SourceDispatchPaused
-        if isinstance(error,SourceDispatchPaused) or str(error)=='pilot lease held; reconcile terminal execution before continuation':raise
+        from tools.tenancy.cloud_tick import SourceDispatchPaused,OverlapWait
+        if isinstance(error,(SourceDispatchPaused,OverlapWait)) or str(error)=='pilot lease held; reconcile terminal execution before continuation':raise
         raise GateFailure(stage,'EVIDENCE') from None
     except BF.TT.TableError as error:
         from tools.tenancy.cloud_access import TransientReadError

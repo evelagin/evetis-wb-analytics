@@ -65,7 +65,7 @@ def validate(p,manifest,release):
     for key in ('runtime_source','runtime_image','runtime_implementation_hash'):
         if p[key]!=manifest[key.replace('runtime_source','runtime_source_sha')]:fail('runtime changed')
     if (p['controller_source'],p['controller_image'],p['controller_implementation_hash'])!=(release['source_sha'],release['image'],release['controller_implementation_hash']):fail('controller release differs')
-    if release.get('schema_version')!=3 or release.get('verification',{}).get('recent_priority_adapter')!='PASS':fail('priority release unqualified')
+    if release.get('schema_version') not in {3,4} or release.get('verification',{}).get('recent_priority_adapter')!='PASS':fail('priority release unqualified')
     F.stamp(p['activated_at'])
     refs=p['historical_recovery_policies']
     if not isinstance(refs,list) or not 1<=len(refs)<=8 or len({r.get('source') for r in refs})!=len(refs):fail('historical authority chain ambiguous')
@@ -86,7 +86,7 @@ def load(backend,manifest,release=None):
         release=parse(marker[1])['release']
     marker=backend.tables.get_table(backend.c['datasets']['ref'],name(manifest['hash'],source))
     if marker is None:
-        if release['schema_version']==3:fail('owner priority authority absent')
+        if release['schema_version']>=3:fail('owner priority authority absent')
         return None
     p=parse(marker[1]);validate(p,manifest,release)
     if marker!=value(p):fail('owner authority metadata differs')

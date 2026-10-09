@@ -45,6 +45,10 @@ def protocol_check(m,p):
             ('Backend.reconcile',lambda *a:dict(source_complete=False,persisted_reconciled=True))]:
             stack.enter_context(patch('tools.tenancy.full_controller.'+target,value))
         stack.enter_context(patch('tools.tenancy.recent_priority.load',lambda *a,**k:p))
+        # Synthetic priority ordering has no executing controller identity.
+        # The separate installed cadence check exercises the real wake fence.
+        stack.enter_context(patch('tools.tenancy.controller_cadence.acquire',lambda *a:None))
+        stack.enter_context(patch('tools.tenancy.controller_cadence.enabled',lambda *a:False))
         H.leaf_wake(H.Backend(base,m),m,supplies,item,[])
         preserved=deepcopy(states[supply['ack_hash']])
         result,_=H.wake(base,m['hash'])
