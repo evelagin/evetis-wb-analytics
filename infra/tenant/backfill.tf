@@ -2,6 +2,28 @@
 # no ordinary Scheduler invocation grants, no RAW/ref mutation permission.
 locals {
   backfill = var.contract.orchestration
+  # Read authority from the immutable release registered by source SHA. No
+  # tenant-specific branches or arbitrary cron policy can enter this root.
+  backfill_cadence_release = try(
+    can(regex("^[0-9a-f]{40}$", local.backfill.job.env["CONTROLLER_SOURCE_SHA"])) ?
+    jsondecode(file("${path.module}/releases/backfill/${local.backfill.job.env["CONTROLLER_SOURCE_SHA"]}.json")) : null,
+    null
+  )
+  backfill_registered_cadence = try(local.backfill_cadence_release.schema_version == 4 ? local.backfill_cadence_release.cadence_policy : null, null)
+  backfill_cadence_3_authorized = try(
+    local.backfill_registered_cadence != null &&
+    jsonencode(local.backfill.cadence) == jsonencode(local.backfill_registered_cadence) &&
+    var.contract.tenant_id == local.backfill_registered_cadence.tenant &&
+    var.contract.project_id == local.backfill_registered_cadence.project &&
+    local.backfill.job.env["BACKFILL_ROOT_HASH"] == local.backfill_registered_cadence.root &&
+    local.backfill.job.image == local.backfill_cadence_release.image &&
+    local.backfill.job.env["CONTROLLER_IMAGE"] == local.backfill_cadence_release.image &&
+    local.backfill.job.env["CONTROLLER_SOURCE_SHA"] == local.backfill_cadence_release.source_sha &&
+    local.backfill_registered_cadence.preferred == "*/3 * * * *" &&
+    local.backfill_registered_cadence.stable_fallback == "*/10 * * * *" &&
+    local.backfill.job.env["HISTORICAL_CADENCE_POLICY"] == sha256(jsonencode(local.backfill_registered_cadence)),
+    false
+  )
   backfill_project_grants = local.backfill == null ? {} : {
     for g in local.backfill.matrix : g.role => g
     if g.resource == "projects/${var.contract.project_id}"
@@ -187,11 +209,14 @@ resource "terraform_data" "backfill_guard" {
       condition = var.contract.orchestration == null ? true : (
         var.contract.orchestration.scheduler.name == "tenant-backfill-tick" &&
         contains(["PAUSED", "ENABLED"], var.contract.orchestration.scheduler.state) &&
-        contains(["0 * * * *", "*/10 * * * *"], var.contract.orchestration.scheduler.schedule) &&
+        (local.backfill_cadence_3_authorized ?
+          contains([local.backfill_registered_cadence.preferred, local.backfill_registered_cadence.stable_fallback], var.contract.orchestration.scheduler.schedule) :
+          try(local.backfill.cadence, null) == null && contains(["0 * * * *", "*/10 * * * *"], var.contract.orchestration.scheduler.schedule)
+        ) &&
         var.contract.orchestration.scheduler.time_zone == "Europe/Moscow" &&
         var.contract.orchestration.scheduler.uri == "https://run.googleapis.com/v2/projects/${var.contract.project_id}/locations/${var.contract.region}/jobs/tenant-backfill-controller:run"
       )
-      error_message = "Backfill: only the dedicated reviewed hourly/10-minute historical Scheduler is permitted."
+      error_message = "Backfill: legacy hourly/10-minute or exact owner-registered 3/10-minute cadence required."
     }
 
   }
