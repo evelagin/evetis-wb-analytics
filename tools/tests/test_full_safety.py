@@ -241,6 +241,8 @@ def test_monitoring_uses_exact_published_scope_without_async_identifier(monkeypa
     monkeypatch.setattr(BF,'validate_plan',lambda *a:records.c)
     b=SimpleNamespace(c=records.c,store=records.store,clock=lambda:NOW,state=lambda d:state,
         select=select,journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS',binding_status={'seller':'BOUND','performance':'BOUND'})
+    # This fixture verifies legacy scope privacy, without a priority overlay.
+    monkeypatch.setattr(H.RP,'load',lambda *a,**k:None)
     out=H.monitoring(b,m['hash'],{'status':'MONITORING','index':i})
     s=out['current_scope']
     assert s['plan_id']==doc['runtime_plan']['plan_id'] and s['sequence']==3
