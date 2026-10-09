@@ -63,7 +63,7 @@ def test_A_B_rating_only_ingested_once_with_one_card():
     assert doc["v31_draft"]["status"] == "READY" and "оценк" in doc["final_answer"]
     assert "Рекомендуемый ответ 3.1E" in d.telegram.sent[-1][1]
     again = run_poll(d)                                                                   # B
-    assert again["rating_only"]["processed"] == 0 and again["rating_only"]["skipped"] == 1
+    assert again["rating_only"]["processed"] == 0 and again["rating_only"]["known"] == 1
     assert len(d.telegram.sent) == 1 and len(d.repo.docs) == 1
 
 
