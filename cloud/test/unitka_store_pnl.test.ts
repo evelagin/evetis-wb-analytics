@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs';
 import { parseUnitkaComponents, STORE_PNL_FROM } from '../src/loaders/unitka/storepnl/parse.js';
 import { snapshotAppendSql, snapshotRecord, storePnlRaiseError, type PnlRow } from '../src/loaders/unitka/storepnl/bq.js';
 import { buildTabPlan, toNum, TAB_HEADER, TAB_NAME } from '../src/loaders/unitka/storepnl/tabplan.js';
-import { unitkaStorePnlLoader, snapshotIdOf, type StorePnlDeps } from '../src/loaders/unitka/storepnl/index.js';
+import { unitkaStorePnlLoader, snapshotIdOf, activeNewOperations, publishEnv, type StorePnlDeps } from '../src/loaders/unitka/storepnl/index.js';
+import { decidePublish, publishRequests, publishGate, metaOnly, contentSha, assertOnlyTab, PUBLISH_META_KEY } from '../src/loaders/unitka/storepnl/publish.js';
 import { addDaysIso, isoToSerial, OFFSET, SUMMARY, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
 import { Logger } from '../src/logging.js';
@@ -170,7 +171,8 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
     transit_rub: 0, acceptance_rub: 0, other_marketplace_cost_rub: 0, marketplace_income_rub: 0, ads_adjustment_rub: 10,
     storage_adjustment_rub: 1, commission_adjustment_rub: 5, price_adjustment_rub: 2, mature_cohort_adjustment_rub: 0,
     timing_bridge_logistics_rub: 40, timing_bridge_unsettled_margin_rub: 300, management_net_store_profit_rub: 118,
-    management_net_store_margin: 0.118, financial_state: 'PARTIAL_AWAITING_ACCOUNT_INVOICE', ...o,
+    management_net_store_margin: 0.118, financial_state: 'PARTIAL_AWAITING_ACCOUNT_INVOICE', double_count_residual_rub: 0,
+    service_month: `${String(o.month ?? '2026-09')}-01`, ...o,
   };
 }
 
@@ -209,6 +211,28 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
   });
 });
 
+function deps(pnl: PnlRow[] = [pnlRow()]) {
+  const calls: { appended: number; snapshotId?: string; lcd?: string; ranges?: string[]; metaAnchor?: boolean; readonly?: boolean; writes: string[]; requests: unknown[] } = { appended: 0, writes: [], requests: [] };
+  const d: StorePnlDeps = {
+    now: () => new Date('2026-10-09T07:40:00Z'),
+    makeSheets: (_c, readonly) => ({
+      readSheetMeta: async (_n: string, requireAnchor?: boolean) => { calls.metaAnchor = requireAnchor; calls.readonly = readonly; return { sheetId: 1, rowCount: 10, columnCount: 60, anchorCol: 0, namedRanges: {} }; },
+      readValues: async (ranges: string[]) => {
+        if (ranges[0]!.startsWith(`'${TAB_NAME}'`)) return [tabState.values];
+        calls.ranges = ranges; return [[...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]];
+      },
+      readSheetMetadata: async (id: number) => (id === TAB_ID ? { title: tabState.title, rowCount: 20, metadata: tabState.meta } : null),
+      structureWrite: async (reqs) => { applyRequests(reqs); calls.requests.push(...reqs); calls.writes.push(...reqs.filter((r) => 'updateCells' in r).map(() => 'updateCells')); return reqs.length; },
+    }),
+    makeBq: () => ({
+      appendSnapshot: async (rows, m) => { calls.appended = rows.length; calls.snapshotId = m.snapshotId; calls.lcd = m.lcd; },
+      readPnl: async () => pnl,
+      readNewOperations: async () => [],
+    }),
+  };
+  return { d, calls };
+}
+
 describe('Phase C — загрузчик unitka-store-pnl', () => {
   const ctx = (c: Partial<LoaderContext['config']> = {}): LoaderContext => ({
     config: { environment: 'prod', rawDataset: 'wb_raw', unitkaOpsDataset: 'wb_ops', unitkaMartDataset: 'wb_mart',
@@ -216,22 +240,6 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
       executionId: 'e', ...c } as LoaderContext['config'],
     logger: new Logger({}, 'error'), logicalPeriod: '2026-10-09T10', runId: 'run1', targetDate: '2026-10-09T10',
   });
-  function deps(pnl: PnlRow[] = [pnlRow()]) {
-    const calls: { appended: number; snapshotId?: string; lcd?: string; ranges?: string[]; metaAnchor?: boolean } = { appended: 0 };
-    const d: StorePnlDeps = {
-      now: () => new Date('2026-10-09T07:40:00Z'),
-      makeSheets: () => ({
-        readSheetMeta: async (_n: string, requireAnchor?: boolean) => { calls.metaAnchor = requireAnchor; return { sheetId: 1, rowCount: 10, columnCount: 60, anchorCol: 0, namedRanges: {} }; },
-        readValues: async (ranges: string[]) => { calls.ranges = ranges; return [[...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]]; },
-      }),
-      makeBq: () => ({
-        appendSnapshot: async (rows, m) => { calls.appended = rows.length; calls.snapshotId = m.snapshotId; calls.lcd = m.lcd; },
-        readPnl: async () => pnl,
-        readNewOperations: async () => [],
-      }),
-    };
-    return { d, calls };
-  }
 
   it('лист читается без требования якоря, снимок пишется, план строится; записи в лист нет', async () => {
     const { d, calls } = deps();
@@ -261,5 +269,163 @@ describe('Phase C — наследие августа', () => {
   it('август виден только справочно и никогда не «закрыт»', () => {
     const p = buildTabPlan([pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' })]);
     expect(p.rows[0]![15]).toBe('Справочно: наследие, известные дефекты');
+  });
+});
+
+const TAB_ID = 989153123;
+const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }> } = { title: TAB_NAME, values: [], meta: [] };
+
+/** Фейковый Sheets: применяет updateCells и metadata к состоянию вкладки так, как это сделал бы API. */
+function applyRequests(reqs: Record<string, unknown>[]): void {
+  for (const r of reqs) {
+    const u = (r as { updateCells?: { rows: Array<{ values: Array<{ userEnteredValue?: { numberValue?: number; stringValue?: string } }> }> } }).updateCells;
+    if (u) {
+      const next = u.rows.map((row) => row.values.map((c) => (c.userEnteredValue?.numberValue ?? c.userEnteredValue?.stringValue ?? '') as CellValue));
+      for (let k = 0; k < next.length; k++) tabState.values[k] = next[k]!;
+    }
+    const c = (r as { createDeveloperMetadata?: { developerMetadata: { metadataValue: string } } }).createDeveloperMetadata;
+    if (c) tabState.meta = [{ id: 7, key: PUBLISH_META_KEY, value: c.developerMetadata.metadataValue }];
+    const up = (r as { updateDeveloperMetadata?: { developerMetadata: { metadataValue: string } } }).updateDeveloperMetadata;
+    if (up) tabState.meta = [{ ...tabState.meta[0]!, value: up.developerMetadata.metadataValue }];
+  }
+}
+
+describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запросы', () => {
+  const AUGR = pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' });
+  const plan = buildTabPlan([AUGR, pnlRow()]);
+  const want = [[...plan.header], ...plan.rows];
+  const old = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
+  const oldGrid = [[...old.header], ...old.rows];
+
+  it('NOOP идемпотентно; отпечаток дописывается, если его нет', () => {
+    expect(decidePublish({ current: want, plan })).toMatchObject({ action: 'NOOP', setMeta: true });
+    expect(decidePublish({ current: want, publishedSha: contentSha(want), plan })).toMatchObject({ action: 'NOOP', setMeta: false });
+  });
+
+  it('вкладка = последней публикации → WRITE; ручная правка значения → отказ', () => {
+    expect(decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', clearRows: 0, adopted: false });
+    const edited = oldGrid.map((r) => [...r]); edited[2]![1] = 12345;
+    expect(decidePublish({ current: edited, publishedSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
+  });
+
+  it('ADOPT: первое подключение и восстановление только для ровно проверенного содержимого', () => {
+    expect(decidePublish({ current: oldGrid, plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_UNTRACKED' });
+    expect(decidePublish({ current: oldGrid, adoptSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
+    expect(decidePublish({ current: oldGrid, adoptSha: 'f'.repeat(64), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
+    expect(decidePublish({ current: oldGrid, publishedSha: 'a'.repeat(64), adoptSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
+    expect(decidePublish({ current: oldGrid, publishedSha: 'a'.repeat(64), adoptSha: 'b'.repeat(64), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
+  });
+
+  it('один атомарный batchUpdate: значения, форматы строк данных, отпечаток; всё в sheetId вкладки', () => {
+    const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
+    if (d.action !== 'WRITE') throw new Error('ожидалась запись');
+    const reqs = publishRequests(plan, TAB_ID, 20, d, 7);
+    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'updateDeveloperMetadata']);
+    expect(JSON.stringify(reqs.slice(1, -1))).not.toMatch(/"startRowIndex":0/);
+    expect(JSON.stringify(reqs.at(-1))).toMatch(/"metadataLocation":\{"sheetId":989153123\}/);
+  });
+
+  it('сетка короче плана → appendDimension той же вкладки; лишние строки чистятся в A:Q', () => {
+    const longer = [...oldGrid, ['2026-11', 1]];
+    const d = decidePublish({ current: longer, publishedSha: contentSha(longer), plan });
+    if (d.action !== 'WRITE') throw new Error('ожидалась запись');
+    const reqs = publishRequests(plan, TAB_ID, 2, d);
+    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'ROWS', length: 12 } });
+    const uc = (reqs[1] as { updateCells: { range: Record<string, number>; rows: unknown[] } }).updateCells;
+    expect(uc.range).toEqual({ sheetId: TAB_ID, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 17 });
+    expect(uc.rows).toHaveLength(4);
+  });
+
+  it('assertOnlyTab: чужой sheetId, чужой тип запроса, чужой metadataId — отказ', () => {
+    expect(() => assertOnlyTab(TAB_ID, [{ repeatCell: { range: { sheetId: 0 } } }])).toThrow(/вне вкладки/);
+    expect(() => assertOnlyTab(TAB_ID, [{ deleteSheet: { sheetId: TAB_ID } }])).toThrow(/вне вкладки/);
+    expect(() => assertOnlyTab(TAB_ID, [{ updateCells: { range: { sheetId: TAB_ID } }, repeatCell: {} }])).toThrow(/вне вкладки/);
+    expect(() => assertOnlyTab(TAB_ID, [{ updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: 7 } }] } }], 7)).toThrow(/вне вкладки/);
+    expect(() => assertOnlyTab(TAB_ID, [{ createDeveloperMetadata: { developerMetadata: { location: { spreadsheet: true } } } }])).toThrow(/вне вкладки/);
+    expect(() => metaOnly(TAB_ID, 'x', 7)).not.toThrow();
+  });
+
+  it('гейт: «закрыт» при открытых условиях, нарушенное тождество, неверное наследие — стоп; честный красный месяц — публикуется', () => {
+    expect(publishGate([AUGR, pnlRow()])).toEqual([]);
+    expect(publishGate([pnlRow({ financial_state: 'FINANCIAL_COMPLETE', pending_rows: 1 })])[0]).toMatch(/открытых условиях/);
+    expect(publishGate([pnlRow({ double_count_residual_rub: 5 })])[0]).toMatch(/тождество/);
+    expect(publishGate([pnlRow({ month: '2026-08' })])[0]).toMatch(/наследия/);
+    expect(publishGate([pnlRow({ financial_state: 'UNKNOWN_COST_PRESENT', unconsumed_finance_rub: 100 })])).toEqual([]);
+  });
+
+  it('флаги: по умолчанию выключено; включение требует sheetId; ADOPT — sha256', () => {
+    expect(publishEnv({})).toEqual({ enabled: false, sheetId: undefined, adoptSha: undefined });
+    expect(() => publishEnv({ UNITKA_STORE_PNL_PUBLISH: '1' })).toThrow(/SHEET_ID/);
+    expect(publishEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: '989153123' })).toMatchObject({ enabled: true, sheetId: 989153123 });
+    expect(() => publishEnv({ UNITKA_STORE_PNL_ADOPT_SHA: 'x' })).toThrow(/sha256/);
+  });
+
+  it('шум: исторические PENDING 2024–2025 не предупреждаются, новые и активного горизонта — да', () => {
+    const rows = [
+      { supplier_oper_name: 'Коррекция продаж', treatment: 'PENDING_CLASSIFICATION', rows_n: 8, last_seen: { value: '2025-07-01' } },
+      { supplier_oper_name: 'X', treatment: 'PENDING_CLASSIFICATION', rows_n: 1, last_seen: '2026-09-15' },
+      { supplier_oper_name: 'Новая', treatment: 'NEW_FINANCE_OPERATION', rows_n: 1, last_seen: '2025-01-01' },
+    ];
+    expect(activeNewOperations(rows).map((o) => o.supplier_oper_name)).toEqual(['X', 'Новая']);
+  });
+});
+
+describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
+  const ctx = (): LoaderContext => ({
+    config: { environment: 'prod', rawDataset: 'wb_raw', unitkaOpsDataset: 'wb_ops', unitkaMartDataset: 'wb_mart', unitkaSheetName: 'WB_Юнит_2025',
+      unitkaSpreadsheetId: 's', projectId: 'p', bqLocation: 'EU', imageDigest: 'd', gitSha: 'g', executionId: 'e' } as LoaderContext['config'],
+    logger: new Logger({}, 'error'), logicalPeriod: '2026-10-09T10', runId: 'run1', targetDate: '2026-10-09T10',
+  });
+  const AUGR = pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' });
+  const PNL = [AUGR, pnlRow()];
+  const withEnv = async (env: Record<string, string>, f: () => Promise<void>): Promise<void> => {
+    const keep = { ...process.env }; Object.assign(process.env, env);
+    try { await f(); } finally { for (const k of Object.keys(env)) delete process.env[k]; Object.assign(process.env, keep); }
+  };
+
+  it('без флага: шлюз readonly, записей нет', async () => {
+    const { d, calls } = deps(PNL);
+    await unitkaStorePnlLoader(ctx(), d);
+    expect(calls.readonly).toBe(true);
+    expect(calls.writes).toEqual([]);
+  });
+
+  it('с флагом: ADOPT → одна атомарная запись, отпечаток в metadata; повтор — NOOP; без ADOPT — тоже NOOP', async () => {
+    const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
+    tabState.values = [[...init.header], ...init.rows]; tabState.meta = []; tabState.title = TAB_NAME;
+    const adopt = contentSha(tabState.values);
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt }, async () => {
+      const a = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), a.d);
+      expect(a.calls.readonly).toBe(false);
+      expect(a.calls.writes).toEqual(['updateCells']);
+      expect(tabState.meta).toHaveLength(1);
+      expect(tabState.meta[0]!.value).toBe(contentSha(tabState.values));
+      const b = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), b.d);
+      expect(b.calls.writes).toEqual([]);
+    });
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const c = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), c.d);
+      expect(c.calls.writes).toEqual([]);
+    });
+  });
+
+  it('с флагом: ручная правка — STORE_PNL_TAB_EDITED без записи; чужое имя — STORE_PNL_TAB_MISSING; сломанная модель — STORE_PNL_PUBLISH_GATE', async () => {
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const saved = tabState.values.map((r) => [...r]);
+      tabState.values[1]![1] = 1;
+      const a = deps([AUGR, pnlRow({ revenue_rub: 5 })]);
+      await expect(unitkaStorePnlLoader(ctx(), a.d)).rejects.toMatchObject({ code: 'STORE_PNL_TAB_EDITED' });
+      expect(a.calls.writes).toEqual([]);
+      tabState.values = saved;
+      tabState.title = 'Другое';
+      await expect(unitkaStorePnlLoader(ctx(), deps(PNL).d)).rejects.toMatchObject({ code: 'STORE_PNL_TAB_MISSING' });
+      tabState.title = TAB_NAME;
+      const g = deps([AUGR, pnlRow({ financial_state: 'FINANCIAL_COMPLETE', pending_rows: 2 })]);
+      await expect(unitkaStorePnlLoader(ctx(), g.d)).rejects.toMatchObject({ code: 'STORE_PNL_PUBLISH_GATE' });
+      expect(g.calls.writes).toEqual([]);
+    });
   });
 });

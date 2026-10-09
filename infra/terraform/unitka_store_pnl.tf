@@ -14,7 +14,8 @@
 #   2) вью (tools/unitka_store_pnl_deploy.py --apply) — после таблицы снимка, до первого прогона;
 #   3) deploy-prod — тот же digest и на unitka-store-pnl-prod;
 #   4) ручной прогон → QA = PASS → снять паузу (scheduler-control.yml).
-# Вкладка «WB Магазин P&L» этим контуром НЕ создаётся и не пишется (отдельное OWNER ACK).
+# Вкладка «WB Магазин P&L» создана разово 09.10 (sheetId 989153123, OWNER ACK). Автопубликация —
+# UNITKA_STORE_PNL_PUBLISH=1 (по умолчанию 0), только эта вкладка; см. runbook §11.
 # ══════════════════════════════════════════════════════════════════════════════
 
 locals {
@@ -24,6 +25,10 @@ locals {
     UNITKA_SHEET_NAME     = "WB_Юнит_2025"
     UNITKA_MART_DATASET   = var.mart_dataset
     UNITKA_OPS_DATASET    = "wb_ops"
+    # AUTO-PUBLISH вкладки «WB Магазин P&L» — выключен. Env Job'а под ignore_changes: живое значение
+    # ставится gcloud по OWNER ACK (runbook §11), здесь — значения при пересоздании Job'а.
+    UNITKA_STORE_PNL_PUBLISH  = "0"
+    UNITKA_STORE_PNL_SHEET_ID = "989153123"
   }
   # Порядок колонок = snapshotRecord() в bq.ts (INSERT … SELECT * из stage); закреплён тестом.
   store_pnl_snapshot_schema = [
