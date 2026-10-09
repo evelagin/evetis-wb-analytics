@@ -160,6 +160,13 @@ def test_uncommitted_reconciliation_fence_cannot_reorder_or_claim_zero_pending(p
     assert P.pending_receipts(b,{i:it})==[(i,it)]
 
 
+def test_elected_uncommitted_intent_cannot_yield_to_another_leaf(pilot):
+    p=pilot;i,it=supplies(p);sh=it['shard_root']
+    p.records.meta.objects[f'BFQ_{sh}_0000000001_DISPATCH_INTENT']=({'root':sh[:16],'kind':'dispatch_intent'},D.encoded({'record_hash':'a'*64}))
+    b=SimpleNamespace(c=p.b.c,store=p.b.store)
+    with pytest.raises(BF.B.EvidenceError,match='no reordering'):P.pending_receipts(b,{i:it})
+
+
 def test_reconciled_receipt_yields_even_when_new_report_quota_is_waiting(pilot,monkeypatch):
     p=pilot;catalog(p);i,it=supplies(p);H.leaf_wake(H.Backend(p.b,p.m),p.m,i,it,[])
     overlay,_=policy(p.m);monkeypatch.setattr(P,'load',lambda *a,**k:overlay)

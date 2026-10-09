@@ -164,12 +164,22 @@ def pending_receipts(backend,plans):
         recon=latest.get((shard,'RECONCILED'),0)
         if receipt>intent or recon>intent:fail('receipt fence sequence exceeds elected intent')
         if not intent:continue
+        elected=metadata.get_table(locks,f'BFQ_{shard}_{intent:010d}_DISPATCH_INTENT')
+        if not elected or elected[0]!={'root':shard[:16],'kind':'dispatch_intent'}:fail('elected intent fence metadata differs')
+        election=parse(elected[1])
+        if set(election)!={'record_hash'}:fail('elected intent fence schema differs')
+        h=D.check_hash(election['record_hash'])
+        commit=metadata.get_table(locks,'BFR_'+h) if 'BFR_'+h in names else None
+        expected=({'root':shard[:16],'kind':'dispatch_intent'},D.encoded(dict(root_hash=shard,record_hash=h,kind='DISPATCH_INTENT',sequence=intent)))
+        if commit!=expected:fail('elected intent uncommitted; no reordering')
         accepted=0
         if recon:
             marker=metadata.get_table(locks,f'BFQ_{shard}_{recon:010d}_RECONCILED')
             labels={'root':shard[:16],'kind':'reconciled'}
             if not marker or marker[0]!=labels:fail('reconciliation fence metadata differs')
-            desc=parse(marker[1]);h=desc.get('record_hash');D.check_hash(h)
+            desc=parse(marker[1])
+            if set(desc)!={'record_hash'}:fail('reconciliation fence schema differs')
+            h=desc['record_hash'];D.check_hash(h)
             commit=metadata.get_table(locks,'BFR_'+h) if 'BFR_'+h in names else None
             expected=(labels,D.encoded(dict(root_hash=shard,record_hash=h,kind='RECONCILED',sequence=recon)))
             if commit is not None:
