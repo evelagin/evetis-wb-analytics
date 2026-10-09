@@ -197,9 +197,9 @@ def _me(deps, chat, uid, principal):
 def _help(deps, chat, principal):
     if principal.can_manage_team:
         text = ("ℹ️ <b>Команды EVETIS</b>\n/me — мой доступ\n/team — команда\n/requests — запросы доступа\n"
-                "/apply — запрос доступа\n/help — справка\n\nКнопки модерации доступны в карточках отзывов и вопросов.")
+                "/apply — запрос доступа\n/status — состояние опроса WB\n/help — справка\n\nКнопки модерации доступны в карточках отзывов и вопросов.")
     elif principal.can_moderate:
-        text = ("ℹ️ <b>Команды EVETIS</b>\n/me — мой доступ\n/help — справка\n\n"
+        text = ("ℹ️ <b>Команды EVETIS</b>\n/me — мой доступ\n/status — состояние опроса WB\n/help — справка\n\n"
                 "Кнопки модерации доступны в карточках отзывов и вопросов.")
     else:
         text = "ℹ️ <b>Команды EVETIS</b>\n/apply — запросить доступ к модерации\n/me — мой доступ"

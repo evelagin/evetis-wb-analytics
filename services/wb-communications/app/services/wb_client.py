@@ -105,6 +105,31 @@ class WBClient:
         feedbacks = ((data.get("data") or {}).get("feedbacks")) or []
         return feedbacks
 
+    def get_recent_answered_feedbacks(self, date_from: int, take: int = 100, skip: int = 0) -> list[dict]:
+        """R2.4A.1: one page of the ANSWERED feed since ``date_from`` (unix seconds). WB puts
+        rating-only reviews here without any seller answer; callers must check the answer."""
+        params = {"isAnswered": "true", "take": take, "skip": skip, "order": "dateDesc", "dateFrom": int(date_from)}
+
+        def _do() -> httpx.Response:
+            return self._request("GET", self._s.wb_feedbacks_path, params=params)
+
+        resp = retry_call(_do, retries=3, retry_on=_RETRY_ON)
+        if resp.status_code >= 400:
+            raise WBApiError("WB answered feedbacks fetch failed", status_code=resp.status_code)
+        return (((resp.json() or {}).get("data") or {}).get("feedbacks")) or []
+
+    def iter_recent_answered_feedbacks(self, date_from: int, max_items: int = 300) -> list[dict]:
+        """Bounded: at most ``max_items`` answered reviews created since ``date_from``."""
+        collected: list[dict] = []
+        skip, take = 0, 100
+        while len(collected) < max_items:
+            batch = self.get_recent_answered_feedbacks(date_from, take=take, skip=skip)
+            collected.extend(batch)
+            if len(batch) < take:
+                break
+            skip += take
+        return collected[:max_items]
+
     def iter_unanswered_feedbacks(self) -> list[dict]:
         """Paginate through unanswered feedbacks up to max_pages / max_items.
 

@@ -1031,50 +1031,78 @@ def _send_card(deps: Deps, doc: dict, doc_id: str, card_builder, v2_meta) -> dic
 def run_poll(deps: Deps) -> dict:
     """One scheduled poll. The poll start bounds the R2 operator-draft time budget."""
     token = _POLL_STARTED.set(time.monotonic())
+    from app.services.wb_completeness import record_poll_health
+    started = datetime.now(timezone.utc)
     try:
-        return _run_poll(deps)
+        summary = _run_poll(deps)
+    except Exception as exc:
+        record_poll_health(deps, started, None, error=type(exc).__name__)   # R2.4A.1 /status
+        raise
     finally:
         _POLL_STARTED.reset(token)
+    record_poll_health(deps, started, summary)
+    return summary
 
 
 def _run_poll(deps: Deps) -> dict:
     poll_started = time.monotonic()
     feedbacks = deps.wb.iter_unanswered_feedbacks()
     fetched = len(feedbacks)
-    processed = skipped = errors = 0
     legacy_feedback_ids = []
 
-    for fb in feedbacks:
+    def ingest_one(fb) -> str | None:
+        """One WB review through the normal pipeline; the review id is the idempotency key."""
         review = Review.from_wb_feedback(fb)
         if not review.review_id:
-            continue
+            return None
         should_process, doc_id, doc = deps.repo.claim_review(review)
         if not should_process:
             if doc.get("status") == "published" and not doc.get("verified_at"):
                 legacy_feedback_ids.append(doc_id)
-            skipped += 1
-            continue
+            return "skipped"
         try:
             doc = _draft_and_send(deps, review, doc, doc_id, CommunicationType.REVIEW, build_card)
-            processed += 1
             # Shadow-only: run Communication Engine v2 for observation. Fully
             # isolated — never affects the card just sent or WB publishing.
             _run_shadow(deps, review, doc, doc_id)
+            return "processed"
         except Exception as exc:  # noqa: BLE001 — one bad review must not kill the batch
             deps.repo.mark_error(doc_id, f"{type(exc).__name__}: {exc}")
             _sync_current(deps, doc_id, doc)
             _emit_event(deps, deps.repo.get(doc_id) or doc, doc_id, EventType.FAILED,
                         status_after=Status.ERROR.value, error_code=type(exc).__name__, error_message=str(exc))
             log_event(logger, "error", "poll item failed", doc_id=doc_id, error=type(exc).__name__)
-            errors += 1
+            return "errors"
+
+    outcomes = [ingest_one(fb) for fb in feedbacks]
+    processed, skipped, errors = (outcomes.count(k) for k in ("processed", "skipped", "errors"))
+    rating_only = None
+    if getattr(deps.settings, "wb_rating_only_ingest_enabled", False):
+        # R2.4A.1: rating-only reviews WB flags isAnswered=true without any seller answer.
+        from app.services.wb_completeness import ingest_rating_only
+        try:
+            rating_only = ingest_rating_only(deps, ingest_one)
+        except Exception as exc:  # noqa: BLE001 — the unanswered feed result stands
+            rating_only = {"errors": 1, "error_class": type(exc).__name__}
+            log_event(logger, "warning", "rating-only ingestion failed", error=type(exc).__name__)
 
     flush_events(deps)
     summary = {"fetched": fetched, "processed": processed, "skipped": skipped, "errors": errors}
+    if rating_only is not None:
+        summary["rating_only"] = rating_only
     from app.services.feedback_publication import reconcile
     summary["feedback_verification"] = reconcile(deps, legacy_feedback_ids)
     # WB buyer questions — separate entity, after reviews, behind its own flag.
     if getattr(deps.settings, "wb_questions_enabled", False):
         summary["questions"] = _run_questions(deps)
+    if getattr(deps.settings, "wb_reconcile_external_answers_enabled", False):
+        # R2.4A.1: close cards already answered in the WB cabinet (read-only towards WB).
+        from app.services.wb_completeness import reconcile_external_answers
+        try:
+            summary["reconciled"] = reconcile_external_answers(deps)
+        except Exception as exc:  # noqa: BLE001
+            summary["reconciled"] = {"errors": 1, "error_class": type(exc).__name__}
+            log_event(logger, "warning", "reconciliation failed", error=type(exc).__name__)
     # v3 SHADOW — strictly after all v2 work of this poll, time-boxed, never raises.
     if getattr(deps.settings, "v3_shadow_enabled", False) and deps.v3 is not None:
         from app.v3.shadow import run_shadow_isolated
@@ -2176,6 +2204,12 @@ def _handle_message(deps: Deps, message: dict) -> dict:
 
     if not _allowed(deps, chat, user_id):
         return {"status": "unauthorized"}
+
+    if team_access.command_of(text) == "/status":
+        # R2.4A.1: read-only operational status for every authorised moderator.
+        from app.services.wb_completeness import status_text
+        deps.telegram.send_message(chat, escape_html(status_text(deps)))
+        return {"status": "status"}
 
     session = deps.repo.get_editing_session(user_id)
 

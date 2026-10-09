@@ -492,6 +492,27 @@ class MemoryRepository:
         doc.update({**fields, "status": status, "lock_expires_at": None, "updated_at": _now()})
         doc["publish_trace"] = (doc.get("publish_trace") or []) + [copy.deepcopy(trace)]
 
+    # --- R2.4A.1: reconciliation + poll health ---
+    def apply_if_unchanged(self, doc_id: str, expected_status: str, expected_generation, fields: dict):
+        """Apply ``fields`` only if status and generation are still what was observed."""
+        doc = self.docs.get(doc_id)
+        if (doc is None or doc.get("status") != expected_status
+                or doc.get("generation_number", 0) != expected_generation):
+            return None
+        doc.update(copy.deepcopy(fields))
+        doc["updated_at"] = _now()
+        return copy.deepcopy(doc)
+
+    def get_poll_health(self):
+        return copy.deepcopy(getattr(self, "_poll_health", None))
+
+    def save_poll_health(self, record: dict) -> None:
+        current = getattr(self, "_poll_health", None) or {}
+        merged = {**current, **record}
+        if not record.get("last_card_at"):
+            merged["last_card_at"] = current.get("last_card_at")
+        self._poll_health = merged
+
     def list_by_status(self, status: str, limit: int = 50,
                        entity_type: Optional[str] = None) -> list[tuple[str, dict]]:
         out = [(k, copy.deepcopy(v)) for k, v in self.docs.items()
@@ -969,6 +990,34 @@ class FirestoreRepository:
                                   "publish_trace": firestore.ArrayUnion([trace])})
 
     @translate_fs_errors
+    @translate_fs_errors
+    def apply_if_unchanged(self, doc_id: str, expected_status: str, expected_generation, fields: dict):
+        """R2.4A.1: one transaction — apply only if status and generation are unchanged."""
+        from google.cloud import firestore
+        client = self._lazy()
+        ref = self._doc(doc_id)
+
+        @firestore.transactional
+        def txn(transaction):
+            snap = ref.get(transaction=transaction)
+            doc = snap.to_dict() if snap.exists else None
+            if (doc is None or doc.get("status") != expected_status
+                    or doc.get("generation_number", 0) != expected_generation):
+                return None
+            patch = {**fields, "updated_at": _now()}
+            transaction.update(ref, patch)
+            return {**doc, **patch}
+
+        return txn(client.transaction())
+
+    def get_poll_health(self):
+        snap = self._lazy().collection("wb_poll_health").document("current").get()
+        return snap.to_dict() if snap.exists else None
+
+    def save_poll_health(self, record: dict) -> None:
+        data = {k: v for k, v in record.items() if k != "last_card_at" or v}
+        self._lazy().collection("wb_poll_health").document("current").set(data, merge=True)
+
     def list_by_status(self, status: str, limit: int = 50,
                        entity_type: Optional[str] = None) -> list[tuple[str, dict]]:
         # Equality-only filters: served by Firestore single-field indexes (no
