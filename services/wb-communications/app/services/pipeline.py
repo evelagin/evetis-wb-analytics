@@ -44,7 +44,7 @@ from app.utils.text import (
 
 logger = get_logger(__name__)
 
-ACTIONS = {"pub", "p31", "s31", "sv2", "u2", "edit", "regen", "skip", "show", "ov", "oc"}
+ACTIONS = {"pub", "p31", "s31", "sv2", "u2", "pa", "sa", "edit", "regen", "skip", "show", "ov", "oc"}
 # callback token -> state-machine action name
 _ACTION_MAP = {"pub": "publish", "edit": "edit", "regen": "regenerate", "skip": "skip", "show": "show"}
 _REVIEW_TEXT_CARD_LIMIT = 700
@@ -384,7 +384,7 @@ def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str
                       f"<b>Недостатки:</b> {e(fit(doc.get('cons')) or '—')}",
                       *([f"<b>Теги покупателя:</b> {e(', '.join(doc.get('bables')))}"] if doc.get('bables') else []),
                       f"<b>Комментарий:</b> {e(fit(doc.get('text')) or '—')}"]
-        lines += ["", answer or "✨ <i>Ответ не предложен.</i>", "",
+        lines += ["", answer or "✨ <i>Ответ не предложен.</i>", *_preflight_lines(doc), "",
                   f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>"]
         return "\n".join(lines), cut
 
@@ -394,6 +394,87 @@ def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str
         cap = int((cap or max(len(str(doc.get(k) or "")) for k in ("text", "pros", "cons"))) * 0.7)
         text, cut = compose(cap)
     return truncate(text, TELEGRAM_MSG_SOFT_LIMIT), cut
+
+
+# --------------------------------------------------------------------------- #
+# R2.3: proactive publication preflight — the finding is on the card BEFORE the owner acts
+# --------------------------------------------------------------------------- #
+# RED: stronger (two-step) confirmation. Serious safety and a policy outage are RED too.
+_RED_RULES = {"V-RESTRICTED", "V-CONFLICT", "V-SAFETY", "V-SAFETY-ROUTE", "V-MEDICAL"}
+_FINDING_RU = {
+    "V-CLAIM": "свойство товара, не подтверждённое документами",
+    "V-FACT": "сведения о составе, не подтверждённые документами",
+    "V-GENERAL": "совет или утверждение, не утверждённое брендом",
+    "V-RESTRICTED": "закрытые сведения (ограниченное значение)",
+    "V-CONFLICT": "противоречие проверенным данным",
+    "V-NUM": "число или процент без подтверждения",
+    "V-MEDICAL": "медицинское утверждение",
+    "V-SAFETY": "небезопасная формулировка о реакции",
+    "V-SAFETY-ROUTE": "случай безопасности требует проверки человеком",
+    "V-SERVICE-PREMISE": "сервисная ситуация, о которой покупатель не сообщал",
+    "PRODUCT_NOT_VERIFIED": "товар не опознан",
+}
+
+
+def _preflight_text(doc):
+    if not _is_v31_only(doc) or _answer_source(doc) not in _V31_SOURCES:
+        return None
+    return clean_answer(doc.get("final_answer") or "") or None
+
+
+def _current_preflight(doc):
+    """The stored preflight, only if it describes exactly the active text and generation."""
+    pf = (doc or {}).get("publication_preflight") or {}
+    text = _preflight_text(doc)
+    if not pf or not text or pf.get("generation") != doc.get("generation_number", 0) \
+            or pf.get("text_sha256") != hashlib.sha256(text.encode()).hexdigest():
+        return None
+    return pf
+
+
+def _ensure_preflight(deps, doc_id, doc, *, force=False):
+    """Run the current publication policy on the active answer and persist the result."""
+    text = _preflight_text(doc)
+    if not text or (not force and _current_preflight(doc)):
+        return doc
+    from app.services.owner_override import fingerprint
+    from app.services.publication_policy import error_policy
+    mode = publication_mode_for(doc)
+    validator = _publication_validator(deps, mode)
+    try:
+        policy = (validator(text, doc, deps.settings) if deps.publication_validator else
+                  validator(text, doc, deps.settings, include_spans=True))
+        if not isinstance(policy, dict) or policy.get("verdict") not in ("PASS", "INFO", "WARNING", "BLOCK"):
+            raise ValueError("invalid policy verdict")
+    except Exception as exc:  # noqa: BLE001
+        policy = error_policy(text, exc)
+    rules = sorted({v.get("rule_id") for v in policy.get("violations") or [] if v.get("rule_id")})
+    red = (["POLICY_UNAVAILABLE"] if policy["verdict"] == "ERROR" else []) + (
+        (["SERIOUS_SAFETY"] if _serious(doc) else []) + (["HIGH_RISK_RULE"] if set(rules) & _RED_RULES else [])
+        if policy["verdict"] == "BLOCK" else [])
+    pf = {"text_sha256": hashlib.sha256(text.encode()).hexdigest(), "generation": doc.get("generation_number", 0),
+          "mode": mode, "policy_version": policy.get("version"), "snapshot": policy.get("snapshot"),
+          "verdict": policy["verdict"], "rules": rules,
+          "spans": [str(s.get("span")) for s in policy.get("violation_spans") or [] if s.get("span")][:5],
+          "fingerprint": fingerprint(policy), "red": bool(red), "red_reasons": red, "checked_at": _now_iso()}
+    deps.repo.update(doc_id, {"publication_preflight": pf})
+    return {**doc, "publication_preflight": pf}
+
+
+def _preflight_lines(doc) -> list[str]:
+    pf = _current_preflight(doc)
+    if not pf or pf["verdict"] in ("PASS", "INFO"):
+        return []
+    if pf["verdict"] == "ERROR":
+        return ["", "⛔ <b>Проверка правил 3.1E сейчас недоступна.</b> Публикация — только решением владельца "
+                    "в два шага."]
+    findings = escape_html("; ".join(_FINDING_RU.get(r, r) for r in pf["rules"]) or "замечание правил")
+    if pf["verdict"] == "WARNING":
+        return ["", f"ℹ️ Замечание правил 3.1E: {findings}."]
+    spans = "; ".join("«" + escape_html(s) + "»" for s in pf.get("spans") or [])
+    head = ("⛔ <b>Высокий риск — система не рекомендует публикацию:</b>" if pf["red"] else
+            "⚠️ <b>Система не рекомендует публикацию без проверки:</b>")
+    return ["", f"{head} {findings}." + (f"\nФрагмент: {spans}" if spans else "")]
 
 
 def _owner_decision_available(deps, doc) -> bool:
@@ -412,9 +493,23 @@ def _v31_only_keyboard(deps, doc_id, doc, *, show_full=False, card_text=None):
     skip = {"text": "⏭ Пропустить", "callback_data": f"skip:{doc_id}"}
     if answer:
         visible = bool(card_text and answer in card_text)
+        other = {"text": "🔄 Другой вариант", "callback_data": f"regen:{doc_id}"}
+        pf = _current_preflight(doc)
+        if pf and pf["verdict"] in ("BLOCK", "ERROR"):
+            # The finding is already on the card: the owner decides here, not after a surprise.
+            from app.services.owner_override import eligible
+            first = []
+            if eligible(doc, deps.settings) and visible:
+                source = doc["answer_versions"][-1]["generation_number"]
+                first.append({"text": "⚠️ Решение владельца: опубликовать", "callback_data": f"ov:{doc_id}:{gen}:{source}"}
+                             if pf["red"] else {"text": "✅ Опубликовать как есть", "callback_data": f"pa:{doc_id}:{gen}"})
+            elif not visible:
+                first.append({"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"})
+            first.append({"text": "✨ Безопасная альтернатива", "callback_data": f"sa:{doc_id}:{gen}"})
+            return {"inline_keyboard": [first, [edit, other], [skip]]}
         rows = [[{"text": "✅ Опубликовать", "callback_data": f"pub:{doc_id}:{gen}"} if visible else
                  {"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}, edit],
-                [{"text": "🔄 Перегенерировать", "callback_data": f"regen:{doc_id}"}, skip]]
+                [other, skip]]
         if show_full and visible:
             rows.append([{"text": "📋 Показать полностью", "callback_data": f"show:{doc_id}"}])
         if _owner_decision_available(deps, doc):
@@ -902,6 +997,7 @@ def _draft_and_send(deps: Deps, subject, doc: dict, doc_id: str, communication_t
 
 
 def _send_card(deps: Deps, doc: dict, doc_id: str, card_builder, v2_meta) -> dict:
+    doc = _ensure_preflight(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.AI_GENERATED,
                 status_after=Status.PROCESSING.value, answer_version=doc.get("generation_number"))
 
@@ -1195,6 +1291,7 @@ def migrate_to_v31_only(deps: Deps, doc_id: str) -> dict:
         deps.repo.cancel_draft(doc_id, token)
         doc = deps.repo.get(doc_id) or doc
     _sync_current(deps, doc_id, doc)
+    doc = _ensure_preflight(deps, doc_id, doc)
     chat = deps.settings.telegram_chat_id
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     msg = deps.telegram.send_message(chat, card_text,
@@ -1303,6 +1400,14 @@ def _handle_callback(deps: Deps, cq: dict) -> dict:
         if action == "s31":
             return _show_v31(deps, doc_id, int(version), chat)
         return _publish_v31(deps, doc_id, int(version), chat, message_id, user_id)
+    if action == "pa":
+        from app.services.owner_override import publish_as_is
+        return publish_as_is(deps, doc_id, chat, message_id, user_id)
+    if action == "sa":
+        doc_id, _, version = doc_id.partition(":")
+        if not version.isdigit() or len(version) > 9:
+            return {"status": "bad_request"}
+        return _safe_alternative(deps, doc_id, int(version), chat, message_id)
     if action in {"sv2", "u2"}:
         doc_id, _, version = doc_id.partition(":")
         if not version.isdigit() or len(version) > 9:
@@ -1379,6 +1484,45 @@ def _show_v31(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
                 if _v31_visible(message, text) else []}
     deps.telegram.send_message(chat, message, keyboard)
     return {"status": "v31_shown"}
+
+
+def _passes_policy(deps, doc, text) -> bool:
+    try:
+        policy = _publication_validator(deps, "v31")(text, doc, deps.settings)
+        return isinstance(policy, dict) and policy.get("verdict") in ("PASS", "INFO", "WARNING")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _safe_alternative(deps: Deps, doc_id, expected_generation: int, chat, message_id) -> dict:
+    """R2.3 «✨ Безопасная альтернатива»: a 3.1E answer that passes the current policy — the
+    stored 3.1E draft if it differs and passes, else a fresh 3.1E draft. Never V2."""
+    doc = deps.repo.get(doc_id)
+    if not doc or not _is_v31_only(doc) or doc.get("generation_number", 0) != expected_generation:
+        return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
+    try:
+        doc, token = deps.repo.begin_regenerate(doc_id)
+    except InvalidTransition:
+        return _stale(deps, chat)
+    current = clean_answer(doc.get("final_answer") or "")
+    draft = doc.get("v31_draft") or {}
+    text = clean_answer(draft.get("text") or "")
+    if not (text and text != current and not _serious(doc) and _passes_policy(deps, doc, text)):
+        draft = _v31_draft(deps, doc_id, doc, budgeted=False) or {}
+        text = clean_answer(draft.get("text") or "") if draft.get("status") == "READY" else ""
+        if text == current:
+            text = ""
+    if not text:
+        deps.repo.cancel_draft(doc_id, token)
+        deps.telegram.send_message(chat, "⚠️ Безопасной альтернативы сейчас нет: отредактируйте ответ "
+                                         "или выберите «🔄 Другой вариант».")
+        return {"status": "no_alternative"}
+    try:
+        doc = deps.repo.commit_regenerate(doc_id, _v31_generation({**draft, "text": text}), token, source="v31e")
+    except InvalidTransition:
+        return _stale(deps, chat, "⚠️ Карточка устарела. Откройте актуальную карточку.")
+    result = _after_regenerate(deps, doc_id, doc, chat, message_id, None)
+    return {**result, "status": "alternative"}
 
 
 def _show_v2(deps: Deps, doc_id, expected_generation: int, chat) -> dict:
@@ -1572,6 +1716,12 @@ def _publish(deps: Deps, doc_id, chat, message_id, user_id, *, expected_generati
                        (" Владелец может опубликовать ответ под свою ответственность."
                         if _owner_decision_available(deps, after) else ""))
         keyboard = _operator_keyboard(deps, doc_id, after if _is_v31_only(after) else doc)
+        if _is_v31_only(after):
+            # The full card with the current finding, so the owner decides on the text itself.
+            after = _ensure_preflight(deps, doc_id, after, force=True)
+            card, _ = _card_builder_for(after)(after, doc_id)
+            message = card + "\n\n<i>" + escape_html(message.split("\n")[0]) + "</i>"
+            keyboard = _operator_keyboard(deps, doc_id, after, card_text=card)
         keyboard["inline_keyboard"][0] = [b for b in keyboard["inline_keyboard"][0]
                                           if not b["callback_data"].startswith(("pub:", "show:"))]
         if _recovery_enabled(deps):
@@ -1893,6 +2043,7 @@ def _regenerate(deps: Deps, doc_id, chat, message_id) -> dict:
 
 
 def _after_regenerate(deps, doc_id, doc, chat, message_id, v2_meta) -> dict:
+    doc = _ensure_preflight(deps, doc_id, doc)
     _sync_current(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.REGENERATED, best_effort=False,
                 answer_version=doc.get("generation_number"))
@@ -1934,6 +2085,7 @@ def _show_full(deps: Deps, doc_id, chat, message_id) -> dict:
     doc = deps.repo.get(doc_id)
     if not doc:
         return {"status": "not_found"}
+    doc = _ensure_preflight(deps, doc_id, doc)
     card_text, _ = _card_builder_for(doc)(doc, doc_id, full=True)
     card_text = _recovery_note(card_text, doc)
     deps.telegram.edit_message_text(chat, message_id, card_text, _operator_keyboard(deps, doc_id, doc, card_text=card_text))
@@ -2016,6 +2168,7 @@ def _handle_message(deps: Deps, message: dict) -> dict:
     _sync_current(deps, doc_id, doc)
     _emit_event(deps, doc, doc_id, EventType.MANUALLY_EDITED, best_effort=False,
                 telegram_user_id=user_id, answer_version=doc.get("generation_number"))
+    doc = _ensure_preflight(deps, doc_id, doc)
     card_text, truncated = _card_builder_for(doc)(doc, doc_id)
     card_text = _recovery_note(_card_with_flags(card_text, {"flags": _manual_text_flags(deps, doc, new_text)}), doc)
     msg = deps.telegram.send_message(chat, card_text,

@@ -88,20 +88,28 @@ def validate_binding(doc,pending):
     if not valid: raise InvalidTransition('override expired or draft changed')
 
 
+def eligible(doc,settings):
+    """Static owner-decision eligibility (no policy run): R2.2 card, owner authority on, a
+    draft-state record, the active answer is 3.1E or operator text within the WB limit, and on
+    any safety case only operator text. Technical limits are never overridden."""
+    from app.services.pipeline import _serious
+    if not _v31_only(doc) or not owner_authority(settings): return False
+    if doc.get('status') not in {'pending_approval','policy_blocked','policy_check_failed','publish_failed'}:
+        return False
+    rows=doc.get('answer_versions') or []
+    if not rows or rows[-1].get('source') not in {'v31e','manual'}: return False
+    if (_serious(doc) or safety_fixed(doc,settings)) and rows[-1]['source']!='manual': return False
+    return is_within_wb_limit(clean_answer(rows[-1]['text']))
+
+
 def _offer_v31(doc,settings):
     """R2.3: the exact active answer of an R2.2 card that the current policy BLOCKs or could
     not check. Serious safety: only operator-written text, never a machine draft. V2 never."""
-    from app.services.pipeline import _answer_source, _serious, publication_mode_for
+    from app.services.pipeline import publication_mode_for
     from app.services.publication_policy import error_policy, validator_for
-    if not owner_authority(settings): return None
-    if doc.get('status') not in {'pending_approval','policy_blocked','policy_check_failed','publish_failed'}:
-        return None
-    rows=doc.get('answer_versions') or []
-    if not rows or rows[-1].get('source') not in {'v31e','manual'}: return None
-    row=rows[-1]
-    if (_serious(doc) or safety_fixed(doc,settings)) and row['source']!='manual': return None
+    if not eligible(doc,settings): return None
+    row=doc['answer_versions'][-1]
     text=clean_answer(row['text'])
-    if not is_within_wb_limit(text): return None      # technical limits are never overridden
     try:
         policy=validator_for(publication_mode_for(doc),settings)(text,doc,settings,include_spans=True)
         if not isinstance(policy,dict) or policy.get('verdict') not in ('PASS','INFO','WARNING','BLOCK'):
@@ -134,6 +142,55 @@ def offer(doc,settings):
     return dict(source_version=row['generation_number'],text=text,policy=policy)
 
 
+def _pending(deps,doc,candidate,user,generation,confirmed_by_card=False):
+    """The confirmation record bound to user, communication, generation, exact text, context,
+    expiry and policy fingerprint."""
+    policy=candidate['policy'];now=datetime.now(timezone.utc)
+    return dict(nonce=secrets.token_hex(12),current_generation=generation,
+        communication_context_sha256=context_hash(doc),
+        current_hash=sha(doc.get('final_answer') or doc.get('ai_answer')),
+        source_version=candidate['source_version'],answer_hash=sha(candidate['text']),
+        override_by=str(user),override_at=now.isoformat(),
+        expires_at=(now+timedelta(seconds=deps.settings.telegram_edit_timeout_seconds)).isoformat(),
+        policy_fingerprint=fingerprint(policy),policy_version=policy['version'],
+        knowledge_snapshot=policy['snapshot'],knowledge_snapshot_sha256=policy['snapshot_sha256'],
+        expertise_sha256=policy['expertise_sha256'],violations=policy['violations'],
+        violation_spans=policy.get('violation_spans',[]),reason_optional=None,
+        confirmed_by_card=confirmed_by_card,
+        preflight_checked_at=(doc.get('publication_preflight') or {}).get('checked_at'))
+
+
+def publish_as_is(deps,payload,chat,message_id,user):
+    """«✅ Опубликовать как есть» on a card that already shows an ordinary (non-RED) content
+    finding: the visible warning is the first confirmation, this tap the final one. Bound to
+    the preflight the owner saw; a changed text, generation or policy refreshes the card."""
+    from app.services.pipeline import (_publish, _stale, _current_preflight, _ensure_preflight,
+                                       _card_builder_for, _operator_keyboard)
+    if not allowed(deps,chat,user):
+        return _deny()
+    doc_id,_,version=payload.partition(':')
+    if not version.isdigit() or len(version)>9: return {'status':'bad_request'}
+    doc=deps.repo.get(doc_id)
+    if not doc: return {'status':'not_found'}
+    if not allowed(deps,chat,user,doc): return _deny()
+    generation=int(version)
+    pf=_current_preflight(doc)
+    if (not _v31_only(doc) or doc.get('generation_number',0)!=generation or not pf
+            or pf['verdict']!='BLOCK' or pf['red']):
+        return _stale(deps,chat,'⚠️ Карточка устарела. Откройте актуальную карточку.')
+    candidate=_offer_v31(doc,deps.settings)
+    if not candidate: return _stale(deps,chat,'⚠️ Карточка устарела. Откройте актуальную карточку.')
+    if fingerprint(candidate['policy'])!=pf['fingerprint']:
+        doc=_ensure_preflight(deps,doc_id,doc,force=True)
+        card,_=_card_builder_for(doc)(doc,doc_id)
+        deps.telegram.edit_message_text(chat,message_id,card,_operator_keyboard(deps,doc_id,doc,card_text=card))
+        return {'status':'override_reconfirmation_required'}
+    pending=_pending(deps,doc,candidate,user,generation,confirmed_by_card=True)
+    try: deps.repo.request_override(doc_id,pending,generation)
+    except InvalidTransition: return _stale(deps,chat)
+    return _publish(deps,doc_id,chat,message_id,user,expected_generation=generation,override_confirmation=pending)
+
+
 def _deny():
     from app.utils.logging import audit_event
     audit_event('auth_denied',route='/telegram-webhook',mechanism='owner_override_allowlist',
@@ -157,17 +214,8 @@ def handle(deps,action,payload,chat,message_id,user):
         candidate=offer(doc,deps.settings)
         if not candidate or candidate['source_version']!=source_version:
             return _stale(deps,chat,'⚠️ Исходный вариант изменился. Прочитайте новую карточку.')
-        policy=candidate['policy'];now=datetime.now(timezone.utc)
-        pending=dict(nonce=secrets.token_hex(12),current_generation=generation,
-            communication_context_sha256=context_hash(doc),
-            current_hash=sha(doc.get('final_answer') or doc.get('ai_answer')),
-            source_version=source_version,answer_hash=sha(candidate['text']),
-            override_by=str(user),override_at=now.isoformat(),
-            expires_at=(now+timedelta(seconds=deps.settings.telegram_edit_timeout_seconds)).isoformat(),
-            policy_fingerprint=fingerprint(policy),policy_version=policy['version'],
-            knowledge_snapshot=policy['snapshot'],knowledge_snapshot_sha256=policy['snapshot_sha256'],
-            expertise_sha256=policy['expertise_sha256'],violations=policy['violations'],
-            violation_spans=policy.get('violation_spans',[]),reason_optional=None)
+        policy=candidate['policy']
+        pending=_pending(deps,doc,candidate,user,generation)
         try: deps.repo.request_override(doc_id,pending,generation)
         except InvalidTransition: return _stale(deps,chat)
         violations='; '.join(sorted({v['rule_id'] for v in policy['violations']}))

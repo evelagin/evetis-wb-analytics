@@ -236,11 +236,15 @@ def test_irritation_complaint_machine_draft_publishes_and_operator_text_can_be_d
     assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"
 
 
+ORDINARY = "Анна, спасибо! Масла ши и миндаля питают кожу рук."   # set: V-CLAIM/V-FACT, not RED
+
+
 def test_moderate_case_owner_decision_on_operator_text():
     d = owner_deps(feedback=anna())
-    doc_id, ov = blocked_operator_text(d, text="Анна, спасибо! Масла ши и миндаля питают кожу рук.")
-    assert ov and cb(d, ov[0], 40)["status"] == "override_confirmation_required"
-    assert confirm(d, 41)["status"] == "published"
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id = doc_of(d)[0]
+    assert cb(d, f"pa:{doc_id}:{doc['generation_number']}", 30)["status"] == "published"
 
 
 # technical guarantees under an owner decision ------------------------------------------------
@@ -348,3 +352,155 @@ def test_migration_skips_records_with_a_known_wb_answer():
     from app.services.pipeline import migration_plan
     assert migration_plan({"status": "publish_failed", "verified_at": "2026-10-08T10:00:00+00:00"}) == \
         "EXCLUDED_ALREADY_ANSWERED"
+
+
+# R2.3 proactive preflight: the finding is on the card BEFORE the owner acts --------------------
+def pf_of(d):
+    return doc_of(d)[1]["publication_preflight"]
+
+
+def test_pass_card_has_persisted_preflight_and_one_click_publish(policies):
+    d = owner_deps()
+    run_poll(d)
+    doc_id, doc = doc_of(d)
+    pf = doc["publication_preflight"]
+    import hashlib
+    assert pf["verdict"] == "PASS" and pf["generation"] == doc["generation_number"] and pf["mode"] == "v31"
+    assert pf["text_sha256"] == hashlib.sha256(doc["final_answer"].encode()).hexdigest()
+    assert pf["policy_version"] and pf["snapshot"] and pf["checked_at"] and pf["rules"] == [] and not pf["red"]
+    keyboard = d.telegram.sent[-1][2]["inline_keyboard"]
+    assert [b["text"] for row in keyboard for b in row] == ["✅ Опубликовать", "✏️ Изменить", "🔄 Другой вариант",
+                                                            "⏭ Пропустить"]
+    assert "не рекомендует" not in card(d)
+    assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"   # one click
+    assert d.wb.published and "owner_override" not in last_trace(d)
+
+
+def test_ordinary_finding_is_shown_before_action_and_owner_publishes_in_one_tap(policies):
+    d = owner_deps(feedback=anna())
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id, gen = doc_of(d)[0], doc["generation_number"]
+    pf = pf_of(d)
+    assert pf["verdict"] == "BLOCK" and set(pf["rules"]) >= {"V-CLAIM"} and pf["spans"] and not pf["red"]
+    assert "Система не рекомендует публикацию без проверки" in card(d) and "«питают»" in card(d)
+    texts = [b["text"] for row in d.telegram.sent[-1][2]["inline_keyboard"] for b in row]
+    assert texts == ["✅ Опубликовать как есть", "✨ Безопасная альтернатива", "✏️ Изменить",
+                     "🔄 Другой вариант", "⏭ Пропустить"]
+    assert cb(d, f"pa:{doc_id}:{gen}", 30, user=OPERATOR)["status"] == "unauthorized" and d.wb.published == []
+    assert cb(d, f"pa:{doc_id}:{gen}", 31)["status"] == "published"
+    trace = last_trace(d)
+    assert trace["policy"]["verdict"] == "BLOCK" and trace["owner_override"]["override"] is True
+    assert d.repo.get(doc_id)["owner_override_audit"][-1]["confirmed_by_card"] is True
+    assert [t for _, t in d.wb.published] == [ORDINARY] and policies.live.calls == []
+    assert cb(d, f"pa:{doc_id}:{gen}", 32)["status"] == "stale" and len(d.wb.published) == 1
+
+
+def test_finding_card_without_owner_authority_offers_no_publish():
+    d = owner_deps(feedback=anna(), owners=())
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id = doc_of(d)[0]
+    assert not any(c.startswith(("pa:", "ov:", "pub:")) for c in buttons(d))
+    assert f"sa:{doc_id}:{doc['generation_number']}" in buttons(d)
+    assert cb(d, f"pa:{doc_id}:{doc['generation_number']}", 30)["status"] == "unauthorized"
+
+
+def test_red_finding_requires_two_steps():
+    d = owner_deps()
+    run_poll(d)
+    doc = edit(d, CLAIM, n=20)                                     # V-CONFLICT → RED
+    doc_id, gen = doc_of(d)[0], doc["generation_number"]
+    assert pf_of(d)["red"] and "HIGH_RISK_RULE" in pf_of(d)["red_reasons"]
+    assert "Высокий риск" in card(d)
+    assert not any(c.startswith("pa:") for c in buttons(d))
+    ov = [c for c in buttons(d) if c.startswith("ov:")]
+    assert cb(d, f"pa:{doc_id}:{gen}", 30)["status"] == "stale" and d.wb.published == []   # no one-tap
+    assert cb(d, ov[0], 31)["status"] == "override_confirmation_required" and d.wb.published == []
+    assert confirm(d, 32)["status"] == "published"
+
+
+def test_policy_outage_at_card_time_is_red(monkeypatch):
+    import app.services.publication_policy as pp
+    d = owner_deps()
+    run_poll(d)
+    monkeypatch.setattr(pp, "validate_for_publication",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("snapshot unavailable")))
+    doc = edit(d, "Людмила, спасибо за отзыв!", n=20)
+    pf = pf_of(d)
+    assert pf["verdict"] == "ERROR" and pf["red"] and pf["red_reasons"] == ["POLICY_UNAVAILABLE"]
+    assert "Проверка правил 3.1E сейчас недоступна" in card(d)
+    ov = [c for c in buttons(d) if c.startswith("ov:")]
+    assert ov and not any(c.startswith(("pa:", "pub:")) for c in buttons(d))
+    cb(d, ov[0], 30)
+    assert confirm(d, 31)["status"] == "published" and last_trace(d)["policy"]["verdict"] == "ERROR"
+
+
+def test_policy_change_between_card_and_tap_refreshes_card(monkeypatch):
+    import app.services.owner_override as oo
+    d = owner_deps(feedback=anna())
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id = doc_of(d)[0]
+    real = oo.fingerprint
+    monkeypatch.setattr(oo, "fingerprint", lambda policy: real(policy) + "-new")
+    assert cb(d, f"pa:{doc_id}:{doc['generation_number']}", 30)["status"] == "override_reconfirmation_required"
+    assert d.wb.published == [] and "не рекомендует" in d.telegram.edits[-1][1]
+
+
+def test_safe_alternative_restores_a_passing_3_1e_answer():
+    d = owner_deps(feedback=anna())
+    run_poll(d)
+    v31_text = doc_of(d)[1]["final_answer"]
+    doc = edit(d, ORDINARY, n=20)
+    doc_id = doc_of(d)[0]
+    result = cb(d, f"sa:{doc_id}:{doc['generation_number']}", 30)
+    after = d.repo.get(doc_id)
+    assert result["status"] == "alternative" and after["final_answer"] == v31_text
+    assert after["answer_versions"][-1]["source"] == "v31e" and after["publication_preflight"]["verdict"] == "PASS"
+    assert "✅ Опубликовать" in [b["text"] for row in d.telegram.edit_markups[-1][1]["inline_keyboard"] for b in row]
+    assert d.wb.published == []
+    assert cb(d, f"sa:{doc_id}:{doc['generation_number']}", 31)["status"] == "stale"
+
+
+def test_safe_alternative_unavailable_changes_nothing(monkeypatch):
+    import app.services.pipeline as pl
+    d = owner_deps(feedback=anna())
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id = doc_of(d)[0]
+    monkeypatch.setattr(pl, "_passes_policy", lambda *a: False)
+    monkeypatch.setattr(pl, "_v31_draft", lambda *a, **k: {"status": "HUMAN_REVIEW"})
+    before = d.repo.get(doc_id)
+    assert cb(d, f"sa:{doc_id}:{doc['generation_number']}", 30)["status"] == "no_alternative"
+    after = d.repo.get(doc_id)
+    assert after["final_answer"] == before["final_answer"] and after["generation_number"] == before["generation_number"]
+    assert after["status"] == "pending_approval"
+
+
+@pytest.mark.parametrize("case", ["external", "uncertain", "readback", "stale", "length"])
+def test_publish_as_is_never_bypasses_technical_stops(case):
+    d = owner_deps(feedback=anna())
+    run_poll(d)
+    doc = edit(d, ORDINARY, n=20)
+    doc_id, gen = doc_of(d)[0], doc["generation_number"]
+    d.wb = WBApi()
+    if case == "external":
+        d.wb.answer = {"text": "Ответ из кабинета WB", "state": "wbRu"}
+        assert cb(d, f"pa:{doc_id}:{gen}", 30)["status"] == "answered_externally" and d.wb.calls == ["GET"]
+    elif case == "uncertain":
+        d.wb.visible, d.wb.error = False, WBPublishOutcomeUnknown("unknown", status_code=None)
+        assert cb(d, f"pa:{doc_id}:{gen}", 30)["status"] == "publish_unknown"
+        cb(d, f"pa:{doc_id}:{gen}", 31)
+        assert d.wb.calls.count("POST") == 1
+    elif case == "readback":
+        d.wb.visible = False
+        assert cb(d, f"pa:{doc_id}:{gen}", 30)["status"] == "publish_accepted"
+        assert d.repo.get(doc_id)["status"] != "published"
+    elif case == "stale":
+        assert cb(d, f"pa:{doc_id}:{gen - 1}", 30)["status"] == "stale" and d.wb.calls == []
+    else:
+        long_text = "Спасибо! " * 120
+        d.repo.docs[doc_id]["final_answer"] = long_text
+        d.repo.docs[doc_id]["answer_versions"][-1]["text"] = long_text
+        assert cb(d, f"pa:{doc_id}:{gen}", 30)["status"] == "stale" and d.wb.calls == []
