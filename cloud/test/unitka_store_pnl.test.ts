@@ -256,3 +256,10 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
     expect(LOADERS['unitka-store-pnl']).toMatchObject({ prodOnly: true, retryTransient: true });
   });
 });
+
+describe('Phase C — наследие августа', () => {
+  it('август виден только справочно и никогда не «закрыт»', () => {
+    const p = buildTabPlan([pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' })]);
+    expect(p.rows[0]![15]).toBe('Справочно: наследие, известные дефекты');
+  });
+});

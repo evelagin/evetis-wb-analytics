@@ -100,6 +100,33 @@ SELECT 'UNKNOWN_ACCOUNT_COST' check_name,
   IFNULL(STRING_AGG(CONCAT(month, ': ', CAST(n AS STRING), ' строк, ', FORMAT('%.2f', rub), ' ₽, ', state), '; ' ORDER BY month), 'нет') detail
 FROM u;
 
+-- @check LATE_INVOICE_RESTATEMENT
+-- Р1 (OWNER ACK 09.10): счёт, проведённый ПОСЛЕ окна месяц + 20 суток, ложится в свой месяц услуги, и P&L этого
+-- месяца пересчитан им: колонки кабинета = Σ журнала по месяцу услуги при ЛЮБОЙ дате проводки. Поздние проводки
+-- раскрываются (late_account_bookings), закрытие месяца по правилу +20 — не необратимо.
+WITH pnl AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`),
+led AS (
+  SELECT service_month m,
+    SUM(IF(treatment = 'ACCOUNT_LEVEL', amount_rub, 0)) cost_rub, -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) income_rub,
+    COUNTIF(booking_date > DATE_ADD(LAST_DAY(service_month), INTERVAL 20 DAY)) late_n
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` GROUP BY 1)
+SELECT 'LATE_INVOICE_RESTATEMENT' check_name,
+  IF(MAX(ABS(p.marketplace_costs_rub - IFNULL(l.cost_rub, 0)) + ABS(p.marketplace_income_rub - IFNULL(l.income_rub, 0))) < 0.01
+     AND MAX(ABS(p.late_account_bookings - IFNULL(l.late_n, 0))) = 0, 'PASS', 'FAIL') status,
+  STRING_AGG(CONCAT(p.month, ': кабинет ', FORMAT('%.2f', p.marketplace_costs_rub), ' = журнал ', FORMAT('%.2f', IFNULL(l.cost_rub, 0)),
+    ', поздних проводок ', CAST(p.late_account_bookings AS STRING)), '; ' ORDER BY p.month) detail
+FROM pnl p LEFT JOIN led l ON l.m = p.service_month;
+
+-- @check R2_MEMO_ROW_GUARD
+-- Р2: строка «Возмещение…», не выполняющая тождество (|возмещение + vw + vwNds| > 0,01 или for_pay ≠ 0), не наследует MEMO —
+-- она PENDING_CLASSIFICATION до доказательства и блокирует закрытие месяца.
+WITH c AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COVERAGE` WHERE supplier_oper_name LIKE 'Возмещение%' AND booking_date >= DATE '2026-08-01')
+SELECT 'R2_MEMO_ROW_GUARD' check_name,
+  IF(COUNTIF(treatment = 'PENDING_CLASSIFICATION') = 0, 'PASS', 'FAIL') status,
+  CONCAT('строк возмещений ', CAST(COUNT(*) AS STRING), ', MEMO ', CAST(COUNTIF(treatment = 'MEMO_NON_PNL') AS STRING),
+         ', не доказано (PENDING) ', CAST(COUNTIF(treatment = 'PENDING_CLASSIFICATION') AS STRING)) detail
+FROM c;
+
 -- @check R2_REIMBURSEMENT_OFFSET
 -- 5. Р2: возмещения WB погашены вознаграждением WB до копеек, к выплате 0 → MEMO_NON_PNL.
 WITH snap AS (
@@ -177,7 +204,8 @@ SELECT 'STATE_CONSISTENCY' check_name,
          AND orphan_finance_base_rub = 0 AND orphan_finance_logistics_rub = 0 AND sku_month_closed AND month_finance_final
          AND ads_days > 0 AND ads_final_days = ads_days
          AND (account_invoice_window_closed OR (minimum_payment_invoices > 0 AND utilization_invoices > 0)), FALSE)) = 0
-     AND COUNTIF(financial_state IS NULL) = 0, 'PASS', 'FAIL') status,
+     AND COUNTIF(financial_state IS NULL) = 0
+     AND COUNTIF((service_month < DATE '2026-09-01') != (financial_state = 'LEGACY_PARTIAL_KNOWN_DEFECTS')) = 0, 'PASS', 'FAIL') status,
   STRING_AGG(CONCAT(month, ' ', IFNULL(financial_state, 'NULL')), '; ' ORDER BY month) detail
 FROM pnl;
 

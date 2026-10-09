@@ -92,7 +92,8 @@ other AS (
          WHEN supplier_oper_name IN ('Платная приемка', 'Пересчет платной приемки') THEN 'ACCEPTANCE' END deduction_class,
     IFNULL(SAFE_CAST(penalty AS NUMERIC), 0) + IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0) amount_rub, srid
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
-  WHERE supplier_oper_name IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки'))
+  WHERE supplier_oper_name IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки')),
+l AS (
 SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONTH) booking_month,
   CASE WHEN deduction_class = 'UTILIZATION' AND m_num IS NOT NULL AND m_year IS NOT NULL THEN DATE(m_year, m_num, 1)
        WHEN deduction_class = 'MINIMUM_PAYMENT_ADJUSTMENT' THEN DATE_SUB(DATE_TRUNC(finance_date, MONTH), INTERVAL 1 MONTH)
@@ -120,7 +121,16 @@ FROM (
   SELECT finance_row_key, finance_date, label, deduction_class, amount_rub, srid, transit_supply_id, m_num, m_year FROM ded2
   UNION ALL
   SELECT finance_row_key, finance_date, label, deduction_class, amount_rub, srid, CAST(NULL AS STRING), NULL, NULL FROM other
-  WHERE amount_rub != 0);
+  WHERE amount_rub != 0)),
+periods AS (
+  SELECT DISTINCT SAFE_CAST(report_period_from AS DATE) pf, SAFE_CAST(report_period_to AS DATE) pt
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`)
+-- Три даты раздельно (OWNER ACK 09.10): месяц услуги (service_month), дата операции в отчёте WB
+-- (source_operation_date = booking_date, по ней окна), дата отчёта WB, в котором строка пришла (report_date).
+-- Поздний счёт за прошлый месяц услуги ложится в СВОЙ месяц услуги — P&L этого месяца пересчитывается сам.
+SELECT l.*, l.booking_date source_operation_date, p.pt report_date
+FROM l LEFT JOIN periods p ON l.booking_date BETWEEN p.pf AND p.pt
+QUALIFY ROW_NUMBER() OVER (PARTITION BY l.finance_row_key, l.label, l.amount_rub ORDER BY p.pt) = 1;
 
 -- ─── 4. Новые / неутверждённые операции (C4): операция вне карты или с классом PENDING / UNKNOWN ─────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_NEW_OPERATIONS` AS
@@ -158,11 +168,20 @@ WITH f AS (
     ABS(IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0)) acc, ABS(IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0)) addp,
     ABS(IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0)) rb, ABS(IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0)) comp,
     ABS(IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0)) oth, ABS(IFNULL(SAFE_CAST(acquiring_fee AS NUMERIC), 0)) acq,
-    ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)) ppvz
+    ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)) ppvz,
+    -- Р2: возмещение = rebillLogisticCost + ppvzReward, погашено vw + vwNds до копеек, к выплате 0
+    ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.rebillLogisticCost') AS NUMERIC), 0)
+      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)
+      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.vw') AS FLOAT64), 0)
+      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.vwNds') AS NUMERIC), 0)) memo_offset_abs
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`),
 c AS (
-  SELECT f.*, IFNULL(m.treatment, 'NEW_FINANCE_OPERATION') treatment,
+  SELECT f.*,
+    -- MEMO не наследуется: строка возмещения, не выполняющая тождество Р2, — PENDING_CLASSIFICATION до доказательства
+    CASE WHEN m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'PENDING_CLASSIFICATION'
+         ELSE IFNULL(m.treatment, 'NEW_FINANCE_OPERATION') END treatment,
     CASE WHEN m.treatment IN ('PENDING_CLASSIFICATION') OR m.treatment IS NULL THEN 'NONE'
+         WHEN m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'NONE'
          WHEN f.op IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики') THEN 'COHORT'
          WHEN f.op IN ('Хранение', 'Коррекция хранения') THEN 'STORAGE'
          WHEN f.op = 'Удержание' THEN 'DEDUCTION_LEDGER'
@@ -287,6 +306,9 @@ acc AS (
     SUM(IF(treatment = 'UNKNOWN', ABS(amount_rub), 0)) unknown_rub,
     COUNTIF(category = 'MINIMUM_PAYMENT') minimum_payment_invoices,
     COUNTIF(category = 'UTILIZATION') utilization_invoices,
+    -- проведено позже окна (месяц + 20 суток): месяц, уже вышедший из PARTIAL, пересчитан этим счётом
+    COUNTIF(booking_date > DATE_ADD(LAST_DAY(service_month), INTERVAL 20 DAY)) late_account_bookings,
+    SUM(IF(booking_date > DATE_ADD(LAST_DAY(service_month), INTERVAL 20 DAY), amount_rub, 0)) late_account_rub,
     STRING_AGG(DISTINCT CONCAT(category, ':', CAST(booking_date AS STRING)), ', ') account_bookings
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` GROUP BY 1),
 memo AS (
@@ -304,6 +326,7 @@ j AS (
     IFNULL(acc.other_marketplace_cost_rub, 0) other_marketplace_cost_rub, IFNULL(acc.marketplace_income_rub, 0) marketplace_income_rub,
     IFNULL(acc.unknown_rub, 0) unknown_rub, IFNULL(acc.minimum_payment_invoices, 0) minimum_payment_invoices,
     IFNULL(acc.utilization_invoices, 0) utilization_invoices, acc.account_bookings,
+    IFNULL(acc.late_account_bookings, 0) late_account_bookings, IFNULL(acc.late_account_rub, 0) late_account_rub,
     IFNULL(memo.memo_reimbursement_rub, 0) memo_reimbursement_rub, IFNULL(u.pending_rows, 0) pending_rows,
     IFNULL(u.unconsumed_finance_rub, 0) unconsumed_finance_rub, IFNULL(dg.deduction_source_gap_rub, 0) deduction_source_gap_rub,
     IFNULL(cov.final_month, FALSE) final_month, IFNULL(cov.final_m20, FALSE) final_m20, IFNULL(cov.final_m46, FALSE) final_m46,
@@ -350,7 +373,10 @@ SELECT
     + marketplace_income_rub management_net_store_profit_rub,
   SAFE_DIVIDE(sku_contribution_rub + reconciliation_adjustments_rub + mature_cohort_adjustment_rub - marketplace_costs_rub
     + marketplace_income_rub, IF(cohort_mature, seller_base_rub, revenue_model_rub + price_adjustment_rub)) management_net_store_margin,
-  CASE WHEN unknown_rub > 0.5 OR orphan_finance_base_rub != 0 OR orphan_finance_logistics_rub != 0
+  -- Август 2026 — только сравнение (OWNER ACK 09.10): известные дефекты Юнитки (отказы, оценочное хранение, формулы)
+  -- Phase C не чинит, поэтому месяц не может выглядеть закрытым, сумма — справочная.
+  CASE WHEN m < DATE '2026-09-01' THEN 'LEGACY_PARTIAL_KNOWN_DEFECTS'
+       WHEN unknown_rub > 0.5 OR orphan_finance_base_rub != 0 OR orphan_finance_logistics_rub != 0
          OR unconsumed_finance_rub > 0.5 THEN 'UNKNOWN_COST_PRESENT'
        WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
        -- месяц ещё идёт в листе (или снимок отстал) — счета за него заведомо впереди
@@ -380,7 +406,7 @@ SELECT
   logistics_adjustment_rub, realized_qty, sold_qty, unsettled_qty, oversold_qty, unsettled_revenue_rub, unsettled_margin_rub,
   memo_reimbursement_rub, unknown_rub, pending_rows, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub,
-  minimum_payment_invoices, utilization_invoices, account_bookings,
+  minimum_payment_invoices, utilization_invoices, account_bookings, late_account_bookings, late_account_rub,
   cohort_mature, account_invoice_window_closed, month_finance_final, sku_month_closed, final_through, snapshot_lcd,
   model_gap_abs_rub,
   (SELECT MAX(snapshot_id) FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`) snapshot_id

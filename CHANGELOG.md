@@ -13,7 +13,8 @@
 - Новые вью `wb_mart` (существующие не меняются): `V_WB_FINANCE_OPERATION_MAP`, `V_WB_STORE_FINANCE_COHORT_DAILY`,
   `V_WB_STORE_ACCOUNT_LEDGER`, `V_WB_FINANCE_NEW_OPERATIONS`, `V_WB_STORE_FINANCE_COVERAGE`, `V_WB_STORE_PNL_MONTHLY`
   (`sql/unitka/store_pnl_v1.sql`, развёртывание `tools/unitka_store_pnl_deploy.py`). QA — `sql/unitka/qa_store_pnl_v1.sql`
-  (17 проверок). Окно — с 2026-08; состояния месяца по данным (покрытие FINAL-отчётов), не по календарю.
+  (19 проверок). Окно — с 2026-08 (август — `LEGACY_PARTIAL_KNOWN_DEFECTS`, справочно); состояния месяца по данным
+  (покрытие FINAL-отчётов), не по календарю; поздний счёт пересчитывает свой месяц услуги.
 - Контракт: счета кабинета по месяцу услуги (Р1); возмещения WB — MEMO_NON_PNL (Р2, доказано на 2 794 строках);
   мост сроков до созревания когорты в прибыль не входит. Экономика `MART_SKU_DAILY`, `V_DASH_*` и листа не меняется.
 

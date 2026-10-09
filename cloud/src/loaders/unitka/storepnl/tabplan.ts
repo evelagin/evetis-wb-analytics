@@ -23,6 +23,7 @@ export const TAB_HEADER = [
 ] as const;
 
 export const STATE_LABEL: Readonly<Record<string, string>> = {
+  LEGACY_PARTIAL_KNOWN_DEFECTS: 'Справочно: наследие, известные дефекты',
   FINANCIAL_COMPLETE: 'Закрыт',
   FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE: 'Закрыт, когорта дозревает',
   PARTIAL_AWAITING_ACCOUNT_INVOICE: 'Ждём счета WB',

@@ -13,7 +13,7 @@ import unitka_store_pnl_deploy as t  # noqa: E402
 SQL = (ROOT / "sql/unitka/store_pnl_v1.sql").read_text()
 QA = (ROOT / "sql/unitka/qa_store_pnl_v1.sql").read_text()
 TF = (ROOT / "infra/terraform/unitka_store_pnl.tf").read_text()
-STATES = ["FINANCIAL_COMPLETE", "FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE", "PARTIAL_AWAITING_ACCOUNT_INVOICE",
+STATES = ["LEGACY_PARTIAL_KNOWN_DEFECTS", "FINANCIAL_COMPLETE", "FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE", "PARTIAL_AWAITING_ACCOUNT_INVOICE",
           "PENDING_CLASSIFICATION", "UNKNOWN_COST_PRESENT"]
 
 
@@ -46,9 +46,9 @@ def test_every_statement_is_a_single_view_without_dml():
 
 def test_state_machine_has_exactly_the_owner_states_and_unknown_first():
     pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
-    case = re.search(r"CASE WHEN unknown_rub.*?END financial_state", pnl, re.S).group(0)
+    case = re.search(r"CASE WHEN m < DATE '2026-09-01'.*?END financial_state", pnl, re.S).group(0)
     assert set(re.findall(r"'([A-Z_]+)'", case)) == set(STATES)
-    order = [case.index(f"'{s}'") for s in ["UNKNOWN_COST_PRESENT", "PENDING_CLASSIFICATION", "PARTIAL_AWAITING_ACCOUNT_INVOICE",
+    order = [case.index(f"'{s}'") for s in ["LEGACY_PARTIAL_KNOWN_DEFECTS", "UNKNOWN_COST_PRESENT", "PENDING_CLASSIFICATION", "PARTIAL_AWAITING_ACCOUNT_INVOICE",
                                            "FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE"]]
     assert order == sorted(order)
 
@@ -108,7 +108,7 @@ def test_qa_is_read_only_blocks_and_covers_c4():
     names = blocks[0::2]
     assert names == ["NEW_FINANCE_OPERATION", "PENDING_CLASSIFICATION_IN_PNL_MONTHS", "SNAPSHOT_FRESH", "SNAPSHOT_KEY_UNIQUE",
                      "FINANCE_COVERAGE", "DEDUCTION_SOURCE_RECONCILIATION", "ORPHAN_FINANCE", "ACCOUNT_SERVICE_PERIOD",
-                     "UNKNOWN_ACCOUNT_COST", "R2_REIMBURSEMENT_OFFSET", "BRIDGE_ADS", "BRIDGE_STORAGE", "BRIDGE_LOGISTICS_TIMING",
+                     "UNKNOWN_ACCOUNT_COST", "LATE_INVOICE_RESTATEMENT", "R2_MEMO_ROW_GUARD", "R2_REIMBURSEMENT_OFFSET", "BRIDGE_ADS", "BRIDGE_STORAGE", "BRIDGE_LOGISTICS_TIMING",
                      "FORMULA_IDENTITY", "ROW_IDENTITY", "STATE_CONSISTENCY", "SHEET_MODEL_GAP"]
     for name, sql in zip(names, blocks[1::2]):
         bare = re.sub(r"--[^\n]*", "", sql).strip()
@@ -137,3 +137,17 @@ def test_no_comment_line_ends_with_semicolon():
     assert not re.findall(r"^\s*--.*;\s*$", SQL, flags=re.M)
     tails = {n: b.rstrip()[-12:] for n, b in bodies().items()}
     assert tails["V_WB_STORE_PNL_MONTHLY"].endswith("FROM n"), tails
+
+
+def test_late_invoice_lands_in_its_service_month():
+    led = bodies()["V_WB_STORE_ACCOUNT_LEDGER"]
+    for col in ["service_month", "booking_date", "source_operation_date", "report_date"]:
+        assert re.search(rf"\b{col}\b", led), col
+    pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
+    acc = re.search(r"\nacc AS \(.*?GROUP BY 1\)", pnl, re.S).group(0)
+    assert "SELECT service_month m," in acc and "WHERE" not in acc.split("FROM")[-1], "кабинет — по месяцу услуги без фильтра по дате проводки"
+
+
+def test_memo_is_not_inherited_without_row_identity():
+    cov = bodies()["V_WB_STORE_FINANCE_COVERAGE"]
+    assert "m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'PENDING_CLASSIFICATION'" in cov
