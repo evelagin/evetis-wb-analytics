@@ -309,6 +309,8 @@ class MemoryRepository:
         self.editing: dict[str, dict] = {}
         self.updates: dict[str, dict] = {}
         self.outbox: dict[str, dict] = {}
+        from app.services.team_store import MemoryTeamStore
+        self.team = MemoryTeamStore()
         self._lease = lease_seconds
         self._ulease = update_lease_seconds
         self._elease = edit_lease_seconds
@@ -624,6 +626,12 @@ class FirestoreRepository:
 
     def _doc(self, doc_id: str):
         return self._lazy().collection(self._col_name).document(doc_id)
+
+    @property
+    def team(self):
+        """R2.4A team access store; only touched when TELEGRAM_DYNAMIC_ACCESS_ENABLED=true."""
+        from app.services.team_store import FirestoreTeamStore
+        return FirestoreTeamStore(self._lazy)
 
     @translate_fs_errors
     def claim_review(self, review: Review):
