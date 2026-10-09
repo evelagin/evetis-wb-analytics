@@ -2,7 +2,7 @@
 from datetime import timedelta
 import copy
 from tools.tenancy import full_history as F, full_controller as H, tenant_backfill as BF
-from tools.tenancy import durable_plan as D, cloud_controller as C, orchestration_contract as O
+from tools.tenancy import durable_plan as D, cloud_controller as C, orchestration_contract as O, recent_priority as RP
 
 
 def monitoring_check(store, base, manifest, now):
@@ -84,7 +84,7 @@ def check(store, base, now, source):
         else:raise AssertionError('unproven full GO accepted')
     store.commit(m['hash'],'FULL_MANIFEST',0,m,now)
     original=(H.verify_authority,H.Backend.preflight,H.Backend.state,H.Backend.quota,
-              H.Backend.active_runtime_execution,H.Backend.start,H.Backend.reconcile)
+              H.Backend.active_runtime_execution,H.Backend.start,H.Backend.reconcile,RP.load)
     posts=[]
     paused_entrypoint=paused_entrypoint_check()
     def scope(b,m):
@@ -98,6 +98,10 @@ def check(store, base, now, source):
     try:
         # Isolate the actual CAS/dispatch protocol; synthetic authority is NOT a
         # deployment/GO claim. Production guards are restored before returning.
+        # This synthetic legacy CAS fixture has no live owner descriptor.
+        # Priority authority/drain behavior is exercised independently by the
+        # installed recent_priority_image_check after these stubs are restored.
+        RP.load=lambda *a,**k:None
         H.verify_authority=scope;H.Backend.preflight=lambda *a,**k:None
         H.Backend.state=lambda b,d:BF.B.initial(d['runtime_plan'])
         H.Backend.quota=lambda *a:{'status':'ELIGIBLE','allowance':0}
@@ -120,4 +124,4 @@ def check(store, base, now, source):
                 'full_history_live_go':'UNPROVEN'}
     finally:
         (H.verify_authority,H.Backend.preflight,H.Backend.state,H.Backend.quota,
-         H.Backend.active_runtime_execution,H.Backend.start,H.Backend.reconcile)=original
+         H.Backend.active_runtime_execution,H.Backend.start,H.Backend.reconcile,RP.load)=original
