@@ -4,7 +4,7 @@ import json
 from datetime import datetime,timezone
 from types import SimpleNamespace
 import pytest
-from tools.tenancy import full_controller as H, full_history as F, durable_plan as D, tenant_backfill as BF
+from tools.tenancy import full_controller as H, full_history as F, durable_plan as D, tenant_backfill as BF, controller_cadence as CC
 from tools.tests.test_full_history import manifest
 from tools.tests.test_durable_plan import Backend as Records
 
@@ -22,6 +22,10 @@ def pilot(monkeypatch):
     # This synthetic legacy protocol has no priority authority. Priority tests
     # replace this stub with their independently validated overlay.
     monkeypatch.setattr(H.RP,'load',lambda *a,**k:None)
+    # Isolate the legacy state protocol; cadence tests independently exercise
+    # real executing-controller identity and atomic wake ownership.
+    monkeypatch.setattr(CC,'acquire',lambda *a:None)
+    monkeypatch.setattr(CC,'enabled',lambda *a:False)
     monkeypatch.setattr(H.Backend,'preflight',lambda *a,**k:None)
     monkeypatch.setattr(H.Backend,'quota',lambda *a:{'status':'ELIGIBLE','allowance':0})
     monkeypatch.setattr(H.Backend,'active_runtime_execution',lambda _:False)
