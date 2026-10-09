@@ -97,3 +97,19 @@ run "reject_binding_bypass" {
   variables { contract = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration, { job = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration.job, { env = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration.job.env, { TENANT_BINDING_REQUIRED = "0" }) }) }) }) }
   expect_failures = [terraform_data.backfill_guard]
 }
+
+run "reject_unregistered_release_source" {
+  command = plan
+  variables {
+    contract = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration, { job = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration.job, { env = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration.job.env, { CONTROLLER_SOURCE_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }) }) }) })
+  }
+  expect_failures = [terraform_data.backfill_guard]
+}
+
+run "reject_image_not_registered_to_policy" {
+  command = plan
+  variables {
+    contract = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")), { orchestration = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration, { job = merge(jsondecode(file("tests/fixtures/cadence.synthetic.contract.json")).orchestration.job, { image = "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }) }) })
+  }
+  expect_failures = [terraform_data.backfill_guard]
+}
