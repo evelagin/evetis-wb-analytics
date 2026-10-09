@@ -57,7 +57,7 @@ const AUG = daysOf('2026-08-01', '2026-08-31');
 
 describe('Phase C — снимок компонент SKU из листа', () => {
   it('тождество строки: COGS выводится, model_gap = 0, пустые SKU-сутки и сутки после LCD не попадают', () => {
-    const p = parseUnitkaComponents(grid([...SEP, '2026-10-01']), '2026-09-30', REV);
+    const p = parseUnitkaComponents(grid([...SEP, '2026-10-01']), '2026-09-30', REV, '2026-09-01');
     expect(p.sections).toBe(1);
     expect(p.rows).toHaveLength(30);
     const r = p.rows[0]!;
@@ -70,9 +70,9 @@ describe('Phase C — снимок компонент SKU из листа', () =
 
   it('месяц до LCD — сутки с 1-го по LCD; месяцы раньше окна Phase C не читаются', () => {
     expect(STORE_PNL_FROM).toBe('2026-08-01');
-    const g = [...grid(daysOf('2026-07-01', '2026-07-31')), ...grid(daysOf('2026-10-01', '2026-10-08'))];
+    const g = [...grid(daysOf('2026-07-01', '2026-07-31')), ...grid(AUG), ...grid(SEP), ...grid(daysOf('2026-10-01', '2026-10-08'))];
     const p = parseUnitkaComponents(g, '2026-10-08', REV);
-    expect(Object.keys(p.months)).toEqual(['2026-10']);
+    expect(Object.keys(p.months).sort()).toEqual(['2026-08', '2026-09', '2026-10']);
     expect(p.months['2026-10']!.days).toBe(8);
   });
 
@@ -109,12 +109,17 @@ describe('Phase C — снимок компонент SKU из листа', () =
       .toThrow(/дата сводки/);
   });
 
+  it('месяц окна, которого нет в листе, — отказ (секция выпала бы молча)', () => {
+    expect(() => parseUnitkaComponents(grid(SEP), '2026-10-08', REV, '2026-09-01')).toThrow(/2026-10: месяца нет в листе/);
+    expect(() => parseUnitkaComponents(grid(SEP), '2026-09-30', REV)).toThrow(/2026-08: месяца нет в листе/);
+  });
+
   it('пропущенные сутки месяца — отказ', () => {
-    expect(() => parseUnitkaComponents(grid(SEP.filter((d) => d !== '2026-09-10')), '2026-09-30', REV)).toThrow(/нет суток 2026-09-10/);
+    expect(() => parseUnitkaComponents(grid(SEP.filter((d) => d !== '2026-09-10')), '2026-09-30', REV, '2026-09-01')).toThrow(/нет суток 2026-09-10/);
   });
 
   it('одни и те же сутки × nm в двух секциях — отказ', () => {
-    expect(() => parseUnitkaComponents([...grid(SEP), ...grid(SEP)], '2026-09-30', REV)).toThrow(/дубль/);
+    expect(() => parseUnitkaComponents([...grid(SEP), ...grid(SEP)], '2026-09-30', REV, '2026-09-01')).toThrow(/дубль/);
   });
 
   it('нет секций, плохие LCD / REVERSE_LEG_RATE — отказ', () => {
@@ -148,7 +153,7 @@ describe('Phase C — запись снимка', () => {
     const tf = readFileSync(new URL('../../infra/terraform/unitka_store_pnl.tf', import.meta.url), 'utf8');
     const schema = /store_pnl_snapshot_schema\s*=\s*\[([\s\S]*?)\n\s*\]/.exec(tf)![1]!;
     const cols = [...schema.matchAll(/name\s*=\s*"([a-z_]+)"/g)].map((m) => m[1]);
-    const p = parseUnitkaComponents(grid(SEP), '2026-09-30', REV);
+    const p = parseUnitkaComponents(grid(SEP), '2026-09-30', REV, '2026-09-01');
     const rec = snapshotRecord(p.rows[0]!, { snapshotId: 's', runId: 'r', snapshotAt: '2026-10-09T07:00:00Z', lcd: '2026-09-30', imageDigest: 'd', gitSha: 'g' });
     expect(Object.keys(rec)).toEqual(cols);
   });
@@ -217,7 +222,7 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
       now: () => new Date('2026-10-09T07:40:00Z'),
       makeSheets: () => ({
         readSheetMeta: async (_n: string, requireAnchor?: boolean) => { calls.metaAnchor = requireAnchor; return { sheetId: 1, rowCount: 10, columnCount: 60, anchorCol: 0, namedRanges: {} }; },
-        readValues: async (ranges: string[]) => { calls.ranges = ranges; return [grid(SEP), [[isoToSerial('2026-09-30')]], [[REV]]]; },
+        readValues: async (ranges: string[]) => { calls.ranges = ranges; return [[...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]]; },
       }),
       makeBq: () => ({
         appendSnapshot: async (rows, m) => { calls.appended = rows.length; calls.snapshotId = m.snapshotId; calls.lcd = m.lcd; },
@@ -231,8 +236,8 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
   it('лист читается без требования якоря, снимок пишется, план строится; записи в лист нет', async () => {
     const { d, calls } = deps();
     const r = await unitkaStorePnlLoader(ctx(), d);
-    expect(r).toEqual({ rowsFetched: 30, rowsLoaded: 30 });
-    expect(calls).toMatchObject({ appended: 30, snapshotId: '20261009T074000000Z', lcd: '2026-09-30', metaAnchor: false });
+    expect(r).toEqual({ rowsFetched: 61, rowsLoaded: 61 });
+    expect(calls).toMatchObject({ appended: 61, snapshotId: '20261009T074000000Z', lcd: '2026-09-30', metaAnchor: false });
     expect(calls.ranges).toEqual(["'WB_Юнит_2025'!A1:BH10", 'LAST_CLOSED_DATE', 'REVERSE_LEG_RATE']);
   });
 

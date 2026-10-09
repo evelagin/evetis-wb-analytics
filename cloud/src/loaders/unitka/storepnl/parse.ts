@@ -74,7 +74,8 @@ function num(v: CellValue | undefined, where: string): number {
  * Все секции листа (строка заголовков: «Дата» в колонке M), сутки ≤ LCD, блоки с nmID.
  * Пустые SKU-сутки (нет заказов, прибыли, рекламы, хранения) не попадают в снимок: их вклад нулевой.
  */
-export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], lcd: string, reverseLegRate: number): ParsedComponents {
+export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], lcd: string, reverseLegRate: number,
+  from: string = STORE_PNL_FROM): ParsedComponents {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(lcd)) throw new LoaderError(`LAST_CLOSED_DATE: не дата (${lcd})`, 'STORE_PNL_SHEET_ERROR');
   if (!Number.isFinite(reverseLegRate) || reverseLegRate <= 0) {
     throw new LoaderError(`REVERSE_LEG_RATE: недопустимо (${reverseLegRate})`, 'STORE_PNL_SHEET_ERROR');
@@ -94,7 +95,7 @@ export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], l
       const dv = at(i, BLOCK_FIRST_COLUMN);
       if (typeof dv !== 'number') break;
       const day = serialToIso(dv);
-      if (day > lcd || day < STORE_PNL_FROM) continue;
+      if (day > lcd || day < from) continue;
       const sumDate = at(i, SUMMARY.date);
       if (typeof sumDate !== 'number' || serialToIso(sumDate) !== day) {
         throw new LoaderError(`строка ${i}: дата сводки ${JSON.stringify(sumDate)} ≠ ${day}`, 'STORE_PNL_SHEET_ERROR');
@@ -142,6 +143,11 @@ export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], l
     }
   }
   if (sections === 0) throw new LoaderError('в листе нет ни одной секции («Дата» в колонке M)', 'STORE_PNL_SHEET_ERROR');
+  // Каждый месяц окна до месяца LCD обязан быть в листе: секция, не опознанная по «Дата»/дате в M, иначе молча
+  // выпала бы из P&L целиком.
+  for (let m = from.slice(0, 7); m <= lcd.slice(0, 7); m = addDaysIso(`${m}-01`, 31).slice(0, 7)) {
+    if (!days.has(m)) throw new LoaderError(`${m}: месяца нет в листе (секция не найдена или без суток)`, 'STORE_PNL_SHEET_ERROR');
+  }
   // Сутки месяца подряд: с 1-го до последнего дня месяца или до LCD (пропуск строки секции = пропуск денег).
   for (const [m, s] of days) {
     const first = `${m}-01`;

@@ -248,7 +248,8 @@ cov AS (
 -- Деньги финотчёта, которые модель не читает, и неразобранные операции — в окне месяца и 20 суток после
 -- (счета и сторно за месяц приходят в следующем): иначе операция, проведённая 12-го, блокировала бы не тот месяц.
 uncovered AS (
-  SELECT s.m, SUM(c.unconsumed_abs_rub) unconsumed_finance_rub,
+  -- деньги PENDING/NEW-операций — это PENDING_CLASSIFICATION (разбор), а не «неизвестный расход»
+  SELECT s.m, SUM(IF(c.treatment IN ('NEW_FINANCE_OPERATION', 'PENDING_CLASSIFICATION'), 0, c.unconsumed_abs_rub)) unconsumed_finance_rub,
     COUNTIF(c.treatment IN ('NEW_FINANCE_OPERATION', 'PENDING_CLASSIFICATION')) pending_rows
   FROM (SELECT DISTINCT DATE_TRUNC(date_msk, MONTH) m FROM snap) s
   JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COVERAGE` c
@@ -350,13 +351,15 @@ SELECT
   SAFE_DIVIDE(sku_contribution_rub + reconciliation_adjustments_rub + mature_cohort_adjustment_rub - marketplace_costs_rub
     + marketplace_income_rub, IF(cohort_mature, seller_base_rub, revenue_model_rub + price_adjustment_rub)) management_net_store_margin,
   CASE WHEN unknown_rub > 0.5 OR orphan_finance_base_rub != 0 OR orphan_finance_logistics_rub != 0
-         OR unconsumed_finance_rub > 0.5 OR deduction_source_gap_rub > 0.5 THEN 'UNKNOWN_COST_PRESENT'
+         OR unconsumed_finance_rub > 0.5 THEN 'UNKNOWN_COST_PRESENT'
        WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
        -- месяц ещё идёт в листе (или снимок отстал) — счета за него заведомо впереди
        WHEN NOT sku_month_closed THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT account_invoice_window_closed AND (minimum_payment_invoices = 0 OR utilization_invoices = 0)
          THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT month_finance_final OR ads_days = 0 OR ads_final_days < ads_days THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
+       -- источник счетов кабинета (FACT_FINANCE) отстал от финотчёта: ждём, а не «неизвестный расход»
+       WHEN deduction_source_gap_rub > 0.5 THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT cohort_mature THEN 'FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE'
        ELSE 'FINANCIAL_COMPLETE' END financial_state,
   -- Тождество ФОРМЫ (C2): та же прибыль, собранная сверху вниз (финотчёт когорты, биллинг рекламы, налог/COGS проданных

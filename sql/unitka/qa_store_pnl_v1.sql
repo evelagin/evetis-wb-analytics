@@ -175,7 +175,8 @@ SELECT 'STATE_CONSISTENCY' check_name,
   IF(COUNTIF(financial_state LIKE 'FINANCIAL_COMPLETE%' AND NOT IFNULL(
          pending_rows = 0 AND unknown_rub <= 0.5 AND unconsumed_finance_rub <= 0.5 AND deduction_source_gap_rub <= 0.5
          AND orphan_finance_base_rub = 0 AND orphan_finance_logistics_rub = 0 AND sku_month_closed AND month_finance_final
-         AND ads_days > 0 AND ads_final_days = ads_days AND account_invoice_window_closed, FALSE)) = 0
+         AND ads_days > 0 AND ads_final_days = ads_days
+         AND (account_invoice_window_closed OR (minimum_payment_invoices > 0 AND utilization_invoices > 0)), FALSE)) = 0
      AND COUNTIF(financial_state IS NULL) = 0, 'PASS', 'FAIL') status,
   STRING_AGG(CONCAT(month, ' ', IFNULL(financial_state, 'NULL')), '; ' ORDER BY month) detail
 FROM pnl;
