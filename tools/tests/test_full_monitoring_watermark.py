@@ -22,6 +22,8 @@ def monitor(monkeypatch, offsets=(0,1,2,5), success=4, *, rows=1,status='MONITOR
         events.append('last-query');return [{'last_success':(NOW+timedelta(seconds=success)).isoformat(),'failed_attempts':1}]*rows
     def state_read(d):events.append('state-read');return state
     monkeypatch.setattr(BF,'validate_plan',lambda *a:store.c)
+    # Isolate the legacy telemetry clock contract from priority projection.
+    monkeypatch.setattr(H.RP,'load',lambda *a,**k:None)
     b=SimpleNamespace(c=store.c,store=store.store,clock=lambda:next(times),state=state_read,select=select,
         journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS',binding_status={'seller':'BOUND','performance':'BOUND'})
     return H.monitoring(b,m['hash'],{'status':status,'index':i}),events

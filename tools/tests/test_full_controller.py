@@ -19,6 +19,9 @@ def pilot(monkeypatch):
     base=SimpleNamespace(c=BF.target('client_001'),store=records.store,clock=lambda:NOW,
                          binding_status={'seller':'BOUND','performance':'BOUND'})
     monkeypatch.setattr(H,'verify_authority',lambda b,m:b.c)
+    # This synthetic legacy protocol has no priority authority. Priority tests
+    # replace this stub with their independently validated overlay.
+    monkeypatch.setattr(H.RP,'load',lambda *a,**k:None)
     monkeypatch.setattr(H.Backend,'preflight',lambda *a,**k:None)
     monkeypatch.setattr(H.Backend,'quota',lambda *a:{'status':'ELIGIBLE','allowance':0})
     monkeypatch.setattr(H.Backend,'active_runtime_execution',lambda _:False)
