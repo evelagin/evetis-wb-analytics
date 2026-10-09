@@ -177,7 +177,7 @@ def rating_only_aspects(msg, res, snap):
                    (r"жаль|сожале",))]
 
 
-def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False):
+def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False, safe_gaps=False):
     res = resolver.resolve(snap, nm_id=msg.get("nm_id"), supplier_article=msg.get("supplier_article"),
                            barcode=msg.get("barcode"), marketplace=msg.get("channel") or msg.get("marketplace") or "WB")
     cls = classifier.classify_rules(msg, snap)
@@ -204,6 +204,12 @@ def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False):
         found = moderate.signals(msg, cls, hard, _raw(msg))
         if found:
             return moderate.apply(msg, res, snap, p, found)
+    if safe_gaps:
+        # R2.2: an honest «cannot confirm» answer for a bounded information gap (restock date).
+        from app.response_quality import safe_gap
+        gap = safe_gap.apply(msg, cls, hard, res, snap, p)
+        if gap:
+            return gap
     # Hard routes dominate the voice layer, regardless of stars or friendliness.
     if hard.strategy == "HUMAN_REVIEW":
         p.human_reason = hard.failure_code or "HUMAN_REVIEW"
@@ -368,7 +374,7 @@ def evaluate(text, msg, p, hard_policy, *, previous_answers=()):
 
 
 def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=None, force_generation=False,
-            moderate_safety=False):
+            moderate_safety=False, safe_gaps=False):
     """At most one corrected candidate from the injected language pass (or offline renderer).
 
     Final policy is checked independently again. Corpus force_generation evaluates
@@ -379,7 +385,7 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
     """
     from app.response_quality.brand_voice import render as default_render
     render = render or default_render
-    p = make_plan(msg, snap, hard_plan=hard_plan, moderate_safety=moderate_safety)
+    p = make_plan(msg, snap, hard_plan=hard_plan, moderate_safety=moderate_safety, safe_gaps=safe_gaps)
     st = SimpleNamespace(v3_knowledge_snapshot_id=snap.snapshot_id)
     first = validate_for_publication(original or "", msg, st, include_spans=True)
     q = evaluate(original, msg, p, first)
