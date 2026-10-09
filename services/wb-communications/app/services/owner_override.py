@@ -44,8 +44,11 @@ def owner_ids(settings):
 
 def owner_authority(settings):
     """R2.3: the owner's final word on R2.2 (v31_only) cards. Independent of the V2/R2.1
-    flags; needs the override flag AND an explicit owner list (empty = nobody)."""
-    return bool(getattr(settings,'v31_owner_override_enabled',False) and owner_ids(settings))
+    flags; needs the override flag AND an explicit owner list (empty = nobody) — or, with
+    R2.4A team access, the team (every ACTIVE operator may decide)."""
+    from app.services.team_access import enabled as team_enabled
+    return bool(getattr(settings,'v31_owner_override_enabled',False)
+                and (owner_ids(settings) or team_enabled(settings)))
 
 
 def _v31_only(doc):
@@ -57,6 +60,13 @@ def allowed(deps,chat,user,doc=None):
     users=getattr(deps.settings,'telegram_allowed_user_ids',set())
     base=(bool(users) and str(user) in {str(u) for u in users}
           and is_allowed(chat,user,deps.settings.allowed_chat_ids,users))
+    from app.services import team_access
+    if team_access.enabled(deps.settings):
+        # R2.4A: ONE authorization source; every ACTIVE operator (bootstrap or team) may decide.
+        principal=team_access.resolve(deps,chat,user)
+        if doc is not None and _v31_only(doc):
+            return owner_authority(deps.settings) and principal.can_policy_override
+        return principal.can_moderate and (enabled(deps.settings) or owner_authority(deps.settings))
     if doc is not None and _v31_only(doc):
         # Only an explicitly listed owner, who is also an allowlisted operator in this chat.
         return base and owner_authority(deps.settings) and str(user) in owner_ids(deps.settings)
@@ -218,6 +228,10 @@ def handle(deps,action,payload,chat,message_id,user):
         pending=_pending(deps,doc,candidate,user,generation)
         try: deps.repo.request_override(doc_id,pending,generation)
         except InvalidTransition: return _stale(deps,chat)
+        from app.services.pipeline import _emit_event
+        from app.domain.statuses import EventType
+        _emit_event(deps,doc,doc_id,EventType.OVERRIDE_REQUESTED,best_effort=True,telegram_user_id=user,
+                    answer_version=generation)
         violations='; '.join(sorted({v['rule_id'] for v in policy['violations']}))
         spans='; '.join('«'+v['span']+'»' for v in policy.get('violation_spans',[]))
         if _v31_only(doc):
