@@ -102,6 +102,18 @@ jobs:
           else
             echo "::warning title=ozon-cpo-orders-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy unitka-store-pnl-prod (тот же digest)
+        # Phase C (2026-10-09): P&L магазина WB, dispatch args[0]=unitka-store-pnl, SA sa-loaders-prod.
+        # Лист — только чтение (scope readonly), пишет лишь снимок wb_ops. Guard — до первого infra apply.
+        run: |
+          if gcloud run jobs describe unitka-store-pnl-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update unitka-store-pnl-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+          else
+            echo "::warning title=unitka-store-pnl-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
       - name: Deploy wb-paid-storage-prod (тот же digest)
         # Stage E4: Job создаётся Terraform'ом. Guard сохраняет совместимость до первого infra apply.
         # Секрет остаётся WB_TOKEN_ANALYTICS из Terraform env; workflow его не читает и не меняет.

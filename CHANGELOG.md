@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-10-09 — P&L магазина WB (Phase C, C1–C4): снимок листа, мост категорий, состояния (вкладка НЕ создаётся)
+
+Док: `docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md` (доказательства — `WB_STORE_PNL_PHASE_C_EVIDENCE_2026-10-09.md`).
+
+- Новый загрузчик `unitka-store-pnl` (`cloud/src/loaders/unitka/storepnl/`): лист `WB_Юнит_2025` только чтением
+  (scope readonly), снимок компонент SKU в `wb_ops.UNITKA_SKU_COMPONENTS_DAILY` (+`__STAGE`, только добавление,
+  атомарно), план вкладки «WB Магазин P&L» — в журнал. Записи в Sheets нет. Engine Юнитки не меняется.
+- Terraform `infra/terraform/unitka_store_pnl.tf`: 2 таблицы, `dataEditor` `sa-loaders-prod` на эти 2 таблицы,
+  Job `unitka-store-pnl-prod`, invoker, Scheduler 10:00 UTC (на паузе), алерт. `deploy-prod.yml` — тот же digest;
+  `scheduler-control.yml` — `unitka-store-pnl` (только prod).
+- Новые вью `wb_mart` (существующие не меняются): `V_WB_FINANCE_OPERATION_MAP`, `V_WB_STORE_FINANCE_COHORT_DAILY`,
+  `V_WB_STORE_ACCOUNT_LEDGER`, `V_WB_FINANCE_NEW_OPERATIONS`, `V_WB_STORE_FINANCE_COVERAGE`, `V_WB_STORE_PNL_MONTHLY`
+  (`sql/unitka/store_pnl_v1.sql`, развёртывание `tools/unitka_store_pnl_deploy.py`). QA — `sql/unitka/qa_store_pnl_v1.sql`
+  (17 проверок). Окно — с 2026-08; состояния месяца по данным (покрытие FINAL-отчётов), не по календарю.
+- Контракт: счета кабинета по месяцу услуги (Р1); возмещения WB — MEMO_NON_PNL (Р2, доказано на 2 794 строках);
+  мост сроков до созревания когорты в прибыль не входит. Экономика `MART_SKU_DAILY`, `V_DASH_*` и листа не меняется.
+
 ## 2026-10-08 — Ozon «Оплата за заказ» (CPO): загрузчик, канон, Юнитка (Phase B; лист — по флагу, ВЫКЛЮЧЕН)
 
 Док: `docs/finance/OZON_CPO_PHASE_B_2026-10-08.md` (+ обновлённая фаза A `docs/finance/UNITKA_FIN_COMPLETENESS_PHASE_A_2026-10-08.md`).
