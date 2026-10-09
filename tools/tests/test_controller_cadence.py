@@ -79,6 +79,8 @@ def runtime_fixture():
     # Runtime uses the image entrypoint; the canonical task contract is 3600s.
     execution=dict(name=base+'/jobs/'+job+'/executions/'+job+'-known',createTime=(NOW-timedelta(seconds=10)).isoformat(),taskCount=1,template=task)
     operation=dict(name=receipt['operation'],done=False,metadata=dict(name=execution['name']))
+    cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',c['project_id']])[:16]
+    objects[BF.CK.lease_name(cid,8)]=(dict(owner=prep['run_id'],until=str(int(NOW.timestamp()+3600))),D.encoded(dict(mode='BOUNDED_PILOT',ack_hash=doc['ack_hash'])))
     backend.request=lambda method,url,body=None:deepcopy(operation)
     return backend,doc,execution,job,records,operation
 
@@ -110,6 +112,13 @@ def test_terminal_operation_with_lagging_execution_waits_for_canonical_recon():
     with pytest.raises(T.OverlapWait) as e:CC.runtime(b,d,x,j)
     assert e.value.status=='WAIT_RECONCILIATION'
     assert len(records)==2 # no new intent, receipt, rewrite or fake COMPLETE
+
+
+def test_unknown_live_lease_owner_is_a_real_error_not_wait():
+    b,d,x,j,records,op=runtime_fixture()
+    old=b.tables.get_table
+    b.tables.get_table=lambda ds,n:({'owner':'bf-foreign','until':'123'},'{}') if n.startswith('L_') else old(ds,n)
+    with pytest.raises(BF.B.EvidenceError,match='lease/owner linkage unknown'):CC.runtime(b,d,x,j)
 
 
 def test_append_marker_route_is_only_current_root_and_exact_metadata(capsys):

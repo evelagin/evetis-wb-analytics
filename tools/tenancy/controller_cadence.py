@@ -241,6 +241,16 @@ def runtime(backend,doc,x,job_name):
         if response.get('completionTime') and response.get('succeededCount')==1:
             raise OverlapWait('WAIT_RECONCILIATION')
         fail('terminal source operation status unknown')
+    if operation.get('metadata',{}).get('name')!=x['name']:
+        fail('live operation/source execution linkage unknown')
+    cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',backend.c['project_id']])[:16]
+    generation=prep['lease_generation'];locks=backend.c['datasets']['tenant_locks']
+    lease=backend.tables.get_table(locks,BF.CK.lease_name(cid,generation))
+    if (not lease or lease[0].get('owner')!=prep['run_id']
+            or parse(lease[1] or '{}')!={'mode':'BOUNDED_PILOT','ack_hash':doc['ack_hash']}
+            or not str(lease[0].get('until','')).isdigit()
+            or backend.tables.get_table(locks,f'LD_{cid}_{generation:04d}') is not None):
+        fail('live source lease/owner linkage unknown')
     return True
 
 
