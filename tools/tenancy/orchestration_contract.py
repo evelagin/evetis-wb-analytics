@@ -11,6 +11,7 @@ SOURCE_FILES = (
     'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py','controller_stop_recovery.py','controller_stop_image_check.py','controller_dispatch_recovery.py','controller_dispatch_image_check.py',
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
     'full_leaf_recovery.py','full_leaf_image_check.py','controller_diagnostics.py',
+    'recent_priority.py','recent_priority_image_check.py',
 )
 
 
@@ -29,14 +30,15 @@ def block(c, settings, repo, release=None):
         raise ValueError('explicit historical Scheduler state required')
     release=release or parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{settings['release']}.json").read_text())
     expected={'schema_version','image','source_sha','runtime_image','runtime_implementation_hash','controller_implementation_hash','verification'}
-    if set(release)!=expected or type(release['schema_version']) is not int or release['schema_version'] not in {1,2} or release['source_sha']!=settings['release']:
+    if set(release)!=expected or type(release['schema_version']) is not int or release['schema_version'] not in {1,2,3} or release['source_sha']!=settings['release']:
         raise ValueError('controller release schema/provenance mismatch')
     if not re.fullmatch(r'europe-west1-docker\.pkg\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}',release['image']):
         raise ValueError('immutable canonical controller image required')
     if release['runtime_image']!=c['marketplaces']['ozon']['runtime_image']:
         raise ValueError('controller/runtime implementation qualification differs')
     required={'ci','exact_image','offline_restart','lost_post_no_repeat','quota_wait_no_source','tenant_isolation','reader_append_separation'}
-    if release['schema_version']==2:required.add('full_history_adapter')
+    if release['schema_version']>=2:required.add('full_history_adapter')
+    if release['schema_version']==3:required.add('recent_priority_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
