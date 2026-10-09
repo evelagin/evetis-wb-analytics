@@ -200,6 +200,11 @@ class Settings:
     v31_owner_override_enabled: bool = field(
         default_factory=lambda: os.environ.get("V31_OWNER_OVERRIDE_ENABLED", "false").lower() == "true"
     )
+    # R2.3 owner final authority on R2.2 cards: ONLY these Telegram users may publish past a
+    # content-policy BLOCK/ERROR (two explicit taps). Empty = nobody (fail closed).
+    v31_owner_override_user_ids: set = field(
+        default_factory=lambda: _split_ids(os.environ.get("V31_OWNER_OVERRIDE_USER_IDS", ""))
+    )
 
     # --- Wildberries ---
     wb_api_base_url: str = field(
