@@ -22,6 +22,7 @@ import { unitkaSppRollbackLoader } from './unitka/spp_rollback.js';
 import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
+import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -72,6 +73,10 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Период — часовой слот МСК: ручной бэкфилл в другой час не упирается в COMPLETE суточного прогона.
   // Замена блока окна идемпотентна, поэтому транзиентный отказ повторяется один раз в слоте.
   'ozon-cpo-orders': { handler: (ctx) => ozonCpoOrdersLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // Phase C (OWNER ACK 09.10.2026): P&L магазина WB. Лист Юнитки — только чтение (scope readonly);
+  // пишет лишь снимок wb_ops.UNITKA_SKU_COMPONENTS_DAILY (добавление, новый snapshot_id), план вкладки —
+  // в журнал. Повтор после транзиентного отказа безопасен: снимок либо лёг целиком, либо не лёг.
+  'unitka-store-pnl': { handler: (ctx) => unitkaStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
