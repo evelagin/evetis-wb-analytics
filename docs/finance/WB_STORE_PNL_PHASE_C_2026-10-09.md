@@ -164,6 +164,12 @@ Engine Юнитки не затрагивается; в загрузчике н�
 `cd881e6b1103f73278ac14485702851c116855fb11f723c929f9a0016eb16f21`. Манифест — `~/Projects/evetis-manifests/wb-store-pnl-2026-10-09/`.
 Откат — только `deleteSheet` по sheetId 989153123.
 
+**Решение F-18 (OWNER ACK 2026-10-09, узкое исключение).** F-18 не снимается. `unitka-store-pnl` разрешено
+автоматически писать ТОЛЬКО во вкладку «WB Магазин P&L» (sheetId 989153123) этой книги и только представление канонической
+`wb_mart.V_WB_STORE_PNL_MONTHLY`. Не разрешено: запись в WB или Ozon, кампании/ставки/цены, другие внешние системы, другие
+вкладки книги, общий доступ на запись в Sheets для других загрузчиков. Запись — `docs/ops/SECURITY_BACKLOG.md` (раздел F-18).
+Исторический шум PENDING 2024–2025 подавлен только в журнале: операции и их классификация в данных не меняются.
+
 **Автопубликация (`publish.ts`, по умолчанию ВЫКЛЮЧЕНА).** При `UNITKA_STORE_PNL_PUBLISH=1` загрузчик после снимка пишет план
 только во вкладку `UNITKA_STORE_PNL_SHEET_ID`:
 - источник истины — `V_WB_STORE_PNL_MONTHLY`, вкладка — представление (значения RAW, без формул);
@@ -180,5 +186,6 @@ Engine Юнитки не затрагивается; в загрузчике н�
 
 Включение (каждый шаг — по OWNER ACK): merge → deploy-prod → `gcloud run jobs update unitka-store-pnl-prod
 --update-env-vars UNITKA_STORE_PNL_PUBLISH=1,UNITKA_STORE_PNL_SHEET_ID=989153123,UNITKA_STORE_PNL_ADOPT_SHA=cd881e6b…` →
-один ручной прогон (ожидается WRITE или NOOP, лист-источник без изменений) → снять паузу Scheduler (scheduler-control.yml).
+один ручной прогон (ожидается WRITE или NOOP, лист-источник без изменений) → **удалить `UNITKA_STORE_PNL_ADOPT_SHA`** из env
+(разовый ключ подключения; дальше охраняет отпечаток в metadata) → снять паузу Scheduler (scheduler-control.yml).
 Откат: `UNITKA_STORE_PNL_PUBLISH=0` (или пауза Scheduler); вкладка остаётся с последней публикацией.
