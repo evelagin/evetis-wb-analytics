@@ -49,12 +49,6 @@ def cards(d):
     return [doc["source_id"] for doc in d.repo.docs.values() if doc.get("telegram_message_id")]
 
 
-def card_text(d, source_id):
-    doc_id = make_doc_id("wb", "review", source_id)
-    message_id = int(d.repo.get(doc_id)["telegram_message_id"])
-    return d.telegram.sent[message_id - 1][1] if len(d.telegram.sent) >= message_id else d.telegram.sent[-1][1]
-
-
 # --- pure classification ---------------------------------------------------------------------------
 @pytest.mark.parametrize("raw,verdict,reason", [
     ({"id": "R", "state": "none", "answer": None}, act.ACTIONABLE_FIRST_RESPONSE, "no_seller_answer"),
@@ -221,16 +215,92 @@ def test_n_superseded_review_seller_should_not_answer_zero_card_on_both_paths():
 
 
 # --- O–S --------------------------------------------------------------------------------------------------
-def test_o_reconciliation_zero_wb_writes_and_counts_superseded():
+def _superseded_setup():
     d = deps()
     d.wb.answered_feedbacks = [rating_only("RO1"), rating_only("RO2")]
     run_poll(d)
-    d.wb.feedback_answers["RO1"] = "Ответ появился в кабинете"
+    return d, {doc["source_id"]: doc_id for doc_id, doc in d.repo.docs.items()}
+
+
+def test_o1_pending_superseded_card_closed_not_actionable_buttons_retired_zero_writes():
+    d, ids = _superseded_setup()
     d.wb.answered_feedbacks[1]["childFeedbackId"] = "RO2-NEW"            # the buyer rewrote RO2
     summary = run_poll(d)["reconciled"]
-    assert summary["answered_externally"] == 1 and summary["superseded"] == 1
-    assert d.repo.get(make_doc_id("wb", "review", "RO2"))["status"] == "pending_approval"   # no new state
+    doc = d.repo.get(ids["RO2"])
+    assert summary["not_actionable"] == 1 and doc["status"] == "not_actionable_on_wb"
+    assert doc["not_actionable_reason"] == "superseded_by_newer_version" and doc["wb_child_feedback_id"] == "RO2-NEW"
+    assert doc["reconciled_at"] and doc["telegram_message_id"]           # history kept, nothing deleted
+    retired = [e for e in d.telegram.edits if "Покупатель обновил отзыв" in str(e)]
+    assert retired and "Карточка закрыта" in str(retired[-1])
+    assert d.telegram.edit_markups[-1][1] is None                        # no buttons left
+    assert d.repo.get(ids["RO1"])["status"] == "pending_approval"
     assert d.wb.published == [] and d.wb.published_questions == []
+    assert any(e.get("event_type") == "not_actionable_on_wb" for e in _events(d))
+
+
+def _events(d):
+    rows = getattr(d.bq, "events", None) or getattr(d.bq, "rows", None) or []
+    out = list(rows)
+    for rec in getattr(d.repo, "outbox", {}).values():
+        out.append(rec.get("payload") or rec)
+    return out
+
+
+@pytest.mark.parametrize("ours", [True, False])
+def test_o2_superseded_with_real_seller_answer_keeps_answer_semantics(ours):
+    d, ids = _superseded_setup()
+    d.wb.answered_feedbacks[1]["childFeedbackId"] = "RO2-NEW"
+    local = d.repo.get(ids["RO2"])["final_answer"]
+    d.wb.feedback_answers["RO2"] = local if ours else "Ответ из кабинета"
+    run_poll(d)
+    status = d.repo.get(ids["RO2"])["status"]
+    assert status == ("published" if ours else "answered_externally")   # the answer wins over «superseded»
+    assert status != "not_actionable_on_wb"
+
+
+def test_o3_operator_race_is_never_overwritten():
+    d, ids = _superseded_setup()
+    d.wb.answered_feedbacks[1]["childFeedbackId"] = "RO2-NEW"
+    real = d.repo.apply_if_unchanged
+
+    def operator_first(doc_id, status, generation, fields):
+        d.repo.docs[doc_id]["status"] = "editing"                       # the operator opened an edit
+        return real(doc_id, status, generation, fields)
+    d.repo.apply_if_unchanged = operator_first
+    summary = run_poll(d)["reconciled"]
+    assert d.repo.get(ids["RO2"])["status"] == "editing" and summary["not_actionable"] == 0
+    assert not [e for e in d.telegram.edits if "Покупатель обновил отзыв" in str(e)]
+
+
+def test_o4_o5_child_gets_one_card_parent_never_reenters():
+    d, ids = _superseded_setup()
+    d.wb.answered_feedbacks[1]["childFeedbackId"] = "RO2-NEW"
+    run_poll(d)                                                           # parent closed
+    child = {**fb(text="Отличный крем"), "id": "RO2-NEW", "parentFeedbackId": "RO2"}
+    d.wb._feedbacks.append(child)
+    sent_before = len(d.telegram.sent)
+    run_poll(d)
+    run_poll(d)
+    assert cards(d).count("RO2-NEW") == 1 and len(d.telegram.sent) == sent_before + 1
+    assert cards(d).count("RO2") == 1                                     # the old card, never a second one
+    assert d.repo.get(ids["RO2"])["status"] == "not_actionable_on_wb"
+
+
+def test_o6_o7_pending_count_and_status_exclude_closed_superseded():
+    d, ids = _superseded_setup()
+    assert d.repo.get_poll_health()["pending_count"] == 2
+    d.wb.answered_feedbacks[1]["childFeedbackId"] = "RO2-NEW"
+    run_poll(d)
+    h = d.repo.get_poll_health()
+    assert h["pending_count"] == 1 and h["reconciled_not_actionable"] == 1
+    text = status_text(d)
+    assert "Ожидают решения: 1" in text and "не требующие ответа (отзыв обновлён): 1" in text
+
+
+def test_o8_closed_superseded_card_rejects_buttons():
+    from app.domain.statuses import action_allowed
+    for action in ("publish", "edit", "regenerate", "skip"):
+        assert not action_allowed("not_actionable_on_wb", action)
 
 
 def test_p_auto_publish_off_and_polls_never_write():

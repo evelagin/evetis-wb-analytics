@@ -20,6 +20,8 @@ RECONCILE_STATUSES = ("pending_approval", "policy_blocked", "policy_check_failed
 PENDING_STATUSES = RECONCILE_STATUSES
 _RETIRED = "ℹ️ На Wildberries уже опубликован ответ.\nКарточка закрыта."
 _RETIRED_SAME = "✅ Этот ответ уже опубликован на Wildberries.\nКарточка закрыта."
+_RETIRED_SUPERSEDED = ("ℹ️ Покупатель обновил отзыв.\nWildberries создал новую версию, поэтому эта карточка "
+                       "больше не требует ответа.\n\nКарточка закрыта.")
 
 
 def _now():
@@ -100,7 +102,8 @@ def reconcile_external_answers(deps) -> dict:
     Bounded per poll; read-only towards WB; a read error leaves the record unchanged."""
     from app.domain.statuses import EventType
     from app.services.pipeline import _emit_event, _sync_current
-    counts = {"checked": 0, "answered_externally": 0, "published": 0, "unchanged": 0, "errors": 0}
+    counts = {"checked": 0, "answered_externally": 0, "published": 0, "not_actionable": 0, "unchanged": 0,
+              "errors": 0}
     candidates = []
     for status in RECONCILE_STATUSES:
         candidates += deps.repo.list_by_status(status, limit=200)
@@ -115,8 +118,12 @@ def reconcile_external_answers(deps) -> dict:
             log_event(logger, "warning", "wb reconcile read failed", doc_id=doc_id, error=type(exc).__name__)
             continue
         actual = seller_answer_text(data)
-        if not actual and doc.get("entity_type") != "question" and data.get("childFeedbackId"):
-            counts["superseded"] = counts.get("superseded", 0) + 1  # buyer rewrote it; visible in logs
+        if doc.get("entity_type") != "question" and \
+                act.classify(data, doc["source_id"]).reason == "superseded_by_newer_version":
+            # No seller answer and WB replaced the review with a newer version (its own card via
+            # normal ingestion): the seller should not answer THIS one. Never created from here.
+            _close_superseded(deps, doc_id, doc, data, stamp, counts)
+            continue
         local = _norm(doc.get("final_answer") or doc.get("ai_answer"))
         if not actual or (actual == local and doc.get("entity_type") != "question" and state != "wbRu"):
             # No seller answer (incl. WB's isAnswered=true on a rating-only review), or our own
@@ -150,6 +157,31 @@ def reconcile_external_answers(deps) -> dict:
     return counts
 
 
+def _close_superseded(deps, doc_id, doc, data, stamp, counts) -> None:
+    from app.domain.statuses import EventType, Status
+    from app.services.pipeline import _emit_event, _sync_current
+    status = Status.NOT_ACTIONABLE_ON_WB.value
+    fields = {"status": status, "reconciled_at": stamp, "wb_reconcile_checked_at": stamp,
+              "not_actionable_reason": "superseded_by_newer_version",
+              "wb_child_feedback_id": str(data.get("childFeedbackId") or "")}
+    after = deps.repo.apply_if_unchanged(doc_id, doc.get("status"), doc.get("generation_number", 0), fields)
+    if after is None:  # an operator acted meanwhile: never close underneath them
+        counts["unchanged"] += 1
+        return
+    counts["not_actionable"] += 1
+    _sync_current(deps, doc_id, after)
+    _emit_event(deps, after, doc_id, EventType.NOT_ACTIONABLE_ON_WB, best_effort=True,
+                status_before=doc.get("status"), status_after=status,
+                payload={"reconciled": True, "reason": "superseded_by_newer_version",
+                         "child_feedback_id": fields["wb_child_feedback_id"]})
+    chat, message_id = doc.get("telegram_chat_id") or deps.settings.telegram_chat_id, doc.get("telegram_message_id")
+    if chat and message_id:
+        try:
+            deps.telegram.edit_message_text(chat, message_id, _RETIRED_SUPERSEDED, None)
+        except Exception as exc:  # noqa: BLE001 — the record is already closed
+            log_event(logger, "info", "superseded card not retired", error=type(exc).__name__)
+
+
 # --- poll health and /status ---------------------------------------------------------------------
 def record_poll_health(deps, started_at: datetime, summary: dict | None, error: str | None = None) -> None:
     """One small operational record per natural poll (best effort, never fails the poll)."""
@@ -175,6 +207,7 @@ def record_poll_health(deps, started_at: datetime, summary: dict | None, error: 
             "questions_fetched": int(q.get("fetched") or 0), "questions_processed": int(q.get("processed") or 0),
             "questions_skipped": int(q.get("skipped") or 0), "questions_errors": int(q.get("errors") or 0),
             "reconciled_closed": int(rc.get("answered_externally") or 0) + int(rc.get("published") or 0),
+            "reconciled_not_actionable": int(rc.get("not_actionable") or 0),
             "telegram_cards_sent": cards, "last_card_at": finished.isoformat() if cards else None,
             "pending_count": pending,
             **_actionability_health(summary.get("actionability") or {}, ro),
@@ -253,4 +286,6 @@ def status_text(deps, now: datetime | None = None) -> str:
                         f"{h.get('filtered_ambiguous', 0)}, уже в EVETIS {h.get('duplicates_skipped', 0)}")
     if h.get("reconciled_closed"):
         lines.insert(-1, f"Закрыто как отвеченные на WB: {h['reconciled_closed']}")
+    if h.get("reconciled_not_actionable"):
+        lines.insert(-1, f"Закрыто как не требующие ответа (отзыв обновлён): {h['reconciled_not_actionable']}")
     return "\n".join(lines)

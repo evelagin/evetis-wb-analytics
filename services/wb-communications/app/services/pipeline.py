@@ -1358,7 +1358,7 @@ _CARD_SUPERSEDED = "ℹ️ Карточка устарела — актуаль�
 
 
 MIGRATION_EXCLUDED = ("published", "publishing", "publish_accepted", "publish_unknown",
-                      "answered_externally", "skipped", "editing", "regenerating")
+                      "answered_externally", "not_actionable_on_wb", "skipped", "editing", "regenerating")
 
 
 def migration_plan(doc) -> str:

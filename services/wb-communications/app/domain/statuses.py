@@ -34,6 +34,10 @@ class Status(str, Enum):
     # Question already carries an answer on WB with a DIFFERENT text (e.g. typed
     # in the WB cabinet). Our text was not sent.
     ANSWERED_EXTERNALLY = "answered_externally"
+    # Review only: WB no longer expects an answer to THIS review — the buyer rewrote it and WB
+    # created a newer version (childFeedbackId), which is its own communication. Nothing was
+    # published. Set by reconciliation from the authoritative direct WB read; terminal.
+    NOT_ACTIONABLE_ON_WB = "not_actionable_on_wb"
     POLICY_BLOCKED = "policy_blocked"
     POLICY_CHECK_FAILED = "policy_check_failed"
     # WB rejected / errored — safe to retry
@@ -54,6 +58,7 @@ HANDLED_STATUSES = frozenset(
         Status.PUBLISH_ACCEPTED,
         Status.PUBLISH_UNKNOWN,
         Status.ANSWERED_EXTERNALLY,
+        Status.NOT_ACTIONABLE_ON_WB,
         Status.SKIPPED,
     }
 )
@@ -87,6 +92,7 @@ ALLOWED_ACTIONS: dict[str, frozenset[str]] = {
     # publish = "check WB, and write only if still unanswered" (never a blind re-send)
     Status.PUBLISH_UNKNOWN.value: frozenset({"publish", "skip", "show"}),
     Status.ANSWERED_EXTERNALLY.value: frozenset({"show"}),
+    Status.NOT_ACTIONABLE_ON_WB.value: frozenset({"show"}),
     Status.SKIPPED.value: frozenset({"show", "restore"}),
     Status.PROCESSING.value: frozenset({"show"}),
     Status.ERROR.value: frozenset({"show"}),
@@ -113,6 +119,7 @@ class EventType(str, Enum):
     PUBLISH_ACCEPTED = "publish_accepted"
     PUBLISH_UNKNOWN = "publish_unknown"
     ANSWERED_EXTERNALLY = "answered_externally"
+    NOT_ACTIONABLE_ON_WB = "not_actionable_on_wb"
     SKIPPED = "skipped"
     RESTORED = "restored"
     EDIT_STARTED = "edit_started"            # R2.4A operator identity: who opened an edit
