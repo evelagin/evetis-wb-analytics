@@ -9,7 +9,7 @@
     "repository": "evelagin/evetis-wb-analytics",
     "commit": "8f7e937d1636844b46df336cbba63fae09eb41c7",
     "reviewed_pr": 313,
-    "merged_main": null,
+    "merged_main": "1a682df78337eec9b59037923c6ce6b1fe2bed10",
     "main_at_build": "51661d494cef062bedab504c38a2ef1f8315f8a7",
     "source_tree": "ecdb45c8e9ba65914f38c38beb9d18a6b17f25b2",
     "context": "pipelines/ozon/runtime",
@@ -271,10 +271,16 @@
     "qualification_source_sha256": "395b33114e6a1614719ee1964b359dc3298dd5694569b0fa5a2801b4822f4b11",
     "runtime_image_check": "PASS; exact pinned digest; network=none; no tenant credentials; source hashes, binding and two-tenant portability independently read back",
     "Python3.12_tests": "979 PASS/1 established skip Ozon; full tools and exact final integration CI required before merge/deploy",
-    "global_machine_dod": "BLOCKED outside tenant applicability; no gate waived"
+    "global_machine_dod": "BLOCKED outside tenant applicability; no gate waived",
+    "final_integration_ci": {
+      "pr": 313,
+      "head": "b9337798d8f775ce78e4bfe8b90fdde353e9e77b",
+      "all_11_checks": "PASS",
+      "merge": "1a682df78337eec9b59037923c6ce6b1fe2bed10"
+    }
   },
   "deployment": {
-    "tenants": "INERT candidate registration; no default image pointer or tenant deployment change. Paired controller build and final reviewed release required.",
+    "tenants": "Qualified paired runtime/controller release registration; exact tenant plan/recovery and live activation remain required. Immutable build source/archive remains the reviewed PR ancestor.",
     "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS untouched.",
     "rollback": "Pause dedicated controller safely; retain accepted manifests, all reservations/checkpoints and receipts. No blind old-image restore after new state or ambiguous intent."
   }
