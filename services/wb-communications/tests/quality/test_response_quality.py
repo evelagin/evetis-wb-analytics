@@ -110,6 +110,7 @@ def _cb(action,c,version=None,n=100):
 def _pending(text='В составе 2,25% салициловой кислоты.', question=False):
     d=make_deps([dict(SAMPLE_FEEDBACK)],v31_operator_recovery_enabled=False)
     run_poll(d);c=next(iter(d.repo.docs));doc=d.repo.docs[c]
+    d.wb.get_feedback_calls=0  # count only reads made after the card (the actionability read is ingestion)
     doc.update(nm_id='438775617',supplier_article='',text='Отличный продукт',final_answer=text,
                answer_versions=[{'text':text,'source':'ai','generation_number':1}],generation_number=1)
     if question:
@@ -161,7 +162,7 @@ def test_initial_candidate_repaired_before_card_with_no_auto_publish():
     run_poll(d);doc=next(iter(d.repo.docs.values()))
     assert doc['response_recovery']['repaired'] and doc['status']=='pending_approval'
     assert 'мягк' in doc['final_answer'] and '0,2%' not in doc['final_answer']
-    assert not d.wb.published and d.wb.get_feedback_calls==0
+    assert not d.wb.published and d.wb.get_feedback_calls==1  # only the pre-card actionability read
     assert [v['source'] for v in doc['answer_versions']]==['ai','policy_repair']
 
 def test_manual_edit_and_regenerate_keep_versions_and_no_write():

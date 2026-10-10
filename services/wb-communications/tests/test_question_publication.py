@@ -226,6 +226,7 @@ def test_qpub06_review_publication_regression():
     deps = make_deps([dict(SAMPLE_FEEDBACK)], wb_questions_enabled=True,
                      wb_question_publish_enabled=True)
     run_poll(deps)
+    deps.wb.get_feedback_calls = 0  # the pre-card actionability read belongs to ingestion
     doc_id = make_doc_id("wb", "review", "REVIEW_1")
     assert handle_update(deps, _cb(10, "pub", doc_id))["status"] == "published"
     assert deps.wb.published == [("REVIEW_1", deps.repo.get(doc_id)["final_answer"])]

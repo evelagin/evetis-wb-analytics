@@ -289,6 +289,12 @@ class Settings:
     wb_rating_only_max_per_poll: int = field(
         default_factory=lambda: int(os.environ.get("WB_RATING_ONLY_MAX_PER_POLL", "20"))
     )
+    # Authoritative actionability gate for the normal unanswered feed: a NEW review becomes a
+    # card only after the direct WB read classifies it ACTIONABLE_FIRST_RESPONSE (see
+    # app/services/wb_actionability.py). On by default; "false" = previous behaviour (kill switch).
+    wb_actionability_gate_enabled: bool = field(
+        default_factory=lambda: os.environ.get("WB_ACTIONABILITY_GATE_ENABLED", "true").lower() == "true"
+    )
     # R2.4A.1: close cards already answered in the WB cabinet (read-only WB GET per card,
     # bounded per poll). Off = no reconciliation.
     wb_reconcile_external_answers_enabled: bool = field(

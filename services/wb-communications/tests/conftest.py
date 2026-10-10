@@ -64,9 +64,14 @@ class FakeWB:
         return {"status_code": 204}
 
     def get_feedback(self, feedback_id, **kwargs):
+        """Direct GET: the stored review (unanswered → state 'none', answered feed → 'wbRu')
+        with the seller answer WB currently holds."""
         self.get_feedback_calls += 1
+        unanswered = next((f for f in self._feedbacks if f.get("id") == feedback_id), None)
+        base = unanswered or next((f for f in self.answered_feedbacks if f.get("id") == feedback_id), {})
         text = self.feedback_answers.get(feedback_id)
-        return {"id": feedback_id, "answer": {"text": text, "state": "wbRu"} if text else None}
+        return {"state": "none" if unanswered else "wbRu", **base, "id": feedback_id,
+                "answer": {"text": text, "state": "wbRu"} if text else None}
 
     # --- questions ---
     def iter_unanswered_questions(self):
