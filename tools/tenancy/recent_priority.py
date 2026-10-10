@@ -117,13 +117,27 @@ def historical_policy(backend,manifest,active,source):
     marker=backend.tables.get_table(backend.c['datasets']['ref'],FL.policy_name(manifest['hash'],source))
     old=parse(marker[1]) if marker else {}
     release=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text())
-    # block checks registered immutable release gates; an old artifact must not
-    # pretend to match the executing new source implementation hash.
-    O.block(backend.c,dict(release=source,root_hash=manifest['hash'],scheduler_state='PAUSED'),BF.REPO,release)
     FL.validate_policy(old,manifest,release,historical=True)
     if old['hash']!=refs[0]['policy_hash'] or marker!=FL.policy_value(old):fail('historical policy changed')
     keys=('initial_stop','initial_receipt','initial_intent','initial_generation','initial_unit_start','initial_unit_end','automatic_class_c')
     if any(old[k]!=active[k] for k in keys):fail('class-C incident/authority broadened')
+    # A committed predecessor certificate describes its original runtime, not
+    # the executing replacement. Only the frozen manifest's exact runtime may
+    # be read in that historical context, after validating the current handoff.
+    # Future observation/apply still uses the unchanged live contract.
+    contract=backend.c
+    if release['runtime_image']!=contract['marketplaces']['ozon']['runtime_image']:
+        from tools.tenancy import full_runtime_handoff as FH
+        if any(old[k]!=manifest[k.replace('runtime_source','runtime_source_sha')]
+               for k in ('runtime_source','runtime_image','runtime_implementation_hash')):
+            fail('historical runtime is not frozen manifest runtime')
+        if (release['runtime_image'],release['runtime_implementation_hash'])!=(old['runtime_image'],old['runtime_implementation_hash']):
+            fail('historical runtime release differs')
+        FH.policy(backend,manifest)
+        from copy import deepcopy
+        contract=deepcopy(contract)
+        contract['marketplaces']['ozon']['runtime_image']=old['runtime_image']
+    O.block(contract,dict(release=source,root_hash=manifest['hash'],scheduler_state='PAUSED'),BF.REPO,release)
     return old
 
 

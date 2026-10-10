@@ -90,7 +90,47 @@ def check():
     assert all(w['finance_economic_finality']=='PROVISIONAL' for w in out['windows'].values())
     assert m==original and D.digest(m)==p['manifest_hash']
     return dict(recent_priority_adapter='PASS',recent_frozen_scope='PASS',
-        recent_no_false_ready='PASS',recent_readonly_progress='PASS',recent_installed_drain_order=protocol_check(m,p))
+        recent_no_false_ready='PASS',recent_readonly_progress='PASS',recent_installed_drain_order=protocol_check(m,p),
+        recent_retained_runtime_handoff=historical_check())
+
+
+def historical_check():
+    """Load a committed old-runtime certificate through the packaged reader.
+
+    Synthetic owner handoff is isolated from live authority validation (which
+    has a separate exact-artifact check); all certificate and fence reads are
+    real. No live contract, certificate or source state may be rewritten.
+    """
+    import json,tempfile
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from tools.tenancy import full_leaf_recovery as R,full_runtime_handoff as FH,tenant_backfill as BF
+    m,old,proof,root,sh,recon,release,*_=fixture()
+    recovered=dict(version=D.VERSION,root_hash=m['hash'],kind=R.KIND,sequence=proof['index'],payload=proof)
+    records=root+[recovered];sh=sh+[recon]
+    contract=deepcopy(BF.target('client_001'))
+    contract['marketplaces']['ozon']['runtime_image']='europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:'+'e'*64
+    markers={R.policy_name(m['hash'],old['controller_source']):R.policy_value(old),
+        f"BFFLR_{m['hash']}_{proof['stop_hash']}":({'kind':'full_leaf_recovery','root':m['hash'][:16]},D.encoded(proof))}
+    b=SimpleNamespace(c=contract,tables=SimpleNamespace(get_table=lambda ds,n:markers.get(n)),
+        store=SimpleNamespace(history=lambda r,**kw:deepcopy(sh)))
+    active=R.sealed(dict({k:v for k,v in old.items() if k!='hash'},controller_source='f'*40))
+    overlay={'historical_recovery_policies':[dict(source=old['controller_source'],policy_hash=old['hash'])]}
+    before=deepcopy((contract,markers,records,sh));calls=[]
+    with tempfile.TemporaryDirectory() as td:
+        repo=Path(td);path=repo/'infra/tenant/releases/backfill'/f"{old['controller_source']}.json"
+        path.parent.mkdir(parents=True);path.write_text(json.dumps(release))
+        with patch.object(BF,'REPO',repo),patch.object(P,'load',lambda *a:overlay),patch.object(R,'policy',lambda *a:active):
+            with patch.object(FH,'policy',lambda *a:calls.append(True) or dict(qualified=True)):
+                assert R.load(b,m,records)==[proof] and calls==[True]
+            def absent(*a):raise BF.B.EvidenceError('owner runtime handoff absent')
+            with patch.object(FH,'policy',absent):
+                try:R.load(b,m,records)
+                except BF.B.EvidenceError:pass
+                else:raise AssertionError('historical runtime accepted without current owner handoff')
+    assert (contract,markers,records,sh)==before
+    return 'PASS'
 
 
 if __name__=='__main__':
