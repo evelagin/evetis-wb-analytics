@@ -218,6 +218,7 @@ def test_canonical_observer_rejects_live_counterexamples(monkeypatch,fault):
 
 
 def test_publication_adds_only_owner_marker_and_record_preserving_originals(monkeypatch):
+    monkeypatch.setattr(BF,'validate_plan',lambda doc,ack:BF.target(doc['tenant_id']))
     from tools.tests.test_durable_plan import Backend,NOW
     b,p,rows,_=terminal_fixture();memory=Backend()
     from tools.tenancy import orchestration_contract as O
@@ -240,6 +241,7 @@ def test_publication_adds_only_owner_marker_and_record_preserving_originals(monk
 
 
 def test_failed_fresh_observation_cannot_write_even_owner_marker(monkeypatch):
+    monkeypatch.setattr(BF,'validate_plan',lambda doc,ack:BF.target(doc['tenant_id']))
     from tools.tests.test_durable_plan import Backend,NOW
     b,p,rows,_=terminal_fixture();memory=Backend()
     from tools.tenancy import orchestration_contract as O

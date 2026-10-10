@@ -243,6 +243,7 @@ def test_baseline_is_isolated_from_production_code_and_image():
     dockerfile = (ozon / "runtime" / "Dockerfile").read_text(encoding="utf-8")
     copies = [line.split()[1:-1] for line in dockerfile.splitlines() if line.upper().startswith("COPY ")]
     assert copies == [["requirements.txt"], ["common.py", "entities.py", "main.py", "promo.py", "catalog_identity.py", "backfill.py", "backfill_core.py", "qualification.py", "qualification_resume.json", "pre_source.py"],
+                      ["full_resume.py", "full_resume.json", "cooldown_failed.py", "cooldown_image_check.py"],
                       # T5: identity/привязка, control plane и политика методов Seller — тоже поимённо
                       ["identity.py", "credentials.py", "lifecycle.py", "lifecycle_core.py", "checkpoints.py",
                        "history.py", "quota.py", "dq.py", "control_store.py", "seller_policy.py", "seller_method_policy.json", "runtime_execution_contract.json"]], \

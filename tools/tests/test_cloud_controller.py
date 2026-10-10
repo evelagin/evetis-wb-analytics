@@ -58,6 +58,17 @@ def test_ambiguous_source_intent_stops_even_when_budget_allows():
     assert b.recover_receipt({'preparation':{'run_id':'synthetic'}}) is None
 
 
+def test_ordinary_full_sku_honors_cooldown_before_new_dispatch():
+    b=backend();doc=sku();s=BF.B.initial(doc['runtime_plan'])
+    s['progress']['rate_limit']={'count':3,'safe_cap':15,'eligible_at':'2026-10-06T09:00:00Z'}
+    b.state=lambda _:s;b.select=lambda q,p:[] if 'GROUP BY' in q else [{'n':0}]
+    assert b.quota({'plans':[doc]},NOW)=={'status':'WAITING','allowance':0,'eligible_at':'2026-10-06T09:00:00Z','basis':'SOURCE_COOLDOWN'}
+    s['progress']['report']={'phase':'INTENT'}
+    assert b.quota({'plans':[doc]},NOW)['status']=='STOPPED'
+    s['progress'].pop('report');b.select=lambda q,p:[] if 'GROUP BY' in q else [{'n':1}]
+    with pytest.raises(BF.B.EvidenceError,match='unknown ordinary'):b.quota({'plans':[doc]},NOW)
+
+
 @pytest.mark.parametrize('unknown,expected', [(0,'ELIGIBLE'),(1,'STOPPED')])
 def test_supplies_does_not_spend_performance_exports_but_unknowns_still_stop(unknown,expected):
     b=backend();doc=sku()

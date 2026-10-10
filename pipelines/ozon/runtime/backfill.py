@@ -34,7 +34,7 @@ def export_budget(cap=15, p=None):
     table = f"{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}"
     config = bigquery.QueryJobConfig(use_legacy_sql=False, maximum_bytes_billed=1073741824)
     approved = read_recovery_proofs(p, accounting=True) if p is not None else []
-    excluded = [x['run_id'] for x in approved]
+    excluded = [x['run_id'] for x in approved]+read_failed_cooldown_attestations()
     config.query_parameters = [bigquery.ArrayQueryParameter('no_post_runs','STRING',excluded),
         bigquery.ArrayQueryParameter('no_post_units','STRING',[f"{x['plan_id']}:{x['unit_sequence']}" for x in approved])]
     rows = list(C.bq().query(f"""SELECT
@@ -89,8 +89,22 @@ class Engine:
         self.before_intent = None
         self.recovery_reader = None
         self.last_diagnostic = {}
+        self.clock = lambda: datetime.now().astimezone()
+        self.wait = None
+
+    def cooldown(self):
+        rate = self.state['progress'].get('rate_limit')
+        if rate:
+            eligible = datetime.fromisoformat(rate['eligible_at'])
+            if eligible.utcoffset() is None:
+                raise B.EvidenceError('source cooldown timezone unproven')
+            if eligible > self.clock():
+                self.wait = {'basis':'SOURCE_COOLDOWN','eligible_at':rate['eligible_at']}
+                raise B.BudgetReached('documented source throttle cooldown')
 
     def call(self, path, body=None, *, performance=False, text=True):
+        if performance:
+            self.cooldown()  # Before transport, OAuth, initialization or POST.
         if self.requests >= self.budget or time.monotonic() >= self.deadline:
             raise B.BudgetReached("bounded execution budget reached")
         self.requests += 1
@@ -431,6 +445,16 @@ class Engine:
 
     def sku(self, s):
         pr = s["progress"]; day = pr["next_day"]
+        report = pr.get('report')
+        if report is not None and report['phase']=='INTENT' and report.get('execution')!=self.run_id:
+            proof=self.recovery_reader(self.p,s) if self.recovery_reader is not None else None
+            if proof is None:
+                raise B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS: no owner-attested pre-source recovery')
+            if self.before_intent is not None:self.before_intent()
+            recovered,detail=PS.recover(proof,self.p,s)
+            s.clear();s.update(recovered)
+            return {},detail
+        self.cooldown()
         if "pending" not in pr:
             types = {str(c["id"]): c.get("advObjectType") for c in self.campaigns()}
             txt = self.call(f"/api/client/statistics/expense?dateFrom={day}&dateTo={day}", performance=True)
@@ -459,18 +483,7 @@ class Engine:
             return {}, {"action": "SKU_COHORT", "day": day, "required_campaigns": len(need),
                         "not_applicable_campaigns": len(skipped), "source_terminal": not need,
                         "retention_completeness": "UNPROVEN_EMPTY" if not need else "OBSERVED"}
-        rate = pr.get("rate_limit")
-        if rate and datetime.fromisoformat(rate["eligible_at"]) > datetime.now().astimezone():
-            raise B.BudgetReached("documented source throttle cooldown")
         report = pr["report"]
-        if report is not None and report['phase']=='INTENT' and report.get('execution')!=self.run_id:
-            proof=self.recovery_reader(self.p,s) if self.recovery_reader is not None else None
-            if proof is None:
-                raise B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS: no owner-attested pre-source recovery')
-            if self.before_intent is not None:self.before_intent()
-            recovered,detail=PS.recover(proof,self.p,s)
-            s.clear();s.update(recovered)
-            return {},detail
         if report is None:
             if self.before_intent is not None:self.before_intent()
             if self.export_allowance is None:
@@ -666,13 +679,13 @@ class Engine:
                     pr["report"] = None
                 previous = pr.get("rate_limit", {})
                 count = previous.get("count", 0) + 1
-                if count > 3:
-                    raise B.EvidenceError("SOURCE_REPEATED_LIMIT_OWNER_REVIEW")
+                if type(count) is not int or count<1:
+                    raise B.EvidenceError('source cooldown counter unproven')
                 seconds = max(3600, exc.diagnostic.get("retry-after", 3600))
                 if seconds > 86400:
                     raise B.EvidenceError("SOURCE_ACCOUNT_RESTRICTION_OWNER_REVIEW")
                 pr["rate_limit"] = {"safe_cap": min(previous.get("safe_cap", 15), 15),
-                    "count": count, "eligible_at": (datetime.now().astimezone() + timedelta(seconds=seconds)).isoformat()}
+                    "count": count, "eligible_at": (self.clock() + timedelta(seconds=seconds)).isoformat()}
                 result = {}
                 detail = {"action": "SOURCE_THROTTLED", "submission_rejected": submitting,
                     "source_diagnostic": exc.diagnostic, "cooldown": pr["rate_limit"],
@@ -699,6 +712,7 @@ class Engine:
         total["evidence"] = {"version": B.VERSION, "plan": self.p, "state": self.state,
                              "execution_requests": self.requests, "execution_pages": self.pages,
                              "complete": self.state["complete"], "replay": self.state["complete"] and self.requests == 0}
+        if self.wait:total['evidence']['wait']=self.wait
         return total
 
 
@@ -732,6 +746,7 @@ def resume(p):
 
 
 def run_backfill(p, run_id, ts):
+    if os.environ.get('BACKFILL_FULL_AUTHORITY'):failure_evidence(p)
     state = resume(p)
     engine = Engine(p, run_id, ts, state,
                     request_budget=B.integer(os.environ, "BACKFILL_MAX_REQUESTS", 400, 2, 500),
@@ -761,7 +776,41 @@ def run_backfill(p, run_id, ts):
                      p["from"], p["to"], dict(result, evidence=evidence), "OK",
                      requests_n=evidence["detail"]["transport_requests"],
                      retries=evidence["detail"]["transport_retries"])
-    return engine.run(persist)
+    try:
+        return engine.run(persist)
+    except Exception as error:
+        error.backfill_failure_evidence = failure_evidence(p, engine.state)
+        raise
+
+
+def failure_evidence(p, state=None):
+    """Additive attribution; a FAILED aggregate never fabricates an OK unit."""
+    result={'version':B.VERSION,'plan':p,'failure':True,'source_trace':C.perf_trace(),
+            'source_category':'PERFORMANCE' if p['entity'].startswith('ads_') else 'SELLER',
+            'runtime_execution':os.environ.get('CLOUD_RUN_EXECUTION')}
+    if state is not None:result['state']=state
+    context=os.environ.get('BACKFILL_FULL_AUTHORITY')
+    if context:
+        import full_resume as FR
+        value=json.loads(context)
+        if set(value)!={'root','index','shard','receipt_sequence','plan_id'}:
+            raise B.EvidenceError('failure authority schema differs')
+        if value['root']!=FR.manifest()['hash'] or value['plan_id']!=p['plan_id'] or type(value['receipt_sequence']) is not int or value['receipt_sequence']<1:
+            raise B.EvidenceError('failure authority target differs')
+        m=FR.manifest();index=value['index']
+        if type(index) is not int or not 0<=index<len(m['programs']) or os.environ.get('BACKFILL_FULL_ROOT_HASH')!=m['hash']:
+            raise B.EvidenceError('failure full scope differs')
+        if p==m['retained_supplies']['runtime_plan']:
+            doc=m['retained_supplies']
+            if m['programs'][index]['entity']!='supplies':raise B.EvidenceError('failure Supplies scope differs')
+        else:
+            if FR.scope(p,m['hash'])!=index:raise B.EvidenceError('failure leaf index differs')
+            doc={'mode':'BOUNDED_PILOT','tenant_id':m['tenant'],'image':m['runtime_image'],'runtime_plan':p,'max_requests':400,'max_units':20,'max_order_batches':1}
+            doc['ack_hash']=B.digest(doc)
+        if value['shard']!=B.digest({'full_root':m['hash'],'index':index,'ack_hash':doc['ack_hash']}):
+            raise B.EvidenceError('failure shard/plan linkage differs')
+        result['authority']=value
+    return result
 
 
 def internal_preflight(p, *, source_binding=True):
@@ -829,4 +878,25 @@ def read_recovery_proofs(p, *, accounting=False):
         rows=list(client.query(f"SELECT status FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE started_at>=@origin AND ingestion_run_id=@run AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
         if len(rows)!=1 or rows[0]['status']!='FAILED':raise B.EvidenceError('failed aggregate attribution unproven')
         out.append(proof)
+    return out
+
+
+def read_failed_cooldown_attestations():
+    """Owner-only accepted failed closure; no ordinary budget/unit exemption."""
+    import cooldown_failed as CF
+    import full_resume as FR
+    if C.PROJECT!=FR.manifest()['project']:return []
+    client=C.bq();out=[]
+    names=[t.table_id for t in client.list_tables(f'{C.PROJECT}.{C.REF_DATASET}') if t.table_id.startswith('BFCF_ACCEPTED_')]
+    if len(names)>1:raise B.EvidenceError('multiple failed cooldown attestations')
+    for name in names:
+        t=client.get_table(f'{C.PROJECT}.{C.REF_DATASET}.{name}');doc=json.loads(t.description or '{}')
+        if set(doc)!={'policy','proof'} or t.labels!={'kind':'failed_cooldown'}:CF.fail('closed accepted owner attestation required')
+        p=CF.policy(doc['policy']);proof=CF.proof(doc['proof'],p)
+        if name!='BFCF_ACCEPTED_'+proof['hash'] or p['runtime_implementation_hash']!=B.implementation_hash():CF.fail('accepted recovery/artifact differs')
+        config=bigquery.QueryJobConfig(use_legacy_sql=False,maximum_bytes_billed=1073741824,
+            query_parameters=[bigquery.ScalarQueryParameter('run','STRING',proof['run_id'])])
+        rows=list(client.query(f"SELECT status,backfill_plan_id,backfill_sequence,error_message,requests,retry_count,rows_received,rows_inserted,rows_updated FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE ingestion_run_id=@run AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())
+        if len(rows)!=1 or tuple(rows[0][k] for k in ('status','backfill_plan_id','backfill_sequence','error_message','requests','retry_count','rows_received','rows_inserted','rows_updated'))!=('FAILED',None,None,"EvidenceError('SOURCE_REPEATED_LIMIT_OWNER_REVIEW')",3,0,0,0,0):CF.fail('original exact failed aggregate differs')
+        out.append(proof['run_id'])
     return out

@@ -217,6 +217,10 @@ def runtime(backend,doc,x,job_name):
         'BACKFILL_MAX_UNITS':str(doc['max_units'])}
     if p['window_days']!=1:expected['BACKFILL_WINDOW_DAYS']=str(p['window_days'])
     expected.update(BF.continuation_overrides(doc))
+    from pipelines.ozon.runtime import full_resume as FR
+    if FR.recognized(manifest):
+        expected['BACKFILL_FULL_AUTHORITY']=D.encoded(dict(root=manifest['hash'],index=index,shard=shard,receipt_sequence=intent['sequence'],plan_id=p['plan_id']))
+        expected['BACKFILL_FULL_ROOT_HASH']=manifest['hash']
     body={'overrides':{'containerOverrides':[{'env':[{'name':k,'value':v} for k,v in expected.items()]}]}}
     if prep.get('overrides')!=body or prep.get('ack_hash')!=doc['ack_hash'] or type(prep.get('lease_generation')) is not int or prep['lease_generation']<1:
         fail('active runtime source budgets/intent scope differs')
@@ -293,7 +297,12 @@ def backoff(facts):
         fail('backoff evidence unknown')
     ds=facts['controller_durations']
     if not isinstance(ds,list) or any(type(d) not in (int,float) or not 0<=d<=3600 for d in ds):fail('duration evidence unknown')
-    unsafe=[k for k in counts-{'material_overlaps'} if facts[k]]
+    # A source 429/quota WAIT alone is an ordinary bounded cooldown. The owner
+    # acceleration authority requires an observed cadence failure, not a guess
+    # that a faster cron caused a marketplace restriction.
+    unsafe=[k for k in counts-{'material_overlaps','cadence_throttles','material_quota_rejections'} if facts[k]]
+    if facts['overlap_instability'] or facts['unsafe_lease_contention'] or facts['duplicate_intents'] or facts['duplicate_runtimes']:
+        unsafe.extend(k for k in ('cadence_throttles','material_quota_rejections') if facts[k])
     if facts['security_regression']:unsafe.append('security_regression')
     # Persistence is assessed across two independent halves of at least ten
     # measured controllers, with real overlapping executions, not cron theory.

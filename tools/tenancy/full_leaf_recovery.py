@@ -50,7 +50,11 @@ def validate_policy(p,manifest,release,*,historical=False):
     if (p['tenant'],p['project'],p['root'],p['manifest_hash'])!=(manifest['tenant'],manifest['project'],manifest['hash'],D.digest(manifest)):
         fail('policy/frozen manifest differs')
     if any(p[k]!=manifest[k.replace('runtime_source','runtime_source_sha')] for k in ('runtime_source','runtime_image','runtime_implementation_hash')):
-        fail('runtime provenance changed')
+        # Same nineteen predicates; an exact qualified owner handoff changes
+        # artifact provenance only. Retained certificates use original policy.
+        from tools.tenancy import full_runtime_handoff as FH
+        current=FH.runtime_facts(BF.target(manifest['tenant']),manifest)
+        if any(p[k]!=v for k,v in current.items()):fail('runtime provenance changed')
     if (p['controller_source'],p['controller_image'],p['controller_implementation_hash'])!=(release['source_sha'],release['image'],release['controller_implementation_hash']):
         fail('unqualified policy artifact')
     for k in ('controller_source','runtime_source'):
@@ -120,7 +124,7 @@ def validate(proof,manifest,p,root_records,shard_records,*,final=False):
     if len(plans)!=1 or stops['root_hash']!=manifest['hash']:fail('root/leaf namespace differs')
     doc=plans[0]['payload']['plan']
     if F.shard_root(manifest,index,doc)!=proof['shard']:fail('leaf shard differs')
-    F.validate_leaf(manifest,index,doc,F.stamp(proof['verified_at']).astimezone(BF.B.MSK).date())
+    F.validate_leaf(manifest,index,doc,F.stamp(proof['verified_at']).astimezone(BF.B.MSK).date(),artifact=False)
     intent=one(shard_records,'DISPATCH_INTENT',proof['intent_hash']);rec=one(shard_records,'DISPATCH_RECEIPT',proof['receipt_hash'])
     previous=one(shard_records,'DISPATCH_RECEIPT',proof['prior_receipt_hash']);prior=one(shard_records,'RECONCILED',proof['prior_recon_hash'])
     if any(r['root_hash']!=proof['shard'] or r['version']!=D.VERSION for r in (intent,rec,previous,prior)):fail('foreign shard evidence')
@@ -324,6 +328,9 @@ def apply(base,manifest,stop_hash,index,*,automatic=False):
     previous=next((x for x in approved if x['stop_hash']==stop_hash),None)
     if previous:return {'accepted_sequence':previous['unit_end'],'lease_release':previous['lease_release'],'record_hash':D.digest({'version':D.VERSION,'root_hash':manifest['hash'],'kind':KIND,'sequence':index,'payload':previous}),'reconciliation_hash':previous['reconciliation_hash'],'source_calls':0,'source_dispatches':0}
     unresolved={D.digest(r) for r in records if r['kind']=='STOPPED'}-{x['stop_hash'] for x in approved}
+    from tools.tenancy import full_cooldown_recovery as FC
+    if any(r['kind']==FC.KIND for r in records):
+        unresolved-={x['stop_hash'] for x in FC.load(base,manifest,records)}
     if unresolved!={stop_hash}:fail('another unresolved STOP')
     name=f'BFFLR_{manifest["hash"]}_{stop_hash}';existing=base.tables.get_table(base.c['datasets']['tenant_locks'],name)
     proof=observe(base,manifest,stop_hash,index,automatic=automatic,existing=parse(existing[1]) if existing else None)
@@ -347,6 +354,8 @@ def apply(base,manifest,stop_hash,index,*,automatic=False):
 def recover_pending(backend,manifest,records):
     """Only explicitly enabled, typed, fully proven class C; never generic STOP."""
     approved=load(backend,manifest,records)
+    from tools.tenancy import full_cooldown_recovery as FC
+    approved+=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
     unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {x['stop_hash'] for x in approved}]
     if len(unresolved)!=1:return None
     stop=unresolved[0];diag=stop['payload'].get('diagnostic',{})

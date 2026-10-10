@@ -22,6 +22,9 @@ def handoff():
         release['verification'].pop('cadence_overlap_adapter')
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
+    # Synthetic current replacement, paired with the elected runtime. The
+    # retained historical execution still uses its original registered image.
+    release['runtime_image']=c['marketplaces']['ozon']['runtime_image']
     settings={'release':source,'root_hash':B.QF.ROOT,'scheduler_state':'PAUSED'}
     c['orchestration']=O.block(c,settings,B.REPO,release)
     base,_=B.resources(c)
@@ -44,9 +47,10 @@ def handoff():
     return SimpleNamespace(b=b,c=c,doc=doc,receipt=receipt,execution=execution,metadata=metadata,records=records,reads=reads)
 
 
-def test_exact_terminal_prior_qualified_supplies_image_can_be_drained_in_cloud(handoff):
+def test_legacy_handoff_cannot_hide_changed_runtime_security_source(handoff):
     p=handoff
-    assert B.verify_paused_supplies_handoff(p.doc,p.c,p.receipt,p.execution,p.b)==p.execution['template']['containers'][0]['image']
+    with pytest.raises(B.B.EvidenceError,match='security/binding source differs'):
+        B.verify_paused_supplies_handoff(p.doc,p.c,p.receipt,p.execution,p.b)
     assert len(p.reads)==1
 
 

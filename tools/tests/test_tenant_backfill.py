@@ -280,12 +280,16 @@ def offline_qualified_release(monkeypatch, tmp_path):
     Keep the real validate_plan check and supply an isolated release fixture.
     """
     from tools.tenancy import platform as PL
+    # Pin the target before replacing the artifact directory. This fixture
+    # models WINDOW_V1, not the independent paired FULL-runtime election.
+    contract = T.target("client_001")
     folder = tmp_path / PL.RUNTIME_RELEASES_DIR / "ozon"
     folder.mkdir(parents=True)
     fixture = folder / "synthetic.json"
     fixture.write_text(json.dumps({"image": doc()["image"], "verification": {"built_artifact": {
         "backfill_window_v1": "PASS", "backfill_implementation_hash": T.B.implementation_hash()}}}))
     monkeypatch.setattr(T, "REPO", tmp_path)
+    monkeypatch.setattr(T, "target", lambda tenant: copy.deepcopy(contract))
     return fixture
 
 
@@ -356,6 +360,51 @@ def test_multiday_stale_image_qualification_is_rejected_before_cloud(monkeypatch
                     "split-live", "2026-10-04T00:00:00Z", window_days=14)
     with pytest.raises(T.B.EvidenceError, match="matching qualified"):
         T.start(p, p["ack_hash"])
+
+
+def continuation_candidates(monkeypatch, tmp_path):
+    from tools.tenancy import platform as PL
+    from pipelines.ozon.runtime import full_resume as FR
+    baseline = R.terraform_inputs("client_001")
+    monkeypatch.setattr(R, "terraform_inputs", lambda tenant: copy.deepcopy(baseline))
+    monkeypatch.setattr(T.TT, "_req", lambda *a: pytest.fail("artifact election touched cloud"))
+    folder = tmp_path / PL.RUNTIME_RELEASES_DIR / "ozon"
+    folder.mkdir(parents=True)
+    candidate = {"image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:" + "2" * 64,
+                 "verification": {"built_artifact": {
+                     "backfill_implementation_hash": T.B.implementation_hash(),
+                     "full_resume_root": FR.manifest()["hash"],
+                     "performance_cooldown_before_initialization": "PASS"}}}
+    monkeypatch.setattr(T, "REPO", tmp_path)
+    return baseline, folder, candidate
+
+
+def test_qualified_runtime_election_changes_only_artifact_not_default_contract(monkeypatch, tmp_path):
+    baseline, folder, candidate = continuation_candidates(monkeypatch, tmp_path)
+    (folder / "one.json").write_text(json.dumps(candidate))
+    selected = T.target("client_001")
+    expected = copy.deepcopy(baseline)
+    expected["marketplaces"]["ozon"]["runtime_image"] = candidate["image"]
+    assert selected == expected
+    assert baseline["marketplaces"]["ozon"]["runtime_image"] != candidate["image"]
+
+
+def test_two_qualified_runtime_candidates_never_elect_source_authority(monkeypatch, tmp_path):
+    _, folder, candidate = continuation_candidates(monkeypatch, tmp_path)
+    (folder / "one.json").write_text(json.dumps(candidate))
+    second = copy.deepcopy(candidate)
+    second["image"] = second["image"].replace("2" * 64, "3" * 64)
+    (folder / "two.json").write_text(json.dumps(second))
+    with pytest.raises(T.B.EvidenceError, match="ambiguous registered"):
+        T.target("client_001")
+
+
+@pytest.mark.parametrize("field", ["backfill_implementation_hash", "full_resume_root", "performance_cooldown_before_initialization"])
+def test_unknown_runtime_continuation_predicate_cannot_change_artifact(monkeypatch, tmp_path, field):
+    baseline, folder, candidate = continuation_candidates(monkeypatch, tmp_path)
+    candidate["verification"]["built_artifact"][field] = "UNKNOWN"
+    (folder / "unknown.json").write_text(json.dumps(candidate))
+    assert T.target("client_001") == baseline
 
 
 def test_cloud_read_proof_uses_reader_only_and_validates_actual_plan(monkeypatch):

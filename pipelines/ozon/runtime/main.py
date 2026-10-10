@@ -236,7 +236,11 @@ def main():
             ok += 1
         except Exception as e:                                   # изоляция отказов
             try:
-                C.record_run(run_id, name, started, frm, to, {}, "FAILED", error=repr(e),
+                failure = {}
+                if backfill_plan is not None:
+                    import backfill
+                    failure={'evidence':getattr(e,'backfill_failure_evidence',None) or backfill.failure_evidence(backfill_plan)}
+                C.record_run(run_id, name, started, frm, to, failure, "FAILED", error=repr(e),
                              requests_n=C.STATS["requests"] - r0,
                              retries=C.STATS["retries"] - t0)
             except Exception as journal_error:                   # noqa: BLE001

@@ -149,10 +149,12 @@ class Backend:
         for doc in manifest['plans']:
             if doc['runtime_plan']['entity']=='ads_sku_daily':
                 state=self.state(doc);report=state['progress'].get('report')
+                eligible=state['progress'].get('rate_limit',{}).get('eligible_at')
+                if eligible and (cooldown is None or timestamp(eligible)>timestamp(cooldown)):
+                    cooldown=eligible
                 if BF.QF.matches(doc) and doc['runtime_plan']['plan_id']==BF.QF.SKU:
                     self.sku_accounting(doc,state,linkage=False)
                     cap=BF.QF.guard(doc['runtime_plan'],state);calibrated=True
-                    cooldown=state['progress'].get('rate_limit',{}).get('eligible_at')
                 if report is not None:
                     approved=[p for p in getattr(self,'verified_pre_source_failures',[]) if p['plan_id']==doc['runtime_plan']['plan_id'] and p['unit_sequence']==state['sequence']]
                     if approved:
@@ -168,7 +170,7 @@ class Backend:
         rows=[r for r in rows if (r['plan_id'],r['sequence']) not in excluded]
         reservations=[{'plan_id':r['plan_id'],'sequence':r['sequence'],'exports':r['exports'],
                        'at':timestamp(r['reserved_at']).isoformat()} for r in rows]
-        excluded_runs=[p['run_id'] for p in approved]
+        excluded_runs=[p['run_id'] for p in approved]+[p['run_id'] for p in getattr(self,'verified_cooldown_failures',[])]
         for i,run in enumerate(excluded_runs):params['excluded'+str(i)]=('STRING',run)
         exception=" AND NOT COALESCE(status='FAILED' AND ingestion_run_id IN ("+','.join('@excluded'+str(i) for i in range(len(excluded_runs)))+"),FALSE)" if excluded_runs else ''
         unknown=self.select(f"SELECT COUNT(*) AS n FROM `{self.journal}` WHERE started_at >= @since AND entity = 'ads_sku_daily' AND backfill_plan_id IS NULL{exception}",params)
@@ -185,7 +187,7 @@ class Backend:
             return {'status':'ELIGIBLE','allowance':0,'basis':'SELLER_SCOPE_NO_PERFORMANCE_EXPORT',
                     'performance_quota':verdict}
         if cooldown and timestamp(cooldown)>now and verdict['status']!='STOPPED':
-            return {'status':'WAITING','allowance':0,'eligible_at':cooldown,'basis':'SOURCE_THROTTLE'}
+            return {'status':'WAITING','allowance':0,'eligible_at':cooldown,'basis':'SOURCE_COOLDOWN'}
         return verdict
 
     def all_complete(self,manifest):

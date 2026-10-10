@@ -39,6 +39,9 @@ def protocol_check(m,p):
         n=len(posts)+1;prep=dict(run_id=f'synthetic-{n}',lease_generation=n,ack_hash=d['ack_hash'])
         before(prep);posts.append(d['ack_hash']);after(dict(prep,operation=f'projects/mpa-t-client-001/locations/europe-west1/operations/synthetic-{n}'))
     with ExitStack() as stack:
+        # Synthetic protocol fixture has no production runtime release. The
+        # separate exact-artifact qualification never uses this local gate.
+        stack.enter_context(patch.object(BF,'validate_plan',lambda d,ack:c if d['ack_hash']==ack else (_ for _ in ()).throw(BF.B.EvidenceError('modified synthetic fixture'))))
         for target,value in [('verify_authority',lambda b,m:b.c),('Backend.preflight',lambda *a,**k:None),
             ('Backend.state',state),('Backend.quota',lambda *a:dict(status='ELIGIBLE',allowance=0)),
             ('Backend.active_runtime_execution',lambda b:False),('Backend.start',source),
