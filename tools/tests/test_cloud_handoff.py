@@ -22,6 +22,9 @@ def handoff():
         release['verification'].pop('cadence_overlap_adapter')
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
+    # Synthetic current replacement, paired with the elected runtime. The
+    # retained historical execution still uses its original registered image.
+    release['runtime_image']=c['marketplaces']['ozon']['runtime_image']
     settings={'release':source,'root_hash':B.QF.ROOT,'scheduler_state':'PAUSED'}
     c['orchestration']=O.block(c,settings,B.REPO,release)
     base,_=B.resources(c)
