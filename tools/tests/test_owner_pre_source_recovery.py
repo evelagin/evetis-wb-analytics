@@ -135,7 +135,8 @@ def test_owner_publisher_preserves_all_predecessors_and_rejects_conflicting_mark
     with pytest.raises(BF.B.EvidenceError,match='conflict'):R.publish(backend,proof,NOW)
 
 
-@pytest.mark.parametrize('mode',['owner','cloud_missing_identity','owner_active','owner_fake_identity'])
+@pytest.mark.parametrize('mode',['owner','cloud_missing_identity','owner_active','owner_fake_identity',
+    'full_owner','full_owner_active_controller','full_owner_active_runtime','full_owner_active_control'])
 def test_owner_read_preflight_never_forges_cloud_execution_or_tolerates_active(monkeypatch,mode):
     from types import SimpleNamespace
     from tools.tests.test_tenant_backfill import metadata
@@ -157,13 +158,34 @@ def test_owner_read_preflight_never_forges_cloud_execution_or_tolerates_active(m
         assert method=='GET'
         if 'cloudscheduler' in url:return {'jobs':sched}
         if '/namespaces/' in url:return {'items':[{'metadata':{'name':j['name'].split('/')[-1],'labels':{'cloud.googleapis.com/location':c['region']}}} for j in jobs]}
-        if '/executions?' in url:return {'executions':[{'name':controller['name']+'/executions/active'}] if mode=='owner_active' and O.JOB in url else []}
+        if '/executions?' in url:
+            active=(mode=='owner_active' and O.JOB in url or
+                mode=='full_owner_active_controller' and O.JOB in url or
+                mode=='full_owner_active_runtime' and '/ozon-runtime-daily/' in url or
+                mode=='full_owner_active_control' and '/tenant-control/' in url)
+            return {'executions':[{'name':url.split('/executions?')[0]+'/executions/active'}] if active else []}
+        if url.startswith(BF.TT.BQ):return {}
         return {'jobs':jobs}
     monkeypatch.setattr(BF.TL,'read_state',lambda *a:([],{},[],[],False))
     import lifecycle_core as L
     monkeypatch.setattr(L,'current_state',lambda _:L.CAPABILITY_DISCOVERY)
     monkeypatch.setattr(BF.TL,'operator_binding',lambda *a:({'seller':'BOUND','performance':'BOUND'},{k:{'status':'PASS'} for k in ('seller','performance')}))
     b=SimpleNamespace(c=c,tables=object(),request=request,current_execution=controller['name']+'/executions/fake' if mode=='owner_fake_identity' else None)
-    if mode=='owner':BF.preflight(c,p,datetime.now(timezone.utc),b,owner_observation=True)
+    if mode.startswith('full_owner'):
+        from tools.tenancy import full_controller as H,full_leaf_recovery as FL
+        # Exercise the real inherited FULL preflight and canonical Job/Scheduler
+        # checks, rather than replacing observer.preflight with a no-op.
+        observed=object.__new__(FL.SourceFreeObservation)
+        observed.__dict__.update(b.__dict__)
+        observed.original_backend=b;observed.manifest={'hash':'d'*64}
+        observed.clock=lambda:datetime.now(timezone.utc)
+        observed.observation_tables=SimpleNamespace(list_tables=lambda *a,**kw:[])
+        monkeypatch.setattr(H,'verify_authority',lambda *a:True)
+        monkeypatch.setattr(BF,'validate_plan',lambda *a:c)
+        leaf={'hash':observed.manifest['hash'],'plans':[p]}
+        if mode=='full_owner':observed.preflight(leaf)
+        else:
+            with pytest.raises(BF.B.EvidenceError):observed.preflight(leaf)
+    elif mode=='owner':BF.preflight(c,p,datetime.now(timezone.utc),b,owner_observation=True)
     else:
         with pytest.raises(BF.B.EvidenceError):BF.preflight(c,p,datetime.now(timezone.utc),b,owner_observation=mode!='cloud_missing_identity')

@@ -217,7 +217,11 @@ class Backend(C.Backend):
             raise BF.B.EvidenceError('one exact full leaf per preflight')
         doc = leaf['plans'][0]
         self.active = False
-        BF.preflight(BF.validate_plan(doc, doc['ack_hash']), doc, self.clock(), backend=self, allow_active=True)
+        # A source-free owner observer has no cloud execution identity and must
+        # reject every active Job. Only an identified cloud wake may observe
+        # active work under the existing reconciliation/overlap fences.
+        BF.preflight(BF.validate_plan(doc, doc['ack_hash']), doc, self.clock(), backend=self,
+                     allow_active=self.current_execution is not None)
         for ds in ('tenant_ops','tenant_locks'):
             table = self.request('GET', f"{BF.TT.BQ}/projects/{self.c['project_id']}/datasets/{self.c['datasets'][ds]}?datasetView=METADATA")
             if table.get('defaultTableExpirationMs') or table.get('defaultPartitionExpirationMs'):
