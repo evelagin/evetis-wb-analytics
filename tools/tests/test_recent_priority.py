@@ -119,7 +119,8 @@ def test_unknown_coverage_and_partial_parent_are_not_recent_ready():
     with pytest.raises(BF.B.EvidenceError,match='false canonical parent'):P.progress(m,records,done,p,now=NOW)
 
 
-def test_old_recovery_certificate_survives_exact_owner_pinned_handoff(monkeypatch,tmp_path):
+@pytest.mark.parametrize('runtime_changed',[False,True])
+def test_old_recovery_certificate_survives_exact_owner_pinned_handoff(monkeypatch,tmp_path,runtime_changed):
     b,m,old,proof,root,sh,control,memory,_=observed(monkeypatch)
     R.apply(b,m,D.digest(root[-1]),proof['index'])
     before=deepcopy(memory.store.history(m['hash']))
@@ -129,8 +130,22 @@ def test_old_recovery_certificate_survives_exact_owner_pinned_handoff(monkeypatc
     active=R.sealed(dict({k:v for k,v in old.items() if k!='hash'},controller_source='e'*40,controller_image='new-qualified-image',controller_implementation_hash='f'*64))
     monkeypatch.setattr(P,'load',lambda *a:dict(historical_recovery_policies=[dict(source=old['controller_source'],policy_hash=old['hash'])]))
     monkeypatch.setattr(R,'policy',lambda *a:active)
+    from tools.tenancy import full_runtime_handoff as FH
+    calls=[]
+    if runtime_changed:b.c['marketplaces']['ozon']['runtime_image']='europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:'+'e'*64
+    contract=deepcopy(b.c)
+    monkeypatch.setattr(FH,'policy',lambda backend,manifest:calls.append((backend,manifest)) or dict(qualified=True))
     accepted=R.load(b,m,memory.store.history(m['hash']))
     assert accepted[0]['policy_hash']==old['hash'] and memory.store.history(m['hash'])==before
+    assert b.c==contract and len(calls)==int(runtime_changed)
+    if runtime_changed:
+        def missing(*a):raise BF.B.EvidenceError('owner runtime handoff absent')
+        monkeypatch.setattr(FH,'policy',missing)
+        with pytest.raises(BF.B.EvidenceError,match='handoff absent'):R.load(b,m,before)
+        monkeypatch.setattr(FH,'policy',lambda *a:dict(qualified=True))
+        bad=deepcopy(release);bad['runtime_implementation_hash']='e'*64;path.write_text(json.dumps(bad))
+        with pytest.raises(BF.B.EvidenceError,match='historical runtime release differs'):R.load(b,m,before)
+        path.write_text(json.dumps(release))
     active['initial_generation']+=1
     with pytest.raises(BF.B.EvidenceError,match='broadened'):R.load(b,m,before)
 
