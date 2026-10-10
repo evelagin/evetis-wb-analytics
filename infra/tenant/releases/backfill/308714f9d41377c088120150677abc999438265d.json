@@ -1,0 +1,30 @@
+{
+  "schema_version": 4,
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:b50e32fa80027bb72ccdd754b7a2390b3a8f7a0f6e8ce95a49f51e2a24d5b847",
+  "source_sha": "308714f9d41377c088120150677abc999438265d",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:37dda2748e42fa9923baa5363f209696421806a3f61a45604a4229d291e71ea1",
+  "runtime_implementation_hash": "4d1d9e333eb57bf627456a35120bea540361b2d1b516614fdef84f7b3f9906e7",
+  "controller_implementation_hash": "b920f84839f5034af444e61cf6fccda2b43d774733b58f1b566a566239822b39",
+  "verification": {
+    "ci": "PASS",
+    "exact_image": "PASS",
+    "offline_restart": "PASS",
+    "lost_post_no_repeat": "PASS",
+    "quota_wait_no_source": "PASS",
+    "tenant_isolation": "PASS",
+    "reader_append_separation": "PASS",
+    "full_history_adapter": "PASS",
+    "cadence_overlap_adapter": "PASS",
+    "recent_priority_adapter": "PASS"
+  },
+  "cadence_policy": {
+    "version": 1,
+    "profile": "CLIENT001_HISTORICAL_3_STABLE_10_V1",
+    "tenant": "client_001",
+    "project": "mpa-t-client-001",
+    "root": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222",
+    "preferred": "*/3 * * * *",
+    "stable_fallback": "*/10 * * * *",
+    "owner_ack_sha256": "0a7190301fa5b925e6446f9a3f8430239eaa124a6fbeda73a2cd72a2872a42b0"
+  }
+}
