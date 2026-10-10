@@ -133,6 +133,8 @@ def test_source_budget_apply_contains_no_dispatch_or_coverage_path():
 
 
 def applier_fixture(monkeypatch):
+    # Synthetic durable recovery protocol; live artifact fitness is separate.
+    monkeypatch.setattr(BF,'validate_plan',lambda doc,ack:BF.target(doc['tenant_id']))
     from types import SimpleNamespace
     from tools.tests.test_durable_plan import Backend,NOW
     from tools.tenancy import orchestration_contract as O,controller_stop_recovery as CR,pre_source_recovery as PR
@@ -229,6 +231,9 @@ def test_source_free_exact_global_inventory_get_only():
 
 
 def test_canonical_reconcile_current_qualified_runtime_without_old_handoff(monkeypatch):
+    # Inject a qualified runtime for this synthetic bookkeeping contract.
+    # Production still requires the independently built exact-image gate.
+    monkeypatch.setattr(BF,'validate_plan',lambda doc,ack:BF.target(doc['tenant_id']))
     from types import SimpleNamespace
     from datetime import datetime,timezone
     from tools.tests.test_durable_plan import Backend

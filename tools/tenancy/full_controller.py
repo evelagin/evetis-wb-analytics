@@ -104,8 +104,10 @@ def verify_authority(backend, manifest):
     c = dict(c, orchestration=canonical)
     if env['BACKFILL_ROOT_HASH'] != manifest['hash']:
         raise BF.B.EvidenceError('full descriptor/root/source differs')
-    if c['marketplaces']['ozon']['runtime_image'] != manifest['runtime_image']:
-        raise BF.B.EvidenceError('full exact image differs')
+    handoff=c['marketplaces']['ozon']['runtime_image'] != manifest['runtime_image']
+    if handoff:
+        from tools.tenancy import full_runtime_handoff as FH
+        FH.policy(backend,manifest,release)
     if active_source==manifest['controller_source_sha']:
         if expected['job']['image']!=manifest['controller_image'] or manifest['controller_implementation_hash']!=C.O.implementation_hash(BF.REPO):
             raise BF.B.EvidenceError('full packaged controller implementation differs')
@@ -118,10 +120,11 @@ def verify_authority(backend, manifest):
             raise BF.B.EvidenceError('replacement controller image differs')
     from tools.tenancy import platform as PL
     runtimes=[parse_tenant_json(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
-    runtimes=[r for r in runtimes if r.get('image')==manifest['runtime_image']]
-    if (len(runtimes)!=1 or runtimes[0]['source']['commit']!=manifest['runtime_source_sha']
+    runtime_image=c['marketplaces']['ozon']['runtime_image'] if handoff else manifest['runtime_image']
+    runtimes=[r for r in runtimes if r.get('image')==runtime_image]
+    if (len(runtimes)!=1 or (not handoff and runtimes[0]['source']['commit']!=manifest['runtime_source_sha'])
             or runtimes[0]['verification']['built_artifact'].get('full_current_snapshot_adapters')!='PASS'
-            or manifest['runtime_implementation_hash']!=BF.B.implementation_hash()):
+            or (not handoff and manifest['runtime_implementation_hash']!=BF.B.implementation_hash())):
         raise BF.B.EvidenceError('exact runtime image has no full domain qualification')
     results = {g:'PASS' for g in F.GATES}
     if backend.tables.get_table(c['datasets']['ref'], F.go_marker(manifest)) != F.go_value(manifest, results):
@@ -223,7 +226,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -235,8 +238,44 @@ class Backend(C.Backend):
                               {'since':('TIMESTAMP',(now-timedelta(hours=24)).isoformat())})
         if len(unknown) != 1:raise BF.B.EvidenceError('full rolling aggregate accounting ambiguous')
         self.verified_pre_source_failures = R.load(self,self.store.history(BF.QF.ROOT),BF.QF.ROOT) if unknown[0]['n'] else []
+        from tools.tenancy import full_cooldown_recovery as FC
+        if unknown[0]['n']:
+            records=self.store.history(self.manifest['hash'])
+            failed=FC.load(self,self.manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+            self.verified_cooldown_failures=failed
         doc = leaf['plans'][0]
         q = super().quota(leaf, now)
+        if q['status']!='STOPPED':
+            # One Performance source class across frozen leaves. Moving the
+            # priority queue must not escape a different leaf's active cooldown.
+            records=self.store.history(self.manifest['hash'])
+            plans=reconstruct_plans(records,self.manifest,now)
+            docs={v['plan']['runtime_plan']['plan_id']:v['plan'] for v in plans.values()
+                  if v['plan']['runtime_plan']['entity']=='ads_sku_daily'}
+            if docs:
+                rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity='ads_sku_daily' AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
+                if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')
+                states={}
+                for r in rows:
+                    proof=parse_tenant_json(r['evidence_json']);rp=docs[r['plan_id']]['runtime_plan']
+                    if proof.get('plan')!=rp:raise BF.B.EvidenceError('Performance class source scope differs')
+                    s=BF.B.validate(rp,proof['state'])
+                    if s['sequence']!=r['backfill_sequence'] or (r['plan_id'] in states and states[r['plan_id']]!=s):raise BF.B.EvidenceError('Performance class source checkpoint conflicts')
+                    states[r['plan_id']]=s
+                rates=[];reports=[]
+                for pid,s in states.items():
+                    report=s['progress'].get('report')
+                    if report:
+                        if report.get('phase')=='INTENT':raise BF.B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS')
+                        if report.get('phase')!='POLL':raise BF.B.EvidenceError('unknown Performance async state')
+                        reports.append(pid)
+                    eligible=s['progress'].get('rate_limit',{}).get('eligible_at')
+                    if eligible and C.timestamp(eligible)>now:rates.append(eligible)
+                if len(reports)>1:raise BF.B.EvidenceError('multiple Performance async scopes')
+                if doc['runtime_plan']['entity'].startswith('ads_'):
+                    if rates:return {'status':'WAITING','allowance':0,'eligible_at':max(rates,key=C.timestamp),'basis':'SOURCE_COOLDOWN'}
+                    if reports and reports!=[doc['runtime_plan']['plan_id']]:
+                        return {'status':'WAITING','allowance':0,'eligible_at':(now+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
         if doc['runtime_plan']['entity'] != 'ads_sku_daily' and q['status'] == 'WAITING':
             return {'status':'ELIGIBLE','allowance':0,'performance_quota':q,
                     'basis':'NO_NEW_PERFORMANCE_REPORT_IN_THIS_SOURCE_SCOPE'}
@@ -329,6 +368,9 @@ class Backend(C.Backend):
 
 
 def _dispatch(backend, manifest, index, doc, root, sequence):
+    from pipelines.ozon.runtime import full_resume as FR
+    if FR.recognized(manifest):
+        backend.full_dispatch_authority={'root':manifest['hash'],'index':index,'shard':root,'receipt_sequence':sequence,'plan_id':doc['runtime_plan']['plan_id']}
     prepared, received = [], []
     def before(preparation):
         if prepared: raise BF.B.EvidenceError('full wake dispatch repeated')
@@ -396,6 +438,10 @@ def wake(base, root):
     if any(r['kind']=='STOPPED' for r in records):
         from tools.tenancy import full_leaf_recovery as FL
         approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
+        from tools.tenancy import full_cooldown_recovery as FC
+        failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+        backend.verified_cooldown_failures=failed
+        approved=approved+failed
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -505,7 +551,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if manifest['programs'][index].get('accepted_qualification_plan'):
         return import_accepted_sku90(backend,manifest,index,item,records,history),backend
     with gate('QUOTA'):quota=backend.quota(leaf,backend.clock())
-    decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution())
+    decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution(),verified_failed_cooldown=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard])
     action=decision['action'];sequence=decision.get('sequence')
     if action=='MONITOR':return {'status':'MONITORING','source_dispatches':0,'index':index},backend
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:

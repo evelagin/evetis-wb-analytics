@@ -13,6 +13,7 @@ SOURCE_FILES = (
     'full_leaf_recovery.py','full_leaf_image_check.py','controller_diagnostics.py',
     'recent_priority.py','recent_priority_image_check.py',
     'controller_cadence.py','controller_cadence_image_check.py',
+    'full_runtime_handoff.py','full_cooldown_recovery.py','full_cooldown_image_check.py',
 )
 
 

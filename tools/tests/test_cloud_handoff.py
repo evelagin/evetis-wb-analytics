@@ -44,9 +44,10 @@ def handoff():
     return SimpleNamespace(b=b,c=c,doc=doc,receipt=receipt,execution=execution,metadata=metadata,records=records,reads=reads)
 
 
-def test_exact_terminal_prior_qualified_supplies_image_can_be_drained_in_cloud(handoff):
+def test_legacy_handoff_cannot_hide_changed_runtime_security_source(handoff):
     p=handoff
-    assert B.verify_paused_supplies_handoff(p.doc,p.c,p.receipt,p.execution,p.b)==p.execution['template']['containers'][0]['image']
+    with pytest.raises(B.B.EvidenceError,match='security/binding source differs'):
+        B.verify_paused_supplies_handoff(p.doc,p.c,p.receipt,p.execution,p.b)
     assert len(p.reads)==1
 
 

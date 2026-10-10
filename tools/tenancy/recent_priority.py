@@ -185,7 +185,14 @@ def pending_receipts(backend,plans):
             if commit is not None:
                 if commit!=expected:fail('reconciliation commit metadata differs')
                 accepted=recon
-        if intent>accepted:pending.append((index,plans[index]))
+        if intent>accepted:
+            proofs=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard and p['receipt_sequence']==intent]
+            if proofs:
+                from tools.tenancy import full_cooldown_recovery as FC
+                proof=proofs[0]
+                sh=backend.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
+                if len(proofs)!=1 or not any(r['kind']==FC.SHARD_KIND and r['sequence']==intent and D.digest(r)==proof['closure_hash'] for r in sh):fail('failed cooldown closure uncommitted')
+            else:pending.append((index,plans[index]))
     return pending
 
 
@@ -313,6 +320,10 @@ def monitoring(backend,manifest,records,done,p,now):
     """Bounded read projection; no evidence append/reconciliation side effects."""
     from tools.tenancy import full_leaf_recovery as FL
     approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
+    from tools.tenancy import full_cooldown_recovery as FC
+    failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+    backend.verified_cooldown_failures=failed
+    approved=approved+failed
     stops={D.digest(r) for r in records if r['kind']=='STOPPED'}-{x['stop_hash'] for x in approved}
     plans={n:r['payload'] for n,r in enumerate(records) if r['kind'] in {'CHUNK_PLAN','DEPENDENCY_PLAN'}}
     waiting=len(pending_receipts(backend,plans))

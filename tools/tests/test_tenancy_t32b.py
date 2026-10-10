@@ -278,7 +278,7 @@ def test_builder_identity_is_separate_from_tenant_provisioning():
 def test_next_build_config_expects_exactly_the_dockerfile_contents(candidate):
     """Шаг contents v2 ждёт ровно файлы из COPY Dockerfile (+ requirements.txt): иначе сборка
     кандидата T5 упала бы на собственной проверке состава (или пропустила лишнее)."""
-    text = (RELEASES / "ozon-runtime.v9.cloudbuild.yaml" if candidate else NEXT_CONFIG).read_text(encoding="utf-8")
+    text = (RELEASES / "ozon-runtime.v12.cloudbuild.yaml" if candidate else NEXT_CONFIG).read_text(encoding="utf-8")
     docker = (REPO / "pipelines/ozon/runtime/Dockerfile").read_text(encoding="utf-8")
     copied = set()
     for line in docker.splitlines():

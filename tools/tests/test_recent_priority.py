@@ -192,3 +192,20 @@ def test_eta_requires_observed_post_activation_completions_not_tick_interval():
     assert out['median_leaf_completion_seconds']==1800 and out['p90_leaf_completion_seconds'] is None
     assert out['quota_wait_share']==1 and out['estimates']['RECENT_180']['remaining_leaves']==len(indices)-5
     done.pop(indices[0]);assert P.throughput(m,done,p,NOW,starts)['status'].startswith('WAITING_FOR_5')
+
+
+def test_no_eligible_recent_leaf_returns_cooldown_wait_without_stop_or_dispatch(pilot,monkeypatch):
+    p=pilot;catalog(p)
+    # The accepted qualification is already DONE in this production scenario;
+    # a source cooldown must never cause the offline fixture to reread it.
+    i=next(i for i,x in enumerate(p.m['programs']) if x.get('accepted_qualification_plan'))
+    _,it=item(p,i);proof=completion(p,i,it['plan'],attempts=0)
+    proof['reused_qualification']=dict(root=BF.QF.ROOT,plan_id=BF.QF.SKU,terminal_reconciliation_hash='8'*64)
+    p.b.store.commit(p.m['hash'],'CHUNK_PLAN',i,it,p.b.clock())
+    p.b.store.commit(p.m['hash'],'CHUNK_COMPLETE',i,proof,p.b.clock())
+    overlay,_=policy(p.m);monkeypatch.setattr(P,'load',lambda *a,**k:overlay)
+    eligible='2026-10-09T09:00:00+00:00'
+    monkeypatch.setattr(H.Backend,'quota',lambda *a:dict(status='WAITING',allowance=0,eligible_at=eligible,basis='SOURCE_COOLDOWN'))
+    out,_=H.wake(p.b,p.m['hash'])
+    assert out['status']=='WAITING' and out['eligible_at']==eligible and not p.dispatches
+    assert not any(r['kind']=='STOPPED' for r in p.b.store.history(p.m['hash']))

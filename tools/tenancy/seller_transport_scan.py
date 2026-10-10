@@ -9,7 +9,7 @@ PUBLIC = {
     "ApiPathDenied", "ConfigError", "JournalWriteError", "DATASET", "PROJECT", "REF_DATASET",
     "LOCATION", "RUNS_TABLE", "STATS", "STRICT_PAGE_CAPS", "LEGACY_INGESTION_PROJECT", "CONFIG",
     "SELLER_ALLOWED_PATHS", "SELLER_PROFILES", "seller_call", "seller_post", "seller_client_id",
-    "perf_client_id", "perf_token", "perf_get", "perf_post", "perf_diagnostic", "bq", "h", "log", "now_msk",
+    "perf_client_id", "perf_token", "perf_get", "perf_post", "perf_diagnostic", "perf_trace", "bq", "h", "log", "now_msk",
     "merge_rows", "append_rows", "record_run", "safe_error_text", "safe_excepthook", "redact_value",
     "promo_slot", "promo_observation_id", "promo_load_job_id", "PROMO_SLOT_HOURS_UTC",
 }

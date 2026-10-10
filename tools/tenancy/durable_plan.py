@@ -16,6 +16,7 @@ VERSION = "CLOUD_BACKFILL_V1"
 HASH = re.compile(r"^[0-9a-f]{64}$")
 KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "WAITING", "STOPPED", "COMPLETE", "DEPENDENCY_PLAN", "SNAPSHOT_CERT", "FAILED_PRE_SOURCE", "CONTROLLER_STOP_RECOVERED", "CONTROLLER_DISPATCH_STOP_RECOVERED", "FULL_MANIFEST", "CHUNK_PLAN", "CHUNK_COMPLETE", "FULL_COMPLETE", "T5_PARENT_COMPLETE", "CHUNK_SUPERSEDED", "FULL_BOOTSTRAP_SUPERSEDED"})
 KINDS = KINDS | {'FULL_LEAF_STOP_RECOVERED'}
+KINDS = KINDS | {'FULL_COOLDOWN_FAILED_RECOVERED','FAILED_SOURCE_ATTEMPT_SUPERSEDED'}
 MAX_RECORD_BYTES = 900000
 
 
@@ -121,7 +122,7 @@ class DurableRecords:
         # controllers can produce different run IDs for the same sequence.
         # A consistent, non-expiring per-sequence CAS fence elects exactly one
         # immutable intent BEFORE any journal append or Cloud Run POST.
-        if kind in {"DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED"}:
+        if kind in {"DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILED", "FAILED_SOURCE_ATTEMPT_SUPERSEDED"}:
             if not 1 <= sequence <= 9999999999:
                 raise BF.B.EvidenceError("invalid durable dispatch sequence")
             fence = f"BFQ_{root_hash}_{sequence:010d}_{kind}"
@@ -272,7 +273,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
-def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=()):
+def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
     Never dispatch after an intent lacking a receipt. Reconcile terminal receipts
@@ -285,6 +286,14 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
     if any(not any(r['kind']=='FAILED_PRE_SOURCE' and r['payload']==p and r['sequence']==p['dispatch_sequence'] for r in current) for p in verified_failures):
         raise BF.B.EvidenceError('verified failure lacks its immutable recovery record')
     recovered={p['dispatch_sequence'] for p in verified_failures}
+    for proof in verified_failed_cooldown:
+        import cooldown_failed as CF
+        CF.digest(proof,CF.PROOF_FIELDS)
+        if proof['shard']!=plan_hash or set(proof['predicates'])!=CF.PREDICATES or any(v is not True for v in proof['predicates'].values()):
+            raise BF.B.EvidenceError('foreign/unproven failed cooldown closure')
+        closure=[r for r in current if r['kind']==CF.SHARD_KIND and r['sequence']==proof['receipt_sequence'] and digest(r)==proof['closure_hash']]
+        if len(closure)!=1:raise BF.B.EvidenceError('verified failed cooldown lacks committed closure')
+        recovered.add(proof['receipt_sequence'])
     approved_stops={h for p in verified_failures for h in p['stop_hashes']}
     if any(r['root_hash']!=p['root_hash'] for p in verified_failures for r in current):
         raise BF.B.EvidenceError('foreign recovery root')

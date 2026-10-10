@@ -113,7 +113,8 @@ def programs(chunks, cutover, starts):
 
 def make_manifest(*, tenant, created_at, cutover, chunks, runtime_source, runtime_image,
                   controller_source, controller_image, controller_implementation,
-                  boundary_evidence, starts, qualification_evidence, retained_supplies):
+                  boundary_evidence, starts, qualification_evidence, retained_supplies,
+                  runtime_implementation=None):
     c = BF.target(tenant)
     at = stamp(created_at)
     end = date.fromisoformat(cutover)
@@ -138,7 +139,7 @@ def make_manifest(*, tenant, created_at, cutover, chunks, runtime_source, runtim
         'version': VERSION, 'purpose': 'FULL_HISTORY', 'tenant': tenant, 'project': c['project_id'],
         'created_at': created_at, 'cutover': cutover,
         'runtime_source_sha': runtime_source, 'runtime_image': runtime_image,
-        'runtime_implementation_hash': BF.B.implementation_hash(),
+        'runtime_implementation_hash': runtime_implementation or BF.B.implementation_hash(),
         'controller_source_sha': controller_source, 'controller_image': controller_image,
         'controller_implementation_hash': controller_implementation,
         't5_plan_hash': BF.CK.plan_hash(chunks), 'programs': programs(chunks, end, starts), 'starts': {k: str(v) for k, v in starts.items()},
@@ -197,13 +198,18 @@ def canonical_chunks(manifest):
 def validate_manifest(manifest):
     if not isinstance(manifest, dict) or manifest.get('version') != VERSION:
         raise BF.B.EvidenceError('unsupported full program schema')
+    from pipelines.ozon.runtime import full_resume as FR
+    compatible=FR.recognized(manifest)
+    if manifest.get('runtime_implementation_hash')!=BF.B.implementation_hash() and not compatible:
+        raise BF.B.EvidenceError('unregistered full runtime continuation')
     rebuilt = make_manifest(
         tenant=manifest['tenant'], created_at=manifest['created_at'], cutover=manifest['cutover'],
         chunks=canonical_chunks(manifest), runtime_source=manifest['runtime_source_sha'],
         runtime_image=manifest['runtime_image'], controller_source=manifest['controller_source_sha'],
         controller_image=manifest['controller_image'], controller_implementation=manifest['controller_implementation_hash'],
         boundary_evidence=manifest['boundaries'], starts={k: date.fromisoformat(v) for k,v in manifest['starts'].items()},
-        qualification_evidence=manifest['qualification_evidence'], retained_supplies=manifest['retained_supplies'])
+        qualification_evidence=manifest['qualification_evidence'], retained_supplies=manifest['retained_supplies'],
+        runtime_implementation=manifest['runtime_implementation_hash'] if compatible else None)
     if manifest != rebuilt:
         raise BF.B.EvidenceError('full immutable manifest content/hash differs')
     return BF.target(manifest['tenant'])
@@ -248,16 +254,20 @@ def render_leaf(manifest, index, day):
         frm, to = p['from'], p['to']
     else:
         frm = to = str(day - timedelta(days=1))
-    return BF.make_plan(manifest['tenant'], p['entity'], frm, to,
+    doc = BF.make_plan(manifest['tenant'], p['entity'], frm, to,
                         'full-' + manifest['hash'][:24] + '-' + str(index), manifest['created_at'],
                         today=day, max_units=20, window_days=p.get('window_days', 1))
+    from pipelines.ozon.runtime import full_resume as FR
+    return FR.document(doc) if FR.recognized(manifest) else doc
 
 
-def validate_leaf(manifest, index, doc, today):
+def validate_leaf(manifest, index, doc, today, *, artifact=True):
     observed = doc['runtime_plan'].get('observation_date')
     day = date.fromisoformat(observed) if observed else today
     if day > today or day < stamp(manifest['created_at']).astimezone(BF.B.MSK).date():
         raise BF.B.EvidenceError('full source observation date outside approved program')
     if doc != render_leaf(manifest, index, day):
         raise BF.B.EvidenceError('full source leaf differs from exact immutable program')
-    return BF.validate_plan(doc, doc['ack_hash'])
+    # Retained certificates verify their exact semantic leaf. Live preflight
+    # additionally verifies today's registered artifact; it keeps artifact=True.
+    return BF.validate_plan(doc, doc['ack_hash']) if artifact else doc

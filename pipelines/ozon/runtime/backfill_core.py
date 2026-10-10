@@ -37,7 +37,7 @@ def implementation_hash():
     names = ("backfill_core.py", "catalog_identity.py", "backfill.py", "main.py", "entities.py", "common.py",
              "identity.py", "seller_policy.py", "seller_method_policy.json", "runtime_execution_contract.json",
              "qualification.py", "qualification_resume.json", "pre_source.py", "checkpoints.py", "control_store.py", "credentials.py", "dq.py", "history.py", "lifecycle.py",
-             "lifecycle_core.py", "promo.py", "quota.py", "requirements.txt")
+             "lifecycle_core.py", "promo.py", "quota.py", "requirements.txt", "full_resume.py", "full_resume.json", "cooldown_failed.py", "cooldown_image_check.py")
     return digest({name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names})
 
 
@@ -93,6 +93,14 @@ def plan(env, entity, project, raw, ref, today, now=None):
     if entity not in DATED and entity != "supplies":
         out["observation_date"] = str(today)
     out["plan_id"] = digest(out)
+    if env.get("BACKFILL_FULL_ROOT_HASH") and env.get("BACKFILL_RESUME_PLAN_ID"):
+        import full_resume as FR
+        import qualification as QF
+        if env['BACKFILL_FULL_ROOT_HASH']!=FR.manifest()['hash']:
+            raise EvidenceError('full resume root differs')
+        if QF.accepted_doc(env['BACKFILL_RESUME_PLAN_ID']):
+            return QF.resume(out,env['BACKFILL_RESUME_PLAN_ID'])
+        return FR.resume(out,env['BACKFILL_FULL_ROOT_HASH'],env['BACKFILL_RESUME_PLAN_ID'])
     if env.get("BACKFILL_RESUME_PLAN_ID"):
         import qualification as QF
         return QF.resume(out, env["BACKFILL_RESUME_PLAN_ID"])

@@ -468,6 +468,29 @@ def h(*parts):
 
 # ------------------------------------------------------------------ HTTP
 PERF_DIAGNOSTIC = {}
+PERF_REQUEST_TRACE = []
+PERF_TRACE_COMPLETE = True
+
+def perf_trace():
+    return {'complete':PERF_TRACE_COMPLETE,'requests':[dict(x) for x in PERF_REQUEST_TRACE]}
+
+def _perf_request_evidence(req,status):
+    global PERF_TRACE_COMPLETE
+    parsed=urllib.parse.urlsplit(req.full_url)
+    path=parsed.path
+    if path not in {'/api/client/statistics/expense','/api/client/statistics/daily','/api/client/statistics/report'} and re.fullmatch(r'/api/client/statistics/[A-Za-z0-9-]+',path):
+        path='/api/client/statistics/{report_id}'
+    path=re.sub(r'/campaign/[0-9]+/', '/campaign/{campaign_id}/',path)
+    item={'method':req.get_method(),'endpoint':path,'http_status':status}
+    # No raw URL/query, OAuth material, request body or returned payload.
+    PERF_DIAGNOSTIC.update(item)
+    if len(PERF_REQUEST_TRACE)<4096:PERF_REQUEST_TRACE.append(item)
+    else:PERF_TRACE_COMPLETE=False
+    try:
+        log(event='performance_request',**item)
+    except Exception:
+        # Diagnostic logging cannot turn an accepted request into a retry.
+        PERF_TRACE_COMPLETE=False
 
 
 def perf_diagnostic():
@@ -508,6 +531,7 @@ def _request(req, attempt=0, raw_text=False):
             body = r.read()
             if performance:
                 _perf_diagnostic(r.status, r.headers)
+                _perf_request_evidence(req,r.status)
             # surrogateescape: отчёты Performance API приходят ZIP-архивом, строгий
             # utf-8 на них падает. Round-trip .encode("utf-8","surrogateescape")
             # в entities.py восстанавливает байты один в один.
@@ -519,18 +543,20 @@ def _request(req, attempt=0, raw_text=False):
         payload = e.read().decode("utf-8", "replace")
         if performance:
             _perf_diagnostic(e.code, e.headers)
+            _perf_request_evidence(req,e.code)
         if not report_submit and (not performance or e.code != 429) and e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
         return e.code, {"_error": safe_error_text(payload, 400)}
     except Exception as e:                                        # SSL, таймаут, обрыв
+        if performance:
+            _perf_diagnostic('NET_ERROR',None)
+            _perf_request_evidence(req,'NET_ERROR')
         if not report_submit and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
             return _request(req, attempt + 1, raw_text)
-        if performance:
-            _perf_diagnostic("NET_ERROR", None)
         return "NET_ERROR", {"_error": safe_error_text(repr(e), 300)}
 
 
@@ -921,7 +947,7 @@ def record_run(run_id, entity, started, src_from, src_to, res, status,
         proof = res["evidence"]
         row["evidence_json"] = json.dumps(proof, sort_keys=True, separators=(",", ":"))
         row["backfill_plan_id"] = proof["plan"]["plan_id"]
-        if "detail" in proof:
+        if "detail" in proof and not proof.get('failure'):
             row["backfill_sequence"] = proof["state"]["sequence"]
             row["backfill_detail_json"] = json.dumps(proof["detail"], sort_keys=True, separators=(",", ":"))
     rejected = bq().insert_rows_json(f"{PROJECT}.{DATASET}.{RUNS_TABLE}", [row])

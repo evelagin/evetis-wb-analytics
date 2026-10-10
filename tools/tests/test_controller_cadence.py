@@ -63,8 +63,11 @@ def test_corrupt_closure_is_not_release(change):
     with pytest.raises(BF.B.EvidenceError,match='closure unknown'):CC.acquire(b(1))
 
 
-def runtime_fixture():
+def runtime_fixture(monkeypatch):
     m,r,c,b,x,objects,commits=protocol();backend=b(0);CC.acquire(backend)
+    # Synthetic protocol identity is qualified by this fixture, not by the
+    # production registry. Real artifact mismatch rejection is tested separately.
+    monkeypatch.setattr(BF,'validate_plan',lambda d,ack:c if d['ack_hash']==ack else pytest.fail('modified fixture'))
     i=next(i for i,p in enumerate(m['programs']) if p['entity']=='fbo_postings')
     doc=F.render_leaf(m,i,NOW.astimezone(BF.B.MSK).date());backend.manifest=m;backend.index=i
     p=doc['runtime_plan'];base,jobs=BF.resources(c);job=next(n for n,j in jobs.items() if p['entity'] in j['entities'])
@@ -85,15 +88,15 @@ def runtime_fixture():
     return backend,doc,execution,job,records,operation
 
 
-def test_live_runtime_is_known_only_through_one_exact_intent_and_receipt():
-    b,d,x,j,records,op=runtime_fixture();assert CC.runtime(b,d,x,j) is True
+def test_live_runtime_is_known_only_through_one_exact_intent_and_receipt(monkeypatch):
+    b,d,x,j,records,op=runtime_fixture(monkeypatch);assert CC.runtime(b,d,x,j) is True
     records.pop()
     with pytest.raises(BF.B.EvidenceError,match='receipt unavailable'):CC.runtime(b,d,x,j)
 
 
 @pytest.mark.parametrize('fault',['run','caps','image','identity','retry','intent','recon','operation'])
-def test_same_image_adhoc_or_ambiguous_source_cannot_become_healthy_wait(fault):
-    b,d,x,j,records,op=runtime_fixture();assert CC.runtime(b,d,x,j)
+def test_same_image_adhoc_or_ambiguous_source_cannot_become_healthy_wait(fault,monkeypatch):
+    b,d,x,j,records,op=runtime_fixture(monkeypatch);assert CC.runtime(b,d,x,j)
     if fault in ('run','caps'):
         n='INGESTION_RUN_ID' if fault=='run' else 'BACKFILL_MAX_UNITS'
         next(v for v in x['template']['containers'][0]['env'] if v['name']==n)['value']='unapproved'
@@ -107,15 +110,15 @@ def test_same_image_adhoc_or_ambiguous_source_cannot_become_healthy_wait(fault):
     assert not isinstance(e.value,T.OverlapWait)
 
 
-def test_terminal_operation_with_lagging_execution_waits_for_canonical_recon():
-    b,d,x,j,records,op=runtime_fixture();op.update(done=True,response=dict(x,completionTime=NOW.isoformat(),succeededCount=1))
+def test_terminal_operation_with_lagging_execution_waits_for_canonical_recon(monkeypatch):
+    b,d,x,j,records,op=runtime_fixture(monkeypatch);op.update(done=True,response=dict(x,completionTime=NOW.isoformat(),succeededCount=1))
     with pytest.raises(T.OverlapWait) as e:CC.runtime(b,d,x,j)
     assert e.value.status=='WAIT_RECONCILIATION'
     assert len(records)==2 # no new intent, receipt, rewrite or fake COMPLETE
 
 
-def test_unknown_live_lease_owner_is_a_real_error_not_wait():
-    b,d,x,j,records,op=runtime_fixture()
+def test_unknown_live_lease_owner_is_a_real_error_not_wait(monkeypatch):
+    b,d,x,j,records,op=runtime_fixture(monkeypatch)
     old=b.tables.get_table
     b.tables.get_table=lambda ds,n:({'owner':'bf-foreign','until':'123'},'{}') if n.startswith('L_') else old(ds,n)
     with pytest.raises(BF.B.EvidenceError,match='lease/owner linkage unknown'):CC.runtime(b,d,x,j)
@@ -146,10 +149,17 @@ def facts():
         security_regression=False,overlap_instability=0,material_overlaps=0,controller_durations=[])
 
 
-@pytest.mark.parametrize('fault',sorted(set(facts())-{'controller_durations','material_overlaps'}))
+@pytest.mark.parametrize('fault',sorted(set(facts())-{'controller_durations','material_overlaps','cadence_throttles','material_quota_rejections'}))
 def test_guard_restores_stable_cadence_on_each_real_regression(fault):
     v=facts();v[fault]=True if fault=='security_regression' else 1
     out=CC.backoff(v);assert out['action']=='RESTORE_STABLE_10' and fault in out['reasons']
+
+
+def test_normal_source_throttle_or_quota_wait_does_not_alone_revert_cadence():
+    v=facts();v.update(cadence_throttles=4,material_quota_rejections=1)
+    assert CC.backoff(v)['action']=='KEEP'
+    v['duplicate_runtimes']=1
+    assert CC.backoff(v)['action']=='RESTORE_STABLE_10'
 
 
 def test_healthy_waits_do_not_revert_but_persistent_latency_with_real_overlap_does():

@@ -61,6 +61,19 @@ def target(tenant_id):
     c = R.terraform_inputs(tenant_id)
     if c["datasets"]["ozon_raw"] != "ozon_raw" or c["datasets"]["ref"] != "ref":
         raise B.EvidenceError("noncanonical pilot datasets")
+    # Compiled continuation may register its paired runtime first. These are
+    # qualification facts; live preflight and owner handoff remain mandatory.
+    if tenant_id=='client_001':
+        from tools.tenancy import platform as PL
+        from pipelines.ozon.runtime import full_resume as FR
+        releases=[parse_tenant_json(f.read_text()) for f in (REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
+        current=[r for r in releases if r.get('verification',{}).get('built_artifact',{}).get('backfill_implementation_hash')==B.implementation_hash()
+                 and r['verification']['built_artifact'].get('full_resume_root')==FR.manifest()['hash']
+                 and r['verification']['built_artifact'].get('performance_cooldown_before_initialization')=='PASS']
+        if len(current)>1:raise B.EvidenceError('ambiguous registered FULL runtime continuation')
+        if current:
+            import copy
+            c=copy.deepcopy(c);c['marketplaces']['ozon']['runtime_image']=current[0]['image']
     return c
 
 
@@ -99,7 +112,8 @@ def validate_plan(doc, ack_hash):
     p = doc["runtime_plan"]
     observation = date.fromisoformat(p["observation_date"]) if "observation_date" in p else None
     expected = make_plan(doc["tenant_id"], p["entity"], p["from"], p["to"], p["generation"], p["origin"], today=observation, max_units=doc["max_units"], window_days=p["window_days"])
-    compatible = QF.matches(doc)
+    from pipelines.ozon.runtime import full_resume as FR
+    compatible = QF.matches(doc) or FR.matches(doc)
     if expected != doc and not compatible:
         raise B.EvidenceError("pilot plan/config/image differs from current reviewed contract")
     c = target(doc["tenant_id"])
@@ -111,16 +125,22 @@ def validate_plan(doc, ack_hash):
     facts = matches[0].get("verification", {}).get("built_artifact", {})
     if facts.get("backfill_window_v1") != "PASS" or facts.get("backfill_implementation_hash") != B.implementation_hash():
         raise B.EvidenceError("exact image has no matching qualified WINDOW_V1 capability")
-    if compatible and facts.get("qualification_resume_root") != QF.ROOT:
+    if QF.matches(doc) and facts.get("qualification_resume_root") != QF.ROOT:
         raise B.EvidenceError("current artifact has no exact historical qualification compatibility")
+    if FR.matches(doc) and facts.get('full_resume_root')!=FR.manifest()['hash']:
+        raise B.EvidenceError('current artifact has no exact FULL continuation qualification')
     return c
 
 
 def execution_image(doc, c):
-    return c["marketplaces"]["ozon"]["runtime_image"] if QF.matches(doc) else doc["image"]
+    from pipelines.ozon.runtime import full_resume as FR
+    return c["marketplaces"]["ozon"]["runtime_image"] if QF.matches(doc) or FR.matches(doc) else doc["image"]
 
 
 def continuation_overrides(doc):
+    from pipelines.ozon.runtime import full_resume as FR
+    if FR.matches(doc):
+        return {'BACKFILL_FULL_ROOT_HASH':FR.manifest()['hash'],'BACKFILL_RESUME_PLAN_ID':doc['runtime_plan']['plan_id']}
     return {"BACKFILL_RESUME_PLAN_ID":doc["runtime_plan"]["plan_id"]} if QF.matches(doc) else {}
 
 
@@ -382,6 +402,10 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     if p["window_days"] != 1:
         overrides["BACKFILL_WINDOW_DAYS"] = str(p["window_days"])
     overrides.update(continuation_overrides(doc))
+    if backend is not None and getattr(backend,'full_dispatch_authority',None):
+        overrides['BACKFILL_FULL_AUTHORITY']=json.dumps(backend.full_dispatch_authority,sort_keys=True,separators=(',',':'))
+        from pipelines.ozon.runtime import full_resume as FR
+        overrides['BACKFILL_FULL_ROOT_HASH']=FR.manifest()['hash']
     body={"overrides":{"containerOverrides":[{"env":[{"name":k,"value":v} for k,v in overrides.items()]}]}}
     prepared={"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash,
               "job":base+"/jobs/"+name,"overrides":body}
