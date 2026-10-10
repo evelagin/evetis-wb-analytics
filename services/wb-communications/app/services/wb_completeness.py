@@ -10,6 +10,8 @@ import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 
+from app.services import wb_actionability as act
+from app.services.wb_actionability import has_customer_words, seller_answer_text  # noqa: F401 (re-export)
 from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
@@ -28,49 +30,23 @@ def _norm(text) -> str:
     return " ".join(str(text or "").split())
 
 
-def seller_answer_text(raw: dict | None) -> str:
-    """The seller answer actually present on WB ('' when there is none)."""
-    answer = (raw or {}).get("answer")
-    return _norm(answer.get("text")) if isinstance(answer, dict) else ""
-
-
 def rating_only_without_seller_answer(fb: dict) -> bool:
     """A star rating with no words, no tags and no actual seller answer (isAnswered ignored)."""
     if not fb.get("productValuation"):
         return False
-    if any(str(fb.get(k) or "").strip() for k in ("text", "pros", "cons")) or fb.get("bables"):
-        return False
-    return not seller_answer_text(fb)
+    return not has_customer_words(fb) and not seller_answer_text(fb)
 
 
 # --- rating-only ingestion ---------------------------------------------------------------------
-def authoritative_no_seller_answer(deps, fb: dict) -> str:
-    """The direct single-review WB read (the verified publisher's GET) decides — never the
-    answered-feed list item alone. 'ok' only when the direct object is this review, is still
-    rating-only and has NO seller answer text; 'answered' / 'not_rating_only' / 'read_error'
-    otherwise. Any doubt fails closed: no card now, a later poll looks again."""
-    try:
-        direct = deps.wb.get_feedback(fb["id"], retries=1, timeout_seconds=5.0)
-    except Exception as exc:  # noqa: BLE001
-        log_event(logger, "warning", "rating-only direct read failed", error=type(exc).__name__)
-        return "read_error"
-    if not isinstance(direct, dict) or str(direct.get("id")) != str(fb["id"]) or "answer" not in direct:
-        return "read_error"
-    if seller_answer_text(direct):
-        return "answered"
-    if any(str(direct.get(k) or "").strip() for k in ("text", "pros", "cons")) or direct.get("bables"):
-        return "not_rating_only"
-    return "ok"
-
-
 def ingest_rating_only(deps, ingest_one) -> dict:
-    """Bounded recent window of the answered feed → rating-only reviews → local dedupe →
-    AUTHORITATIVE direct WB read proving no seller answer → the SAME per-review pipeline
-    (claim by review id → 3.1E → preflight → card). The list item is only a candidate."""
+    """Bounded recent window of the answered feed → rating-only candidates → local dedupe →
+    the SAME authoritative actionability decision as every review path (direct WB read) → the
+    SAME per-review pipeline (claim by review id → 3.1E → preflight → card). The list item is
+    only a candidate; only ACTIONABLE_FIRST_RESPONSE becomes a card."""
     from app.domain.models import make_doc_id
     s = deps.settings
     counts = {"fetched": 0, "eligible": 0, "processed": 0, "skipped": 0, "errors": 0, "capped": False,
-              "known": 0, "answered_on_wb": 0, "not_rating_only": 0, "read_errors": 0}
+              "known": 0, "answered_on_wb": 0, "not_rating_only": 0, "non_actionable": 0, "read_errors": 0}
     cutoff = _now() - timedelta(hours=int(s.wb_rating_only_lookback_hours))
     raw = deps.wb.iter_recent_answered_feedbacks(int(cutoff.timestamp()))
     counts["fetched"] = len(raw)
@@ -88,11 +64,22 @@ def ingest_rating_only(deps, ingest_one) -> dict:
         if counts["processed"] >= int(s.wb_rating_only_max_per_poll):
             counts["capped"] = True
             break
-        verdict = authoritative_no_seller_answer(deps, fb)
-        if verdict != "ok":
-            counts[{"answered": "answered_on_wb", "not_rating_only": "not_rating_only"}.get(verdict, "read_errors")] += 1
+        decision = act.read_review(deps, fb["id"])
+        if decision.verdict == act.ALREADY_ANSWERED:
+            counts["answered_on_wb"] += 1
             continue
-        outcome = ingest_one(fb)
+        if decision.raw is not None and has_customer_words(decision.raw):
+            counts["not_rating_only"] += 1  # now has words: no longer this path's candidate
+            continue
+        if decision.verdict == act.NON_ACTIONABLE:
+            counts["non_actionable"] += 1
+            continue
+        if not decision.actionable:
+            counts["read_errors"] += 1       # AMBIGUOUS: fail closed, a later poll looks again
+            continue
+        counts["actionable"] = counts.get("actionable", 0) + 1
+        from app.services.pipeline import _previous_version
+        outcome = ingest_one(fb, _previous_version(deps, decision.raw))
         counts[outcome] = counts.get(outcome, 0) + 1
     return counts
 
@@ -101,9 +88,10 @@ def ingest_rating_only(deps, ingest_one) -> dict:
 def _read_wb(deps, doc):
     if doc.get("entity_type") == "question":
         return deps.wb.get_question(doc["source_id"]), None
-    data = deps.wb.get_feedback(doc["source_id"], retries=1, timeout_seconds=5.0)
-    if str(data.get("id")) != str(doc["source_id"]):
-        raise ValueError("feedback identity mismatch")
+    decision = act.read_review(deps, doc["source_id"])
+    if decision.raw is None:
+        raise ValueError(decision.reason)
+    data = decision.raw
     return data, ((data.get("answer") or {}).get("state") if isinstance(data.get("answer"), dict) else None)
 
 
@@ -127,6 +115,8 @@ def reconcile_external_answers(deps) -> dict:
             log_event(logger, "warning", "wb reconcile read failed", doc_id=doc_id, error=type(exc).__name__)
             continue
         actual = seller_answer_text(data)
+        if not actual and doc.get("entity_type") != "question" and data.get("childFeedbackId"):
+            counts["superseded"] = counts.get("superseded", 0) + 1  # buyer rewrote it; visible in logs
         local = _norm(doc.get("final_answer") or doc.get("ai_answer"))
         if not actual or (actual == local and doc.get("entity_type") != "question" and state != "wbRu"):
             # No seller answer (incl. WB's isAnswered=true on a rating-only review), or our own
@@ -187,11 +177,25 @@ def record_poll_health(deps, started_at: datetime, summary: dict | None, error: 
             "reconciled_closed": int(rc.get("answered_externally") or 0) + int(rc.get("published") or 0),
             "telegram_cards_sent": cards, "last_card_at": finished.isoformat() if cards else None,
             "pending_count": pending,
+            **_actionability_health(summary.get("actionability") or {}, ro),
             "status": "failed" if error else ("errors" if review_errors or q.get("errors") else "ok"),
             "error_class": error,
         })
     except Exception as exc:  # noqa: BLE001
         log_event(logger, "warning", "poll health not recorded", error=type(exc).__name__)
+
+
+def _actionability_health(gate: dict, ro: dict) -> dict:
+    """«WB had N candidates, M required a reply, K did not» — both review paths together."""
+    n = lambda d, k: int(d.get(k) or 0)  # noqa: E731
+    return {
+        "reviews_candidates": n(gate, "candidates") + n(ro, "eligible"),
+        "reviews_actionable": n(gate, "actionable") + n(ro, "actionable"),
+        "filtered_already_answered": n(gate, "already_answered") + n(ro, "answered_on_wb"),
+        "filtered_non_actionable": n(gate, "non_actionable") + n(ro, "non_actionable") + n(ro, "not_rating_only"),
+        "filtered_ambiguous": n(gate, "ambiguous") + n(ro, "read_errors"),
+        "duplicates_skipped": n(gate, "known") + n(ro, "known") + n(gate, "duplicates_prevented"),
+    }
 
 
 def _hours(settings) -> tuple[int, int]:
@@ -242,6 +246,11 @@ def status_text(deps, now: datetime | None = None) -> str:
              f"Следующий опрос: {_msk(next_poll(now, deps.settings).isoformat())}",
              f"Ожидают решения: {h['pending_count'] if h.get('pending_count') is not None else '—'}",
              f"Ревизия: {h.get('revision') or '—'}"]
+    if h.get("reviews_candidates") is not None:
+        lines.insert(5, f"Проверено на WB: кандидатов {h['reviews_candidates']}, требуют ответа "
+                        f"{h.get('reviews_actionable', 0)}; отсеяно — уже отвечены {h.get('filtered_already_answered', 0)}, "
+                        f"не требуют ответа {h.get('filtered_non_actionable', 0)}, не проверены "
+                        f"{h.get('filtered_ambiguous', 0)}, уже в EVETIS {h.get('duplicates_skipped', 0)}")
     if h.get("reconciled_closed"):
         lines.insert(-1, f"Закрыто как отвеченные на WB: {h['reconciled_closed']}")
     return "\n".join(lines)

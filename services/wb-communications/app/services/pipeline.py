@@ -29,7 +29,7 @@ from app.domain.exceptions import (
     is_transient,
 )
 from app.communication_engine.constants import CommunicationType
-from app.domain.models import Question, Review
+from app.domain.models import Question, Review, make_doc_id
 from app.domain.statuses import EventType, Status
 from app.utils.logging import audit_event, get_logger, log_event, redact
 from app.utils.security import is_allowed
@@ -358,6 +358,19 @@ def _primary_badges(doc) -> list[str]:
     return []
 
 
+def _wb_context_lines(doc) -> list[str]:
+    """Why this review needs an answer although the WB cabinet may look «processed»."""
+    previous = str(doc.get("wb_previous_answer") or "").strip()
+    if previous:
+        return [f"🔁 <i>Покупатель обновил отзыв. На прежнюю версию уже был ответ:</i> "
+                f"«{escape_html(truncate(previous, 200))}» — <i>новой версии нужен свой ответ.</i>"]
+    if doc.get("rating") and not any(str(doc.get(k) or "").strip() for k in ("text", "pros", "cons")) \
+            and not doc.get("bables"):
+        return ["ℹ️ <i>Оценка без комментария: на WB она в разделе «Есть ответ», "
+                "но ответа продавца ещё нет — ответить можно.</i>"]
+    return []
+
+
 def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str, bool]:
     """3.1E leads. The answer is never cut: customer fields shrink to fit Telegram."""
     def e(value) -> str:
@@ -389,7 +402,7 @@ def _build_primary_card(doc, doc_id, *, full=False, question=False) -> tuple[str
                       f"<b>Достоинства:</b> {e(fit(doc.get('pros')) or '—')}",
                       f"<b>Недостатки:</b> {e(fit(doc.get('cons')) or '—')}",
                       *([f"<b>Теги покупателя:</b> {e(', '.join(doc.get('bables')))}"] if doc.get('bables') else []),
-                      f"<b>Комментарий:</b> {e(fit(doc.get('text')) or '—')}"]
+                      f"<b>Комментарий:</b> {e(fit(doc.get('text')) or '—')}", *_wb_context_lines(doc)]
         lines += ["", answer or "✨ <i>Ответ не предложен.</i>", *_preflight_lines(doc), "",
                   f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>"]
         return "\n".join(lines), cut
@@ -657,7 +670,7 @@ def build_card(doc: dict, doc_id: str, *, full: bool = False) -> tuple[str, bool
         f"<b>Достоинства:</b> {e(doc.get('pros') or '—')}",
         f"<b>Недостатки:</b> {e(doc.get('cons') or '—')}",
         *([f"<b>Теги покупателя:</b> {e(', '.join(doc.get('bables')))}"] if doc.get('bables') else []),
-        f"<b>Комментарий:</b> {e(review_text)}", "",
+        f"<b>Комментарий:</b> {e(review_text)}", *_wb_context_lines(doc), "",
         f"✍️ <b>Проект ответа:</b>\n{e(answer)}", *_v31_section(doc), "",
         f"<i>модель: {e(doc.get('openai_model') or '—')} · id: {e(doc_id)}</i>",
     ]
@@ -1046,11 +1059,16 @@ def run_poll(deps: Deps) -> dict:
 
 def _run_poll(deps: Deps) -> dict:
     poll_started = time.monotonic()
+    from app.services import wb_actionability as act
+    from app.services.repository import _decide_claim
     feedbacks = deps.wb.iter_unanswered_feedbacks()
     fetched = len(feedbacks)
     legacy_feedback_ids = []
+    gate_on = getattr(deps.settings, "wb_actionability_gate_enabled", False)
+    gate = {"candidates": 0, "known": 0, "actionable": 0, "already_answered": 0, "non_actionable": 0,
+            "ambiguous": 0, "duplicates_prevented": 0}
 
-    def ingest_one(fb) -> str | None:
+    def ingest_one(fb, extra: dict | None = None) -> str | None:
         """One WB review through the normal pipeline; the review id is the idempotency key."""
         review = Review.from_wb_feedback(fb)
         if not review.review_id:
@@ -1060,6 +1078,18 @@ def _run_poll(deps: Deps) -> dict:
             if doc.get("status") == "published" and not doc.get("verified_at"):
                 legacy_feedback_ids.append(doc_id)
             return "skipped"
+        if doc.get("telegram_message_id"):
+            # A retry of a review whose card already went out (it failed AFTER the send):
+            # restore that card's state. One WB review → one Telegram card, ever.
+            restored = (Status.POLICY_BLOCKED if doc.get("response_review_required") else Status.PENDING_APPROVAL).value
+            deps.repo.update(doc_id, {"status": restored, "lock_expires_at": None})
+            _sync_current(deps, doc_id, doc)
+            gate["duplicates_prevented"] += 1
+            log_event(logger, "warning", "card already sent; retry restored without a second card", doc_id=doc_id)
+            return "skipped"
+        if extra:
+            deps.repo.update(doc_id, extra)
+            doc = {**doc, **extra}
         try:
             doc = _draft_and_send(deps, review, doc, doc_id, CommunicationType.REVIEW, build_card)
             # Shadow-only: run Communication Engine v2 for observation. Fully
@@ -1074,7 +1104,27 @@ def _run_poll(deps: Deps) -> dict:
             log_event(logger, "error", "poll item failed", doc_id=doc_id, error=type(exc).__name__)
             return "errors"
 
-    outcomes = [ingest_one(fb) for fb in feedbacks]
+    def admit_unanswered(fb) -> str | None:
+        """Normal unanswered feed. A known review keeps the existing dedupe path (no WB read,
+        never a second card); a new or retried one becomes a card ONLY when the authoritative
+        actionability decision says ACTIONABLE_FIRST_RESPONSE. Anything else: no card."""
+        if not gate_on:
+            return ingest_one(fb)
+        review_id = str(fb.get("id") or "")
+        gate["candidates"] += 1
+        known = deps.repo.get(make_doc_id("wb", "review", review_id)) if review_id else None
+        if known is not None and _decide_claim(known) == "skip":
+            gate["known"] += 1
+            return ingest_one(fb)
+        decision = act.read_review(deps, review_id)
+        gate[act.COUNTER[decision.verdict]] += 1
+        if not decision.actionable:
+            log_event(logger, "info", "review not actionable, no card", verdict=decision.verdict,
+                      reason=decision.reason, source_id=review_id)
+            return "filtered"
+        return ingest_one(fb, _previous_version(deps, decision.raw))
+
+    outcomes = [admit_unanswered(fb) for fb in feedbacks]
     processed, skipped, errors = (outcomes.count(k) for k in ("processed", "skipped", "errors"))
     rating_only = None
     if getattr(deps.settings, "wb_rating_only_ingest_enabled", False):
@@ -1088,6 +1138,8 @@ def _run_poll(deps: Deps) -> dict:
 
     flush_events(deps)
     summary = {"fetched": fetched, "processed": processed, "skipped": skipped, "errors": errors}
+    if gate_on:
+        summary["actionability"] = gate
     if rating_only is not None:
         summary["rating_only"] = rating_only
     from app.services.feedback_publication import reconcile
@@ -1109,6 +1161,21 @@ def _run_poll(deps: Deps) -> dict:
         summary["v3_shadow"] = run_shadow_isolated(deps.v3, poll_started=poll_started)
     logger.info("poll done %s", summary)
     return summary
+
+
+def _previous_version(deps: Deps, raw: dict | None) -> dict | None:
+    """A buyer who rewrote a review: keep the answer given to the previous version for the
+    operator card (best effort, read-only, never blocks the card)."""
+    parent = (raw or {}).get("parentFeedbackId")
+    if not parent:
+        return None
+    from app.services.wb_actionability import seller_answer_text
+    try:
+        previous = seller_answer_text(deps.wb.get_feedback(parent, retries=1, timeout_seconds=5.0))
+    except Exception as exc:  # noqa: BLE001
+        log_event(logger, "info", "previous review version not read", error=type(exc).__name__)
+        previous = ""
+    return {"wb_parent_feedback_id": str(parent), **({"wb_previous_answer": previous} if previous else {})}
 
 
 def _run_questions(deps: Deps) -> dict:
