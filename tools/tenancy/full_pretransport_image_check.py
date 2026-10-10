@@ -3,7 +3,7 @@ from copy import deepcopy
 from tools.tenancy import cloud_access as A,tenant_backfill as BF,durable_plan as D,full_history as F
 from tools.tenancy import full_pretransport_recovery as PT
 from pipelines.ozon.runtime import full_resume as FR
-from datetime import date
+from datetime import date,datetime,timezone
 
 def fixture():
  m=FR.manifest();doc=F.render_leaf(m,89,date(2026,10,10));p=doc['runtime_plan'];run=PT.EXACT['run_id']
@@ -41,6 +41,10 @@ def check():
       source_budget=0,source_state_hash=D.digest(BF.B.initial(doc['runtime_plan'])),closure_hash='8'*64))
  p['closure_hash']=D.digest(PT.closure(p));p=PT.sealed({k:v for k,v in p.items() if k!='hash'});PT.header(p,m)
  history=[intent,PT.closure(p)]
+ written=BF.checkpoint(doc,p['run_id'],'RUNNING',170,datetime(2026,10,10,tzinfo=timezone.utc))
+ raw=written['evidence_json'];assert raw=='{"mode": "BOUNDED_PILOT", "proof": null}'
+ normalized=PT.checkpoint_row(written)
+ assert normalized['evidence_json']==D.encoded({'mode':'BOUNDED_PILOT','proof':None}) and written['evidence_json']==raw
  assert D.decide_tick(history,p['shard'],{'status':'ELIGIBLE'},verified_pretransport=[p])['sequence']==2
  assert D.decide_tick([intent],p['shard'],{'status':'ELIGIBLE'})['action']=='RECOVER_RECEIPT_OR_STOP'
  for key in PT.PREDICATES:
@@ -51,7 +55,8 @@ def check():
    else:raise AssertionError('unknown recovery predicate accepted')
  return {'full_authority_real_boundary':'PASS','full_authority_unknown_zero_transport':'PASS',
          'pretransport_exact_closed_incident':'PASS','pretransport_no_success_receipt_recon':'PASS',
-         'pretransport_unknown_blocks':'PASS','source_budget_zero':'PASS'}
+         'pretransport_unknown_blocks':'PASS','source_budget_zero':'PASS',
+         'checkpoint_real_writer_json_without_rewrite':'PASS'}
 
 if __name__=='__main__':
  import json
