@@ -18,6 +18,7 @@ KINDS = frozenset({"MANIFEST", "DISPATCH_INTENT", "DISPATCH_RECEIPT", "RECONCILE
 KINDS = KINDS | {'FULL_LEAF_STOP_RECOVERED'}
 KINDS = KINDS | {'FULL_COOLDOWN_FAILED_RECOVERED','FAILED_SOURCE_ATTEMPT_SUPERSEDED'}
 KINDS = KINDS | {'FULL_POLICY_BOOTSTRAP_STOP_RECOVERED'}
+KINDS = KINDS | {'FULL_PRETRANSPORT_STOP_RECOVERED','DISPATCH_PRETRANSPORT_REJECTED'}
 MAX_RECORD_BYTES = 900000
 
 
@@ -274,7 +275,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
-def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=()):
+def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=(), verified_pretransport=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
     Never dispatch after an intent lacking a receipt. Reconcile terminal receipts
@@ -287,6 +288,13 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
     if any(not any(r['kind']=='FAILED_PRE_SOURCE' and r['payload']==p and r['sequence']==p['dispatch_sequence'] for r in current) for p in verified_failures):
         raise BF.B.EvidenceError('verified failure lacks its immutable recovery record')
     recovered={p['dispatch_sequence'] for p in verified_failures}
+    for proof in verified_pretransport:
+        from tools.tenancy import full_pretransport_recovery as PT
+        from pipelines.ozon.runtime import full_resume as FR
+        PT.header(proof,FR.manifest())
+        if proof['shard']!=plan_hash:raise BF.B.EvidenceError('foreign pretransport closure')
+        PT.verify_shard(proof,current)
+        recovered.add(proof['receipt_sequence'])
     for proof in verified_failed_cooldown:
         import cooldown_failed as CF
         CF.digest(proof,CF.PROOF_FIELDS)
@@ -332,7 +340,7 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
     if active_execution:
         return {"action": "MONITOR"}
     for seq in sorted(intents):
-        if seq not in receipts:
+        if seq not in receipts and seq not in recovered:
             return {"action": "RECOVER_RECEIPT_OR_STOP", "sequence": seq}
         if seq not in reconciled and seq not in recovered:
             return {"action": "RECONCILE", "sequence": seq}
