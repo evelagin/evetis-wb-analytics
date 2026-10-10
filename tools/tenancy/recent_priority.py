@@ -200,6 +200,12 @@ def pending_receipts(backend,plans):
                 if commit!=expected:fail('reconciliation commit metadata differs')
                 accepted=recon
         if intent>accepted:
+            rejected=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==shard and p['receipt_sequence']==intent]
+            if rejected:
+                from tools.tenancy import full_pretransport_recovery as PT
+                if len(rejected)!=1:fail('ambiguous pretransport closure')
+                PT.verify_shard(rejected[0],backend.store.history(shard,max_records=F.MAX_LEAF_RECORDS))
+                continue
             proofs=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard and p['receipt_sequence']==intent]
             if proofs:
                 from tools.tenancy import full_cooldown_recovery as FC

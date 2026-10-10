@@ -230,7 +230,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_','BFPB_','BFCW_','BFCX_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_','BFPB_','BFPT_','BFCW_','BFCX_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -378,7 +378,11 @@ def _dispatch(backend, manifest, index, doc, root, sequence):
     prepared, received = [], []
     def before(preparation):
         if prepared: raise BF.B.EvidenceError('full wake dispatch repeated')
-        backend.store.commit(root,'DISPATCH_INTENT',sequence,{'plan':doc,'preparation':preparation},backend.clock())
+        payload={'plan':doc,'preparation':preparation}
+        committed=backend.store.commit(root,'DISPATCH_INTENT',sequence,payload,backend.clock())
+        context={'version':D.VERSION,'root_hash':root,'kind':'DISPATCH_INTENT','sequence':sequence,'payload':payload}
+        if committed!=D.digest(context):raise BF.B.EvidenceError('FULL prepared intent commit differs')
+        backend.full_dispatch_intent=context
         prepared.append(preparation)
     def after(receipt):
         if len(prepared)!=1 or received or any(receipt.get(k)!=prepared[0][k] for k in ('run_id','lease_generation','ack_hash')):
@@ -443,12 +447,15 @@ def wake(base, root):
         from tools.tenancy import full_leaf_recovery as FL
         from tools.tenancy import full_cooldown_recovery as FC
         from tools.tenancy import full_policy_bootstrap_recovery as PB
+        from tools.tenancy import full_pretransport_recovery as PT
         with gate('MANIFEST_ROOT'):
             approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
             failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
             paused_bootstrap=PB.load(backend,manifest,records) if any(r['kind']==PB.KIND for r in records) else []
+            rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
         backend.verified_cooldown_failures=failed
-        approved=approved+failed+paused_bootstrap
+        backend.verified_pretransport_rejections=rejected
+        approved=approved+failed+paused_bootstrap+rejected
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -506,7 +513,8 @@ def wake(base, root):
             for record in records:
                 if record['kind']!='DEPENDENCY_PLAN' or record['payload']['day']>=day:continue
                 prior=record['payload'];history=backend.store.history(prior['shard_root'])
-                decision=D.decide_tick(history,prior['shard_root'],{'status':'ELIGIBLE'},False)
+                decision=D.decide_tick(history,prior['shard_root'],{'status':'ELIGIBLE'},False,
+                    verified_pretransport=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==prior['shard_root']])
                 if decision['action'] in {'RECONCILE','RECOVER_RECEIPT_OR_STOP','STOPPED'}:
                     return leaf_wake(backend,manifest,catalog,prior,records,dependency=True)
             dependencies=[r['payload'] for r in records if r['kind']=='DEPENDENCY_PLAN' and r['payload'].get('day')==day]
@@ -558,7 +566,8 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if manifest['programs'][index].get('accepted_qualification_plan'):
         return import_accepted_sku90(backend,manifest,index,item,records,history),backend
     with gate('QUOTA'):quota=backend.quota(leaf,backend.clock())
-    decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution(),verified_failed_cooldown=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard])
+    decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution(),verified_failed_cooldown=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard],
+        verified_pretransport=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==shard])
     action=decision['action'];sequence=decision.get('sequence')
     if action=='MONITOR':return {'status':'MONITORING','source_dispatches':0,'index':index},backend
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:

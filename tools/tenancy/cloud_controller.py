@@ -89,6 +89,10 @@ class Backend:
         self.wake_activity['dispatch_attempts']+=1
         if self.wake_activity['dispatch_attempts']>1:
             raise BF.B.EvidenceError('one source dispatch per controller wake')
+        authority=getattr(self,'full_dispatch_authority',None)
+        if authority is not None:
+            return self.access.dispatch(*args,full_authority=authority,
+                                        full_intent=getattr(self,'full_dispatch_intent',None))
         return self.access.dispatch(*args)
     def select(self,sql,params):return BF.select(self.c,sql,params,request=self.request)
     @property

@@ -199,7 +199,7 @@ class CloudAccess:
     def tables(self):
         return TT.Tables(self.c["project_id"], request=self.request, write_request=self.append_request)
 
-    def dispatch(self, doc, job, body):
+    def dispatch(self, doc, job, body, *, full_authority=None, full_intent=None):
         from tools.tenancy import tenant_backfill as BF
         c=BF.validate_plan(doc,doc.get("ack_hash"))
         if {k:v for k,v in c.items() if k!='orchestration'} != {k:v for k,v in self.c.items() if k!='orchestration'}:
@@ -225,6 +225,35 @@ class CloudAccess:
                   "BACKFILL_MAX_REQUESTS":str(doc["max_requests"]),"BACKFILL_MAX_UNITS":str(doc["max_units"])}
         if p["window_days"]!=1:expected["BACKFILL_WINDOW_DAYS"]=str(p["window_days"])
         expected.update(BF.continuation_overrides(doc))
+        from pipelines.ozon.runtime import full_resume as FR
+        if full_authority is None and FR.matches(doc):
+            raise TT.TableError('FULL frozen plan requires committed dispatch authority')
+        if full_authority is not None:
+            from tools.tenancy import full_history as F, durable_plan as D
+            m=FR.manifest()
+            if not isinstance(full_authority,dict) or set(full_authority)!={'root','index','shard','receipt_sequence','plan_id'}:
+                raise TT.TableError('closed FULL dispatch authority required')
+            index=FR.scope(p,m['hash'])
+            sequence=full_authority['receipt_sequence']
+            authority={'root':m['hash'],'index':index,'shard':F.shard_root(m,index,doc),
+                       'receipt_sequence':sequence,'plan_id':p['plan_id']}
+            if (type(sequence) is not int or sequence<1 or type(full_authority['index']) is not int
+                    or full_authority!=authority):
+                raise TT.TableError('FULL dispatch authority differs from frozen leaf')
+            if (not isinstance(full_intent,dict) or set(full_intent)!={'version','root_hash','kind','sequence','payload'}
+                    or full_intent['version']!=D.VERSION or full_intent['root_hash']!=authority['shard']
+                    or full_intent['kind']!='DISPATCH_INTENT' or full_intent['sequence']!=sequence
+                    or set(full_intent['payload'])!={'plan','preparation'} or full_intent['payload']['plan']!=doc):
+                raise TT.TableError('committed FULL intent context differs')
+            prepared=full_intent['payload']['preparation']
+            if (set(prepared)!={'run_id','lease_generation','ack_hash','job','overrides'}
+                    or prepared['run_id']!=run_id or prepared['ack_hash']!=doc['ack_hash']
+                    or type(prepared['lease_generation']) is not int or prepared['lease_generation']<1
+                    or prepared['job']!=base+'/jobs/'+job or prepared['overrides']!=body):
+                raise TT.TableError('FULL prepared dispatch differs from committed intent')
+            expected['BACKFILL_FULL_AUTHORITY']=D.encoded(authority)
+        elif full_intent is not None:
+            raise TT.TableError('FULL intent without authority')
         if values != expected:
             raise TT.TableError("Run overrides differ from frozen canonical plan")
         url=f"https://run.googleapis.com/v2/{base}/jobs/{job}:run"
