@@ -60,7 +60,8 @@ def protocol(monkeypatch):
   packaged_probe_hash='4'*64,replacement_check_hash='5'*64,protected_record_hashes=sorted(D.digest(r) for r in records),predicates={k:True for k in R.PREDICATES},
   verified_at=now.isoformat(),source_budget=0,source_state_hash=D.digest(BF.B.initial(doc['runtime_plan'])),closure_hash='6'*64))
  p['closure_hash']=D.digest(R.closure(p));p=R.sealed({k:v for k,v in p.items() if k!='hash'})
- original={'status':'RUNNING','lease_owner':p['run_id'],'error_code':None,'evidence_json':D.encoded({'mode':'BOUNDED_PILOT','proof':None})};rows=[original]
+ written=BF.checkpoint(doc,p['run_id'],'RUNNING',170,now)
+ original={k:written[k] for k in ('status','lease_owner','error_code','evidence_json')};rows=[original]
  objects={'L_50c5d90dbf43ac9c_0170':({'owner':p['run_id']},D.encoded({'mode':'BOUNDED_PILOT','ack_hash':p['ack_hash']})),
   C.descriptor_name(p['new_source'],p['root'],'PAUSED'):({},D.encoded({'settings':settings,'release':release}))}
  effects=[];journal=[{'n':0}];child=[];active=[];state=BF.B.initial(doc['runtime_plan'])
@@ -99,6 +100,21 @@ def test_owner_additive_closure_is_idempotent_retains_intent_and_running_checkpo
  assert not any(r['kind'] in {'DISPATCH_RECEIPT','RECONCILED','CHUNK_COMPLETE'} for r in sh+records)
  before=deepcopy(effects);assert R.publish(b,p,m)==p and effects==before
  assert D.decide_tick(sh,p['shard'],{'status':'ELIGIBLE'},verified_pretransport=[p])=={'action':'PREPARE_NEXT','sequence':2,'poll_only':False}
+
+@pytest.mark.parametrize('evidence',['{"mode":"BOUNDED_PILOT","proof":null,"extra":0}',
+ '{"mode":"BOUNDED_PILOT","proof":0}', '{"mode":"BOUNDED_PILOT"}',
+ '{"mode":"BOUNDED_PILOT","mode":"BOUNDED_PILOT","proof":null}',
+ '{"mode":"BOUNDED_PILOT","proof":NaN}', 'null', '{', None])
+def test_changed_or_ambiguous_checkpoint_content_blocks_before_recovery_writes(monkeypatch,evidence):
+ b,m,p,records,sh,objects,rows,effects,*_=protocol(monkeypatch);rows[0]['evidence_json']=evidence
+ with pytest.raises(BF.B.EvidenceError):R.publish(b,p,m)
+ assert not effects
+
+def test_read_limit_cannot_hide_an_extra_checkpoint_version(monkeypatch):
+ b,m,p,records,sh,objects,rows,effects,*_=protocol(monkeypatch)
+ rows.extend([deepcopy(rows[0]),deepcopy(rows[0])])
+ with pytest.raises(BF.B.EvidenceError,match='extra checkpoint evidence version'):R.publish(b,p,m)
+ assert not effects
 
 @pytest.mark.parametrize('key',sorted(R.PREDICATES))
 @pytest.mark.parametrize('bad',[False,None,1,'UNKNOWN'])

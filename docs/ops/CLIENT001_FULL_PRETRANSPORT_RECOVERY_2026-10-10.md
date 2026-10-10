@@ -26,3 +26,8 @@ IAM change or source replay. Terminal-success class-C recovery is unchanged.
 The FULL root, historical cutoff, recent selection and source/runtime contracts
 remain unchanged. Cloud observers validate the exact owner certificate before
 discounting its retained STOP or treating its rejected intent as closed.
+
+Checkpoint evidence is compared as strict JSON content using the existing
+duplicate-key/NaN-rejecting parser. The canonical writer's JSON spacing must not
+block the exact original RUNNING checkpoint. Unknown content and extra evidence
+versions still block. Original serialized evidence is never rewritten.

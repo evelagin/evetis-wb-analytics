@@ -44,6 +44,11 @@ def closure(p):
 def release_value(p):return {'owner':p['run_id']},D.encoded({'terminal':'PRETRANSPORT_REJECTED','ack_hash':p['ack_hash'],'certificate_hash':p['hash']})
 def checkpoint_evidence(p):return {'mode':'BOUNDED_PILOT','pretransport_certificate':p['hash'],'source_budget':0}
 
+def checkpoint_row(row):
+ """Compare closed JSON content; retain the original writer's bytes unchanged."""
+ try:return dict(row,evidence_json=D.encoded(parse(row['evidence_json'])))
+ except (KeyError,TypeError,ValueError):fail('checkpoint evidence is not unambiguous JSON')
+
 def header(p,m):
  if (not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or p['version']!=1
      or p['type']!=TYPE or D.digest({k:v for k,v in p.items() if k!='hash'})!=p['hash']):fail('closed exact certificate required')
@@ -85,7 +90,8 @@ def validate(p,b,m,records,*,final=True):
  lease=b.tables.get_table(b.c['datasets']['tenant_locks'],f"L_50c5d90dbf43ac9c_{p['lease_generation']:04d}")
  if not lease or lease[0].get('owner')!=p['run_id'] or parse(lease[1]).get('ack_hash')!=p['ack_hash']:fail('original lease differs')
  if final and b.tables.get_table(b.c['datasets']['tenant_locks'],f"LD_50c5d90dbf43ac9c_{p['lease_generation']:04d}")!=release_value(p):fail('source-free release differs')
- rows=b.select(f"SELECT DISTINCT status,lease_owner,error_code,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='catalog' AND plan_hash=@ack AND lease_generation=170 LIMIT 3",{'ack':('STRING',p['ack_hash'])})
+ rows=[checkpoint_row(r) for r in b.select(f"SELECT DISTINCT status,lease_owner,error_code,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='catalog' AND plan_hash=@ack AND lease_generation=170 LIMIT 3",{'ack':('STRING',p['ack_hash'])})]
+ if len(rows)>2:fail('extra checkpoint evidence version')
  original={'status':'RUNNING','lease_owner':p['run_id'],'error_code':None,'evidence_json':D.encoded({'mode':'BOUNDED_PILOT','proof':None})}
  failed={'status':'FAILED','lease_owner':p['run_id'],'error_code':'PRETRANSPORT_REJECTED','evidence_json':D.encoded(checkpoint_evidence(p))}
  if original not in rows or any(r not in (original,failed) for r in rows) or (final and failed not in rows):fail('original/additive checkpoint differs')
