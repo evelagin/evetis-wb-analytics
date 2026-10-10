@@ -230,7 +230,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_','BFPB_','BFCW_','BFCX_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -441,11 +441,14 @@ def wake(base, root):
             if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
     if any(r['kind']=='STOPPED' for r in records):
         from tools.tenancy import full_leaf_recovery as FL
-        approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
         from tools.tenancy import full_cooldown_recovery as FC
-        failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+        from tools.tenancy import full_policy_bootstrap_recovery as PB
+        with gate('MANIFEST_ROOT'):
+            approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
+            failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+            paused_bootstrap=PB.load(backend,manifest,records) if any(r['kind']==PB.KIND for r in records) else []
         backend.verified_cooldown_failures=failed
-        approved=approved+failed
+        approved=approved+failed+paused_bootstrap
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.

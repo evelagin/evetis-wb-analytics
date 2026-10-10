@@ -14,6 +14,7 @@ SOURCE_FILES = (
     'recent_priority.py','recent_priority_image_check.py',
     'controller_cadence.py','controller_cadence_image_check.py',
     'full_runtime_handoff.py','full_cooldown_recovery.py','full_cooldown_image_check.py',
+    'full_policy_bootstrap_recovery.py','full_policy_bootstrap_image_check.py',
 )
 
 

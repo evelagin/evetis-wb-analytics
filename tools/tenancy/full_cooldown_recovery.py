@@ -12,11 +12,30 @@ def name(root,source):return 'BFCF_AUTH_'+D.check_hash(root)+'_'+source
 def value(p):return {'kind':'failed_cooldown','root':p['root'][:16]},D.encoded(p)
 def cert_name(p):return 'BFCF_'+p['root']+'_'+p['stop_hash']
 
-def validate_policy(p,b,m,*,historical=False):
+def validate_policy(p,b,m,*,historical=False,release=None):
     CF.policy(p)
     if (p['root'],p['manifest_hash'])!=(m['hash'],D.digest(m)):fail('frozen manifest differs')
     from tools.tenancy import full_runtime_handoff as FH,orchestration_contract as O
-    release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['controller_source']}.json").read_text())
+    if historical:
+        if release is not None:fail('historical registration must remain immutable')
+        release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['controller_source']}.json").read_text())
+    else:
+        # A current image is built before its own registration JSON exists.
+        # Bootstrap already requires this immutable, exact deployment descriptor;
+        # use the same authority instead of a future file in the built image.
+        from tools.tenancy import cloud_controller as C
+        env=b.c['orchestration']['job']['env']
+        settings={'release':env['CONTROLLER_SOURCE_SHA'],'root_hash':m['hash'],
+                  'scheduler_state':env['HISTORICAL_SCHEDULER_STATE']}
+        if release is None:
+            marker=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(
+                settings['release'],settings['root_hash'],settings['scheduler_state']))
+            descriptor=parse(marker[1]) if marker else {}
+            if set(descriptor)!={'settings','release'} or descriptor['settings']!=settings:
+                fail('current qualified descriptor unavailable or differs')
+            release=descriptor['release']
+        if O.block(b.c,settings,BF.REPO,release)!=b.c['orchestration']:
+            fail('current canonical descriptor differs')
     if (release['image'],release['controller_implementation_hash'],release['runtime_image'],release['runtime_implementation_hash'])!=(p['controller_image'],p['controller_implementation_hash'],p['runtime_image'],p['runtime_implementation_hash']):fail('qualified release differs')
     if not historical:
         O.verify_artifact_source(release,BF.REPO)
@@ -31,8 +50,8 @@ def policy(b,m,source=None):
     if marker!=value(p):fail('owner marker differs')
     return p
 
-def publish_policy(b,p,m):
-    validate_policy(p,b,m);n=name(m['hash'],p['controller_source']);old=b.tables.get_table(b.c['datasets']['ref'],n)
+def publish_policy(b,p,m,release=None):
+    validate_policy(p,b,m,release=release);n=name(m['hash'],p['controller_source']);old=b.tables.get_table(b.c['datasets']['ref'],n)
     if old is None:b.tables.create_marker(b.c['datasets']['ref'],n,*value(p))
     if b.tables.get_table(b.c['datasets']['ref'],n)!=value(p):fail('owner publication conflict')
     return n

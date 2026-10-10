@@ -101,16 +101,52 @@ def claim_value(claim):
     return {'kind':'controller_wake','root':claim['root'][:16]},D.encoded(claim)
 
 
-def validate_claim(backend,value):
+def validate_claim(backend,value,*,allow_closed_history=False):
     p=backend.c['orchestration']['cadence'];env=backend.c['orchestration']['job']['env']
     claim=parse(value[1] or '{}') if value else {}
     if set(claim)!=CLAIM_FIELDS or type(claim['version']) is not int or claim['version']!=1:
         fail('controller claim unavailable/unknown')
     if claim['hash']!=D.digest({k:v for k,v in claim.items() if k!='hash'}):fail('claim digest differs')
-    if (claim['tenant'],claim['project'],claim['root'],claim['policy_hash'],claim['source'],claim['image'])!=(p['tenant'],p['project'],p['root'],D.digest(p),env['CONTROLLER_SOURCE_SHA'],env['CONTROLLER_IMAGE']):
+    if (claim['tenant'],claim['project'],claim['root'],claim['policy_hash'])!=(p['tenant'],p['project'],p['root'],D.digest(p)):
         fail('claim scope/release differs')
     names(claim['root'],claim['generation'])
     if value!=claim_value(claim) or at(claim['created_at'])>backend.clock():fail('claim metadata differs')
+    if (claim['source'],claim['image'])!=(env['CONTROLLER_SOURCE_SHA'],env['CONTROLLER_IMAGE']):
+        if not allow_closed_history:fail('claim scope/release differs')
+        historical_closed_claim(backend,claim)
+    return claim
+
+
+def historical_closed_claim(backend,claim):
+    """A release handoff never erases or reclaims a prior wake's authority.
+
+    Only an already closed, terminal, registered exact historical execution is
+    readable across releases. An active/missing/corrupt closure remains STOP.
+    The current CAS winner and current ownership checks stay current-release only.
+    """
+    from tools.tenancy import orchestration_contract as O,cloud_controller as C
+    if not re.fullmatch('[0-9a-f]{40}',claim['source']) or not closed(backend,claim):
+        fail('historical controller lacks canonical closure')
+    release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{claim['source']}.json").read_text())
+    x=backend.request('GET',BF.RUN_API+'/'+claim['execution'])
+    if (x.get('name')!=claim['execution'] or not x.get('completionTime')
+            or x.get('retriedCount',0) or x.get('cancelledCount',0) or x.get('runningCount',0)
+            or x.get('taskCount',1)!=1
+            or x.get('succeededCount',0)+x.get('failedCount',0)!=1):
+        fail('historical controller terminal state unknown')
+    if not at(x.get('createTime'))<=at(claim['created_at'])<=at(x['completionTime'])<=backend.clock():
+        fail('historical controller interval differs')
+    entries=x['template']['containers'][0]['env'];env={e['name']:e.get('value') for e in entries}
+    settings=dict(release=claim['source'],root_hash=claim['root'],scheduler_state=env.get('HISTORICAL_SCHEDULER_STATE'))
+    marker=backend.tables.get_table(backend.c['datasets']['tenant_locks'],C.descriptor_name(
+        settings['release'],settings['root_hash'],settings['scheduler_state']))
+    descriptor=parse(marker[1]) if marker else {}
+    if (set(descriptor)!={'settings','release'} or descriptor['settings']!=settings
+            or descriptor['release']!=release or release['image']!=claim['image']
+            or release.get('cadence_policy')!=backend.c['orchestration']['cadence']):
+        fail('historical controller descriptor differs')
+    block=O.block(backend.c,settings,BF.REPO,release)
+    O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},block)
     return claim
 
 
@@ -151,7 +187,7 @@ def acquire(backend):
     if sorted(found)!=list(range(1,max(found,default=0)+1)):fail('controller authority generation gap')
     latest=max(found,default=0)
     if latest:
-        previous=validate_claim(backend,backend.tables.get_table(ds,names(root,latest)[0]))
+        previous=validate_claim(backend,backend.tables.get_table(ds,names(root,latest)[0]),allow_closed_history=True)
         if not closed(backend,previous):
             holder=execution(backend,backend.request('GET',BF.RUN_API+'/'+previous['execution']))
             if holder.get('completionTime'):fail('terminal controller missing canonical closure')
