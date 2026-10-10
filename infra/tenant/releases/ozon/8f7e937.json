@@ -280,7 +280,7 @@
     }
   },
   "deployment": {
-    "tenants": "Qualified paired runtime/controller release registration; exact tenant plan/recovery and live activation remain required. Immutable build source/archive remains the reviewed PR ancestor.",
+    "tenants": "INERT — paired runtime/controller registration only; reviewed exact tenant deployment, recovery and activation are still required. Immutable reviewed build source/archive is retained.",
     "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS untouched.",
     "rollback": "Pause dedicated controller safely; retain accepted manifests, all reservations/checkpoints and receipts. No blind old-image restore after new state or ambiguous intent."
   }
