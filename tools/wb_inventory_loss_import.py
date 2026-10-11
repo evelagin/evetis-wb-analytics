@@ -98,13 +98,13 @@ def normalize(m: dict) -> dict:
     for i in m.get("incidents", []):
         for k in ("incident_id", "report_warehouse", "wb_report_ref", "incident_date", "incident_evidence"):
             _req(bool(str(i.get(k, "")).strip()), f"событие без {k}")
-        _req(bool(DATE_RE.match(i["incident_date"])), f"{i['incident_id']}: дата события {i['incident_date']!r}")
-        _req(i["incident_id"] not in inc, f"дубль события {i['incident_id']}")
+        _req(bool(DATE_RE.match(i["incident_date"])), "событие: дата события не в формате ГГГГ-ММ-ДД")
+        _req(i["incident_id"] not in inc, "дубль события")
         inc[i["incident_id"]] = i
     _req(len({i["report_warehouse"] for i in inc.values()}) == len(inc), "два события на один склад")
     items = []
     for it in m.get("items", []):
-        _req(it.get("incident_id") in inc, f"позиция ссылается на неизвестное событие {it.get('incident_id')}")
+        _req(it.get("incident_id") in inc, "позиция ссылается на неизвестное событие")
         _req(isinstance(it.get("nm_id"), int) and it["nm_id"] > 0, f"nm_id {it.get('nm_id')!r}")
         _req(isinstance(it.get("lost_qty"), int) and it["lost_qty"] > 0, f"lost_qty {it.get('lost_qty')!r}")
         e = inc[it["incident_id"]]
@@ -116,17 +116,17 @@ def normalize(m: dict) -> dict:
     _req({x["incident_id"] for x in items} == set(inc), "есть событие без позиций")
     comps = []
     for c in m.get("compensations", []):
-        _req(bool(re.match(r"^\d+$", str(c.get("wb_document", "")))), f"номер документа WB {c.get('wb_document')!r}")
-        _req(bool(DATE_RE.match(str(c.get("booking_date", "")))), f"{c['wb_document']}: дата проводки")
-        _req(money(c["amount_rub"]) > 0, f"{c['wb_document']}: сумма ≤ 0")
-        _req(c.get("attribution_basis") in ATTRIBUTION, f"{c['wb_document']}: attribution_basis {c.get('attribution_basis')!r}")
+        _req(bool(re.match(r"^\d+$", str(c.get("wb_document", "")))), "номер документа WB не число")
+        _req(bool(DATE_RE.match(str(c.get("booking_date", "")))), "компенсация: дата проводки")
+        _req(money(c["amount_rub"]) > 0, "компенсация: сумма ≤ 0")
+        _req(c.get("attribution_basis") in ATTRIBUTION, "компенсация: attribution_basis не BOOKING_MONTH / DOCUMENT_LINKED")
         linked = c["attribution_basis"] == "DOCUMENT_LINKED"
         am = c.get("attributed_incident_month")
-        _req(linked == (am is not None), f"{c['wb_document']}: месяц события задаётся только при DOCUMENT_LINKED")
+        _req(linked == (am is not None), "компенсация: месяц события задаётся только при DOCUMENT_LINKED")
         if linked:
-            _req(bool(DATE_RE.match(am)) and am.endswith("-01"), f"{c['wb_document']}: attributed_incident_month — первое число")
-            _req(am in {x["incident_date"][:7] + "-01" for x in items}, f"{c['wb_document']}: в этом месяце нет события")
-        _req(bool(str(c.get("evidence", "")).strip()), f"{c['wb_document']}: без доказательства")
+            _req(bool(DATE_RE.match(am)) and am.endswith("-01"), "компенсация: attributed_incident_month — первое число")
+            _req(am in {x["incident_date"][:7] + "-01" for x in items}, "компенсация: в этом месяце нет события")
+        _req(bool(str(c.get("evidence", "")).strip()), "компенсация: без доказательства")
         comps.append({"wb_document": str(c["wb_document"]), "booking_date": c["booking_date"],
                       "amount_rub": str(money(c["amount_rub"])), "attribution_basis": c["attribution_basis"],
                       "attributed_incident_month": am, "evidence": c["evidence"]})
@@ -141,7 +141,7 @@ def normalize(m: dict) -> dict:
     _req(bool(DATE_RE.match(claim["filed_date"])), "дата претензии")
     before = sum((money(c["amount_rub"]) for c in comps if c["booking_date"] < claim["filed_date"]), Decimal(0))
     _req(money(claim["compensation_before_claim_rub"]) == before,
-         f"претензия: выплачено до подачи {claim['compensation_before_claim_rub']} ≠ Σ компенсаций до {claim['filed_date']} ({before})")
+         "претензия: выплачено до подачи ≠ Σ компенсаций до даты подачи")
     _req(money(claim["claimed_goods_rub"]) == money(claim["claim_documented_goods_cost_rub"]) - before,
          "претензия: заявлено за товар ≠ документальная себестоимость − выплачено до подачи")
     items.sort(key=lambda x: (x["incident_id"], x["nm_id"]))

@@ -258,14 +258,17 @@ def _private_tokens() -> set[str]:
     import json
     import os
     path = os.environ.get("EVETIS_WB_LOSS_EVIDENCE")
-    if not path or not Path(path).is_file():
+    if not path:
         return set()
+    assert Path(path).is_file(), "EVETIS_WB_LOSS_EVIDENCE задан, но манифест не читается — проверка закрытых значений не выполнена"
     m = json.loads(Path(path).read_text(encoding="utf-8"))
     toks = {str(c["wb_document"]) for c in m.get("compensations", [])}
     toks |= {str(i[k]) for i in m.get("incidents", []) for k in ("incident_id", "wb_report_ref")}
     cl = m.get("claim") or {}
     toks |= {str(cl[k]) for k in ("claim_id", "claim_documented_goods_cost_rub", "claimed_goods_rub") if k in cl}
-    return {t for t in toks if t}
+    toks = {t for t in toks if t}
+    assert toks, "манифест не дал ни одного закрытого значения"
+    return toks
 
 
 def _amount_forms(tok: str) -> set[str]:
