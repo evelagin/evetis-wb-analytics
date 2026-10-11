@@ -251,48 +251,64 @@ def test_inventory_loss_reads_private_evidence_and_is_not_netted():
     assert "OVER (PARTITION BY d.wb_document) doc_rows" in led                     # дубль строки финотчёта не сверяется
 
 
-# Отпечатки (sha256) закрытых значений: номера документов WB, претензия, суммы претензии (только цифры). Сами значения
-# в публичном дереве не хранятся — даже в этом тесте.
-_PRIVATE_TOKEN_SHA256 = {
-    "3c577ec07a262c85b5c2c62b75de5e9796fdc996ca38ae7f550d5653aa2b26c0",
-    "2de988fb23a86389ea36b3913c918dfe88b759422db0d43215f9721d512347a5",
-    "6b2b0319274ba4435e41fa0bcff743297dd3192d6a84285a3ca90c8b4f928217",
-    "452ec28aa8ab4f64e2883db940778922d52042730b33baaf4751e91efe5e6b7c",
-    "bca05becdb8c58e906460cde62d316a58afc455b8d2f60156bc127c1b0a4456f",
-}
+# Закрытые значения (номера документов WB, претензия, её суммы, ссылки на отчёты, id событий) в публичном дереве не хранятся
+# НИ В КАКОМ виде, даже отпечатками (7–8-значные числа перебираются). Тест берёт их из манифеста вне Git:
+# EVETIS_WB_LOSS_EVIDENCE=<путь к evidence_manifest.json>. Без манифеста (CI) проверяются только форматы.
+def _private_tokens() -> set[str]:
+    import json
+    import os
+    path = os.environ.get("EVETIS_WB_LOSS_EVIDENCE")
+    if not path or not Path(path).is_file():
+        return set()
+    m = json.loads(Path(path).read_text(encoding="utf-8"))
+    toks = {str(c["wb_document"]) for c in m.get("compensations", [])}
+    toks |= {str(i[k]) for i in m.get("incidents", []) for k in ("incident_id", "wb_report_ref")}
+    cl = m.get("claim") or {}
+    toks |= {str(cl[k]) for k in ("claim_id", "claim_documented_goods_cost_rub", "claimed_goods_rub") if k in cl}
+    return {t for t in toks if t}
 
 
-def _private_hits(text: str) -> list[str]:
-    import hashlib
-    hits = []
-    for tok in set(re.findall(r"(?<![\d.,])\d{7,8}(?![\d])", text)):                 # номера документов / претензии
-        if hashlib.sha256(tok.encode()).hexdigest() in _PRIVATE_TOKEN_SHA256:
-            hits.append("документ/претензия")
-    for tok in set(re.findall(r"\b\d{3}[ \u00a0]?\d{3}[,.]\d{2}\b", text)):         # суммы «123 456,78»
-        if hashlib.sha256(re.sub(r"\D", "", tok).encode()).hexdigest() in _PRIVATE_TOKEN_SHA256:
-            hits.append("сумма претензии")
-    for pat in (r"damaged-product-report-\d+", r"FM-\d{4}-\d\d-\d\d-[A-Z]{3}"):        # ссылки на отчёты WB, id событий
-        if re.search(pat, text):
-            hits.append(pat)
+def _amount_forms(tok: str) -> set[str]:
+    # «123456.78» → «123456.78», «123456,78», «123 456,78», «123 456.78» (и с неразрывным пробелом)
+    if not re.fullmatch(r"\d+\.\d{2}", tok):
+        return {tok}
+    i, f = tok.split(".")
+    g = f"{int(i):,}"
+    return {tok, f"{i},{f}"} | {f"{g.replace(',', sp)}{dec}{f}" for sp in (" ", "\u00a0") for dec in (",", ".")}
+
+
+def _private_hits(text: str, tokens: set[str]) -> list[str]:
+    hits = [pat for pat in (r"damaged-product-report-\d+", r"FM-\d{4}-\d\d-\d\d-[A-Z]{3}") if re.search(pat, text)]
+    for t in tokens:
+        if any(re.search(rf"(?<![\d]){re.escape(form)}(?![\d])", text) for form in _amount_forms(t)):
+            hits.append("закрытое значение из манифеста")
     return hits
 
 
 def test_public_tree_holds_no_itemized_loss_or_claim_evidence():
     # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытых таблицах wb_ops.
-    exts = {".sql", ".md", ".py", ".ts", ".tf", ".json", ".csv", ".txt", ".yml", ".yaml", ".gs", ".js", ".sh", ".html", ".tsv"}
+    tokens = _private_tokens()
     out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
-    paths = [ROOT / f for f in out if Path(f).suffix in exts or "/" not in f]
+    paths = [ROOT / f for f in out if not f.startswith("cloud/node_modules")]
     # Вне области: отчёт Ozon 3.4A (в main до H0) упоминает сумму претензии — отдельное решение владельца.
     skip = {ROOT / "docs/ozon/STAGE_3_4A_COGS_PROVENANCE_REPORT.md"}
-    bad = [f"{p.relative_to(ROOT)}: {h}" for p in paths if p not in skip and p.is_file()
-           for h in _private_hits(p.read_text(errors="ignore"))]
+    bad = []
+    for p in paths:
+        if p in skip or not p.is_file() or p.stat().st_size > 2_000_000:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        bad += [f"{p.relative_to(ROOT)}: {h}" for h in _private_hits(text, tokens)]
     assert not bad, bad
 
 
 def test_private_token_scan_detects_its_targets():
-    # самопроверка без самих значений: формат ловится, посторонние числа — нет
-    assert _private_hits("см. damaged-product-" + "report-1 и FM-" + "2026-07-18-ABC")   # склеено, чтобы файл сам не совпал
-    assert not _private_hits("выручка 1 073 229,47; заказ 12345678; nm 438775617")
+    assert _private_hits("см. damaged-product-" + "report-1 и FM-" + "2026-07-18-ABC", set())   # склеено: файл сам не совпадает
+    assert not _private_hits("выручка 1 073 229,47; заказ 12345678", set())
+    assert _private_hits("сумма 12 345,67 ₽", {"12345.67"}) and _private_hits("док. №7654321", {"7654321"})
+    assert not _private_hits("17654321", {"7654321"})
 
 
 def test_inventory_loss_tables_are_read_only_for_the_loader():

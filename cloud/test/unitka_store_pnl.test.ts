@@ -557,6 +557,7 @@ describe('Утрата товара: списание и компенсация 
     expect(publishGate([pnlRow({ inventory_loss_evidence_rows: 0, inventory_loss_evidence_runs: 0 })]).join()).toMatch(/не загружены/);
     expect(publishGate([pnlRow({ inventory_loss_evidence_runs: 2 })]).join()).toMatch(/не одним импортом/);
     expect(publishGate([pnlRow()])).toEqual([]);
+    expect(publishGate([]).join()).toMatch(/пусто/);
   });
   it('вью без колонок утраты/налога (старая схема) — отказ, а не молчаливые нули', () => {
     const old = pnlRow();

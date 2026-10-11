@@ -241,8 +241,9 @@ class LiveSource:
 def build_plan(m: dict, src, expect: dict) -> dict:
     rows = normalize(m)
     summary = check_live(rows, src.fetch(rows), expect)
+    # В выводе плана — только итоги и отпечатки (вывод PLAN могут вставить в PR публичного репозитория).
     core = {"tool": TOOL, "manifest_sha256": fingerprint(rows), "expect": {k: str(v) for k, v in expect.items()},
-            "summary": summary, "claim_id": rows["claim"]["claim_id"]}
+            "summary": summary}
     return {"core": core, "fingerprint": fingerprint(core), "rows": rows}
 
 

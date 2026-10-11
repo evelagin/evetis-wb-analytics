@@ -94,6 +94,7 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
   }
   // Доказательства утраты товара (закрытая wb_ops.WB_INVENTORY_LOSS_EVIDENCE) обязаны быть загружены ровно одним импортом:
   // пустая таблица дала бы списание 0 без единого флага (FIRE/LOST INVENTORY, OWNER DECISION 11.10).
+  if (pnl.length === 0) out.push('представление P&L пусто — публикация стёрла бы вкладку');
   const ev = pnl[0];
   if (ev && (toNum(ev.inventory_loss_evidence_rows) <= 0 || toNum(ev.inventory_loss_evidence_runs) !== 1)) {
     out.push(`доказательства утраты товара не загружены или загружены не одним импортом (строк ${toNum(ev.inventory_loss_evidence_rows)}, импортов ${toNum(ev.inventory_loss_evidence_runs)})`);

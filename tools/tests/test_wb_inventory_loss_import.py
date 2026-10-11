@@ -113,3 +113,22 @@ def test_verify_tables_detects_any_difference():
 def test_wrong_project_refused():
     with pytest.raises(SystemExit, match="не совпадает"):
         w.main(["--project", "other"])
+
+
+def test_readback_money_forms_and_filing_day_boundary():
+    # «50.4» в манифесте и «50.40» из таблицы — одна сумма; выплата в день подачи — «после подачи» (не в претензии)
+    m = copy.deepcopy(M)
+    m["compensations"][0]["amount_rub"] = "50.4"
+    m["claim"].update(compensation_before_claim_rub="50.40", claimed_goods_rub="449.60")
+    live = copy.deepcopy(LIVE)
+    live["finance"][0]["amount_rub"] = "50.40"
+    rows = plan(m, live)["rows"]
+    assert rows["compensations"][0]["amount_rub"] == "50.40"
+    m2 = copy.deepcopy(M)
+    m2["compensations"][0]["booking_date"] = m2["claim"]["filed_date"]
+    live2 = copy.deepcopy(LIVE)
+    live2["finance"][0]["booking_date"] = m2["claim"]["filed_date"]
+    with pytest.raises(w.PlanRefused, match="выплачено до подачи"):
+        plan(m2, live2)                                   # в день подачи — не «до»: 50 в претензии не вычитаются
+    m2["claim"].update(compensation_before_claim_rub="0.00", claimed_goods_rub="500.00")
+    assert plan(m2, live2)["rows"]["claim"]["claimed_goods_rub"] == "500.00"
