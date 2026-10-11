@@ -1,11 +1,12 @@
 /**
  * WB STORE P&L AUTO-PUBLISH — публикация плана P&L магазина во вкладку «WB Магазин P&L».
  *
- * F-18 (OWNER ACK 2026-10-09, узкое исключение): автоматическая запись разрешена ТОЛЬКО в эту вкладку
- * (sheetId из UNITKA_STORE_PNL_SHEET_ID) и только представлением wb_mart.V_WB_STORE_PNL_MONTHLY.
+ * F-18 (OWNER ACK 2026-10-09, узкое исключение; источник расширен OWNER ACK 2026-10-11 H0): автоматическая запись
+ * разрешена ТОЛЬКО в эту вкладку (sheetId из UNITKA_STORE_PNL_SHEET_ID) и только представлением
+ * wb_mart.V_WB_STORE_PNL_PRESENTATION (история 2026-05..07 + Phase C с 2026-08, одна власть на месяц).
  * BigQuery — источник истины; вкладка — представление. Модуль чистый: гейт, решение, запросы. I/O — в index.ts.
  *
- * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Q (sha256)
+ * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:U (sha256)
  * лежит в developer metadata вкладки. Писать можно, только если текущее содержимое равно последнему
  * опубликованному, либо явно принятому владельцем UNITKA_STORE_PNL_ADOPT_SHA (первое подключение или
  * восстановление: владелец проверил вкладку и подтверждает ровно это содержимое). Иначе — отказ
@@ -13,17 +14,37 @@
  *
  * Атомарность: значения (updateCells), форматы строк данных и отпечаток — ОДИН spreadsheets.batchUpdate:
  * либо легло всё, либо ничего (иначе отпечаток мог бы разойтись со значениями навсегда).
- * Что перезаписывается: значения A1:Q{n+1} (заголовок — теми же значениями), формат чисел B:O/Q и фон P
- * строк данных; ручные правки ФОРМАТА строк данных не обнаруживаются и перезаписываются. Заметки
- * строки 1 и всё вне A:Q не трогаются. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
+ * Что перезаписывается: значения A1:U{n+1} (заголовок — теми же значениями); форматы строк данных A:U сначала
+ * сбрасываются (число, фон, цвет текста — чтобы смена схемы не оставила чужих форматов), затем пишутся формат чисел
+ * B:R и U, процент S, фон T, серый текст справочных Q и U; заметки 21 ячейки заголовка — системный контракт (ручные
+ * заметки A1:U1 перезаписываются). Всё вне A:U не трогается. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
  */
 import { createHash } from 'node:crypto';
 import type { CellValue } from '../model.js';
-import { STATE_LABEL, toNum, type TabPlan } from './tabplan.js';
+import { COL, STATE_LABEL, TAB_COLS, TAB_HEADER, TAB_NOTES, toNum, type TabPlan } from './tabplan.js';
 import type { PnlRow } from './bq.js';
 
 export const PUBLISH_META_KEY = 'evetis.store_pnl.published_sha';
-export const TAB_COLS = 17;
+/** Отпечаток КОНТРАКТА представления (заголовки + заметки + число колонок) — в metadata рядом с отпечатком значений. */
+export const CONTRACT_META_KEY = 'evetis.store_pnl.contract_sha';
+export { TAB_COLS };
+
+/** sha256 контракта: изменение заголовка, заметки или ширины = новая схема, требует управляемой миграции. */
+export function contractSha(): string {
+  return createHash('sha256').update(JSON.stringify({ cols: TAB_COLS, header: TAB_HEADER, notes: TAB_NOTES })).digest('hex');
+}
+
+/**
+ * Миграция схемы (A:Q → A:U и любые будущие) — только управляемо (OWNER ACK 11.10): если отпечаток контракта во вкладке
+ * не равен коду, публикация отказывает (STORE_PNL_CONTRACT_MIGRATION_REQUIRED), пока владелец не разрешит ровно этот
+ * переход через UNITKA_STORE_PNL_MIGRATE_CONTRACT = contractSha() нового кода. Первый плановый прогон новой схему не мигрирует.
+ */
+export function decideContract(input: { publishedContract?: string; allowMigrationTo?: string }): { ok: true; migrate: boolean } | { ok: false; message: string } {
+  const want = contractSha();
+  if (input.publishedContract === want) return { ok: true, migrate: false };
+  if (input.allowMigrationTo === want) return { ok: true, migrate: true };
+  return { ok: false, message: `контракт вкладки ${input.publishedContract ?? '(нет — схема A:Q)'} ≠ коду ${want}; миграция только с UNITKA_STORE_PNL_MIGRATE_CONTRACT=${want} (OWNER ACK)` };
+}
 
 export function contentSha(values: readonly (readonly CellValue[])[]): string {
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -54,16 +75,29 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
     const st = String(p.financial_state ?? '');
     const n = (k: string): number => toNum(p[k]);
     if (!STATE_LABEL[st]) out.push(`${m}: неизвестное состояние ${st}`);
-    const legacy = String(p.service_month && typeof p.service_month === 'object' && 'value' in p.service_month ? (p.service_month as { value: unknown }).value : p.service_month) < '2026-09-01';
+    // Наследие — только август 2026 (Phase C, дефекты листа не чинятся); исторический слой (2026-05..07) — канонический.
+    const sm = String(p.service_month && typeof p.service_month === 'object' && 'value' in p.service_month ? (p.service_month as { value: unknown }).value : p.service_month);
+    const legacy = sm >= '2026-08-01' && sm < '2026-09-01';
     if (legacy !== (st === 'LEGACY_PARTIAL_KNOWN_DEFECTS')) out.push(`${m}: состояние наследия не совпадает с месяцем`);
+    const authority = String(p.authority ?? '');
+    if (authority !== (sm < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C')) out.push(`${m}: власть месяца «${authority}»`);
     if (st.startsWith('FINANCIAL_COMPLETE')) {
       const open = n('pending_rows') > 0 || n('unknown_rub') > 0.5 || n('unconsumed_finance_rub') > 0.5 || n('deduction_source_gap_rub') > 0.5
         || n('orphan_finance_base_rub') !== 0 || n('orphan_finance_logistics_rub') !== 0 || !b(p.sku_month_closed) || !b(p.month_finance_final)
         || n('ads_days') === 0 || n('ads_final_days') !== n('ads_days')
+        || n('inventory_loss_cogs_missing_qty') > 0 || n('inventory_loss_double_count_risk_qty') > 0
+        || n('loss_compensation_unreconciled_rows') > 0
         || !(b(p.account_invoice_window_closed) || (n('minimum_payment_invoices') > 0 && n('utilization_invoices') > 0));
       if (open) out.push(`${m}: «${st}» при открытых условиях`);
     }
     if (Math.abs(n('double_count_residual_rub')) >= 0.01) out.push(`${m}: тождество формы ${n('double_count_residual_rub')}`);
+  }
+  // Доказательства утраты товара (закрытый wb_secure, агрегат V_WB_INVENTORY_LOSS_STATUS) обязаны быть загружены ровно одним импортом:
+  // пустая таблица дала бы списание 0 без единого флага (FIRE/LOST INVENTORY, OWNER DECISION 11.10).
+  if (pnl.length === 0) out.push('представление P&L пусто — публикация стёрла бы вкладку');
+  const ev = pnl[0];
+  if (ev && (toNum(ev.inventory_loss_evidence_rows) <= 0 || toNum(ev.inventory_loss_evidence_runs) !== 1)) {
+    out.push(`доказательства утраты товара не загружены или загружены не одним импортом (строк ${toNum(ev.inventory_loss_evidence_rows)}, импортов ${toNum(ev.inventory_loss_evidence_runs)})`);
   }
   return out;
 }
@@ -111,8 +145,9 @@ function metaRequest(sheetId: number, sha: string, metaId?: number): Record<stri
         developerMetadata: { metadataValue: sha }, fields: 'metadataValue' } };
 }
 
-/** Один атомарный batchUpdate: [расширение сетки] + значения + очистка + форматы строк данных + отпечаток. */
-export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number, d: Extract<PublishDecision, { action: 'WRITE' }>, metaId?: number): Record<string, unknown>[] {
+/** Один атомарный batchUpdate: [расширение сетки] + значения + очистка + форматы строк данных + заметки + отпечатки. */
+export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number, d: Extract<PublishDecision, { action: 'WRITE' }>, metaId?: number,
+  contractMetaId?: number, gridCols: number = TAB_COLS): Record<string, unknown>[] {
   const n = plan.rows.length;
   const grid: CellValue[][] = [[...plan.header], ...plan.rows.map((r) => [...r])];
   if (grid.some((r) => r.length !== TAB_COLS)) throw new Error(`план не ${TAB_COLS} колонок`);
@@ -121,16 +156,30 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
     ({ sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 });
   const requests: Record<string, unknown>[] = [];
   if (grid.length > gridRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: grid.length - gridRows + 10 } });
+  if (gridCols < TAB_COLS) requests.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: TAB_COLS - gridCols } });
   requests.push(
     { updateCells: { range: R(0, grid.length, 0, TAB_COLS), rows: grid.map((r) => ({ values: r.map(cellOf) })), fields: 'userEnteredValue' } },
-    { repeatCell: { range: R(1, n + 1, 1, 14), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { repeatCell: { range: R(1, n + 1, 14, 15), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { repeatCell: { range: R(1, n + 1, 16, 17), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' }, textFormat: { foregroundColor: rgb('666666') } } }, fields: 'userEnteredFormat(numberFormat,textFormat.foregroundColor)' } },
-    ...plan.rows.map((row, i) => ({ repeatCell: { range: R(i + 1, i + 2, 15, 16), cell: { userEnteredFormat: { backgroundColor: rgb(STATE_BG[String(row[15])] ?? 'F4CCCC') } }, fields: 'userEnteredFormat.backgroundColor' } })),
+    // Сброс форматов строк данных (включая очищаемые): после смены схемы прежние фон/цвет/формат колонок не переезжают.
+    { repeatCell: { range: R(1, grid.length, 0, TAB_COLS), cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } },
+    // A..U: месяц · деньги B..R (выручка … чистая прибыль) · S маржа · T состояние · U мост; Q и U — справочные (серым)
+    { repeatCell: { range: R(1, n + 1, COL.FIRST_MONEY, COL.NET + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    { repeatCell: { range: R(1, n + 1, COL.MARGIN, COL.MARGIN + 1), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    ...[COL.FM_NET, COL.BRIDGE].map((c) => ({ repeatCell: { range: R(1, n + 1, c, c + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' }, textFormat: { foregroundColor: rgb('666666') } } }, fields: 'userEnteredFormat(numberFormat,textFormat.foregroundColor)' } })),
+    ...plan.rows.map((row, i) => ({ repeatCell: { range: R(i + 1, i + 2, COL.STATE, COL.STATE + 1), cell: { userEnteredFormat: { backgroundColor: rgb(STATE_BG[String(row[COL.STATE])] ?? 'F4CCCC') } }, fields: 'userEnteredFormat.backgroundColor' } })),
+    // Системные заметки заголовка (контракт): пишутся каждой записью, текст — из TAB_COLUMNS.
+    { updateCells: { range: R(0, 1, 0, TAB_COLS), rows: [{ values: plan.notes.map((note) => ({ note })) }], fields: 'note' } },
     metaRequest(sheetId, d.sha, metaId),
+    contractMetaRequest(sheetId, contractMetaId),
   );
-  assertOnlyTab(sheetId, requests, metaId);
+  assertOnlyTab(sheetId, requests, metaId, contractMetaId);
   return requests;
+}
+
+function contractMetaRequest(sheetId: number, contractMetaId?: number): Record<string, unknown> {
+  return contractMetaId === undefined
+    ? { createDeveloperMetadata: { developerMetadata: { metadataKey: CONTRACT_META_KEY, metadataValue: contractSha(), location: { sheetId }, visibility: 'DOCUMENT' } } }
+    : { updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: contractMetaId, metadataKey: CONTRACT_META_KEY, metadataLocation: { sheetId } } }],
+        developerMetadata: { metadataValue: contractSha() }, fields: 'metadataValue' } };
 }
 
 /** NOOP без отпечатка: дописать только metadata. */
@@ -141,7 +190,7 @@ export function metaOnly(sheetId: number, sha: string, metaId?: number): Record<
 }
 
 /** Разрешённые типы запросов, и каждый — только про sheetId вкладки. Всё остальное — отказ. */
-export function assertOnlyTab(sheetId: number, requests: readonly Record<string, unknown>[], metaId?: number): void {
+export function assertOnlyTab(sheetId: number, requests: readonly Record<string, unknown>[], metaId?: number, contractMetaId?: number): void {
   for (const r of requests) {
     const keys = Object.keys(r);
     if (keys.length !== 1) throw new Error(`запрос вне вкладки: ${keys.join(',')}`);
@@ -156,8 +205,10 @@ export function assertOnlyTab(sheetId: number, requests: readonly Record<string,
     else if (kind === 'createDeveloperMetadata') ok = body.developerMetadata?.location?.sheetId === sheetId;
     else if (kind === 'updateDeveloperMetadata') {
       const f = body.dataFilters ?? [];
-      ok = f.length > 0 && f.every((x) => x.developerMetadataLookup?.metadataId === metaId && metaId !== undefined
-        && x.developerMetadataLookup?.metadataLocation?.sheetId === sheetId);
+      ok = f.length > 0 && f.every((x) => {
+        const id = x.developerMetadataLookup?.metadataId;
+        return id !== undefined && (id === metaId || id === contractMetaId) && x.developerMetadataLookup?.metadataLocation?.sheetId === sheetId;
+      });
     }
     if (!ok) throw new Error(`запрос вне вкладки: ${JSON.stringify(r).slice(0, 200)}`);
   }

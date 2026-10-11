@@ -1,5 +1,6 @@
 """Phase C (2026-10-09): P&L магазина WB — вью, QA, развёртывание, Terraform. Только офлайн-проверки контракта."""
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -70,17 +71,26 @@ def test_service_period_rules_r1():
         assert rx.count("(") == 1, rx
 
 
-def test_reimbursements_are_memo_r2_and_pending_ops_stay_pending():
+def test_reimbursements_are_memo_r2_and_historical_classes_are_period_bounded():
     m = bodies()["V_WB_FINANCE_OPERATION_MAP"]
     for op in ["Возмещение издержек по перевозке/по складским операциям с товаром",
                "Возмещение издержек по перемещению и операционной обработке товара",
                "Возмещение за выдачу и возврат товаров на ПВЗ"]:
         assert re.search(rf"'{re.escape(op)}', 'MEMO_NON_PNL'", m), op
-    # операции, которые модель не читает, утверждёнными быть не могут (ревью M2)
-    for op in ["Коррекция продаж", "Корректировка эквайринга", "Добровольная компенсация при возврате", "Компенсация ущерба",
-               "Стоимость участия в программе лояльности", "Сумма удержанная за начисленные баллы программы лояльности"]:
-        assert re.search(rf"'{re.escape(op)}', 'PENDING_CLASSIFICATION'", m), op
-    assert "ACCOUNT_LEVEL_INCOME" not in m
+    # H0 (OWNER ACK 11.10): доказанные исторические классы — только в доказанном периоде
+    proven = {
+        "Коррекция продаж": ("DIRECT_SKU", "2024-09-01", "2025-07-31"),
+        "Корректировка эквайринга": ("DIRECT_SKU", "2024-09-01", "2025-01-31"),
+        "Добровольная компенсация при возврате": ("ACCOUNT_LEVEL_INCOME", "2024-11-01", "2026-04-30"),
+        "Компенсация ущерба": ("ACCOUNT_LEVEL_INCOME", "2024-12-01", "2025-02-28"),
+        "Стоимость участия в программе лояльности": ("DIRECT_SKU", "2025-08-01", "2025-09-30"),
+    }
+    for op, (tr, a, b) in proven.items():
+        assert re.search(rf"'{re.escape(op)}', '{tr}', '[A-Z_]+', '[^']*', DATE '{a}', DATE '{b}'\)", m), op
+    assert re.search(r"'Сумма удержанная за начисленные баллы программы лояльности', 'PENDING_CLASSIFICATION'", m)
+    assert re.search(r"'Компенсация скидки по программе лояльности', 'MEMO_NON_PNL', 'LOYALTY', '[^']*', DATE '2025-08-01', NULL", m)
+    cov = bodies()["V_WB_STORE_FINANCE_COVERAGE"]
+    assert "WHEN NOT in_period THEN 'PENDING_CLASSIFICATION'" in cov
 
 
 def test_every_mapped_treatment_has_a_consumer_in_coverage():
@@ -148,6 +158,260 @@ def test_late_invoice_lands_in_its_service_month():
     assert "SELECT service_month m," in acc and "WHERE" not in acc.split("FROM")[-1], "кабинет — по месяцу услуги без фильтра по дате проводки"
 
 
-def test_memo_is_not_inherited_without_row_identity():
+def test_memo_guard_is_schema_aware_and_fails_closed():
     cov = bodies()["V_WB_STORE_FINANCE_COVERAGE"]
-    assert "m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'PENDING_CLASSIFICATION'" in cov
+    # MEMO не наследуется: без доказанного основания — PENDING
+    assert "map_treatment = 'MEMO_NON_PNL' AND op LIKE 'Возмещение%' AND memo_basis IS NULL THEN 'PENDING_CLASSIFICATION'" in cov
+    # camelCase — прежнее тождество; LEGACY snake_case — НДС 1,20 до 2026-01-01, 1,22 после; иначе UNKNOWN → PENDING
+    assert "ABS(IFNULL(c_rb, 0) + IFNULL(c_pr, 0) + IFNULL(c_vw, 0) + IFNULL(c_nds, 0))" in cov
+    assert "s_vw * IF(booking_date < DATE '2026-01-01', 1.20, 1.22)" in cov
+    assert "ELSE 'UNKNOWN' END memo_schema" in cov
+    # ПВЗ LEGACY: MEMO только при нулевом денежном эффекте строки
+    assert "THEN IF(zero_cash, 'LEGACY_ZERO_CASH', NULL)" in cov
+    assert "IFNULL(s_fp, 0) = 0" in cov and "fp + retail + lg + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz = 0" in cov
+
+
+def test_management_tax_is_exposed_but_not_in_net():
+    pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
+    assert "SUM(realized * tax_per_unit) management_tax_rub" in pnl
+    net = re.search(r"\n  sku_contribution_rub \+ reconciliation_adjustments_rub.*?management_net_store_profit_rub", pnl, re.S).group(0)
+    assert "management_tax_rub" not in net
+
+
+H_SQL = (ROOT / "sql/unitka/store_pnl_historical_v1.sql").read_text()
+
+
+def h_bodies():
+    import unitka_store_pnl_h0_deploy as h
+    return {n: b for n, _, b in h.plan(False)}
+
+
+def test_historical_layer_single_authority_and_canonical_sources():
+    b = h_bodies()
+    hist = b["V_WB_STORE_PNL_HISTORICAL"]
+    assert "'HISTORICAL_CANONICAL' authority" in hist and "DATE '2026-05-01' hist_from, DATE '2026-08-01' phase_c_from" in hist
+    assert "wb_mart.UNITKA_COGS_EFFECTIVE" in hist and "wb_raw.REF_SKU_MASTER" in hist and "0.02 * seller_base_rub" in hist
+    assert "ad_spend_financial_rub" in hist and "V_WB_FINANCE_HISTORICAL_OVERRIDES" in hist
+    # формулы листа не задают экономику истории: из снимка — только внешняя реклама
+    assert hist.count("UNITKA_SKU_COMPONENTS_DAILY") == 3 and "SUM(ads_out) external_marketing_rub" in hist
+    pres = b["V_WB_STORE_PNL_PRESENTATION"]
+    assert "'CURRENT_PHASE_C' authority" in pres and pres.count("UNION ALL") == 1
+    pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
+    assert "AND date_msk >= DATE '2026-08-01'" in pnl     # Phase C начинается там, где кончается история
+
+
+def test_wb_loader_views_do_not_read_evetis_ref():
+    # 1C1B/1C2A: учётки загрузчиков Unitka не читают evetis_ref — COGS из физической копии в wb_mart.
+    for n, body in h_bodies().items():
+        code = re.sub(r"--[^\n]*", "", body)
+        assert "evetis_ref" not in code, n
+
+
+def test_historical_joins_fail_closed_and_snapshot_must_cover_history():
+    hist = h_bodies()["V_WB_STORE_PNL_HISTORICAL"]
+    assert "IF(COUNT(DISTINCT internal_sku) = 1, ANY_VALUE(internal_sku), NULL)" in hist
+    assert "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL) cogs_unit" in hist
+    assert "FROM (SELECT DISTINCT d, nm_id FROM coh) k" in hist       # связки до (сутки, nm) — без размножения
+    assert "MIN(date_msk) <= (SELECT hist_from FROM bounds) covered" in hist
+    state = hist.split("CASE WHEN unknown_rub")[1].split("'UNKNOWN_COST_PRESENT'")[0]
+    assert "NOT external_marketing_covered" in state and "cohort_join_gap > 0.005" in state
+
+
+def test_bundle_seed_matches_acked_start_dates():
+    seed = (ROOT / "sql/ref/pr_ref_cogs_history.sql").read_text()
+    for bc, d in [("BC-28", "2026-05-01"), ("BC-29", "2026-05-01"), ("BC-30", "2026-07-01"), ("BC-31", "2026-07-01")]:
+        assert re.search(rf"^\('{bc}','[^']+','[^']+',1,DATE '{d}'", seed, flags=re.M), bc
+
+
+# wb_mart наружу отдаёт только финансовый результат и состояние полноты (OWNER DECISION 11.10 §5): без номеров документов,
+# id событий, складов, текстов доказательств, претензии и позиций склад × nm.
+ALLOWED_LOSS_OUTPUT = {
+    "V_WB_INVENTORY_LOSS_MONTHLY": {"service_month", "inventory_loss_qty", "inventory_loss_writeoff_rub", "inventory_loss_cogs_missing_qty",
+                                    "inventory_loss_double_count_risk_qty", "inventory_loss_incidents"},
+    "V_WB_INVENTORY_LOSS_COMPENSATION_MATCH": {"finance_row_key", "loss_evidence_matched", "attribution_basis", "attributed_incident_month"},
+    "V_WB_INVENTORY_LOSS_STATUS": {"evidence_rows", "evidence_runs", "evidence_units", "evidence_incidents", "compensation_documents",
+                                   "compensation_documents_rub", "compensation_documents_linked", "compensation_documents_not_once"},
+}
+
+
+def _output_columns(body: str) -> list[str]:
+    """Алиасы финального SELECT: список до FROM верхнего уровня, разбитый по запятым верхнего уровня."""
+    sel = re.sub(r"--[^\n]*", "", body)
+    sel = sel[sel.rindex("\nSELECT") + 7:]
+    depth, items, cur, i = 0, [], "", 0
+    while i < len(sel):
+        ch = sel[i]
+        if depth == 0 and re.match(r"FROM\b", sel[i:]) and (i == 0 or not (sel[i - 1].isalnum() or sel[i - 1] == "_")):
+            break
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            items.append(cur)
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    items.append(cur)
+    return [re.findall(r"[A-Za-z_*][A-Za-z_0-9*]*", it.strip())[-1] for it in items if it.strip()]
+
+
+def test_inventory_loss_reads_wb_secure_and_wb_mart_exposes_only_aggregates():
+    import unitka_store_pnl_h0_deploy as h
+    b = h_bodies()
+    assert h.dataset_of("V_WB_INVENTORY_LOSS_ITEMS") == "wb_secure" and h.dataset_of("V_WB_INVENTORY_LOSS_CLAIM_TRACKING") == "wb_secure"
+    items = b["V_WB_INVENTORY_LOSS_ITEMS"]
+    assert "wb_secure.WB_INVENTORY_LOSS_EVIDENCE" in items and "UNNEST" not in items       # доказательства — не в Git
+    for n in ("V_WB_INVENTORY_LOSS_MONTHLY", "V_WB_INVENTORY_LOSS_COMPENSATION_MATCH", "V_WB_INVENTORY_LOSS_STATUS"):
+        assert h.dataset_of(n) == "wb_mart", n
+        assert set(_output_columns(b[n])) <= ALLOWED_LOSS_OUTPUT[n], (n, set(_output_columns(b[n])) - ALLOWED_LOSS_OUTPUT[n])
+    mon = b["V_WB_INVENTORY_LOSS_MONTHLY"]
+    assert "wb_mart.UNITKA_COGS_EFFECTIVE" in mon and "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL)" in mon
+    assert "_snapshot_date >= DATE '2026-08-26'" in mon and "ABS(pos.lost_qty - IFNULL(r.q, 0))" in mon   # отчёт = остаток 26.08
+    assert "V_WB_ORDERS" not in mon                                           # заказы с 14.08 без склада — не доказательство
+    cm = b["V_WB_INVENTORY_LOSS_COMPENSATION_MATCH"]
+    assert "COUNT(DISTINCT f.finance_row_key) OVER (PARTITION BY f.doc) = 1" in cm            # дубль строки не сверяется
+    assert "IF(attribution_basis = 'DOCUMENT_LINKED', attributed_incident_month, NULL)" in cm   # месяц события — только по документу
+    claim = b["V_WB_INVENTORY_LOSS_CLAIM_TRACKING"]
+    assert "outstanding_claim_rub" in claim and "l.booking_date >= c.filed_date" in claim
+    for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL", "V_WB_STORE_PNL_PRESENTATION", "V_WB_STORE_ACCOUNT_LEDGER"):
+        body = re.sub(r"--[^\n]*", "", b[n])
+        assert "CLAIM" not in body and "wb_secure" not in body and "wb_document" not in body, n   # P&L — только агрегаты wb_mart
+    for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL"):
+        body = re.sub(r"--[^\n]*", "", b[n])
+        assert "- inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub" in body, n
+        assert "inventory_loss_cogs_missing_qty > 0 OR inventory_loss_double_count_risk_qty > 0" in body, n
+        assert "WHEN pending_rows > 0 OR loss_compensation_unreconciled_rows > 0 THEN 'PENDING_CLASSIFICATION'" in body, n
+        assert "NOT IFNULL(loss_evidence_matched, FALSE)" in body, n
+    led = b["V_WB_STORE_ACCOUNT_LEDGER"]
+    assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
+    assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
+    assert "V_WB_INVENTORY_LOSS_COMPENSATION_MATCH" in led and "x.loss_evidence_matched AND x.attributed_incident_month IS NOT NULL" in led
+    assert "V_WB_INVENTORY_LOSS_STATUS" in b["V_WB_STORE_PNL_PRESENTATION"]
+
+
+# Закрытые значения (номера документов WB, претензия, её суммы, ссылки на отчёты, id событий) в публичном дереве не хранятся
+# НИ В КАКОМ виде, даже отпечатками (7–8-значные числа перебираются). Тест берёт их из манифеста вне Git:
+# EVETIS_WB_LOSS_EVIDENCE=<путь к evidence_manifest.json>. Без манифеста (CI) проверяются только форматы.
+def _private_tokens() -> set[str]:
+    import json
+    import os
+    path = os.environ.get("EVETIS_WB_LOSS_EVIDENCE")
+    if not path:
+        return set()
+    assert Path(path).is_file(), "EVETIS_WB_LOSS_EVIDENCE задан, но манифест не читается — проверка закрытых значений не выполнена"
+    m = json.loads(Path(path).read_text(encoding="utf-8"))
+    toks = {str(c["wb_document"]) for c in m.get("compensations", [])}
+    toks |= {str(i[k]) for i in m.get("incidents", []) for k in ("incident_id", "wb_report_ref")}
+    cl = m.get("claim") or {}
+    toks |= {str(cl[k]) for k in ("claim_id", "claim_documented_goods_cost_rub", "claimed_goods_rub") if k in cl}
+    toks = {t for t in toks if t}
+    assert toks, "манифест не дал ни одного закрытого значения"
+    return toks
+
+
+def _amount_forms(tok: str) -> set[str]:
+    # «123456.78» → «123456.78», «123456,78», «123 456,78», «123 456.78» (и с неразрывным пробелом)
+    if not re.fullmatch(r"\d+\.\d{2}", tok):
+        return {tok}
+    i, f = tok.split(".")
+    g = f"{int(i):,}"
+    return {tok, f"{i},{f}"} | {f"{g.replace(',', sp)}{dec}{f}" for sp in (" ", "\u00a0") for dec in (",", ".")}
+
+
+def _private_hits(text: str, tokens: set[str]) -> list[str]:
+    hits = [pat for pat in (r"damaged-product-report-\d+", r"FM-\d{4}-\d\d-\d\d-[A-Z]{3}") if re.search(pat, text)]
+    for t in tokens:
+        if any(re.search(rf"(?<![\d]){re.escape(form)}(?![\d])", text) for form in _amount_forms(t)):
+            hits.append("закрытое значение из манифеста")
+    return hits
+
+
+def test_public_tree_holds_no_itemized_loss_or_claim_evidence():
+    # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытых таблицах wb_ops.
+    tokens = _private_tokens()
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    paths = [ROOT / f for f in out if not f.startswith("cloud/node_modules")]
+    # Вне области: отчёт Ozon 3.4A (в main до H0) упоминает сумму претензии — отдельное решение владельца.
+    skip = {ROOT / "docs/ozon/STAGE_3_4A_COGS_PROVENANCE_REPORT.md"}
+    bad = []
+    for p in paths:
+        if p in skip or not p.is_file() or p.stat().st_size > 2_000_000:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        bad += [f"{p.relative_to(ROOT)}: {h}" for h in _private_hits(text, tokens)]
+    assert not bad, bad
+
+
+def test_private_token_scan_detects_its_targets():
+    assert _private_hits("см. damaged-product-" + "report-1 и FM-" + "2026-07-18-ABC", set())   # склеено: файл сам не совпадает
+    assert not _private_hits("выручка 1 073 229,47; заказ 12345678", set())
+    assert _private_hits("сумма 12 345,67 ₽", {"12345.67"}) and _private_hits("док. №7654321", {"7654321"})
+    assert not _private_hits("17654321", {"7654321"})
+
+
+def test_wb_secure_dataset_acl_is_owner_only_and_loader_reads_two_tables():
+    tf = (ROOT / "infra/terraform/wb_secure.tf").read_text()
+    assert not (ROOT / "infra/terraform/wb_inventory_loss.tf").exists()                    # не в wb_ops
+    ds = re.sub(r"#[^\n]*", "", tf.split('resource "google_bigquery_dataset" "wb_secure"')[1].split("\n}\n")[0])
+    assert 'dataset_id    = "wb_secure"' in ds and "location      = var.bq_location" in ds
+    access = re.findall(r"access\s*\{([^}]*)\}", ds)
+    assert len(access) == 1 and 'role          = "OWNER"' in access[0] and 'special_group = "projectOwners"' in access[0]
+    for forbidden in ("projectReaders", "projectWriters", "allAuthenticatedUsers", "allUsers", "sa-ops-health", "sa-ae-reader"):
+        assert forbidden not in ds, forbidden
+    tables = re.findall(r'table_id\s*=\s*"(WB_INVENTORY_LOSS_[A-Z_]+)"', tf)
+    assert sorted(tables) == ["WB_INVENTORY_LOSS_CLAIM", "WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE", "WB_INVENTORY_LOSS_EVIDENCE"]
+    assert tf.count("deletion_protection = true") == 3 and tf.count("dataset_id          = google_bigquery_dataset.wb_secure.dataset_id") == 3
+    assert re.findall(r'resource "google_bigquery_(?:table|dataset)_iam_(?:member|binding|policy)" "(\w+)"', tf) == ["wb_secure_loader_read"]
+    assert re.findall(r'role\s*=\s*"(roles/[^"]+)"', tf) == ["roles/bigquery.dataViewer"]
+    block = tf.split('resource "google_bigquery_table_iam_member"')[1]
+    assert "claim" not in block.lower() and "loaders_prod" in block                        # претензию загрузчик не читает
+    assert "google_bigquery_dataset_access" not in tf                                     # ACL только авторитативный
+
+def test_overrides_are_the_8_proven_review_points_rows():
+    ov = h_bodies()["V_WB_FINANCE_HISTORICAL_OVERRIDES"]
+    keys = re.findall(r"\('(\d+#\d+)', 'REVIEW_POINTS', 'ACCOUNT_LEVEL', DATE '(2026-0[56])-01'", ov)
+    assert len(keys) == 8 and len({k for k, _ in keys}) == 8
+    assert sorted(m for _, m in keys) == ["2026-05"] * 6 + ["2026-06"] * 2
+    assert "amount" not in ov.split("UNNEST")[1].split("]")[0].lower()   # override не несёт сумм
+
+
+def test_h0_deploy_tool_order_and_rollback_bodies_exist():
+    import unitka_store_pnl_h0_deploy as h
+    names = [n for n, _, _ in h.plan(False)]
+    k = len(h.LOSS)
+    assert names[:k] == [n for n, _ in h.LOSS] and names[k:k + 6] == [n for n, _ in h.CHANGED] and names[k + 6:] == [n for n, _ in h.NEW]
+    rb = [n for n, _, _ in h.plan(True)]
+    assert rb == [n for n, _ in reversed(h.CHANGED)]
+    b = {n: body for n, _, body in h.plan(False)}
+    for i, n in enumerate(names):
+        later = [x for x in names[i + 1:] if f".wb_mart.{x}`" in b[n]]
+        assert not later, f"{n} читает {later}"
+    with pytest.raises(SystemExit, match="не совпадает"):
+        h.main(["--project", "other"])
+
+
+def test_historical_qa_is_read_only_blocks():
+    qa = (ROOT / "sql/unitka/qa_store_pnl_historical_v1.sql").read_text()
+    blocks = re.split(r"^-- @check (\S+)\n", qa, flags=re.M)[1:]
+    names = blocks[0::2]
+    assert names == ["SINGLE_AUTHORITY", "OVERRIDE_INTEGRITY", "HIST_CONSERVATION", "FINANCE_COVERAGE_ALL_HISTORY", "LEGACY_MEMO_GUARD",
+                     "COGS_COVERAGE", "HIST_INPUTS_COMPLETE", "TAX_NOT_DOUBLE_COUNTED", "LOSS_EVIDENCE", "LOSS_NO_DOUBLE_COUNT",
+                     "LOSS_COMPENSATION_RECONCILED", "LOSS_COMPENSATION_IN_PNL", "LOSS_SINGLE_SOURCE", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+    assert "o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01'" in qa   # override только до Phase C
+    for name, sql in zip(names, blocks[1::2]):
+        bare = re.sub(r"--[^\n]*", "", sql).strip()
+        code = re.sub(r"'[^']*'", "''", bare)
+        assert re.match(r"^(SELECT|WITH)\b", bare) and code.count(";") == 1, name
+        assert not re.search(r"\b(INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|ALTER|TRUNCATE|CALL)\b", code), name
+
+
+def test_no_comment_line_ends_with_semicolon_in_historical_sql():
+    assert not re.findall(r"^\s*--.*;\s*$", H_SQL, flags=re.M)
+
+
+def test_no_comment_line_ends_with_semicolon_in_loss_sql():
+    loss = (ROOT / "sql/unitka/store_inventory_loss_v1.sql").read_text()
+    assert not re.findall(r"^\s*--.*;\s*$", loss, flags=re.M)
