@@ -9,7 +9,7 @@
     "repository": "evelagin/evetis-wb-analytics",
     "commit": "5bf3e0bdf138bba8da7faf77be8b51ae063d07c3",
     "reviewed_pr": 333,
-    "merged_main": null,
+    "merged_main": "bf36b6bd4e9a46a40dde3d6787fe7c9491be69bb",
     "main_at_build": "b6b856148f3a05b269ba1bf5c0514cb981047c6d",
     "source_tree": "91e27ae20c52cb44a88b089e5eea989d2d39a477",
     "context": "pipelines/ozon/runtime",
@@ -273,7 +273,7 @@
     "qualification_evidence_sha256": "c9c059313e764ffa7dbaa0a30a8c797b5aa2c3fabd2246873fd476f824a3feb2",
     "qualification_source_sha256": "89e2029b7c03f747d9a667cfda297847be4938f3033feee28cd414cf3ed75fe7",
     "runtime_image_check": "PASS; exact pinned digest; network=none; no tenant credentials; source hashes, binding and two-tenant portability independently read back",
-    "Python3.12_tests": "1012 PASS/1 established skip Ozon; final full tools and all eleven CI required before merge/deploy",
+    "Python3.12_tests": "1012 PASS / 1 established skip Ozon; all eleven final PR333 CI checks PASS, including full tools and SQL",
     "global_machine_dod": "BLOCKED outside tenant applicability; no gate waived",
     "final_integration_ci": {
       "pr": 313,
