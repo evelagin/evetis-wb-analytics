@@ -165,6 +165,8 @@ periods AS (
 -- WB из закрытого wb_secure; одна выплата — одна строка финотчёта). Месяц услуги — месяц события, только если документ его
 -- доказывает (DOCUMENT_LINKED), иначе месяц проводки (BOOKING_MONTH). Номера документов здесь не раскрываются.
 SELECT x.* EXCEPT (loss_attribution_basis, attributed_incident_month) REPLACE (
+    -- номер документа WB компенсации за утрату в аналитическом журнале не раскрывается (OWNER DECISION 11.10 §5)
+    IF(x.treatment = 'LOSS_COMPENSATION_INCOME', REGEXP_REPLACE(x.label, r'документ №\s*\d+', 'документ № [скрыт]'), x.label) AS label,
     IF(x.treatment = 'LOSS_COMPENSATION_INCOME' AND x.loss_evidence_matched AND x.attributed_incident_month IS NOT NULL,
        x.attributed_incident_month, x.service_month) AS service_month,
     IF(x.treatment = 'LOSS_COMPENSATION_INCOME', IF(x.loss_evidence_matched, x.loss_attribution_basis, 'UNRECONCILED'),

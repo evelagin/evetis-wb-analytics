@@ -73,7 +73,7 @@ def _req(cond: bool, msg: str) -> None:
 
 def money(v) -> Decimal:
     s = str(v)
-    _req(bool(MONEY_RE.match(s)), f"сумма {s!r} — не число с копейками")
+    _req(bool(MONEY_RE.match(s)), "сумма в манифесте — не число с копейками")
     return Decimal(s).quantize(CENT)     # одна форма «123.40» и в манифесте, и при перечитывании таблицы
 
 
@@ -453,9 +453,9 @@ def main(argv=None) -> int:
         for table, recs in batches.items():
             jobs[table] = run_load(table, "\n".join(json.dumps(r, ensure_ascii=False) for r in recs), token)["jobReference"]["jobId"]
             print(f"LOADED {table}: {len(recs)} строк · задание {jobs[table]}")
-    except (RuntimeError, SystemExit) as e:
+    except BaseException as e:  # noqa: BLE001 — любой сбой между загрузками (сеть, тайм-аут) → откат ровно этого прогона
         # Частичная загрузка: удалить ровно этот import_run_id (в тексте DML — только id прогона) и остановиться.
-        print(f"STOP: {e} — откат загруженного")
+        print(f"STOP: {type(e).__name__}: {e} — откат загруженного")
         run_script(rollback_sql(run_id), token, plan["fingerprint"][:16])
         write_json(mdir / "readback.json", {"ok": False, "error": str(e), "loaded_before_failure": jobs, "rolled_back": True})
         return 3

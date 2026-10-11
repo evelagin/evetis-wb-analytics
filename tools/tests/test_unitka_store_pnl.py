@@ -260,13 +260,14 @@ def test_inventory_loss_reads_wb_secure_and_wb_mart_exposes_only_aggregates():
     b = h_bodies()
     assert h.dataset_of("V_WB_INVENTORY_LOSS_ITEMS") == "wb_secure" and h.dataset_of("V_WB_INVENTORY_LOSS_CLAIM_TRACKING") == "wb_secure"
     items = b["V_WB_INVENTORY_LOSS_ITEMS"]
-    assert "wb_secure.WB_INVENTORY_LOSS_EVIDENCE" in items and "UNNEST" not in items       # доказательства — не в Git
+    assert "wb_secure.WB_INVENTORY_LOSS_EVIDENCE" in items and "UNNEST" not in items       # доказательства — в wb_secure, не в Git
     for n in ("V_WB_INVENTORY_LOSS_MONTHLY", "V_WB_INVENTORY_LOSS_COMPENSATION_MATCH", "V_WB_INVENTORY_LOSS_STATUS"):
         assert h.dataset_of(n) == "wb_mart", n
         assert set(_output_columns(b[n])) <= ALLOWED_LOSS_OUTPUT[n], (n, set(_output_columns(b[n])) - ALLOWED_LOSS_OUTPUT[n])
     mon = b["V_WB_INVENTORY_LOSS_MONTHLY"]
     assert "wb_mart.UNITKA_COGS_EFFECTIVE" in mon and "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL)" in mon
     assert "_snapshot_date >= DATE '2026-08-26'" in mon and "ABS(pos.lost_qty - IFNULL(r.q, 0))" in mon   # отчёт = остаток 26.08
+    assert "CROSS JOIN snap_days d" in mon and "MIN(IFNULL(st.q, 0)) min_q" in mon      # исчезнувшая позиция = 0, а не «нет данных»
     assert "V_WB_ORDERS" not in mon                                           # заказы с 14.08 без склада — не доказательство
     cm = b["V_WB_INVENTORY_LOSS_COMPENSATION_MATCH"]
     assert "COUNT(DISTINCT f.finance_row_key) OVER (PARTITION BY f.doc) = 1" in cm            # дубль строки не сверяется
@@ -286,6 +287,7 @@ def test_inventory_loss_reads_wb_secure_and_wb_mart_exposes_only_aggregates():
     assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
     assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
     assert "V_WB_INVENTORY_LOSS_COMPENSATION_MATCH" in led and "x.loss_evidence_matched AND x.attributed_incident_month IS NOT NULL" in led
+    assert "REGEXP_REPLACE(x.label, r'документ №\\s*\\d+', 'документ № [скрыт]')" in led       # номер документа не раскрывается
     assert "V_WB_INVENTORY_LOSS_STATUS" in b["V_WB_STORE_PNL_PRESENTATION"]
 
 
@@ -327,7 +329,7 @@ def _private_hits(text: str, tokens: set[str]) -> list[str]:
 
 
 def test_public_tree_holds_no_itemized_loss_or_claim_evidence():
-    # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытых таблицах wb_ops.
+    # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытом датасете wb_secure.
     tokens = _private_tokens()
     out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
     paths = [ROOT / f for f in out if not f.startswith("cloud/node_modules")]

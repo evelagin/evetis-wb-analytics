@@ -204,9 +204,10 @@ CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PR
 -- 0 — гейт публикации отказывает.
 WITH ev AS (
   SELECT evidence_rows inventory_loss_evidence_rows, evidence_runs inventory_loss_evidence_runs,
-    evidence_units inventory_loss_evidence_units
+    evidence_units inventory_loss_evidence_units, compensation_documents_not_once loss_compensation_documents_not_once
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_STATUS`)
-SELECT u.*, ev.inventory_loss_evidence_rows, ev.inventory_loss_evidence_runs, ev.inventory_loss_evidence_units
+SELECT u.*, ev.inventory_loss_evidence_rows, ev.inventory_loss_evidence_runs, ev.inventory_loss_evidence_units,
+  ev.loss_compensation_documents_not_once
 FROM (
 SELECT month, service_month, authority, revenue_rub, sku_contribution_rub, management_tax_rub, minimum_payment_rub, utilization_rub, penalty_rub, transit_rub,
   acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub,

@@ -99,6 +99,10 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
   if (ev && (toNum(ev.inventory_loss_evidence_rows) <= 0 || toNum(ev.inventory_loss_evidence_runs) !== 1)) {
     out.push(`доказательства утраты товара не загружены или загружены не одним импортом (строк ${toNum(ev.inventory_loss_evidence_rows)}, импортов ${toNum(ev.inventory_loss_evidence_runs)})`);
   }
+  // Документ компенсации, которого нет в финотчёте или он там не один раз, — сверка сломана (не только «месяц не закрыт»).
+  if (ev && toNum(ev.loss_compensation_documents_not_once) > 0) {
+    out.push(`документы компенсации за утрату не сверяются с финотчётом (не ровно одна строка: ${toNum(ev.loss_compensation_documents_not_once)})`);
+  }
   return out;
 }
 

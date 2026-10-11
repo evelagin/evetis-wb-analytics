@@ -67,15 +67,24 @@ st AS (
   GROUP BY snapshot_id, 1, 2, 3
   QUALIFY snapshot_id = MAX(snapshot_id) OVER (PARTITION BY _snapshot_date)),
 rep_day AS (SELECT warehouse_name, nm_id, q FROM st WHERE sd = DATE '2026-08-26'),
+-- Все даты снимков с 26.08 (по всему T5, не только по этим складам): нулевых строк T5 не хранит — исчезнувшая позиция
+-- (продана или списана WB) = 0 на эту дату, а не «нет наблюдения».
+snap_days AS (
+  SELECT DISTINCT _snapshot_date sd FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_STOCKS_T5`
+  WHERE row_type = 'WAREHOUSE' AND _snapshot_date >= DATE '2026-08-26'),
 pos AS (
   SELECT it.incident_month, it.report_warehouse, it.nm_id, SUM(it.lost_qty) lost_qty
   FROM it GROUP BY 1, 2, 3),
 risk AS (
   SELECT pos.incident_month,
     ABS(pos.lost_qty - IFNULL(r.q, 0))                                                 -- (а) отчёт ≠ остаток 26.08
-    + GREATEST(IFNULL(r.q, 0) - IFNULL((SELECT MIN(st.q) FROM st
-        WHERE st.warehouse_name = pos.report_warehouse AND st.nm_id = pos.nm_id), 0), 0) risk_qty  -- (б) остаток уменьшился
-  FROM pos LEFT JOIN rep_day r ON r.warehouse_name = pos.report_warehouse AND r.nm_id = pos.nm_id),
+    + GREATEST(IFNULL(r.q, 0) - IFNULL(mn.min_q, 0), 0) risk_qty                       -- (б) остаток уменьшился/исчез
+  FROM pos LEFT JOIN rep_day r ON r.warehouse_name = pos.report_warehouse AND r.nm_id = pos.nm_id
+  LEFT JOIN (
+    SELECT p2.report_warehouse, p2.nm_id, MIN(IFNULL(st.q, 0)) min_q                   -- сетка дата × позиция, нет строки = 0
+    FROM (SELECT DISTINCT report_warehouse, nm_id FROM pos) p2 CROSS JOIN snap_days d
+    LEFT JOIN st ON st.sd = d.sd AND st.warehouse_name = p2.report_warehouse AND st.nm_id = p2.nm_id
+    GROUP BY 1, 2) mn ON mn.report_warehouse = pos.report_warehouse AND mn.nm_id = pos.nm_id),
 risk_m AS (SELECT incident_month, SUM(risk_qty) risk_qty FROM risk GROUP BY 1)
 SELECT it.incident_month service_month,
   SUM(it.lost_qty) inventory_loss_qty,

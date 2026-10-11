@@ -7,7 +7,7 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 - `sql/unitka/store_inventory_loss_v1.sql`;
 - `sql/unitka/store_pnl_v1.sql` (журнал и Phase C);
 - `sql/unitka/store_pnl_historical_v1.sql` (история и представление);
-- `infra/terraform/wb_inventory_loss.tf`;
+- `infra/terraform/wb_secure.tf`;
 - `tools/wb_inventory_loss_import.py`.
 
 ## 0. Закрытые доказательства и права доступа (OWNER DECISION 11.10, «FINAL SECURITY HARDENING»)
