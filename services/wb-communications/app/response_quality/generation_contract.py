@@ -41,8 +41,24 @@ def unavailable_expertise(text, supplied):
     return out
 
 
+# 3.1F: a reply may speak about a reaction, symptoms or medical help ONLY when the customer
+# reported an actual symptom; otherwise the candidate invented a safety context.
+_SAFETY_CONTEXT=(r'раздраж|аллерг|покрасн|\bсып|высыпан|зуд|жжен|\bжж|ощущени\w*\s+после|после\s+(?:применени|нанесени)\w*'
+                 r'[^.!?]{0,30}(?:появил|возник)|\bреакци|дыхан|\bдыш|вдыхать\s+безопасн|безопасн\w*\s+(?:вдых|для\s+дыхани)'
+                 r'|прекрат\w*\s+(?:использ|примен)|\bврач|дерматолог|аллерголог')
+
+
+def invented_safety_context(text, plan):
+    u = getattr(plan, 'understanding', None) or {}
+    if not u or u.get('actual_safety_symptoms') or u.get('question'):
+        return []
+    m = re.search(_SAFETY_CONTEXT, normalize(text))
+    return [{'rule_id': 'INVENTED_SAFETY_CONTEXT', 'span': m.group(0)}] if m else []
+
+
 def validate(text, plan):
     out=unavailable_expertise(text,plan.explanations)
+    out.extend(invented_safety_context(text, plan))
     from app.v3.grounding import unsupported_use
     out.extend({'rule_id':'GENERATION_PRODUCT_USE',**v} for v in unsupported_use(text,plan.product_capabilities))
     return out

@@ -232,7 +232,8 @@ def test_irritation_complaint_machine_draft_publishes_and_operator_text_can_be_d
     d = owner_deps(feedback=fb(text="После крема покраснение и зуд на руках", rating=2))
     run_poll(d)
     doc_id, doc = doc_of(d)
-    assert doc["v31_draft"]["status"] == "READY" and doc["v31_draft"]["attention"] == "SAFETY_TEMPLATE"
+    assert doc["v31_draft"]["status"] == "READY" and doc["v31_draft"]["attention"] == "MILD_REACTION"
+    assert "врач" not in doc["v31_draft"]["text"]
     assert tap(d, f"pub:{doc_id}:{doc['generation_number']}")["status"] == "published"
 
 

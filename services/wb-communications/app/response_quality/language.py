@@ -34,6 +34,18 @@ must_address rating_only_thanks: высокая оценка без единог
 must_address rating_only_low: низкая оценка без слов — сожаление и вежливая просьба
 рассказать, что не понравилось; без советов и обещаний.
 
+understanding — разбор этого отзыва до ответа. Отвечайте на то, что покупатель
+действительно написал: 2–4 коротких предложения для содержательного отзыва, без
+обязательного начала и концовки, без фраз, которые подошли бы любому отзыву.
+Смешанный отзыв: признайте главный плюс (positive_aspects) И главный минус
+(negative_aspects) по смыслу, поблагодарите за подробный отзыв.
+exposure_or_avoidance_context (пыль, частички в воздухе, «стараюсь не вдыхать») — это
+неудобство использования, НЕ симптом: не пишите о реакции, ощущениях после применения,
+раздражении или дыхании, не утверждайте, что вдыхать безопасно.
+customer_workaround — способ покупателя; не одобряйте и не советуйте его повторять.
+Никогда не советуйте обратиться к врачу, дерматологу или аллергологу, не ставьте диагноз,
+не объясняйте причину и не обещайте возврат или замену.
+
 Recognize customer → respond to actual experience → integrate useful selected
 expertise when relevant. Тёплый финал НЕ обязателен. Это единая естественная мысль, не перечень благодарности,
 пересказа и рекламы. Mixed feedback должен соединять плюс и минус по смыслу.
@@ -146,6 +158,8 @@ class LanguageRenderer:
         payload = {"case_contract":case_contract,"product_capabilities":product_capabilities,"customer_reported": {"provenance":"CUSTOMER_REPORTED", "features":reported_features(_raw(msg))}, "customer": {**{k: msg.get(k) for k in
                    ("text", "pros", "cons", "rating", "buyer_name")}, "tags": customer_tags(msg)},
                    "must_address": [a.key for a in plan.aspects],
+                   "understanding": {k: v for k, v in (plan.understanding or {}).items()
+                                     if k not in ("safety_context_not_symptoms", "actual_safety_symptoms")},
                    **({"rating_only_style_hint": rating_only_style_hint(msg)}
                       if any(a.key == "rating_only_thanks" for a in plan.aspects) else {}),
                    "facts": [{"text":f['text']} for f in plan.facts],

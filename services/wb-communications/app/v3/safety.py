@@ -55,6 +55,9 @@ class SafetyAssessment:
     risk_level: str = "R0"               # R0 | R3 | R4
     route: Optional[str] = None          # SAFETY_URGENT | S1 | S1R | S2 | HUMAN_REVIEW | None
     reasons: list = field(default_factory=list)
+    # 3.1F: LLM-only safety findings without a customer-reported symptom — operator diagnostic,
+    # never a route («POSSIBLE_SAFETY_CONTEXT»).
+    possible_context: list = field(default_factory=list)
 
     @property
     def has_safety(self) -> bool:
@@ -62,7 +65,8 @@ class SafetyAssessment:
 
     def to_dict(self) -> dict:
         return {"events": [e.to_dict() for e in self.events], "emergency_markers": self.emergency_markers,
-                "risk_level": self.risk_level, "route": self.route, "reasons": self.reasons}
+                "risk_level": self.risk_level, "route": self.route, "reasons": self.reasons,
+                "possible_context": self.possible_context}
 
 
 def _clause_state(clause: str, sym_start: int, cfg: dict) -> tuple[bool, str, str]:
@@ -97,6 +101,110 @@ def _location(clause: str, cfg: dict) -> str:
     return "unknown"
 
 
+# --- 3.1F: what a symptom WORD is doing in the customer's sentence ---------------------------
+# A skin-symptom word is a safety event only when the customer reports it as something that
+# HAPPENED to them. Live replay (10.10, 4 363 real WB reviews): 221 safety routes, the large
+# majority praise — «убирает покраснения», «стало меньше высыпаний», «аллергии не вызывает»,
+# «для аллергика», and «высыпаю горстку пудры на руки» (to pour). Serious/special types
+# (breathing, swelling, eye, ingestion, nausea) and every emergency marker are NOT touched.
+ROLE_ADVERSE, ROLE_ABSENT, ROLE_IMPROVED, ROLE_PRIOR, ROLE_NOT_SYMPTOM = (
+    "adverse", "absent", "improved", "prior_condition", "not_a_symptom")
+_ROLE_TYPES = SKIN_TYPES
+_WIN = 45
+# the reaction happened / got worse (a verb of onset or worsening RIGHT NEXT to the symptom)
+_ONSET = (r"появил\w*|\bпош(?:ел|ла|ли|ло)\b|начал(?:ся|ась|ись|ось|о|а|и)?\b|высыпал(?:о|и)\b|обсыпал\w*|вылез\w*"
+          r"|покраснел\w*|покрасне(?:ет|ют)|сожгл\w*|сожж\w*|воспалил\w*|зачесал\w*|ухудш\w*|\bстал\w*\s+(?:больше|хуже)"
+          r"|ещ[её]\s+больше|\bхуже\b|\bвызвал\w*|\bвызыва(?:ет|ют)\b")
+# the customer attributes the condition to a product («от него», «после крема»): blocks «prior condition» only
+_ATTRIB = (r"\bот\s+(?:него|не[её]|этого|этой|крема|сыворотк\w*|тоник\w*|пудр\w*|средств\w*)\b"
+           r"|\bпосле\s+(?:него|не[её]|нанесени\w*|применени\w*|использовани\w*|крема|сыворотк\w*|тоник\w*|пудр\w*|умывани\w*)")
+_ONSET_WIN = 22
+# the product reduced / removed / prevents a condition (a benefit, not an adverse event)
+_IMPROVED = (r"убира|убрал|\bубер|избав|уменьш|\bменьше|\bменее\b|снима|\bснял|успока|подсуш|справля|\bбор(?:ет|ется|ьб|оть)"
+             r"|побор|помога|\bпомог\b|помоч|\bпротив\b|предотвращ|профилакт|\bреже\b|осветл|высветл|бледн|сглаж|выравн|устраня"
+             r"|\bспас|решил|сократ|подсыха|увлажня|\bот\s+(?:высыпан|покраснен|раздражен|шелушен|прыщ|пят|акне|аллерги)\w*"
+             r"|(?:средств|уход)\w*\s+от")
+# «прошли / ушли / исчезли» and «были» mean improvement / history for a skin CONDITION the product
+# targets (rash, redness, peeling, spots) — but a resolved REACTION for a sensation (burning,
+# itching, irritation, allergy): «жжение прошло» stays S1R.
+_CONDITION_TYPES = {"rash", "redness", "other_adverse_event"}
+_RESOLVED_CONDITION = (r"\bушл[аио]?\b|\bуш[её]л\b|\bпрошл[аио]?\b|\bпрош[её]л\b|исчез|пропал|не\s+стало|\bуход(?:ят|ит|ить)\b"
+                       r"|\bпроход(?:ят|ит|ить)\b")
+# the customer describes their skin / history, not a reaction to this product
+_PRIOR = (r"аллергик|аллерген|склонн\w*\s+к|проблемн\w*|чувствительн\w*|постоянн\w*|периодическ\w*|регулярн\w*|\bредко\b"
+          r"|\b(?:с|при)\s+(?:\w+\s+)?(?:аллерги|высыпан|раздражен|покраснен|шелушен|постакне|акне)\w*|\bбывает\b|\bчасто\b|\bвечно\b"
+          r"|холодов|после\s+(?:родов|бритья|улицы|солнца|мороза)|\bпостакне|пост\s+акне|пигмент|\bот\s+пост|когда\s+\w*\s*(?:обсыпа|высыпа)"
+          r"|\bу\s+меня\s+(?:аллерги|чувствит|проблемн)|аллерги\w*\s+на\s+(?:вс|многое|цитрус|пыльц|кошек|холод)|\bгде\s+есть"
+          r"|други\w*\s+(?:крем|средств|сыворот|тоник|пудр)")
+_PRIOR_CONDITION = r"\bбыл[аио]?\b"
+# an explicit negation that follows or precedes the symptom word in the same clause
+_ABSENT = (r"\bне\s+(?:вызыв|вызвал|успева|наблюда|замеч|замет|появля|появил|был|буд|оставля|раздража|щип|жж|чеш|обсып|высып|сушит"
+           r"|красне|давал|дает|дал|подчеркива)\w*|\bни\s+(?:одного|единого|малейш|следа)|\bне\s+единого|\bнет\b|\bбез\b"
+           r"|\bникак\w*|\bотсутств\w*|\bне\s+было")
+# words that only look like a symptom
+_NOT_SYMPTOM = (r"высыпа(?:ю|ешь|ет|ем|ете|ть)\b(?!ся)|высыплю|высыпь|высыпала?\s+(?:в|на|из|горст|пудр|порош|немного|чуть)"
+                r"|высыпа\w*(?:ся|сь)\b|\bреакци\w*\s+(?:в\s*виде\s+)?(?:приятн|ввиде\s+пощип)|приятн\w*\s+реакци"
+                r"|\bвидео\b[^.!?]{0,40}реакци|\bпятн\w*\s+(?:от\s+)?(?:пост|акне|пигмент)|пигментн\w*\s+пятн"
+                r"|раздражающ\w*\s*,?\s*(?:запах|аромат|смесь)|(?:запах|аромат)\w*[^.!?]{0,25}раздражающ"
+                r"|раздража\w*\s*,?\s*(?:что|когда|то\b|это)|красн\w*\s+зв[её]здочк")
+# a habitual present «появляются» qualified by «реже / меньше» is an improvement, not an onset
+_HABITUAL_BETTER = r"появля\w*[^.!?]{0,25}(?:реже|меньше|не\s+так)|(?:реже|меньше)[^.!?]{0,25}появля"
+
+
+def _improved(near: str, pattern: str = _IMPROVED) -> bool:
+    """A benefit cue that is not negated («не помог», «не убирает», «не справляется»)."""
+    return any(not re.search(r"\bне\s+$", near[max(0, m.start() - 4): m.start()])
+               for m in re.finditer(pattern, near))
+
+
+def _onset(near: str) -> bool:
+    """An onset/worsening verb that is not itself negated («не появилось», «не вызывает») and
+    is not about starting to USE the product («начала пользоваться»)."""
+    for m in re.finditer(_ONSET, near):
+        if re.search(r"\bне\s+$", near[max(0, m.start() - 4): m.start()]):
+            continue
+        if m.group(0).startswith("начал") and re.search(r"пользов|использ|применя|нанос", near[max(0, m.start() - 20): m.end() + 20]):
+            continue
+        return True
+    return False
+
+
+def symptom_role(etype: str, clause: str, start: int, end: int) -> str:
+    """adverse | absent | improved | prior_condition | not_a_symptom for one symptom mention."""
+    if etype not in _ROLE_TYPES:
+        return ROLE_ADVERSE
+    near = clause[max(0, start - _WIN): end + _WIN]
+    if re.search(_NOT_SYMPTOM, clause[max(0, start - 30): end + 30]):
+        return ROLE_NOT_SYMPTOM
+    onset = _onset(clause[max(0, start - _ONSET_WIN): end + _ONSET_WIN])
+    if etype == "other_adverse_event" and re.search(r"\bпятн", clause[start:end]) and not onset:
+        return ROLE_NOT_SYMPTOM        # «пятна» without onset = pigmentation the product targets
+    if re.search(_HABITUAL_BETTER, near):
+        return ROLE_IMPROVED
+    if re.search(_ABSENT, clause[max(0, start - 30): end + 50]) and not onset:
+        return ROLE_ABSENT
+    condition = etype in _CONDITION_TYPES
+    if (_improved(near) or (condition and _improved(near, _RESOLVED_CONDITION))) and not onset:
+        return ROLE_IMPROVED
+    if (re.search(_PRIOR, near) or (condition and re.search(_PRIOR_CONDITION, near))) \
+            and not onset and not re.search(_ATTRIB, near):
+        return ROLE_PRIOR
+    return ROLE_ADVERSE
+
+
+def context_mentions(text: str, policy: dict) -> list[dict]:
+    """Symptom words that are NOT reactions (improvement, prior condition, negation, look-alike)."""
+    out = []
+    for clause in clauses(text):
+        for etype, pats in policy["safety"]["symptoms"].items():
+            m = search_any(pats, clause)
+            if m:
+                role = symptom_role(etype, clause, m.start(), m.end())
+                if role != ROLE_ADVERSE:
+                    out.append({"type": etype, "role": role, "evidence_span": clause[max(0, m.start() - 30): m.end() + 40].strip()})
+    return out
+
+
 def extract_events(text: str, policy: dict) -> list[SafetyEvent]:
     cfg = policy["safety"]
     events: list[SafetyEvent] = []
@@ -106,7 +214,14 @@ def extract_events(text: str, policy: dict) -> list[SafetyEvent]:
             m = search_any(pats, clause)
             if not m:
                 continue
+            role = symptom_role(etype, clause, m.start(), m.end())
+            if role == ROLE_ABSENT and search_any(cfg["uncertainty_cues"], clause):
+                role = ROLE_ADVERSE      # «не могу сказать, что не было» stays conservative (SAF-05)
+            if role in (ROLE_IMPROVED, ROLE_PRIOR, ROLE_NOT_SYMPTOM):
+                continue                 # praise / profile / look-alike: never a safety event
             negated, temporal, certainty = _clause_state(clause, m.start(), cfg)
+            if role == ROLE_ABSENT:
+                negated, temporal = True, "historical_absent"
             # an explicit resolution in the NEXT clause ('сначала было, сейчас прошло')
             if not negated and temporal in ("current", "unknown") and idx + 1 < len(cls):
                 nxt = cls[idx + 1]
@@ -142,7 +257,7 @@ def _cutaneous_events(text, cfg):
     for clause in clauses(text):
         lesion=re.search(r'\b(?:пузыр(?:и|ь|ей|ями|ях|я)|волдыр\w*|blister(?:-like)?\s+lesions?)\b',clause)
         burn=re.search(r'\bожог\w*|\bобожж\w*|мокнущ\w*\s+(?:поврежден\w*|ран\w*)',clause)
-        pain=re.search(r'(?:сильн\w*|резк\w*|выраженн\w*)\s+бол\w*|очень\s+бол\w*',clause)
+        pain=re.search(r'(?:сильн\w*|резк\w*|выраженн\w*|очень)\s+бол(?:ь|и|ью|ит|ят|ело|ела|ели|езненн\w*|ьн\w*)\b',clause)
         if not context or not (lesion or burn or pain):continue
         hit=lesion or burn or pain
         negated,temporal,certainty=_clause_state(clause,hit.start(),cfg)
@@ -245,10 +360,17 @@ def assess(text: str, policy: dict) -> SafetyAssessment:
 
 def merge_llm_events(assessment: SafetyAssessment, llm_events: list[dict], text: str,
                      policy: dict) -> SafetyAssessment:
-    """Union with LLM-extracted events. The LLM can ADD an event or turn a rules event
-    ACTIVE; it can never negate/resolve a rules event. Emergency markers are recomputed by
-    rules on the merged set (the LLM cannot declare R4 by itself, and cannot suppress it)."""
+    """Union with LLM-extracted events. The LLM can never negate/resolve a rules event, and
+    emergency markers are recomputed by rules on the merged set (the LLM cannot declare R4 by
+    itself, and cannot suppress it).
+
+    3.1F calibration: a SKIN event the rules did not find as an actual reaction (LLM-only, or a
+    rules mention that is negated / an improvement / a prior condition) never routes S1/S1R/S2
+    — it is kept as POSSIBLE_SAFETY_CONTEXT for the operator. A special event (breathing,
+    swelling, eye, ingestion, nausea) from the LLM still routes to a human unless its evidence is
+    only an exposure/avoidance statement («стараюсь не вдыхать», «пудра пылит»)."""
     by_type = {e.type: e for e in assessment.events}
+    possible = list(assessment.possible_context)
     for le in llm_events or []:
         et = le.get("type")
         if et not in policy["safety"]["symptoms"]:
@@ -263,6 +385,12 @@ def merge_llm_events(assessment: SafetyAssessment, llm_events: list[dict], text:
                            body_location=le.get("body_location") or "unknown",
                            confidence=float(le.get("confidence") or 0.5), source="llm")
         cur = by_type.get(et)
+        speculative = (et in SKIN_TYPES and not actual_skin_evidence(text, cand.evidence_span)) \
+            or exposure_only(cand.evidence_span)
+        if speculative and (cur is None or not cur.active) and (cand.active or cand.temporal_state == "resolved"):
+            possible.append({"type": et, "evidence_span": cand.evidence_span, "source": "llm",
+                             "reason": "NO_CUSTOMER_REPORTED_SYMPTOM" if et in SKIN_TYPES else "EXPOSURE_ONLY"})
+            continue
         if cur is None:
             if cand.active or cand.temporal_state == "resolved":
                 by_type[et] = cand
@@ -278,9 +406,40 @@ def merge_llm_events(assessment: SafetyAssessment, llm_events: list[dict], text:
     events = list(by_type.values())
     merged = route(events, emergency_markers(text, events, policy), policy)
     order = {"R0": 0, "R3": 1, "R4": 2}
-    if order[merged.risk_level] < order[assessment.risk_level]:
-        return assessment  # never lower
-    return merged
+    result = assessment if order[merged.risk_level] < order[assessment.risk_level] else merged  # never lower
+    result.possible_context = possible
+    return result
+
+
+# Potential exposure / avoidance is not an adverse event: «стараюсь не вдыхать», «пудра пылит»,
+# «частички летят в воздухе» — unless an actual symptom is named in the same evidence.
+_EXPOSURE = (r"\bне\s+вдых|вдыхать|вдыхая|\bпыл(?:ит|ится|ь|ью)\b|распыл\w*|частич\w*|разлета\w*|\bлет(?:ят|ит|ают)\b"
+             r"|в\s+воздух\w*|облак\w*\s+пудр")
+_ACTUAL_SYMPTOM = (r"трудно|тяжело|задыха|кашл|першит|перш|\bчих|удушь|одышк|сдавил|отек|отёк|опух|распух|слез|жж|щип|резь"
+                   r"|\bрежет|тошн|рвот|плохо\s+стало|стало\s+плохо|голов\w*\s+кру")
+
+
+# A sensation the customer reports in their own words (wider than the symptom lexicon, so the
+# LLM may still catch «кожа горит» or «плохо стало с кожей» that the rules missed).
+_SENSATION = (r"гор(?:ит|ела|ел|ели|еть)|\bжж|жж[её]т|\bжгл|щип|\bзуд|чеш|красн|сып|прыщ|раздраж|аллерг|\bпятн|шелуш"
+              r"|воспал|\bпеч(?:ет|ет|ь|ло)|плохо\s+стало|стало\s+плохо|стянул|стягива|покалыва|колет")
+
+
+def actual_skin_evidence(text: str, evidence: str) -> bool:
+    """True when a customer-worded sensation is reported as something that HAPPENED (not praise,
+    not a prior condition, not a negation) in the LLM evidence span or, without one, the text."""
+    for source in (evidence, "" if evidence and normalize(evidence) in normalize(text) else text):
+        for clause in clauses(source or ""):
+            for m in re.finditer(_SENSATION, clause):
+                if symptom_role("other_adverse_event", clause, m.start(), m.end()) == ROLE_ADVERSE \
+                        and not re.search(_ABSENT, clause[max(0, m.start() - 30): m.end() + 50]):
+                    return True
+    return False
+
+
+def exposure_only(evidence: str) -> bool:
+    n = normalize(evidence or "")
+    return bool(re.search(_EXPOSURE, n)) and not re.search(_ACTUAL_SYMPTOM, n)
 
 
 # --- R2.1 operator assist: split the HUMAN_REVIEW safety class -------------------------------
