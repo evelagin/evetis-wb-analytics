@@ -128,6 +128,10 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
       if (!tab || tab.title !== plan.tab) {
         throw new LoaderError(`вкладка sheetId=${sheetId} ${tab ? `называется «${tab.title}»` : 'не найдена'}, ожидалась «${plan.tab}»`, 'STORE_PNL_TAB_MISSING');
       }
+      // Сетка нужна для чтения заметок и расширения колонок; без неё (columnCount 0) — fail-closed, без записи.
+      if (!(tab.rowCount > 0 && tab.columnCount > 0)) {
+        throw new LoaderError(`сетка вкладки «${plan.tab}» не прочитана (${tab.rowCount}×${tab.columnCount})`, 'STORE_PNL_TAB_MISSING');
+      }
       const metas = tab.metadata.filter((m) => m.key === PUBLISH_META_KEY);
       if (metas.length > 1) throw new LoaderError(`${metas.length} отпечатков публикации у вкладки`, 'STORE_PNL_TAB_EDITED');
       const contracts = tab.metadata.filter((m) => m.key === CONTRACT_META_KEY);

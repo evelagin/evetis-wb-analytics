@@ -423,6 +423,16 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
     try { await f(); } finally { for (const k of Object.keys(env)) delete process.env[k]; Object.assign(process.env, keep); }
   };
 
+  it('сетка вкладки не прочитана (columnCount 0): STORE_PNL_TAB_MISSING, записей нет', async () => {
+    const cols = tabState.cols; tabState.cols = 0;
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const a = deps(PNL);
+      await expect(unitkaStorePnlLoader(ctx(), a.d)).rejects.toMatchObject({ code: 'STORE_PNL_TAB_MISSING' });
+      expect(a.calls.writes).toEqual([]);
+    });
+    tabState.cols = cols;
+  });
+
   it('без флага: шлюз readonly, записей нет', async () => {
     const { d, calls } = deps(PNL);
     await unitkaStorePnlLoader(ctx(), d);
@@ -447,8 +457,11 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
   });
 
   it('управляемая миграция: точный отпечаток контракта → одна атомарная запись A:U, заметки, два отпечатка; дальше NOOP без допусков', async () => {
-    const adopt = contentSha(tabState.values);
-    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt,
+    // как в production 11.10: вкладка A:Q на сетке 17 колонок, свой отпечаток публикации, без заметок и контракта — ADOPT не нужен
+    const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
+    tabState.values = [[...init.header], ...init.rows]; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 17;
+    tabState.meta = [{ id: nextMetaId++, key: PUBLISH_META_KEY, value: contentSha(tabState.values) }];
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID),
       UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
       const a = deps(PNL);
       await unitkaStorePnlLoader(ctx(), a.d);
