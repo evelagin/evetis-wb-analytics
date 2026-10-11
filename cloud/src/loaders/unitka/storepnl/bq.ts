@@ -19,7 +19,8 @@ export interface StorePnlBqLike {
 }
 
 export const SNAPSHOT_TABLE = 'UNITKA_SKU_COMPONENTS_DAILY';
-export const PNL_VIEW = 'V_WB_STORE_PNL_MONTHLY';
+/** Единая последовательность месяцев: исторический слой (2026-05..07) + текущий Phase C (2026-08+), одна власть на месяц. */
+export const PNL_VIEW = 'V_WB_STORE_PNL_PRESENTATION';
 export const NEW_OPS_VIEW = 'V_WB_FINANCE_NEW_OPERATIONS';
 
 export interface SnapshotMeta {

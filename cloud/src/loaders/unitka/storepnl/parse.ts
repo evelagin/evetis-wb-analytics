@@ -19,8 +19,12 @@ import { LoaderError } from '../../../errors.js';
 import { BLOCK_FIRST_COLUMN } from '../calendar.js';
 import { OFFSET, SUMMARY, addDaysIso, findBlocks, isEmpty, isFormulaError, serialToIso, type CellValue } from '../model.js';
 
-/** Первый месяц P&L магазина (= нижняя граница в V_WB_STORE_PNL_MONTHLY). */
-export const STORE_PNL_FROM = '2026-08-01';
+/**
+ * Первый месяц снимка листа. С H0 (OWNER ACK 11.10.2026) — 2026-05: исторический слой берёт из листа ТОЛЬКО ручной
+ * ввод «Внешняя реклама (блогеры)»; экономику истории лист не задаёт. Phase C (V_WB_STORE_PNL_MONTHLY) по-прежнему
+ * начинается с 2026-08 — своей нижней границей во вью.
+ */
+export const STORE_PNL_FROM = '2026-05-01';
 
 export interface SkuComponentRow {
   date_msk: string;

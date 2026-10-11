@@ -1,5 +1,49 @@
 # CHANGELOG.md
 
+## 2026-10-11 — WB FIRE / LOST INVENTORY: списание утраченного товара и компенсация WB в P&L магазина (НЕ развёрнуто)
+
+Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.
+
+- Закрытый датасет `wb_secure` (`infra/terraform/wb_secure.tf`, ACL только владелец) с таблицами `WB_INVENTORY_LOSS_EVIDENCE` /
+  `_COMPENSATION_EVIDENCE` / `_CLAIM`; `sa-loaders-prod` — чтение двух таблиц. Импорт `tools/wb_inventory_loss_import.py` из
+  манифеста ВНЕ Git load-заданиями (данные не в тексте SQL): поштучные доказательства (131 позиция, 3 460 ед., 9 событий
+  18.07–16.08.2026), документы WB и претензия в публичном репозитории не хранятся (OWNER DECISION 11.10).
+- Вью (`sql/unitka/store_inventory_loss_v1.sql`): в `wb_secure` — поштучный аудит `V_WB_INVENTORY_LOSS_ITEMS` и претензия
+  `V_WB_INVENTORY_LOSS_CLAIM_TRACKING` (только владелец); в `wb_mart` — только агрегаты `V_WB_INVENTORY_LOSS_MONTHLY` (месяц
+  события, каноническая COGS, двойной счёт по остаткам WB), `_COMPENSATION_MATCH` (сверка выплаты по строке финотчёта, без
+  номеров документов) и `_STATUS` (полнота доказательств).
+- Журнал: `FORCE_MAJEURE_PAYMENT` → категория `LOSS_COMPENSATION`, обработка `LOSS_COMPENSATION_INCOME` (из «Доходов WB»
+  в отдельную строку). Новые поля `V_WB_STORE_PNL_MONTHLY` / `_HISTORICAL` / `_PRESENTATION`: `inventory_loss_writeoff_rub`,
+  `wb_loss_compensation_rub`, `force_majeure_net_effect_rub` (+ раскрытие). Чистая прибыль: − списание + компенсация.
+- **Вкладка «WB Магазин P&L»: 21 колонка A:U** — O «Списание утраченного товара», P «Компенсация WB за утрату товара»,
+  Q «Чистый эффект форс-мажора (справочно)»; S маржа, T состояние, U мост. Изменение экономики: июль −281 074,51 ₽, август
+  −375 990,66 ₽ (сумма компенсации июля без изменений, переносится между колонками).
+- QA: `LOSS_EVIDENCE`, `LOSS_NO_DOUBLE_COUNT`, `LOSS_COMPENSATION_RECONCILED`; тождества строк учитывают обе строки.
+  Списание — по канонической себестоимости (решение 11.10); документальная база претензии — только справочно.
+
+## 2026-10-11 — WB HISTORICAL H0: канонический исторический P&L магазина (2026-05..07), налог 2 % в P&L, схема A:R (НЕ развёрнуто)
+
+Док: `docs/finance/WB_HISTORICAL_H0_2026-10-11.md`.
+
+- Новые вью `wb_mart` (`sql/unitka/store_pnl_historical_v1.sql`): `V_WB_FINANCE_HISTORICAL_OVERRIDES` (8 строк «Баллы за отзывы»),
+  `V_WB_STORE_PNL_HISTORICAL` (2026-05..07 сверху вниз, власть HISTORICAL_CANONICAL), `V_WB_STORE_PNL_PRESENTATION`
+  (история + Phase C, одна власть на месяц). Загрузчик читает представление.
+- Изменения Phase C (`sql/unitka/store_pnl_v1.sql`; месяцы 2026-08+ не меняются — проверено на живых данных):
+  карта операций с доказанными периодами (`valid_from`/`valid_to`), исторические семейства в когорте и журнале,
+  guard возмещений по схеме ключей (LEGACY snake_case + НДС 1,20/1,22; ПВЗ LEGACY — только нулевой денежный эффект),
+  «Баллы за отзывы» — расход со знаком (не доход), `management_tax_rub` в `V_WB_STORE_PNL_MONTHLY`.
+- **Колонки вкладки «WB Магазин P&L»: A:Q → A:R** — новая колонка D «Налог 2% (в составе вклада SKU)» (расшифровка, в прибыль
+  повторно не входит), переименованы E, L, M, N; заметки 18 заголовков — системный контракт в коде. Миграция схемы — только
+  управляемо (`UNITKA_STORE_PNL_MIGRATE_CONTRACT`), плановый прогон отказывает.
+- Снимок листа (`wb_ops.UNITKA_SKU_COMPONENTS_DAILY`) — с 2026-05 (раньше с 2026-08): история берёт из листа только внешнюю рекламу.
+- Независимое ревью (P1 нет; P2/P3 исправлены): история не читает `evetis_ref` (COGS — копия `wb_mart.UNITKA_COGS_EFFECTIVE`,
+  связка — `wb_raw.REF_SKU_MASTER`, ровно одно значение или «неизвестно»); защита от размножения строк и непокрытого снимка
+  (`UNKNOWN_COST_PRESENT`, QA `HIST_INPUTS_COMPLETE`); override только до 2026-08 (QA); сид наборов BC-28..31 с новыми датами;
+  публикатор: сброс форматов строк данных при записи, `appendDimension COLUMNS`, миграция не застревает на NOOP, заметки
+  заголовка восстанавливаются, пустая власть месяца — стоп; документы F-18 — источник `V_WB_STORE_PNL_PRESENTATION`.
+- Инструменты: `tools/unitka_store_pnl_h0_deploy.py` (вью, откат телами до H0), `tools/cogs_bundle_start_fix.py`
+  (сдвиг начала двух наборов в `evetis_ref.REF_BUNDLE_COMPONENTS`, суммы без изменений). QA — `sql/unitka/qa_store_pnl_historical_v1.sql`.
+
 ## 2026-10-09 — P&L магазина WB: автопубликация вкладки «WB Магазин P&L» (ВЫКЛЮЧЕНА по умолчанию)
 
 Док: `docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md` §11.
