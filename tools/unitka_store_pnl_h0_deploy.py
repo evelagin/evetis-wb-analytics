@@ -80,6 +80,15 @@ def dataset_of(name: str) -> str:
     return "wb_secure" if name in SECURE else "wb_mart"
 
 
+def norm(body: str) -> str:
+    """BigQuery хранит тело вью БЕЗ начальных строк комментариев после AS: сравнивать тела только без них
+    (иначе живое тело после развёртывания «не совпадает» с Git — ложный MISMATCH и ложный дрейф при повторе)."""
+    lines = body.strip().splitlines()
+    while lines and (not lines[0].strip() or lines[0].lstrip().startswith("--")):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
 def plan(rollback: bool) -> list[tuple[str, str, str]]:
     if rollback:
         return [(n, *statement("wb_mart", n, f"{ROLLBACK_DIR}/rollback_{n}.sql")) for n, _ in reversed(CHANGED)]
@@ -104,8 +113,8 @@ def main(argv=None) -> int:
         if head != d2.git("rev-parse", "origin/main"):
             raise SystemExit("--apply: HEAD не совпадает с origin/main — развёртывается только слитый код")
     views = plan(a.rollback)                                          # все проверки источников — до сети
-    fwd = {n: b for n, _, b in plan(False)}
-    old = {n: b for n, _, b in plan(True)}
+    fwd = {n: norm(b) for n, _, b in plan(False)}
+    old = {n: norm(b) for n, _, b in plan(True)}
     token = resolve_token(a.token_env, a.token_command, os.environ)
     print(f"git HEAD {head} · вью {len(views)} · режим {('ROLLBACK ' if a.rollback else '') + ('APPLY' if a.apply else 'PLAN')}")
     state = {}
@@ -118,10 +127,10 @@ def main(argv=None) -> int:
     # Дрейф проверяется ВСЕГДА (и в PLAN): живое тело — прежнее или уже целевое; новое — нет или целевое.
     for n, _, _ in views:
         if n in NEW_NAMES:
-            if state[n] and live_view(a.project, dataset_of(n), n, token)[0] != fwd[n]:
+            if state[n] and norm(live_view(a.project, dataset_of(n), n, token)[0]) != fwd[n]:
                 raise SystemExit(f"{dataset_of(n)}.{n}: новая вью уже существует с чужим телом — дрейф, отказ")
             continue
-        now, _ = live_view(a.project, "wb_mart", n, token)
+        now = norm(live_view(a.project, "wb_mart", n, token)[0])
         if now not in (old[n], fwd[n]):
             raise SystemExit(f"wb_mart.{n}: живое тело не совпадает ни с прежним (откат), ни с целевым — дрейф, отказ")
     print("дрейф: нет (живые тела = ожидаемые)")
@@ -137,9 +146,9 @@ def main(argv=None) -> int:
         if not a.apply:
             print(f"PLAN  {dataset_of(n)}.{n}\t{st}\tdry-run OK")
             continue
-        now, _ = live_view(a.project, dataset_of(n), n, token)
-        print(f"DONE  {dataset_of(n)}.{n}\t{st}\tjob {job['jobReference']['jobId']}\treadback {'MATCH' if now == body else 'MISMATCH'}")
-        if now != body:
+        now = norm(live_view(a.project, dataset_of(n), n, token)[0])
+        print(f"DONE  {dataset_of(n)}.{n}\t{st}\tjob {job['jobReference']['jobId']}\treadback {'MATCH' if now == norm(body) else 'MISMATCH'}")
+        if now != norm(body):
             raise SystemExit(f"{dataset_of(n)}.{n}: тело в BigQuery не совпало с Git — развёртывание остановлено")
     return 0
 

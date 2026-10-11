@@ -432,3 +432,13 @@ def test_metabase_reads_only_an_explicit_dataset_allowlist():
     for p in (ROOT / "infra/terraform").glob("*.tf"):                                             # нигде нет проектной роли
         t = re.sub(r"#[^\n]*", "", p.read_text())
         assert not re.search(r'google_project_iam_\w+"[^}]*metabase', t, re.S), p.name
+
+
+def test_h0_deploy_compares_bodies_without_leading_comments():
+    # BigQuery хранит тело вью без начальных строк комментариев: 11.10 это дало ложный MISMATCH на V_WB_FINANCE_OPERATION_MAP.
+    import unitka_store_pnl_h0_deploy as h
+    assert h.norm("-- c1\n-- c2\n\nSELECT 1\n-- tail\n") == "SELECT 1\n-- tail"
+    assert h.norm("SELECT 1") == "SELECT 1"
+    bodies = {n: b for n, _, b in h.plan(False)}
+    assert all(not h.norm(b).startswith("--") for b in bodies.values())
+    assert sum(b.lstrip().startswith("--") for b in bodies.values()) == 5     # именно эти и ломали сравнение
