@@ -222,31 +222,61 @@ def test_bundle_seed_matches_acked_start_dates():
         assert re.search(rf"^\('{bc}','[^']+','[^']+',1,DATE '{d}'", seed, flags=re.M), bc
 
 
-def test_inventory_loss_is_itemized_from_wb_reports_and_not_netted():
+def test_inventory_loss_reads_private_evidence_and_is_not_netted():
     b = h_bodies()
     items = b["V_WB_INVENTORY_LOSS_ITEMS"]
-    rows = re.findall(r"\('(FM-2026-0[78]-\d\d-[A-Z]{3})', (\d+), (\d+)\)", items)
-    assert len(rows) == 131 and sum(int(q) for _, _, q in rows) == 3460
-    assert len(set(i for i, _, _ in rows)) == 9
-    by_month = {}
-    for i, _, q in rows:
-        by_month[i[3:10]] = by_month.get(i[3:10], 0) + int(q)
-    assert by_month == {"2026-07": 1456, "2026-08": 2004}
+    assert "wb_ops.WB_INVENTORY_LOSS_EVIDENCE" in items and "UNNEST" not in items       # доказательства — не в Git
     assert "wb_mart.UNITKA_COGS_EFFECTIVE" in items and "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL)" in items
     mon = b["V_WB_INVENTORY_LOSS_MONTHLY"]
     assert "_snapshot_date >= DATE '2026-08-26'" in mon and "ABS(pos.lost_qty - IFNULL(r.q, 0))" in mon   # отчёт = остаток 26.08
     assert "V_WB_ORDERS" not in mon                                           # заказы с 14.08 без склада — не доказательство
     ev = b["V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE"]
-    assert "('2270352', DATE '2026-07-22', NUMERIC '49479.72'" in ev and "('2336254', DATE '2026-07-30', NUMERIC '20000.00'" in ev
+    assert "wb_ops.WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in ev
+    assert "IF(attribution_basis = 'DOCUMENT_LINKED', attributed_incident_month, NULL)" in ev   # месяц события — только по документу
+    claim = b["V_WB_INVENTORY_LOSS_CLAIM_TRACKING"]
+    assert "outstanding_claim_rub" in claim and "claim_basis_difference_rub" in claim
+    for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL", "V_WB_STORE_PNL_PRESENTATION"):
+        assert "CLAIM" not in re.sub(r"--[^\n]*", "", b[n]), n                 # претензия не входит в P&L
     for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL"):
         body = re.sub(r"--[^\n]*", "", b[n])
         assert "- inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub" in body, n
         assert "inventory_loss_cogs_missing_qty > 0 OR inventory_loss_double_count_risk_qty > 0" in body, n
         assert "WHEN pending_rows > 0 OR loss_compensation_unreconciled_rows > 0 THEN 'PENDING_CLASSIFICATION'" in body, n
-        assert "V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in body, n
+        assert "NOT IFNULL(loss_evidence_matched, FALSE)" in body, n
     led = b["V_WB_STORE_ACCOUNT_LEDGER"]
     assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
     assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
+    assert "V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in led and "e.attributed_incident_month IS NOT NULL AND le.loss_evidence_matched" in led
+
+
+def test_public_tree_holds_no_itemized_loss_or_claim_evidence():
+    # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытых таблицах wb_ops.
+    paths = [p for d in ("sql", "docs", "tools", "cloud/src", "cloud/test", "infra") for p in (ROOT / d).rglob("*")
+             if p.is_file() and p.suffix in {".sql", ".md", ".py", ".ts", ".tf", ".json"}]
+    paths.append(ROOT / "CHANGELOG.md")
+    # Вне области: отчёт Ozon 3.4A (уже в main до H0) упоминает сумму претензии — отдельное решение владельца.
+    skip = {ROOT / "tools/tests/test_unitka_store_pnl.py", ROOT / "docs/ozon/STAGE_3_4A_COGS_PROVENANCE_REPORT.md"}
+    paths = [p for p in paths if p not in skip]
+    bad = []
+    for p in paths:
+        t = p.read_text(errors="ignore")
+        for pat in (r"damaged-product-report", r"FM-2026-0\d-\d\d-[A-Z]{3}", r"\b2270352\b", r"\b2336254\b", r"\b91705474\b",
+                    r"698[ \u00a0]?420[,.]03", r"628[ \u00a0]?940[,.]31"):
+            if re.search(pat, t):
+                bad.append(f"{p.relative_to(ROOT)}: {pat}")
+    assert not bad, bad
+
+
+def test_inventory_loss_tables_are_read_only_for_the_loader():
+    tf = (ROOT / "infra/terraform/wb_inventory_loss.tf").read_text()
+    tables = re.findall(r'table_id\s*=\s*"(WB_INVENTORY_LOSS_[A-Z_]+)"', tf)
+    assert sorted(tables) == ["WB_INVENTORY_LOSS_CLAIM", "WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE", "WB_INVENTORY_LOSS_EVIDENCE"]
+    assert tf.count("deletion_protection = true") == 3
+    grants = re.findall(r'resource "google_bigquery_table_iam_member" "(\w+)"', tf)
+    assert grants == ["wb_inventory_loss_read"]
+    assert re.findall(r'role\s*=\s*"([^"]+)"', tf) == ["roles/bigquery.dataViewer"]
+    block = tf.split('resource "google_bigquery_table_iam_member"')[1]
+    assert "claim" not in block.lower()                                         # претензию загрузчик не читает
 
 
 def test_overrides_are_the_8_proven_review_points_rows():
@@ -278,7 +308,7 @@ def test_historical_qa_is_read_only_blocks():
     names = blocks[0::2]
     assert names == ["SINGLE_AUTHORITY", "OVERRIDE_INTEGRITY", "HIST_CONSERVATION", "FINANCE_COVERAGE_ALL_HISTORY", "LEGACY_MEMO_GUARD",
                      "COGS_COVERAGE", "HIST_INPUTS_COMPLETE", "TAX_NOT_DOUBLE_COUNTED", "LOSS_EVIDENCE", "LOSS_NO_DOUBLE_COUNT",
-                     "LOSS_COMPENSATION_RECONCILED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+                     "LOSS_COMPENSATION_RECONCILED", "LOSS_COMPENSATION_IN_PNL", "LOSS_SINGLE_SOURCE", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
     assert "o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01'" in qa   # override только до Phase C
     for name, sql in zip(names, blocks[1::2]):
         bare = re.sub(r"--[^\n]*", "", sql).strip()

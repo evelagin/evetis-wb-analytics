@@ -67,13 +67,9 @@ storage_fin AS (
 ledger AS (
   SELECT IFNULL(o.service_month, l.service_month) service_month,
     IFNULL(o.category, l.category) category, IFNULL(o.treatment, l.treatment) treatment, l.amount_rub, l.booking_date,
-    o.finance_row_key IS NOT NULL overridden,
-    -- компенсация за утрату сверяется с документами WB по номеру и сумме
-    IFNULL(e.booking_date = l.booking_date AND ABS(e.amount_rub + l.amount_rub) < 0.005, FALSE) loss_matched
+    o.finance_row_key IS NOT NULL overridden, l.loss_evidence_matched
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` l
-  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_HISTORICAL_OVERRIDES` o USING (finance_row_key)
-  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` e
-    ON e.wb_document = REGEXP_EXTRACT(l.label, r'документ №\s*(\d+)')),
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_HISTORICAL_OVERRIDES` o USING (finance_row_key)),
 acc AS (
   SELECT service_month m,
     SUM(IF(category = 'MINIMUM_PAYMENT', amount_rub, 0)) minimum_payment_rub,
@@ -85,7 +81,7 @@ acc AS (
     -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) marketplace_income_rub,
     -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) wb_loss_compensation_rub,
     STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CAST(booking_date AS STRING), NULL), ', ' ORDER BY booking_date) wb_loss_compensation_dates,
-    COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND NOT loss_matched) loss_compensation_unreconciled_rows,
+    COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND NOT IFNULL(loss_evidence_matched, FALSE)) loss_compensation_unreconciled_rows,
     SUM(IF(treatment = 'UNKNOWN', ABS(amount_rub), 0)) unknown_rub,
     COUNTIF(overridden) overridden_rows,
     COUNTIF(category = 'MINIMUM_PAYMENT') minimum_payment_invoices, COUNTIF(category = 'UTILIZATION') utilization_invoices

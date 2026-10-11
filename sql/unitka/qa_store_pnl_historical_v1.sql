@@ -92,18 +92,22 @@ SELECT 'TAX_NOT_DOUBLE_COUNTED' check_name,
 FROM p;
 
 -- @check LOSS_EVIDENCE
--- Утрата товара: 131 позиция отчётов WB, 3 460 ед., 9 событий; у каждой позиции ровно один интервал себестоимости на
--- дату события; списание в P&L = Σ позиций по месяцу события (ни нетто, ни догадок).
+-- Утрата товара: доказательства загружены (закрытая wb_ops.WB_INVENTORY_LOSS_EVIDENCE, импорт с перечитыванием); у каждой
+-- позиции ровно один SKU и ровно один интервал себестоимости на дату события; списание в P&L = Σ позиций по месяцу события.
+-- Итоги, утверждённые владельцем (позиции/единицы/сумма), проверяет инструмент импорта; здесь они раскрываются.
 WITH it AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_ITEMS`),
 p AS (SELECT service_month, inventory_loss_writeoff_rub FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION`),
 m AS (SELECT incident_month, SUM(inventory_loss_writeoff_rub) w FROM it GROUP BY 1)
 SELECT 'LOSS_EVIDENCE' check_name,
-  IF((SELECT COUNT(*) FROM it) = 131 AND (SELECT SUM(lost_qty) FROM it) = 3460 AND (SELECT COUNT(DISTINCT incident_id) FROM it) = 9
-     AND (SELECT COUNTIF(cogs_interval_count != 1 OR unit_cogs_rub IS NULL) FROM it) = 0
+  IF((SELECT COUNT(*) FROM it) > 0
+     AND (SELECT COUNTIF(internal_sku IS NULL OR cogs_interval_count != 1 OR unit_cogs_rub IS NULL) FROM it) = 0
+     AND (SELECT COUNT(*) FROM (SELECT incident_id, nm_id FROM it GROUP BY 1, 2 HAVING COUNT(*) > 1)) = 0
      AND (SELECT COUNT(*) FROM m LEFT JOIN p ON p.service_month = m.incident_month
           WHERE ABS(IFNULL(p.inventory_loss_writeoff_rub, 0) - m.w) >= 0.01) = 0
      AND ABS((SELECT SUM(inventory_loss_writeoff_rub) FROM p) - (SELECT SUM(inventory_loss_writeoff_rub) FROM it)) < 0.01, 'PASS', 'FAIL') status,
-  (SELECT STRING_AGG(CONCAT(FORMAT_DATE('%Y-%m', incident_month), ': ', FORMAT('%.2f', w)), '; ' ORDER BY incident_month) FROM m) detail;
+  CONCAT('позиций ', CAST((SELECT COUNT(*) FROM it) AS STRING), ', ед. ', CAST((SELECT SUM(lost_qty) FROM it) AS STRING),
+    ', событий ', CAST((SELECT COUNT(DISTINCT incident_id) FROM it) AS STRING), '; ',
+    (SELECT STRING_AGG(CONCAT(FORMAT_DATE('%Y-%m', incident_month), ': ', FORMAT('%.2f', w)), '; ' ORDER BY incident_month) FROM m)) detail;
 
 -- @check LOSS_NO_DOUBLE_COUNT
 -- Списана только непроданная единица: количество отчёта WB = остаток WB склад × nm на 26.08.2026 и после этого остаток
@@ -116,20 +120,51 @@ SELECT 'LOSS_NO_DOUBLE_COUNT' check_name,
 FROM m;
 
 -- @check LOSS_COMPENSATION_RECONCILED
--- Компенсация WB за утрату = строки финотчёта «Добровольная выплата за товары, пострадавшие…» (на 11.10: 22.07 49 479,72 +
--- 30.07 20 000 = 69 479,72); в «Доходы WB» не попадает; в P&L — ровно сумма журнала.
-WITH l AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER`),
-p AS (SELECT SUM(wb_loss_compensation_rub) comp FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION`)
+-- Компенсация WB за утрату: каждая выплата журнала (LOSS_COMPENSATION_INCOME) сверена с документом закрытой таблицы
+-- (номер, дата, сумма), каждый документ найден в журнале ровно один раз, суммы равны; в «Доходы WB» не попадает.
+-- Один проход по журналу (планировщик BigQuery не держит журнал дважды в одном запросе).
+WITH a AS (
+  SELECT COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND NOT IFNULL(loss_evidence_matched, FALSE)) unmatched,
+    -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) ledger_rub,
+    COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME') ledger_rows,
+    COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND category != 'LOSS_COMPENSATION') bad_category,
+    COUNTIF(treatment = 'ACCOUNT_LEVEL_INCOME' AND LOWER(label) LIKE '%пострадавшие%') income_leak,
+    ARRAY_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME' AND loss_evidence_matched, wb_document, NULL) IGNORE NULLS) docs
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER`),
+b AS (
+  SELECT COUNT(*) evidence_rows, IFNULL(SUM(amount_rub), 0) evidence_rub, ARRAY_AGG(wb_document) edocs,
+    COUNTIF(attributed_incident_month IS NOT NULL) linked
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE`)
 SELECT 'LOSS_COMPENSATION_RECONCILED' check_name,
-  IF(ABS(-SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) - ANY_VALUE(p.comp)) < 0.01
-     AND ABS(-SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME' AND booking_date < DATE '2026-10-12', amount_rub, 0)) - 69479.72) < 0.01
-     AND COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND category != 'LOSS_COMPENSATION') = 0
-     AND (SELECT SUM(loss_compensation_unreconciled_rows) FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION`) = 0
-     AND COUNTIF(treatment = 'ACCOUNT_LEVEL_INCOME' AND LOWER(label) LIKE '%пострадавшие%') = 0, 'PASS', 'FAIL') status,
-  CONCAT('журнал ', FORMAT('%.2f', -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0))), ' (',
-    STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CONCAT(CAST(booking_date AS STRING), ' ', FORMAT('%.2f', -amount_rub)), NULL), ', ' ORDER BY booking_date),
-    '), в P&L ', FORMAT('%.2f', ANY_VALUE(p.comp))) detail
-FROM l CROSS JOIN p;
+  IF(unmatched = 0 AND bad_category = 0 AND income_leak = 0 AND ABS(ledger_rub - evidence_rub) < 0.01
+     AND (SELECT COUNT(*) FROM UNNEST(edocs) d WHERE (SELECT COUNTIF(x = d) FROM UNNEST(docs) x) != 1) = 0, 'PASS', 'FAIL') status,
+  CONCAT('журнал ', FORMAT('%.2f', ledger_rub), ' (строк ', CAST(ledger_rows AS STRING), ', не сверено ', CAST(unmatched AS STRING),
+    '), документов ', CAST(evidence_rows AS STRING), ' на ', FORMAT('%.2f', evidence_rub), ', месяц по документу: ', CAST(linked AS STRING)) detail
+FROM a CROSS JOIN b;
+
+-- @check LOSS_COMPENSATION_IN_PNL
+-- В P&L компенсация за утрату = сумма сверенных документов (= журналу, LOSS_COMPENSATION_RECONCILED); несверенных строк нет.
+WITH p AS (SELECT SUM(wb_loss_compensation_rub) comp, SUM(loss_compensation_unreconciled_rows) unrec
+           FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION`),
+e AS (SELECT IFNULL(SUM(amount_rub), 0) rub FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE`)
+SELECT 'LOSS_COMPENSATION_IN_PNL' check_name,
+  IF(ABS(p.comp - e.rub) < 0.01 AND p.unrec = 0, 'PASS', 'FAIL') status,
+  CONCAT('в P&L ', FORMAT('%.2f', p.comp), ', документы ', FORMAT('%.2f', e.rub), ', несверенных строк ', CAST(p.unrec AS STRING)) detail
+FROM p CROSS JOIN e;
+
+-- @check LOSS_SINGLE_SOURCE
+-- Один источник списания и один источник компенсации: в журнале кабинета нет других строк об утрате/пострадавшем товаре
+-- вне LOSS_COMPENSATION_INCOME; утилизация — плата WB (UTILIZATION), а не утрата; в P&L списание = только позиции утраты.
+WITH a AS (
+  SELECT COUNTIF(REGEXP_CONTAINS(LOWER(label), r'пострадавш|утрач|утрат') AND treatment != 'LOSS_COMPENSATION_INCOME') other_loss_rows,
+    COUNTIF(category = 'UTILIZATION' AND treatment NOT IN ('ACCOUNT_LEVEL', 'UNKNOWN')) utilization_misrouted,
+    -SUM(IF(category = 'UTILIZATION', -amount_rub, 0)) utilization_rub
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER`)
+SELECT 'LOSS_SINGLE_SOURCE' check_name,
+  IF(other_loss_rows = 0 AND utilization_misrouted = 0, 'PASS', 'FAIL') status,
+  CONCAT('прочих строк об утрате: ', CAST(other_loss_rows AS STRING), '; утилизация (расход кабинета, не утрата): ',
+    FORMAT('%.2f', utilization_rub)) detail
+FROM a;
 
 -- @check ADS_RECONCILES
 -- История: поправка рекламы = атрибуция − биллинг WB по дате услуги (V_DASH_FINANCE_CORRECTED_DAILY).

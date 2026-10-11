@@ -4,9 +4,14 @@
 
 Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.
 
-- Новые вью `wb_mart` (`sql/unitka/store_inventory_loss_v1.sql`): `V_WB_INVENTORY_LOSS_ITEMS` (131 позиция отчётов WB,
-  3 460 ед., 9 событий 18.07–16.08.2026, каноническая себестоимость на дату события) и `V_WB_INVENTORY_LOSS_MONTHLY`
-  (месяц события; защита от двойного счёта — заказы со склада после события).
+- Закрытые таблицы `wb_ops.WB_INVENTORY_LOSS_EVIDENCE` / `_COMPENSATION_EVIDENCE` / `_CLAIM` (`infra/terraform/wb_inventory_loss.tf`,
+  `sa-loaders-prod` — только чтение двух) и импорт `tools/wb_inventory_loss_import.py` из манифеста ВНЕ Git: поштучные
+  доказательства (131 позиция, 3 460 ед., 9 событий 18.07–16.08.2026), документы WB и претензия в публичном репозитории
+  не хранятся (OWNER DECISION 11.10; коммиты 79f70ad/0ae5687 ветки PR #328 временно их содержали).
+- Новые вью `wb_mart` (`sql/unitka/store_inventory_loss_v1.sql`): `V_WB_INVENTORY_LOSS_ITEMS` (каноническая себестоимость на
+  дату события), `V_WB_INVENTORY_LOSS_MONTHLY` (месяц события; двойной счёт — по остаткам WB на 26.08 и после),
+  `V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` (документы WB; месяц события только по документу), `V_WB_INVENTORY_LOSS_CLAIM_TRACKING`
+  (претензия, справочно, вне P&L: документальная база, заявлено, получено, остаток требования).
 - Журнал: `FORCE_MAJEURE_PAYMENT` → категория `LOSS_COMPENSATION`, обработка `LOSS_COMPENSATION_INCOME` (из «Доходов WB»
   в отдельную строку). Новые поля `V_WB_STORE_PNL_MONTHLY` / `_HISTORICAL` / `_PRESENTATION`: `inventory_loss_writeoff_rub`,
   `wb_loss_compensation_rub`, `force_majeure_net_effect_rub` (+ раскрытие). Чистая прибыль: − списание + компенсация.
@@ -14,6 +19,7 @@
   Q «Чистый эффект форс-мажора (справочно)»; S маржа, T состояние, U мост. Изменение экономики: июль −281 074,51 ₽, август
   −375 990,66 ₽ (сумма компенсации июля без изменений, переносится между колонками).
 - QA: `LOSS_EVIDENCE`, `LOSS_NO_DOUBLE_COUNT`, `LOSS_COMPENSATION_RECONCILED`; тождества строк учитывают обе строки.
+  Списание — по канонической себестоимости (решение 11.10); документальная база претензии — только справочно.
 
 ## 2026-10-11 — WB HISTORICAL H0: канонический исторический P&L магазина (2026-05..07), налог 2 % в P&L, схема A:R (НЕ развёрнуто)
 
