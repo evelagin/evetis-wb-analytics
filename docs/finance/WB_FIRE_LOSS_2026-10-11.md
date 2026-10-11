@@ -39,7 +39,7 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 |---|---|---|
 | владелец (`roles/owner`) | ACL датасета `projectOwners` → OWNER | чтение и запись всех таблиц |
 | `sa-terraform-apply` | проект: `roles/bigquery.admin` (+ `resourcemanager.projectIamAdmin`) | чтение и запись. Доверенный администратор, режим break-glass: ни одна среда выполнения его не использует (Cloud Run, Scheduler — нет), пользовательских ключей нет, работает только через WIF в `infra.yml` и `scheduler-control.yml` из `main`; действия видны в Admin Activity audit log |
-| `metabase-read-only` | было: проект `roles/bigquery.dataViewer` без условия (вручную); стало: `dataViewer` на 11 датасетов (`metabase_access.tf`), проектная роль снята | было: 🔴 чтение `wb_secure` в обход ACL; стало: нет (проверяется запросами от имени Metabase) |
+| `metabase-read-only` | было: проект `roles/bigquery.dataViewer` без условия (вручную); стало: `dataViewer` на 9 датасетов (`metabase_access.tf`), проектная роль снята | было: 🔴 чтение `wb_secure` в обход ACL; стало: нет (проверяется запросами от имени Metabase) |
 | `sa-loaders-prod` | табличные права `dataViewer` на 2 таблицы | чтение `…_EVIDENCE` и `…_COMPENSATION_EVIDENCE`; претензии нет; записи нет |
 | `sa-ozon-ingestion` | проект: `dataEditor`/`dataViewer` с условием `ozon_raw` / `evetis_ref` | нет |
 | `sa-ae-reader` | проект: своя роль `jobs.create` + `bigquery.resourceViewer` | данных нет; 🔴 видит **метаданные заданий всех пользователей** (`jobs.listAll`) |
@@ -48,8 +48,8 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 | `projectReaders` / `projectWriters` | в ACL нет | нет |
 
 **Блокер до импорта (F-20) снят решением владельца 11.10.** У Metabase проектная роль `dataViewer` заменяется на явный
-белый список из 11 датасетов (`infra/terraform/metabase_access.tf`, без отрицательных условий). Список составлен по
-фактической нагрузке за 90 дней; `wb_secure` и будущие датасеты в него не входят. После применения нужно доказать
+белый список из 9 датасетов (`infra/terraform/metabase_access.tf`, без отрицательных условий). Список составлен по
+рабочим запросам за 90 дней, без синхронизации метаданных; `wb_secure` и будущие датасеты в него не входят. После применения нужно доказать
 запросами от имени Metabase:
 - A — рабочий запрос дашборда проходит;
 - B — запрос к витрине проходит;
@@ -159,8 +159,8 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 `LOSS_COMPENSATION_RECONCILED`.
 
 ## 7. Развёртывание
-1. Targeted plan и apply `wb_secure.tf` и `metabase_access.tf`: датасет, 3 таблицы, 2 табличных права и 11 членов ACL
-   датасетов — 17 to add, 0 to change, 0 to destroy.
+1. Targeted plan и apply `wb_secure.tf` и `metabase_access.tf`: датасет, 3 таблицы, 2 табличных права и 9 членов ACL
+   датасетов — 15 to add, 0 to change, 0 to destroy.
 2. Снять проектную `roles/bigquery.dataViewer` у `metabase-read-only` (выдана вручную, не в Terraform), например:
    `gcloud projects remove-iam-policy-binding <P> --member=serviceAccount:metabase-read-only@<P>.iam.gserviceaccount.com
    --role=roles/bigquery.dataViewer --condition=None`.
@@ -172,3 +172,14 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
    несовместим: прогон остановится на `STORE_PNL_IDENTITY` и ничего не запишет.
 
 Откат — в обратном порядке: прежний образ → вью → `tools/wb_inventory_loss_import.py --rollback --apply`.
+
+**Откат прав Metabase (F-20).**
+- Если сломалась карточка или dashboard, добавить в белый список (`metabase_access.tf`) датасет, которого не хватило:
+  это targeted apply одного ресурса. Проектную роль не возвращать.
+- Полный откат, только до импорта в `wb_secure`:
+  1. `gcloud projects add-iam-policy-binding <P> --member=serviceAccount:metabase-read-only@<P>.iam.gserviceaccount.com
+     --role=roles/bigquery.dataViewer --condition=None`;
+  2. targeted destroy `google_bigquery_dataset_iam_member.metabase_read`.
+
+  После импорта проектная роль снова открывает `wb_secure` — это F-20. Тогда сначала откатить импорт
+  (`tools/wb_inventory_loss_import.py --rollback --apply`).

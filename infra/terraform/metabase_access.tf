@@ -7,19 +7,24 @@
 # docs/finance/WB_FIRE_LOSS_2026-10-11.md §7). Отрицательные условия IAM не используются — только позитивный список.
 # Проектная roles/bigquery.jobUser (создание заданий) остаётся как есть.
 #
-# Список — по истории заданий Metabase за 90 дней (INFORMATION_SCHEMA.JOBS_BY_PROJECT, referenced_tables, 13 536 заданий):
-# читались ровно эти 11 датасетов. Сырые wb_raw / ozon_raw нужны по факту: прямые запросы (648 / 455 заданий) и вью
-# витрин над ними (вью не authorized — вызывающему нужен доступ к базовым таблицам). wb_secure — НЕТ, будущие датасеты — нет.
+# Список — по рабочим запросам Metabase (INFORMATION_SCHEMA.JOBS_BY_PROJECT за 90 дней — фактически 26.08–04.10.2026,
+# 13 536 заданий; синхронизация метаданных Metabase — запросы к dataset.INFORMATION_SCHEMA — не считается): базовые таблицы
+# (referenced_tables) и вью, названные в тексте. Нужны 9 датасетов: wb_mart 8 550 заданий, wb_raw 6 483, evetis_ref 3 112,
+# ozon_raw 1 206, evetis_mart 487, evetis_ops 298, ozon_mart 29, wb_ops 18, evetis_communications 6. Сырые wb_raw / ozon_raw
+# нужны: вью витрин над ними не authorized (вызывающему нужен доступ к базовым таблицам), wb_raw ещё и в прямых запросах.
+# ozon_stg и evetis_health — только в синхронизации, в рабочих запросах и вью разрешённых датасетов их нет: не выдаются.
+# wb_secure — НЕТ, будущие датасеты — нет.
 #
-# APPLY — targeted, вместе с wb_secure.tf: 11 to add (по одному члену ACL на датасет), 0 to change, 0 to destroy.
+# APPLY — targeted, вместе с wb_secure.tf: 9 to add (по одному члену ACL на датасет), 0 to change, 0 to destroy.
+# ОТКАТ: docs/finance/WB_FIRE_LOSS_2026-10-11.md §7 (не возвращать проектную роль после импорта в wb_secure).
 # ══════════════════════════════════════════════════════════════════════════════
 
 locals {
   metabase_member = "serviceAccount:metabase-read-only@${var.project_id}.iam.gserviceaccount.com"
   metabase_read_datasets = toset([
     "wb_raw", "wb_mart", "wb_ops",
-    "ozon_raw", "ozon_stg", "ozon_mart",
-    "evetis_ref", "evetis_ops", "evetis_mart", "evetis_health", "evetis_communications",
+    "ozon_raw", "ozon_mart",
+    "evetis_ref", "evetis_ops", "evetis_mart", "evetis_communications",
   ])
 }
 
