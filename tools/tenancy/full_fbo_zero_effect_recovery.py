@@ -135,7 +135,7 @@ def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  if any(r['sequence']>1 or r['kind']=='RECONCILED' for r in sh):fail('successor/reconciliation exists')
  if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('inactive owner freeze required')
  observer=FL.observer(b,m,269);H.verify_authority(observer,m);observer.preflight({'hash':m['hash'],'plans':[doc]})
- priority=RP.policy(b,m)
+ priority=RP.load(b,m)
  if len(priority['selection'])!=69 or len(priority['parents'])!=64:fail('exact RECENT selection differs')
  base,_=BF.resources(b.c)
  sched=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')

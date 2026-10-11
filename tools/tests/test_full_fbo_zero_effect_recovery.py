@@ -6,6 +6,18 @@ from tools.tenancy.full_fbo_zero_effect_image_check import fixture,check
 
 def test_packaged_owner_contract():assert set(check().values())=={'PASS'}
 
+def test_owner_observation_requires_real_priority_loader_before_effect_checks(monkeypatch):
+ from tools.tenancy import full_leaf_recovery as FL
+ m,p,b,root,sh,objects,rows,effects,*_=fixture();calls=[]
+ observer=SimpleNamespace(preflight=lambda doc:calls.append('preflight'))
+ monkeypatch.setattr(FL,'observer',lambda *a:observer)
+ monkeypatch.setattr(H,'verify_authority',lambda *a:None)
+ # The real loader consumes the packaged deployment descriptor and rejects
+ # the missing owner marker. It must not invent an API or bypass authority.
+ with pytest.raises(BF.B.EvidenceError,match='owner priority authority absent'):
+  R.observe(b,m,owner_decision_sha256='4'*64,qualification_hash='5'*64,security_hash='6'*64)
+ assert calls==['preflight'] and not effects
+
 @pytest.mark.parametrize('field',sorted(R.PREDICATES))
 @pytest.mark.parametrize('bad',[False,None,1,'UNKNOWN'])
 def test_every_unknown_predicate_blocks_before_writes(field,bad):
