@@ -79,6 +79,9 @@ def test_every_release_record_is_well_formed():
 # Факты каждого выпуска: коммит-источник, конфиг сборки (неизменяемый по версиям) и шаги-ворота.
 V1_GATES = ["identity", "build", "record", "contents", "fail-closed-without-project"]
 RELEASES_FACTS = {
+    '5bf3e0b': {"commit": '5bf3e0bdf138bba8da7faf77be8b51ae063d07c3', "config": RELEASES / "ozon-runtime.v13.cloudbuild.yaml",
+        "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied", "installed-backfill-offline", "qualification-acceleration-offline", "pre-source-recovery-offline", "capability-probes-offline", "full-current-snapshots-offline", "performance-cooldown-full-resume-offline", "fbo-window-diagnostics-offline"],
+        "digest": 'sha256:1dc1d4825d3ac9a8c9dd362720f86948b71684c7167b7b363fa7e6fb5b0c6d87', "build_id": 'a851954c-7a4a-4c37-9379-307556def7a8', "qualification_build": 'ae8e005e-8f22-4128-98d9-2270e89a0cf1', "archive_sha256": '05664699dbb514ef890a97a3ed6d4f7d0063192c49973b9ffa0b59b2ef0aabfe'},
     '8f7e937': {"commit": '8f7e937d1636844b46df336cbba63fae09eb41c7', "config": RELEASES / "ozon-runtime.v12.cloudbuild.yaml",
         "gates": V1_GATES + ["control-fail-closed-without-project", "external-binding-omission-denied", "backfill-invalid-scope-denied", "installed-backfill-offline", "qualification-acceleration-offline", "pre-source-recovery-offline", "capability-probes-offline", "full-current-snapshots-offline", "performance-cooldown-full-resume-offline"],
         "digest": 'sha256:37dda2748e42fa9923baa5363f209696421806a3f61a45604a4229d291e71ea1', "build_id": '47608168-0cc1-4950-96b8-ee6c114e66db', "qualification_build": '582eae43-46f9-42c4-b8c6-9956c39cc8a1', "archive_sha256": '021e6335cd3cc793e8fd9f3f6fe5a7d2949402af3460e84e33a8b978eb6e07b3'},
