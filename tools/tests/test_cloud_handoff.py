@@ -24,6 +24,8 @@ def handoff():
         # qualified extended timeout belongs only to the current v4 profile.
         release.pop('controller_timeout_seconds',None)
         release['verification'].pop('terminal_controller_adapter',None)
+        release.pop('fbo_zero_effect_recovery_version',None)
+        release['verification'].pop('fbo_zero_effect_adapter',None)
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
     # Synthetic current replacement, paired with the elected runtime. The

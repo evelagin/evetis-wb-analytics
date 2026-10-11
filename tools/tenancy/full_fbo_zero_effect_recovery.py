@@ -127,7 +127,7 @@ def protected_retry(b,doc,receipt):
 
 def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  """Fresh metadata/SELECT-only proof. No Ozon calls or business-state writes."""
- from tools.tenancy import full_controller as H,full_leaf_recovery as FL,orchestration_contract as O,full_runtime_handoff as FH
+ from tools.tenancy import full_controller as H,full_leaf_recovery as FL,orchestration_contract as O,full_runtime_handoff as FH,recent_priority as RP
  records=b.store.history(m['hash']);sh=b.store.history(EXACT['shard'],max_records=F.MAX_LEAF_RECORDS)
  # Use the exact original document, not the replacement runtime's mutable state.
  intent=FL.one(sh,'DISPATCH_INTENT',EXACT['intent_hash']);doc=intent['payload']['plan']
@@ -135,6 +135,8 @@ def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  if any(r['sequence']>1 or r['kind']=='RECONCILED' for r in sh):fail('successor/reconciliation exists')
  if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('inactive owner freeze required')
  observer=FL.observer(b,m,269);H.verify_authority(observer,m);observer.preflight({'hash':m['hash'],'plans':[doc]})
+ priority=RP.policy(b,m)
+ if len(priority['selection'])!=69 or len(priority['parents'])!=64:fail('exact RECENT selection differs')
  base,_=BF.resources(b.c)
  sched=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
  if len(sched.get('jobs',[]))!=4 or sched.get('nextPageToken') or any(x['state']!='PAUSED' for x in sched['jobs']):fail('all Scheduler jobs must be paused')
@@ -197,7 +199,7 @@ def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  runtime=FH.runtime_facts(b.c,m);rr=FH.release_for(b.c)
  if release.get('fbo_zero_effect_recovery_version')!=1 or release['verification'].get('fbo_zero_effect_adapter')!='PASS':fail('diagnostic controller adapter unqualified')
  if rr['verification']['built_artifact'].get('fbo_window_typed_diagnostics')!='PASS':fail('diagnostic exact image unqualified')
- evidence=dict(raw=raw,journal=rows,jobs=jobs,lease=lease,checkpoint=cp,state=state)
+ evidence=dict(raw=raw,journal=rows,jobs=jobs,lease=lease,checkpoint=cp,state=state,priority_policy_hash=priority['hash'])
  p=dict(EXACT,version=1,type=TYPE,tenant=m['tenant'],project=m['project'],manifest_hash=D.digest(m),
   new_source=source,new_image=release['image'],new_implementation_hash=release['controller_implementation_hash'],**runtime,
   owner_decision_sha256=owner_decision_sha256,qualification_hash=qualification_hash,security_hash=security_hash,
