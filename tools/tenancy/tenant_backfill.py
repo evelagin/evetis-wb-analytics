@@ -577,6 +577,19 @@ def source_detail(detail):
 
 
 def verify_coverage(doc,ack_hash, *, backend=None):
+    return _verify_coverage(doc,ack_hash,backend=backend,source_only=False)
+
+
+def verify_persistence(doc,ack_hash, *, backend):
+    """Accept only source accounting; current Catalog/DQ remains a completion gate.
+
+    Midnight cannot undo durably persisted source effects. This proof never
+    publishes coverage/DQ or claims that current-day SKU linkage is accepted.
+    """
+    return _verify_coverage(doc,ack_hash,backend=backend,source_only=True)
+
+
+def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
     """Read-back business grain plus source accounting; then append existing scoped evidence.
 
     API traversal completion is separate from economic DQ/finality. A partial pilot cannot
@@ -628,7 +641,7 @@ def verify_coverage(doc,ack_hash, *, backend=None):
                 coverage.append({"entity":p["entity"],"coverage_date":day,"status":status,"reason":reason,
                     "rows_loaded":n,"source_run_id":p["plan_id"],"evaluated_at":now.isoformat()})
                 item={"day":day,"rows":n,"keys":k,"coverage":status}
-                if p["entity"] in {"fbo_postings","finance_accrual","ads_sku_daily"}:
+                if not source_only and p["entity"] in {"fbo_postings","finance_accrual","ads_sku_daily"}:
                     # Current retained ALL+ARCHIVED identity only, never fabricate historic status.
                     link=reader(c,f"SELECT COUNTIF(r.sku IS NOT NULL) AS sku_rows, COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date = @snapshot AND c.sku = r.sku)) AS unresolved_sku_rows FROM `{c['project_id']}.ozon_raw.{table}` r WHERE {predicate}",
                                 {"day":("DATE",day),"snapshot":("DATE",str(now.astimezone(B.MSK).date()))})[0]
@@ -748,8 +761,8 @@ def verify_coverage(doc,ack_hash, *, backend=None):
             coverage.append({"entity": p["entity"], "coverage_date": p["observation_date"],
                 "status": "COMPLETE", "reason": "CURRENT_SNAPSHOT_ONLY_NOT_HISTORICAL_STATUS",
                 "rows_loaded": sum(expected_snapshot.values()), "source_run_id": p["plan_id"], "evaluated_at": now.isoformat()})
-    if coverage:tables.append(c["datasets"]["tenant_ops"],"DATA_COVERAGE",coverage)
-    if p["entity"]=="finance_accrual":
+    if coverage and not source_only:tables.append(c["datasets"]["tenant_ops"],"DATA_COVERAGE",coverage)
+    if p["entity"]=="finance_accrual" and not source_only:
         import dq as DQ
         unresolved=reader(c,f"SELECT COUNTIF(operation_name IS NULL OR operation_name = 'UNKNOWN') AS n FROM `{c['project_id']}.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` WHERE event_date BETWEEN @frm AND @to",
                           {"frm":("DATE",p["from"]),"to":("DATE",p["to"])})[0]["n"]
@@ -765,7 +778,7 @@ def verify_coverage(doc,ack_hash, *, backend=None):
     # HISTORY_BOUNDARIES must represent source-boundary discovery, not pilot progress.
     # Existing lifecycle selects latest per entity; publishing a pilot pseudo-boundary would
     # silently shadow authoritative discovery. Pilot date evidence stays in checkpoint proof.
-    return {"scope":"BOUNDED_PILOT","source_sequence":max(details),"readback":readback,
+    return {**({"catalog_linkage":"PENDING_CURRENT_DAY_DQ"} if source_only else {}),"scope":"BOUNDED_PILOT","source_sequence":max(details),"readback":readback,
             "unknown_finance_type_ids":sorted(unknown),"history_boundary_published":False,"full_history":"UNPROVEN","economic_finality":"UNPROVEN"}
 
 def main(argv=None):
