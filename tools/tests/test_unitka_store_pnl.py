@@ -222,6 +222,27 @@ def test_bundle_seed_matches_acked_start_dates():
         assert re.search(rf"^\('{bc}','[^']+','[^']+',1,DATE '{d}'", seed, flags=re.M), bc
 
 
+def test_inventory_loss_is_itemized_from_wb_reports_and_not_netted():
+    b = h_bodies()
+    items = b["V_WB_INVENTORY_LOSS_ITEMS"]
+    rows = re.findall(r"\('(FM-2026-0[78]-\d\d-[A-Z]{3})', (\d+), (\d+)\)", items)
+    assert len(rows) == 131 and sum(int(q) for _, _, q in rows) == 3460
+    assert len(set(i for i, _, _ in rows)) == 9
+    by_month = {}
+    for i, _, q in rows:
+        by_month[i[3:10]] = by_month.get(i[3:10], 0) + int(q)
+    assert by_month == {"2026-07": 1456, "2026-08": 2004}
+    assert "wb_mart.UNITKA_COGS_EFFECTIVE" in items and "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL)" in items
+    assert "_order_date > inc.incident_date" in b["V_WB_INVENTORY_LOSS_MONTHLY"]
+    for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL"):
+        body = re.sub(r"--[^\n]*", "", b[n])
+        assert "- inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub" in body, n
+        assert "inventory_loss_cogs_missing_qty > 0 OR inventory_loss_post_incident_orders > 0" in body, n
+    led = b["V_WB_STORE_ACCOUNT_LEDGER"]
+    assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
+    assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
+
+
 def test_overrides_are_the_8_proven_review_points_rows():
     ov = h_bodies()["V_WB_FINANCE_HISTORICAL_OVERRIDES"]
     keys = re.findall(r"\('(\d+#\d+)', 'REVIEW_POINTS', 'ACCOUNT_LEVEL', DATE '(2026-0[56])-01'", ov)
@@ -233,7 +254,7 @@ def test_overrides_are_the_8_proven_review_points_rows():
 def test_h0_deploy_tool_order_and_rollback_bodies_exist():
     import unitka_store_pnl_h0_deploy as h
     names = [n for n, _, _ in h.plan(False)]
-    assert names[:6] == [n for n, _ in h.CHANGED] and names[6:] == [n for n, _ in h.NEW]
+    assert names[:2] == [n for n, _ in h.LOSS] and names[2:8] == [n for n, _ in h.CHANGED] and names[8:] == [n for n, _ in h.NEW]
     rb = [n for n, _, _ in h.plan(True)]
     assert rb == [n for n, _ in reversed(h.CHANGED)]
     b = {n: body for n, _, body in h.plan(False)}
@@ -249,7 +270,8 @@ def test_historical_qa_is_read_only_blocks():
     blocks = re.split(r"^-- @check (\S+)\n", qa, flags=re.M)[1:]
     names = blocks[0::2]
     assert names == ["SINGLE_AUTHORITY", "OVERRIDE_INTEGRITY", "HIST_CONSERVATION", "FINANCE_COVERAGE_ALL_HISTORY", "LEGACY_MEMO_GUARD",
-                     "COGS_COVERAGE", "HIST_INPUTS_COMPLETE", "TAX_NOT_DOUBLE_COUNTED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+                     "COGS_COVERAGE", "HIST_INPUTS_COMPLETE", "TAX_NOT_DOUBLE_COUNTED", "LOSS_EVIDENCE", "LOSS_NO_DOUBLE_COUNT",
+                     "LOSS_COMPENSATION_RECONCILED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
     assert "o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01'" in qa   # override только до Phase C
     for name, sql in zip(names, blocks[1::2]):
         bare = re.sub(r"--[^\n]*", "", sql).strip()
@@ -260,3 +282,8 @@ def test_historical_qa_is_read_only_blocks():
 
 def test_no_comment_line_ends_with_semicolon_in_historical_sql():
     assert not re.findall(r"^\s*--.*;\s*$", H_SQL, flags=re.M)
+
+
+def test_no_comment_line_ends_with_semicolon_in_loss_sql():
+    loss = (ROOT / "sql/unitka/store_inventory_loss_v1.sql").read_text()
+    assert not re.findall(r"^\s*--.*;\s*$", loss, flags=re.M)

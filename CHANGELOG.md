@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## 2026-10-11 — WB FIRE / LOST INVENTORY: списание утраченного товара и компенсация WB в P&L магазина (НЕ развёрнуто)
+
+Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.
+
+- Новые вью `wb_mart` (`sql/unitka/store_inventory_loss_v1.sql`): `V_WB_INVENTORY_LOSS_ITEMS` (131 позиция отчётов WB,
+  3 460 ед., 9 событий 18.07–16.08.2026, каноническая себестоимость на дату события) и `V_WB_INVENTORY_LOSS_MONTHLY`
+  (месяц события; защита от двойного счёта — заказы со склада после события).
+- Журнал: `FORCE_MAJEURE_PAYMENT` → категория `LOSS_COMPENSATION`, обработка `LOSS_COMPENSATION_INCOME` (из «Доходов WB»
+  в отдельную строку). Новые поля `V_WB_STORE_PNL_MONTHLY` / `_HISTORICAL` / `_PRESENTATION`: `inventory_loss_writeoff_rub`,
+  `wb_loss_compensation_rub`, `force_majeure_net_effect_rub` (+ раскрытие). Чистая прибыль: − списание + компенсация.
+- **Вкладка «WB Магазин P&L»: 21 колонка A:U** — O «Списание утраченного товара», P «Компенсация WB за утрату товара»,
+  Q «Чистый эффект форс-мажора (справочно)»; S маржа, T состояние, U мост. Изменение экономики: июль −281 074,51 ₽, август
+  −375 990,66 ₽ (сумма компенсации июля без изменений, переносится между колонками).
+- QA: `LOSS_EVIDENCE`, `LOSS_NO_DOUBLE_COUNT`, `LOSS_COMPENSATION_RECONCILED`; тождества строк учитывают обе строки.
+
 ## 2026-10-11 — WB HISTORICAL H0: канонический исторический P&L магазина (2026-05..07), налог 2 % в P&L, схема A:R (НЕ развёрнуто)
 
 Док: `docs/finance/WB_HISTORICAL_H0_2026-10-11.md`.

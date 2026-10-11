@@ -5,6 +5,8 @@
 перечитывает тело каждого представления из BigQuery. Больше ничего: ни таблиц, ни данных, ни прав, ни расписаний,
 ни записи в книгу. Справочник себестоимости правит отдельный инструмент (tools/cogs_bundle_start_fix.py).
 
+  новые, первыми (store_inventory_loss_v1.sql): V_WB_INVENTORY_LOSS_ITEMS → V_WB_INVENTORY_LOSS_MONTHLY
+                                  (утрата товара на складах WB; их читает V_WB_STORE_PNL_MONTHLY)
   изменяемые (store_pnl_v1.sql):  V_WB_FINANCE_OPERATION_MAP → V_WB_STORE_FINANCE_COHORT_DAILY →
                                   V_WB_STORE_ACCOUNT_LEDGER → V_WB_FINANCE_NEW_OPERATIONS →
                                   V_WB_STORE_FINANCE_COVERAGE → V_WB_STORE_PNL_MONTHLY
@@ -15,7 +17,7 @@
 читает SELECT * и колонку не использует), образ с чтением V_WB_STORE_PNL_PRESENTATION — после.
 
 Откат (--rollback): 6 изменяемых вью получают тела production до H0 (sql/unitka/store_pnl_h0_rollback/), в обратном
-порядке. Три новых вью остаются (их читает только новый образ; при откате сначала возвращается прежний образ), DROP —
+порядке. Пять новых вью остаются (их читает только новый образ; при откате сначала возвращается прежний образ), DROP —
 отдельное решение владельца.
 
 Защиты (отказ ДО отправки): закрытый список; ровно один CREATE OR REPLACE VIEW своего имени в источнике; запрещённые
@@ -51,13 +53,17 @@ CHANGED = [
     ("V_WB_STORE_FINANCE_COVERAGE", "sql/unitka/store_pnl_v1.sql"),
     ("V_WB_STORE_PNL_MONTHLY", "sql/unitka/store_pnl_v1.sql"),
 ]
+LOSS = [
+    ("V_WB_INVENTORY_LOSS_ITEMS", "sql/unitka/store_inventory_loss_v1.sql"),
+    ("V_WB_INVENTORY_LOSS_MONTHLY", "sql/unitka/store_inventory_loss_v1.sql"),
+]
 NEW = [
     ("V_WB_FINANCE_HISTORICAL_OVERRIDES", "sql/unitka/store_pnl_historical_v1.sql"),
     ("V_WB_STORE_PNL_HISTORICAL", "sql/unitka/store_pnl_historical_v1.sql"),
     ("V_WB_STORE_PNL_PRESENTATION", "sql/unitka/store_pnl_historical_v1.sql"),
 ]
-OBJECTS = CHANGED + NEW
-NEW_NAMES = {n for n, _ in NEW}
+OBJECTS = LOSS + CHANGED + NEW
+NEW_NAMES = {n for n, _ in LOSS + NEW}
 
 
 def plan(rollback: bool) -> list[tuple[str, str, str]]:

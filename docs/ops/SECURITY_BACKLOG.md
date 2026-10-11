@@ -106,7 +106,7 @@ F-18 **не снимается**. Разрешена одна автоматич
 `wb_mart.V_WB_STORE_PNL_PRESENTATION` (OWNER ACK 2026-10-11, H0: история
 2026-05..07 `V_WB_STORE_PNL_HISTORICAL` + Phase C `V_WB_STORE_PNL_MONTHLY` с
 2026-08, одна власть на месяц; до H0 — только `V_WB_STORE_PNL_MONTHLY`). Источник
-расширен, цель записи — нет: та же вкладка, те же 18 колонок A:R, смена схемы
+расширен, цель записи — нет: та же вкладка, 21 колонка A:U (с 11.10: + утрата товара), смена схемы
 вкладки — только управляемой миграцией (`UNITKA_STORE_PNL_MIGRATE_CONTRACT`).
 Включается флагом `UNITKA_STORE_PNL_PUBLISH=1`;
 каждый запрос в коде ограничен этим sheetId (`publish.ts`, `assertOnlyTab`).

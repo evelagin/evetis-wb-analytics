@@ -14,14 +14,14 @@
  *
  * Атомарность: значения (updateCells), форматы строк данных и отпечаток — ОДИН spreadsheets.batchUpdate:
  * либо легло всё, либо ничего (иначе отпечаток мог бы разойтись со значениями навсегда).
- * Что перезаписывается: значения A1:R{n+1} (заголовок — теми же значениями); форматы строк данных A:R сначала
+ * Что перезаписывается: значения A1:U{n+1} (заголовок — теми же значениями); форматы строк данных A:U сначала
  * сбрасываются (число, фон, цвет текста — чтобы смена схемы не оставила чужих форматов), затем пишутся формат чисел
- * B:O/R, процент P и фон Q; заметки 18 ячеек заголовка — системный контракт (ручные заметки A1:R1 перезаписываются).
- * Всё вне A:R не трогается. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
+ * B:R и U, процент S, фон T, серый текст справочных Q и U; заметки 21 ячейки заголовка — системный контракт (ручные
+ * заметки A1:U1 перезаписываются). Всё вне A:U не трогается. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
  */
 import { createHash } from 'node:crypto';
 import type { CellValue } from '../model.js';
-import { STATE_LABEL, TAB_COLS, TAB_HEADER, TAB_NOTES, toNum, type TabPlan } from './tabplan.js';
+import { COL, STATE_LABEL, TAB_COLS, TAB_HEADER, TAB_NOTES, toNum, type TabPlan } from './tabplan.js';
 import type { PnlRow } from './bq.js';
 
 export const PUBLISH_META_KEY = 'evetis.store_pnl.published_sha';
@@ -35,7 +35,7 @@ export function contractSha(): string {
 }
 
 /**
- * Миграция схемы (A:Q → A:R и любые будущие) — только управляемо (OWNER ACK 11.10): если отпечаток контракта во вкладке
+ * Миграция схемы (A:Q → A:U и любые будущие) — только управляемо (OWNER ACK 11.10): если отпечаток контракта во вкладке
  * не равен коду, публикация отказывает (STORE_PNL_CONTRACT_MIGRATION_REQUIRED), пока владелец не разрешит ровно этот
  * переход через UNITKA_STORE_PNL_MIGRATE_CONTRACT = contractSha() нового кода. Первый плановый прогон новой схему не мигрирует.
  */
@@ -85,6 +85,7 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
       const open = n('pending_rows') > 0 || n('unknown_rub') > 0.5 || n('unconsumed_finance_rub') > 0.5 || n('deduction_source_gap_rub') > 0.5
         || n('orphan_finance_base_rub') !== 0 || n('orphan_finance_logistics_rub') !== 0 || !b(p.sku_month_closed) || !b(p.month_finance_final)
         || n('ads_days') === 0 || n('ads_final_days') !== n('ads_days')
+        || n('inventory_loss_cogs_missing_qty') > 0 || n('inventory_loss_post_incident_orders') > 0
         || !(b(p.account_invoice_window_closed) || (n('minimum_payment_invoices') > 0 && n('utilization_invoices') > 0));
       if (open) out.push(`${m}: «${st}» при открытых условиях`);
     }
@@ -152,11 +153,11 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
     { updateCells: { range: R(0, grid.length, 0, TAB_COLS), rows: grid.map((r) => ({ values: r.map(cellOf) })), fields: 'userEnteredValue' } },
     // Сброс форматов строк данных (включая очищаемые): после смены схемы прежние фон/цвет/формат колонок не переезжают.
     { repeatCell: { range: R(1, grid.length, 0, TAB_COLS), cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } },
-    // A..R: 0 месяц · 1–14 деньги (выручка … доходы, чистая прибыль) · 15 маржа · 16 состояние · 17 мост сроков
-    { repeatCell: { range: R(1, n + 1, 1, 15), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { repeatCell: { range: R(1, n + 1, 15, 16), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { repeatCell: { range: R(1, n + 1, 17, 18), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' }, textFormat: { foregroundColor: rgb('666666') } } }, fields: 'userEnteredFormat(numberFormat,textFormat.foregroundColor)' } },
-    ...plan.rows.map((row, i) => ({ repeatCell: { range: R(i + 1, i + 2, 16, 17), cell: { userEnteredFormat: { backgroundColor: rgb(STATE_BG[String(row[16])] ?? 'F4CCCC') } }, fields: 'userEnteredFormat.backgroundColor' } })),
+    // A..U: месяц · деньги B..R (выручка … чистая прибыль) · S маржа · T состояние · U мост; Q и U — справочные (серым)
+    { repeatCell: { range: R(1, n + 1, COL.FIRST_MONEY, COL.NET + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    { repeatCell: { range: R(1, n + 1, COL.MARGIN, COL.MARGIN + 1), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    ...[COL.FM_NET, COL.BRIDGE].map((c) => ({ repeatCell: { range: R(1, n + 1, c, c + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' }, textFormat: { foregroundColor: rgb('666666') } } }, fields: 'userEnteredFormat(numberFormat,textFormat.foregroundColor)' } })),
+    ...plan.rows.map((row, i) => ({ repeatCell: { range: R(i + 1, i + 2, COL.STATE, COL.STATE + 1), cell: { userEnteredFormat: { backgroundColor: rgb(STATE_BG[String(row[COL.STATE])] ?? 'F4CCCC') } }, fields: 'userEnteredFormat.backgroundColor' } })),
     // Системные заметки заголовка (контракт): пишутся каждой записью, текст — из TAB_COLUMNS.
     { updateCells: { range: R(0, 1, 0, TAB_COLS), rows: [{ values: plan.notes.map((note) => ({ note })) }], fields: 'note' } },
     metaRequest(sheetId, d.sha, metaId),

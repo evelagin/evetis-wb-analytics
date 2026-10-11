@@ -132,13 +132,16 @@ SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONT
     WHEN 'MINIMUM_PAYMENT_ADJUSTMENT' THEN 'MINIMUM_PAYMENT'
     WHEN 'UTILIZATION' THEN 'UTILIZATION'
     WHEN 'TRANSIT_DEDUCTION' THEN 'TRANSIT'
-    WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'COMPENSATION_INCOME'
+    -- «Добровольная выплата за товары, пострадавшие в результате обстоятельств непреодолимой силы» — отдельная строка
+    -- P&L «Компенсация WB за утрату товара» (FIRE/LOST INVENTORY, OWNER ACK 11.10), месяц — месяц проводки
+    WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'
     WHEN 'MARKETPLACE_COMPENSATION' THEN 'COMPENSATION_INCOME'
     -- «Баллы за отзывы»: аванс и возврат его остатка — один расход кабинета со знаком (H0, OWNER ACK 11.10)
     WHEN 'REVIEW_POINTS_ADVANCE_REFUND' THEN 'REVIEW_POINTS'
     WHEN 'UNCLASSIFIED_DEDUCTION' THEN 'UNKNOWN'
     ELSE deduction_class END category,
-  CASE WHEN deduction_class IN ('FORCE_MAJEURE_PAYMENT', 'MARKETPLACE_COMPENSATION') THEN 'ACCOUNT_LEVEL_INCOME'
+  CASE WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'
+       WHEN deduction_class = 'MARKETPLACE_COMPENSATION' THEN 'ACCOUNT_LEVEL_INCOME'
        WHEN deduction_class = 'REVIEW_POINTS_ADVANCE_REFUND' THEN 'ACCOUNT_LEVEL'
        -- утилизация без «за <месяц> <год>»: месяц услуги не доказан → не закрывать месяц молча
        WHEN deduction_class = 'UTILIZATION' AND (m_num IS NULL OR m_year IS NULL) THEN 'UNKNOWN'
@@ -395,6 +398,8 @@ acc AS (
     SUM(IF(category = 'ACCEPTANCE', amount_rub, 0)) acceptance_rub,
     SUM(IF(treatment = 'ACCOUNT_LEVEL' AND category NOT IN ('MINIMUM_PAYMENT', 'UTILIZATION', 'PENALTY', 'TRANSIT', 'ACCEPTANCE'), amount_rub, 0)) other_marketplace_cost_rub,
     -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) marketplace_income_rub,
+    -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) wb_loss_compensation_rub,
+    STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CAST(booking_date AS STRING), NULL), ', ' ORDER BY booking_date) wb_loss_compensation_dates,
     SUM(IF(treatment = 'UNKNOWN', ABS(amount_rub), 0)) unknown_rub,
     COUNTIF(category = 'MINIMUM_PAYMENT') minimum_payment_invoices,
     COUNTIF(category = 'UTILIZATION') utilization_invoices,
@@ -422,8 +427,13 @@ j AS (
     IFNULL(memo.memo_reimbursement_rub, 0) memo_reimbursement_rub, IFNULL(u.pending_rows, 0) pending_rows,
     IFNULL(u.unconsumed_finance_rub, 0) unconsumed_finance_rub, IFNULL(dg.deduction_source_gap_rub, 0) deduction_source_gap_rub,
     IFNULL(cov.final_month, FALSE) final_month, IFNULL(cov.final_m20, FALSE) final_m20, IFNULL(cov.final_m46, FALSE) final_m46,
-    IFNULL(fe.orphan_base_rub, 0) orphan_finance_base_rub, IFNULL(fe.orphan_logistics_rub, 0) orphan_finance_logistics_rub
+    IFNULL(fe.orphan_base_rub, 0) orphan_finance_base_rub, IFNULL(fe.orphan_logistics_rub, 0) orphan_finance_logistics_rub,
+    IFNULL(acc.wb_loss_compensation_rub, 0) wb_loss_compensation_rub, acc.wb_loss_compensation_dates,
+    IFNULL(lo.inventory_loss_writeoff_rub, 0) inventory_loss_writeoff_rub, IFNULL(lo.inventory_loss_qty, 0) inventory_loss_qty,
+    IFNULL(lo.inventory_loss_cogs_missing_qty, 0) inventory_loss_cogs_missing_qty,
+    IFNULL(lo.inventory_loss_post_incident_orders, 0) inventory_loss_post_incident_orders, lo.inventory_loss_incident_list
   FROM sku CROSS JOIN fin_status fs
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_MONTHLY` lo ON lo.service_month = sku.m
   LEFT JOIN storage_fin sf ON sf.m = sku.m LEFT JOIN ads ON ads.m = sku.m LEFT JOIN acc ON acc.m = sku.m
   LEFT JOIN memo ON memo.m = sku.m LEFT JOIN uncovered u ON u.m = sku.m LEFT JOIN fin_extra fe ON fe.m = sku.m
   LEFT JOIN cov ON cov.m = sku.m LEFT JOIN ded_gap dg ON dg.m = sku.m),
@@ -454,6 +464,9 @@ SELECT
   sku_contribution_rub, management_tax_rub,
   minimum_payment_rub, utilization_rub, penalty_rub, transit_rub, acceptance_rub, other_marketplace_cost_rub,
   marketplace_costs_rub, marketplace_income_rub,
+  -- Утрата товара (FIRE/LOST INVENTORY): списание — расход месяца события, компенсация WB — доход месяца проводки,
+  -- обе строки отдельно, чистый эффект — только справочно (в прибыль входит через эти две строки).
+  inventory_loss_writeoff_rub, wb_loss_compensation_rub, wb_loss_compensation_rub - inventory_loss_writeoff_rub force_majeure_net_effect_rub,
   ads_adjustment_rub, storage_adjustment_rub, commission_adjustment_rub, price_adjustment_rub, reconciliation_adjustments_rub,
   -- Логистика и непроданные единицы: пока когорта НЕ созрела — только раскрытие (timing bridge), в прибыль
   -- не входит: разница там — ещё не выставленные плечи и ещё не проданные единицы, а не экономия. После
@@ -462,14 +475,16 @@ SELECT
   IF(cohort_mature, 0, logistics_adjustment_rub) timing_bridge_logistics_rub,
   IF(cohort_mature, 0, unsettled_margin_rub) timing_bridge_unsettled_margin_rub,
   sku_contribution_rub + reconciliation_adjustments_rub + mature_cohort_adjustment_rub - marketplace_costs_rub
-    + marketplace_income_rub management_net_store_profit_rub,
+    + marketplace_income_rub - inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub,
   SAFE_DIVIDE(sku_contribution_rub + reconciliation_adjustments_rub + mature_cohort_adjustment_rub - marketplace_costs_rub
-    + marketplace_income_rub, IF(cohort_mature, seller_base_rub, revenue_model_rub + price_adjustment_rub)) management_net_store_margin,
+    + marketplace_income_rub - inventory_loss_writeoff_rub + wb_loss_compensation_rub,
+    IF(cohort_mature, seller_base_rub, revenue_model_rub + price_adjustment_rub)) management_net_store_margin,
   -- Август 2026 — только сравнение (OWNER ACK 09.10): известные дефекты Юнитки (отказы, оценочное хранение, формулы)
   -- Phase C не чинит, поэтому месяц не может выглядеть закрытым, сумма — справочная.
   CASE WHEN m < DATE '2026-09-01' THEN 'LEGACY_PARTIAL_KNOWN_DEFECTS'
        WHEN unknown_rub > 0.5 OR orphan_finance_base_rub != 0 OR orphan_finance_logistics_rub != 0
-         OR unconsumed_finance_rub > 0.5 THEN 'UNKNOWN_COST_PRESENT'
+         OR unconsumed_finance_rub > 0.5 OR inventory_loss_cogs_missing_qty > 0 OR inventory_loss_post_incident_orders > 0
+         THEN 'UNKNOWN_COST_PRESENT'
        WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
        -- месяц ещё идёт в листе (или снимок отстал) — счета за него заведомо впереди
        WHEN NOT sku_month_closed THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
@@ -486,11 +501,13 @@ SELECT
   -- доказывают: покрытие финотчёта (unconsumed_finance_rub), сверка источников удержаний (deduction_source_gap_rub),
   -- финансы без SKU листа (orphan_*) и сверка снимка с итоговой колонкой листа (загрузчик, parse.ts).
   seller_base_rub - wb_take_rub - logistics_finance_rub - storage_finance_rub - ads_billing_rub - sold_tax_cogs_rub
-    + ads_out_rub + model_gap_rub - marketplace_costs_rub + marketplace_income_rub topdown_net_rub,
+    + ads_out_rub + model_gap_rub - marketplace_costs_rub + marketplace_income_rub
+    - inventory_loss_writeoff_rub + wb_loss_compensation_rub topdown_net_rub,
   (sku_contribution_rub + reconciliation_adjustments_rub + logistics_adjustment_rub - unsettled_margin_rub
-    - marketplace_costs_rub + marketplace_income_rub)
+    - marketplace_costs_rub + marketplace_income_rub - inventory_loss_writeoff_rub + wb_loss_compensation_rub)
   - (seller_base_rub - wb_take_rub - logistics_finance_rub - storage_finance_rub - ads_billing_rub - sold_tax_cogs_rub
-    + ads_out_rub + model_gap_rub - marketplace_costs_rub + marketplace_income_rub) double_count_residual_rub,
+    + ads_out_rub + model_gap_rub - marketplace_costs_rub + marketplace_income_rub
+    - inventory_loss_writeoff_rub + wb_loss_compensation_rub) double_count_residual_rub,
   -- раскрытие и QA
   revenue_model_rub, seller_base_rub, wb_take_rub, sold_tax_cogs_rub, ads_out_rub, model_gap_rub,
   ads_sku_rub, ads_billing_rub, ads_final_days, ads_days,
@@ -498,6 +515,8 @@ SELECT
   logistics_adjustment_rub, realized_qty, sold_qty, unsettled_qty, oversold_qty, unsettled_revenue_rub, unsettled_margin_rub,
   memo_reimbursement_rub, unknown_rub, pending_rows, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub,
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
+  wb_loss_compensation_dates,
   minimum_payment_invoices, utilization_invoices, account_bookings, late_account_bookings, late_account_rub,
   cohort_mature, account_invoice_window_closed, month_finance_final, sku_month_closed, final_through, snapshot_lcd,
   model_gap_abs_rub,

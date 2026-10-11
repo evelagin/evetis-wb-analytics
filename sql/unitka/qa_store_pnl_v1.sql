@@ -193,7 +193,8 @@ FROM pnl;
 WITH pnl AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`)
 SELECT 'ROW_IDENTITY' check_name,
   IF(MAX(ABS(sku_contribution_rub + reconciliation_adjustments_rub + mature_cohort_adjustment_rub - marketplace_costs_rub
-             + marketplace_income_rub - management_net_store_profit_rub)) < 0.01, 'PASS', 'FAIL') status,
+             + marketplace_income_rub - inventory_loss_writeoff_rub + wb_loss_compensation_rub
+             - management_net_store_profit_rub)) < 0.01, 'PASS', 'FAIL') status,
   CONCAT('месяцев ', CAST(COUNT(*) AS STRING)) detail
 FROM pnl;
 

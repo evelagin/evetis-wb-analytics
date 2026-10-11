@@ -9,7 +9,7 @@ import { snapshotAppendSql, snapshotRecord, storePnlRaiseError, type PnlRow } fr
 import { buildTabPlan, toNum, TAB_HEADER, TAB_NAME } from '../src/loaders/unitka/storepnl/tabplan.js';
 import { unitkaStorePnlLoader, snapshotIdOf, activeNewOperations, publishEnv, type StorePnlDeps } from '../src/loaders/unitka/storepnl/index.js';
 import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, contentSha, assertOnlyTab, PUBLISH_META_KEY, CONTRACT_META_KEY } from '../src/loaders/unitka/storepnl/publish.js';
-import { TAB_NOTES, TAB_COLS } from '../src/loaders/unitka/storepnl/tabplan.js';
+import { TAB_NOTES, TAB_COLS, COL } from '../src/loaders/unitka/storepnl/tabplan.js';
 import { addDaysIso, isoToSerial, OFFSET, SUMMARY, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
 import { Logger } from '../src/logging.js';
@@ -186,8 +186,8 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
     const p = buildTabPlan([pnlRow()]);
     expect(p.tab).toBe(TAB_NAME);
     expect(p.header).toEqual([...TAB_HEADER]);
-    expect(p.range).toBe(`'${TAB_NAME}'!A1:R2`);
-    expect(p.rows[0]).toEqual(['2026-09', 1000, 100, 20, 0, 0, 0, 0, 10, 1, 7, 0, 0, 0, 118, 0.118, 'Ждём счета WB', -260]);
+    expect(p.range).toBe(`'${TAB_NAME}'!A1:U2`);
+    expect(p.rows[0]).toEqual(['2026-09', 1000, 100, 20, 0, 0, 0, 0, 10, 1, 7, 0, 0, 0, 0, 0, 0, 118, 0.118, 'Ждём счета WB', -260]);
     expect(p.rowIdentityMaxAbs).toBe(0);
     expect(p.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -275,7 +275,7 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
 describe('Phase C — наследие августа', () => {
   it('август виден только справочно и никогда не «закрыт»', () => {
     const p = buildTabPlan([pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' })]);
-    expect(p.rows[0]![16]).toBe('Справочно: наследие, известные дефекты');
+    expect(p.rows[0]![COL.STATE]).toBe('Справочно: наследие, известные дефекты');
   });
 });
 
@@ -333,10 +333,10 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 20, d, 7);
-    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell',
+    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell',
       'updateCells', 'updateDeveloperMetadata', 'createDeveloperMetadata']);
-    // сброс форматов строк данных A:R — до записи новых форматов (смена схемы не оставляет фон/цвет прежних колонок)
-    expect(reqs[1]).toEqual({ repeatCell: { range: { sheetId: TAB_ID, startRowIndex: 1, endRowIndex: plan.rows.length + 1, startColumnIndex: 0, endColumnIndex: 18 },
+    // сброс форматов строк данных A:U — до записи новых форматов (смена схемы не оставляет фон/цвет прежних колонок)
+    expect(reqs[1]).toEqual({ repeatCell: { range: { sheetId: TAB_ID, startRowIndex: 1, endRowIndex: plan.rows.length + 1, startColumnIndex: 0, endColumnIndex: 21 },
       cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } });
     // строка 1: только заметки заголовка (fields = note); форматы — только строки данных
     const rowZero = reqs.filter((r) => JSON.stringify(r).includes('"startRowIndex":0'));
@@ -346,23 +346,23 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     expect(JSON.stringify(reqs.at(-1))).toContain(CONTRACT_META_KEY);
   });
 
-  it('сетка короче плана → appendDimension той же вкладки; лишние строки чистятся в A:Q', () => {
+  it('сетка короче плана → appendDimension той же вкладки; лишние строки чистятся в A:U', () => {
     const longer = [...oldGrid, ['2026-11', 1]];
     const d = decidePublish({ current: longer, publishedSha: contentSha(longer), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 2, d);
     expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'ROWS', length: 12 } });
     const uc = (reqs[1] as { updateCells: { range: Record<string, number>; rows: unknown[] } }).updateCells;
-    expect(uc.range).toEqual({ sheetId: TAB_ID, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 18 });
+    expect(uc.range).toEqual({ sheetId: TAB_ID, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 21 });
     expect(uc.rows).toHaveLength(4);
   });
 
-  it('в сетке меньше 18 колонок → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
+  it('в сетке меньше 21 колонки (живая A:Q = 17) → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
     const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, 17);
-    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'COLUMNS', length: 1 } });
-    expect(publishRequests(plan, TAB_ID, 20, d, 7, undefined, 18).some((r) => 'appendDimension' in r)).toBe(false);
+    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'COLUMNS', length: 4 } });
+    expect(publishRequests(plan, TAB_ID, 20, d, 7, undefined, 21).some((r) => 'appendDimension' in r)).toBe(false);
   });
 
   it('assertOnlyTab: чужой sheetId, чужой тип запроса, чужой metadataId — отказ', () => {
@@ -513,18 +513,42 @@ describe('Налог 2 % — расшифровка, не второй выче�
     const p = buildTabPlan([row]);
     expect(p.header[3]).toBe('Налог 2% (в составе вклада SKU)');
     expect(p.rows[0]![3]).toBe(21464.59);
-    expect(p.rows[0]![14]).toBe(118);           // чистая прибыль из вью, без вычета налога
+    expect(p.rows[0]![COL.NET]).toBe(118);      // чистая прибыль из вью, без вычета налога
     expect(p.rowIdentityMaxAbs).toBe(0);        // строка складывается БЕЗ колонки налога
-    const net = Number(p.rows[0]![14]);
+    const net = Number(p.rows[0]![COL.NET]);
     expect(net - Number(p.rows[0]![3])).not.toBe(net);
-    expect(buildTabPlan([pnlRow({ management_tax_rub: 0 })]).rows[0]![14]).toBe(net);
+    expect(buildTabPlan([pnlRow({ management_tax_rub: 0 })]).rows[0]![COL.NET]).toBe(net);
   });
 
-  it('18 колонок: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
-    expect(TAB_COLS).toBe(18);
+  it('21 колонка: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
+    expect(TAB_COLS).toBe(21);
     expect(TAB_NOTES.every((n) => n.length > 20)).toBe(true);
     expect(TAB_NOTES[3]).toMatch(/повторно НЕ вычитается/);
     expect(buildTabPlan([pnlRow()]).notes).toEqual([...TAB_NOTES]);
+  });
+});
+
+describe('Утрата товара: списание и компенсация — две строки, не неттуются (FIRE/LOST INVENTORY, OWNER ACK 11.10)', () => {
+  const JUL = { month: '2026-07', marketplace_income_rub: 0, inventory_loss_writeoff_rub: 281074.51, wb_loss_compensation_rub: 69479.72,
+    force_majeure_net_effect_rub: 69479.72 - 281074.51, management_net_store_profit_rub: 118 - 281074.51 + 69479.72 };
+  it('колонки O/P/Q: списание (расход), компенсация (доход), чистый эффект справочно; строка складывается без Q', () => {
+    const p = buildTabPlan([pnlRow(JUL)]);
+    expect(p.header.slice(14, 17)).toEqual(['Списание утраченного товара', 'Компенсация WB за утрату товара', 'Чистый эффект форс-мажора (справочно)']);
+    expect(p.rows[0]!.slice(14, 18)).toEqual([281074.51, 69479.72, -211594.79, -211476.79]);
+    expect(p.rowIdentityMaxAbs).toBe(0);
+  });
+  // Нетто в одной колонке арифметически не отличимо в строке — его исключает SQL (списание = Σ позиций отчётов WB,
+  // компенсация = строки финотчёта; QA LOSS_EVIDENCE / LOSS_COMPENSATION_RECONCILED). Здесь — второй вычет эффекта.
+  it('чистый эффект, вошедший в прибыль второй раз, или несогласованный с двумя строками, — строка не складывается', () => {
+    expect(buildTabPlan([pnlRow({ ...JUL, management_net_store_profit_rub: JUL.management_net_store_profit_rub - 211594.79 })]).rowIdentityMaxAbs).toBeGreaterThan(0);
+    expect(buildTabPlan([pnlRow({ ...JUL, force_majeure_net_effect_rub: 0 })]).rowIdentityMaxAbs).toBeGreaterThan(0);
+  });
+  it('гейт: «закрыт» при себестоимости утраты без доказательства или заказах со склада после события — стоп', () => {
+    const closed = { month: '2026-07', financial_state: 'FINANCIAL_COMPLETE', sku_month_closed: true, month_finance_final: true, ads_days: 31,
+      ads_final_days: 31, account_invoice_window_closed: true };
+    expect(publishGate([pnlRow(closed)])).toEqual([]);
+    expect(publishGate([pnlRow({ ...closed, inventory_loss_cogs_missing_qty: 1 })]).join()).toMatch(/открытых условиях/);
+    expect(publishGate([pnlRow({ ...closed, inventory_loss_post_incident_orders: 2 })]).join()).toMatch(/открытых условиях/);
   });
 });
 

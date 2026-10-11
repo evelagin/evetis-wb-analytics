@@ -79,6 +79,8 @@ acc AS (
     SUM(IF(category = 'ACCEPTANCE', amount_rub, 0)) acceptance_rub,
     SUM(IF(treatment = 'ACCOUNT_LEVEL' AND category NOT IN ('MINIMUM_PAYMENT', 'UTILIZATION', 'PENALTY', 'TRANSIT', 'ACCEPTANCE'), amount_rub, 0)) other_marketplace_cost_rub,
     -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) marketplace_income_rub,
+    -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) wb_loss_compensation_rub,
+    STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CAST(booking_date AS STRING), NULL), ', ' ORDER BY booking_date) wb_loss_compensation_dates,
     SUM(IF(treatment = 'UNKNOWN', ABS(amount_rub), 0)) unknown_rub,
     COUNTIF(overridden) overridden_rows,
     COUNTIF(category = 'MINIMUM_PAYMENT') minimum_payment_invoices, COUNTIF(category = 'UTILIZATION') utilization_invoices
@@ -134,10 +136,15 @@ j AS (
     ABS(IFNULL(cb.base_rub, 0) - IFNULL(s.revenue_rub, 0)) + ABS(IFNULL(cb.base_qty, 0) - IFNULL(s.sold_qty, 0)) cohort_join_gap,
     IFNULL(cv.final_month, FALSE) month_finance_final, IFNULL(cv.final_m20, FALSE) account_invoice_window_closed,
     IFNULL(cv.final_m46, FALSE) cohort_mature,
-    IFNULL(ac.minimum_payment_invoices, 0) minimum_payment_invoices, IFNULL(ac.utilization_invoices, 0) utilization_invoices
+    IFNULL(ac.minimum_payment_invoices, 0) minimum_payment_invoices, IFNULL(ac.utilization_invoices, 0) utilization_invoices,
+    IFNULL(ac.wb_loss_compensation_rub, 0) wb_loss_compensation_rub, ac.wb_loss_compensation_dates,
+    IFNULL(lo.inventory_loss_writeoff_rub, 0) inventory_loss_writeoff_rub, IFNULL(lo.inventory_loss_qty, 0) inventory_loss_qty,
+    IFNULL(lo.inventory_loss_cogs_missing_qty, 0) inventory_loss_cogs_missing_qty,
+    IFNULL(lo.inventory_loss_post_incident_orders, 0) inventory_loss_post_incident_orders, lo.inventory_loss_incident_list
   FROM months mo LEFT JOIN sku s ON s.m = mo.m LEFT JOIN ads a ON a.m = mo.m LEFT JOIN storage_fin sf ON sf.m = mo.m
   LEFT JOIN acc ac ON ac.m = mo.m LEFT JOIN uncovered u ON u.m = mo.m LEFT JOIN ext e ON e.m = mo.m LEFT JOIN cov cv ON cv.m = mo.m
-  LEFT JOIN coh_base cb ON cb.m = mo.m),
+  LEFT JOIN coh_base cb ON cb.m = mo.m
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_MONTHLY` lo ON lo.service_month = mo.m),
 k AS (
   SELECT j.*,
     -- Вклад SKU (канонический): выручка − удержание WB − логистика − налог − COGS − реклама по атрибуции + внешняя реклама.
@@ -145,32 +152,42 @@ k AS (
     revenue_rub - wb_take_rub - logistics_rub - management_tax_rub - cogs_rub - ads_attributed_rub + external_marketing_rub sku_contribution_rub,
     ads_attributed_rub - ads_billing_rub ads_adjustment_rub,
     0 - storage_finance_rub storage_adjustment_rub,
-    minimum_payment_rub + utilization_rub + penalty_rub + transit_rub + acceptance_rub + other_marketplace_cost_rub marketplace_costs_rub
+    minimum_payment_rub + utilization_rub + penalty_rub + transit_rub + acceptance_rub + other_marketplace_cost_rub marketplace_costs_rub,
+    -- Утрата товара: списание (расход месяца события) и компенсация WB (доход месяца проводки) — отдельными строками.
+    wb_loss_compensation_rub - inventory_loss_writeoff_rub force_majeure_net_effect_rub
   FROM j)
 SELECT
   FORMAT_DATE('%Y-%m', m) month, m service_month, 'HISTORICAL_CANONICAL' authority,
   revenue_rub, sku_contribution_rub, management_tax_rub,
   minimum_payment_rub, utilization_rub, penalty_rub, transit_rub, acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub,
-  marketplace_income_rub,
+  marketplace_income_rub, inventory_loss_writeoff_rub, wb_loss_compensation_rub, force_majeure_net_effect_rub,
   ads_adjustment_rub, storage_adjustment_rub, 0 commission_adjustment_rub, 0 price_adjustment_rub,
   ads_adjustment_rub + storage_adjustment_rub reconciliation_adjustments_rub,
   0 mature_cohort_adjustment_rub, 0 timing_bridge_logistics_rub, 0 timing_bridge_unsettled_margin_rub,
-  sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub management_net_store_profit_rub,
-  SAFE_DIVIDE(sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub, revenue_rub) management_net_store_margin,
+  sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub
+    - inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub,
+  SAFE_DIVIDE(sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub
+    - inventory_loss_writeoff_rub + wb_loss_compensation_rub, revenue_rub) management_net_store_margin,
   CASE WHEN unknown_rub > 0.5 OR unconsumed_finance_rub > 0.5 OR cogs_missing_qty > 0
-         OR NOT external_marketing_covered OR cohort_join_gap > 0.005 THEN 'UNKNOWN_COST_PRESENT'
+         OR NOT external_marketing_covered OR cohort_join_gap > 0.005
+         -- утрата: каждая единица с доказанной себестоимостью, ни одного заказа со склада после события
+         OR inventory_loss_cogs_missing_qty > 0 OR inventory_loss_post_incident_orders > 0 THEN 'UNKNOWN_COST_PRESENT'
        WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
        WHEN NOT month_finance_final OR ads_days = 0 OR ads_final_days < ads_days OR provisional_rows > 0 THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT account_invoice_window_closed AND (minimum_payment_invoices = 0 OR utilization_invoices = 0) THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT cohort_mature THEN 'FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE'
        ELSE 'FINANCIAL_COMPLETE' END financial_state,
   -- Сохранение денег: та же прибыль из первичных величин без промежуточных колонок; остаток должен быть 0.
-  (sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub)
+  (sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub
+   - inventory_loss_writeoff_rub + wb_loss_compensation_rub)
   - (revenue_rub - wb_take_rub - logistics_rub - management_tax_rub - cogs_rub - ads_billing_rub - storage_finance_rub
-     + external_marketing_rub - marketplace_costs_rub + marketplace_income_rub) double_count_residual_rub,
+     + external_marketing_rub - marketplace_costs_rub + marketplace_income_rub
+     - inventory_loss_writeoff_rub + wb_loss_compensation_rub) double_count_residual_rub,
   -- раскрытие
   wb_take_rub, logistics_rub, sold_qty, cogs_rub, cogs_missing_qty, ads_billing_rub, ads_attributed_rub,
-  ads_final_days, ads_days, storage_finance_rub, external_marketing_rub, external_marketing_covered, cohort_join_gap, unknown_rub, unconsumed_finance_rub, pending_rub, pending_rows,
+  ads_final_days, ads_days, storage_finance_rub, external_marketing_rub, external_marketing_covered, cohort_join_gap, unknown_rub,
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
+  wb_loss_compensation_dates, unconsumed_finance_rub, pending_rub, pending_rows,
   overridden_rows, month_finance_final, cohort_mature, TRUE sku_month_closed, account_invoice_window_closed,
   minimum_payment_invoices, utilization_invoices, 0 orphan_finance_base_rub, 0 orphan_finance_logistics_rub,
   0 deduction_source_gap_rub
@@ -181,19 +198,25 @@ FROM k;
 -- там же). Пересечения нет по построению границ; QA SINGLE_AUTHORITY проверяет это на живых данных.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION` AS
 SELECT month, service_month, authority, revenue_rub, sku_contribution_rub, management_tax_rub, minimum_payment_rub, utilization_rub, penalty_rub, transit_rub,
-  acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub, ads_adjustment_rub, storage_adjustment_rub,
+  acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub,
+  inventory_loss_writeoff_rub, wb_loss_compensation_rub, force_majeure_net_effect_rub, ads_adjustment_rub, storage_adjustment_rub,
   commission_adjustment_rub, price_adjustment_rub, reconciliation_adjustments_rub, mature_cohort_adjustment_rub,
   timing_bridge_logistics_rub, timing_bridge_unsettled_margin_rub, management_net_store_profit_rub, management_net_store_margin,
   financial_state, double_count_residual_rub, pending_rows, unknown_rub, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub, sku_month_closed, month_finance_final, ads_days, ads_final_days,
-  account_invoice_window_closed, minimum_payment_invoices, utilization_invoices
+  account_invoice_window_closed, minimum_payment_invoices, utilization_invoices,
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
+  wb_loss_compensation_dates
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_HISTORICAL`
 UNION ALL
 SELECT month, service_month, 'CURRENT_PHASE_C' authority, revenue_rub, sku_contribution_rub, management_tax_rub, minimum_payment_rub, utilization_rub, penalty_rub, transit_rub,
-  acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub, ads_adjustment_rub, storage_adjustment_rub,
+  acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub,
+  inventory_loss_writeoff_rub, wb_loss_compensation_rub, force_majeure_net_effect_rub, ads_adjustment_rub, storage_adjustment_rub,
   commission_adjustment_rub, price_adjustment_rub, reconciliation_adjustments_rub, mature_cohort_adjustment_rub,
   timing_bridge_logistics_rub, timing_bridge_unsettled_margin_rub, management_net_store_profit_rub, management_net_store_margin,
   financial_state, double_count_residual_rub, pending_rows, unknown_rub, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub, sku_month_closed, month_finance_final, ads_days, ads_final_days,
-  account_invoice_window_closed, minimum_payment_invoices, utilization_invoices
+  account_invoice_window_closed, minimum_payment_invoices, utilization_invoices,
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
+  wb_loss_compensation_dates
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`;
