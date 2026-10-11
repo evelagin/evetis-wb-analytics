@@ -48,6 +48,11 @@ def closure(p):
 def release_value(p):return {'owner':p['run_id']},D.encoded(dict(terminal='ZERO_EFFECT_FAILED',ack_hash=p['ack_hash'],certificate_hash=p['hash']))
 def checkpoint_evidence(p):return dict(mode='BOUNDED_PILOT',zero_effect_certificate=p['hash'],source_budget=0)
 
+def stable_source_evidence(evidence):
+ # UNION ALL results have no guaranteed order. Canonicalize row order only;
+ # keep every table/count and all other evidence unchanged for fresh comparison.
+ return dict(evidence,raw=sorted(evidence['raw'],key=lambda row:row['table_name']))
+
 def header(p,m):
  if (not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or p['version']!=1
      or p['type']!=TYPE or p['hash']!=D.digest({k:v for k,v in p.items() if k!='hash'})):fail('closed certificate required')
@@ -135,7 +140,7 @@ def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  if any(r['sequence']>1 or r['kind']=='RECONCILED' for r in sh):fail('successor/reconciliation exists')
  if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('inactive owner freeze required')
  observer=FL.observer(b,m,269);H.verify_authority(observer,m);observer.preflight({'hash':m['hash'],'plans':[doc]})
- priority=RP.policy(b,m)
+ priority=RP.load(b,m)
  if len(priority['selection'])!=69 or len(priority['parents'])!=64:fail('exact RECENT selection differs')
  base,_=BF.resources(b.c)
  sched=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
@@ -199,7 +204,7 @@ def observe(b,m,*,owner_decision_sha256,qualification_hash,security_hash):
  runtime=FH.runtime_facts(b.c,m);rr=FH.release_for(b.c)
  if release.get('fbo_zero_effect_recovery_version')!=1 or release['verification'].get('fbo_zero_effect_adapter')!='PASS':fail('diagnostic controller adapter unqualified')
  if rr['verification']['built_artifact'].get('fbo_window_typed_diagnostics')!='PASS':fail('diagnostic exact image unqualified')
- evidence=dict(raw=raw,journal=rows,jobs=jobs,lease=lease,checkpoint=cp,state=state,priority_policy_hash=priority['hash'])
+ evidence=stable_source_evidence(dict(raw=raw,journal=rows,jobs=jobs,lease=lease,checkpoint=cp,state=state,priority_policy_hash=priority['hash']))
  p=dict(EXACT,version=1,type=TYPE,tenant=m['tenant'],project=m['project'],manifest_hash=D.digest(m),
   new_source=source,new_image=release['image'],new_implementation_hash=release['controller_implementation_hash'],**runtime,
   owner_decision_sha256=owner_decision_sha256,qualification_hash=qualification_hash,security_hash=security_hash,
