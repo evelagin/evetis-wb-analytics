@@ -90,10 +90,16 @@ export function toNum(v: unknown): number {
 }
 const r2 = (x: number): number => Math.round(x * 100) / 100;
 
+/** Колонки вью, без которых строка вкладки была бы молча нулевой (toNum(undefined) = 0): их отсутствие — отказ. */
+export const REQUIRED_PNL_COLUMNS = ['management_tax_rub', 'inventory_loss_writeoff_rub', 'wb_loss_compensation_rub',
+  'force_majeure_net_effect_rub', 'management_net_store_profit_rub', 'authority'] as const;
+
 export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
   const rows: TabCell[][] = [];
   let maxAbs = 0;
   for (const p of pnl) {
+    const missing = REQUIRED_PNL_COLUMNS.filter((k) => !(k in p));
+    if (missing.length) throw new Error(`${String(p.month)}: во вью нет колонок ${missing.join(', ')} — схема вью старее кода`);
     const n = (k: string): number => toNum(p[k]);
     const state = String(p.financial_state ?? '');
     const label = STATE_LABEL[state];
@@ -111,8 +117,13 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const net = r2(n('management_net_store_profit_rub'));
     const margin = Math.round(n('management_net_store_margin') * 1e6) / 1e6;
     const bridge = r2(n('timing_bridge_logistics_rub') - n('timing_bridge_unsettled_margin_rub'));
-    maxAbs = Math.max(maxAbs, Math.abs(sku + ads + stor + comm + logi - minPay - util - pen - tr - other + inc - loss + lossComp - net),
-      Math.abs(lossComp - loss - fmNet));
+    // Тождество — на НЕокруглённых значениях вью (14 слагаемых по ±0,005 съели бы допуск 0,02 ₽).
+    maxAbs = Math.max(maxAbs,
+      Math.abs(n('sku_contribution_rub') + n('ads_adjustment_rub') + n('storage_adjustment_rub') + n('commission_adjustment_rub')
+        + n('price_adjustment_rub') + n('mature_cohort_adjustment_rub') - n('minimum_payment_rub') - n('utilization_rub') - n('penalty_rub')
+        - n('transit_rub') - n('acceptance_rub') - n('other_marketplace_cost_rub') + n('marketplace_income_rub')
+        - n('inventory_loss_writeoff_rub') + n('wb_loss_compensation_rub') - n('management_net_store_profit_rub')),
+      Math.abs(n('wb_loss_compensation_rub') - n('inventory_loss_writeoff_rub') - n('force_majeure_net_effect_rub')));
     // Налог и чистый эффект форс-мажора — расшифровки: в сумму строки НЕ входят (инварианты, OWNER ACK 11.10).
     rows.push([String(p.month), r2(n('revenue_rub')), sku, tax, minPay, util, pen, tr, ads, stor, comm, logi, other, inc,
       loss, lossComp, fmNet, net, margin, label, bridge]);

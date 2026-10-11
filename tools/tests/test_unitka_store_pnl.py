@@ -233,11 +233,17 @@ def test_inventory_loss_is_itemized_from_wb_reports_and_not_netted():
         by_month[i[3:10]] = by_month.get(i[3:10], 0) + int(q)
     assert by_month == {"2026-07": 1456, "2026-08": 2004}
     assert "wb_mart.UNITKA_COGS_EFFECTIVE" in items and "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL)" in items
-    assert "_order_date > inc.incident_date" in b["V_WB_INVENTORY_LOSS_MONTHLY"]
+    mon = b["V_WB_INVENTORY_LOSS_MONTHLY"]
+    assert "_snapshot_date >= DATE '2026-08-26'" in mon and "ABS(pos.lost_qty - IFNULL(r.q, 0))" in mon   # отчёт = остаток 26.08
+    assert "V_WB_ORDERS" not in mon                                           # заказы с 14.08 без склада — не доказательство
+    ev = b["V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE"]
+    assert "('2270352', DATE '2026-07-22', NUMERIC '49479.72'" in ev and "('2336254', DATE '2026-07-30', NUMERIC '20000.00'" in ev
     for n in ("V_WB_STORE_PNL_MONTHLY", "V_WB_STORE_PNL_HISTORICAL"):
         body = re.sub(r"--[^\n]*", "", b[n])
         assert "- inventory_loss_writeoff_rub + wb_loss_compensation_rub management_net_store_profit_rub" in body, n
-        assert "inventory_loss_cogs_missing_qty > 0 OR inventory_loss_post_incident_orders > 0" in body, n
+        assert "inventory_loss_cogs_missing_qty > 0 OR inventory_loss_double_count_risk_qty > 0" in body, n
+        assert "WHEN pending_rows > 0 OR loss_compensation_unreconciled_rows > 0 THEN 'PENDING_CLASSIFICATION'" in body, n
+        assert "V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in body, n
     led = b["V_WB_STORE_ACCOUNT_LEDGER"]
     assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
     assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
@@ -254,7 +260,8 @@ def test_overrides_are_the_8_proven_review_points_rows():
 def test_h0_deploy_tool_order_and_rollback_bodies_exist():
     import unitka_store_pnl_h0_deploy as h
     names = [n for n, _, _ in h.plan(False)]
-    assert names[:2] == [n for n, _ in h.LOSS] and names[2:8] == [n for n, _ in h.CHANGED] and names[8:] == [n for n, _ in h.NEW]
+    k = len(h.LOSS)
+    assert names[:k] == [n for n, _ in h.LOSS] and names[k:k + 6] == [n for n, _ in h.CHANGED] and names[k + 6:] == [n for n, _ in h.NEW]
     rb = [n for n, _, _ in h.plan(True)]
     assert rb == [n for n, _ in reversed(h.CHANGED)]
     b = {n: body for n, _, body in h.plan(False)}

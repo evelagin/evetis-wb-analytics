@@ -80,26 +80,46 @@ SELECT i.incident_id, i.report_warehouse, i.wb_report, i.incident_date, DATE_TRU
 FROM items it JOIN incidents i USING (incident_id) LEFT JOIN ref USING (nm_id) LEFT JOIN cogs c USING (incident_id, nm_id);
 
 -- ─── L2. Списание по месяцу события + защита от двойного счёта ───────────────────────────────────────────────────
--- Двойной счёт исключён по построению: количество отчёта WB — остаток, который не уехал со склада (проданная единица
--- в него не входит, её себестоимость — в «Вкладе SKU» по продаже). Проверка данными: ни одного заказа с пострадавшего
--- склада ПОСЛЕ даты события (post_incident_orders = 0), иначе единица могла уйти в продажу — месяц не закрывается.
+-- Двойной счёт исключается ДАННЫМИ остатков WB, а не заказами (заказы с 14.08 WB подписывает «Склад WB РФ»):
+--  (а) количество отчёта = остаток WB по складу × nm в снимке на дату отчётов 26.08.2026 — это остаток, который не
+--      уехал со склада; проданная единица в него не входит (её себестоимость — во «Вкладе SKU» по продаже),
+--  (б) после 26.08 остаток этих позиций не уменьшался ни в одном снимке — ни одна списанная единица не ушла в продажу.
+-- Расхождение (а) или уменьшение (б) — inventory_loss_double_count_risk_qty > 0: месяц не закрывается.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_MONTHLY` AS
 WITH it AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_ITEMS`),
-inc AS (SELECT DISTINCT incident_id, incident_date, incident_month, orders_warehouse FROM it),
-post AS (
-  SELECT inc.incident_id, COUNT(DISTINCT o.srid) post_incident_orders
-  FROM inc JOIN `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_ORDERS` o
-    ON o.warehouse_name = inc.orders_warehouse AND o._order_date > inc.incident_date
-  GROUP BY 1),
-post_m AS (
-  SELECT inc.incident_month, SUM(IFNULL(post.post_incident_orders, 0)) post_incident_orders
-  FROM inc LEFT JOIN post USING (incident_id) GROUP BY 1)
+st AS (
+  SELECT _snapshot_date sd, warehouse_name, nm_id, SUM(quantity) q
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_STOCKS_T5`
+  WHERE row_type = 'WAREHOUSE' AND _snapshot_date >= DATE '2026-08-26'
+    AND warehouse_name IN (SELECT DISTINCT report_warehouse FROM it)
+  GROUP BY snapshot_id, 1, 2, 3
+  QUALIFY snapshot_id = MAX(snapshot_id) OVER (PARTITION BY _snapshot_date)),
+rep_day AS (SELECT warehouse_name, nm_id, q FROM st WHERE sd = DATE '2026-08-26'),
+pos AS (
+  SELECT it.incident_month, it.report_warehouse, it.nm_id, SUM(it.lost_qty) lost_qty
+  FROM it GROUP BY 1, 2, 3),
+risk AS (
+  SELECT pos.incident_month,
+    ABS(pos.lost_qty - IFNULL(r.q, 0))                                                 -- (а) отчёт ≠ остаток 26.08
+    + GREATEST(IFNULL(r.q, 0) - IFNULL((SELECT MIN(st.q) FROM st
+        WHERE st.warehouse_name = pos.report_warehouse AND st.nm_id = pos.nm_id), 0), 0) risk_qty  -- (б) остаток уменьшился
+  FROM pos LEFT JOIN rep_day r ON r.warehouse_name = pos.report_warehouse AND r.nm_id = pos.nm_id),
+risk_m AS (SELECT incident_month, SUM(risk_qty) risk_qty FROM risk GROUP BY 1)
 SELECT it.incident_month service_month,
   SUM(it.lost_qty) inventory_loss_qty,
   SUM(IFNULL(it.inventory_loss_writeoff_rub, 0)) inventory_loss_writeoff_rub,
   SUM(IF(it.unit_cogs_rub IS NULL, it.lost_qty, 0)) inventory_loss_cogs_missing_qty,
-  ANY_VALUE(pm.post_incident_orders) inventory_loss_post_incident_orders,
+  ANY_VALUE(rm.risk_qty) inventory_loss_double_count_risk_qty,
   COUNT(DISTINCT it.incident_id) inventory_loss_incidents,
   STRING_AGG(DISTINCT CONCAT(FORMAT_DATE('%Y-%m-%d', it.incident_date), ' ', it.report_warehouse), '; '
     ORDER BY CONCAT(FORMAT_DATE('%Y-%m-%d', it.incident_date), ' ', it.report_warehouse)) inventory_loss_incident_list
-FROM it LEFT JOIN post_m pm USING (incident_month) GROUP BY 1;
+FROM it LEFT JOIN risk_m rm USING (incident_month) GROUP BY 1;
+
+-- ─── L3. Сверка компенсации WB: каждая выплата «за товары, пострадавшие…» — по номеру документа WB ─────────────────
+-- Выплата в журнале (обработка LOSS_COMPENSATION_INCOME), которой нет в этом списке или с другой суммой, — не сверена:
+-- месяц её проводки «Есть неразобранные операции», пока владелец не добавит документ сюда.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` AS
+SELECT * FROM UNNEST(ARRAY<STRUCT<wb_document STRING, booking_date DATE, amount_rub NUMERIC, evidence STRING>>[
+  ('2270352', DATE '2026-07-22', NUMERIC '49479.72', 'Добровольная выплата за товары, пострадавшие в результате обстоятельств непреодолимой силы; rrd 3130856735246'),
+  ('2336254', DATE '2026-07-30', NUMERIC '20000.00', 'Добровольная выплата за товары, пострадавшие в результате обстоятельств непреодолимой силы; rrd 3131540616009')
+]);

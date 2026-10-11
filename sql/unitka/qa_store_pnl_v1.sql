@@ -110,10 +110,12 @@ WITH pnl AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PN
 led AS (
   SELECT service_month m,
     SUM(IF(treatment = 'ACCOUNT_LEVEL', amount_rub, 0)) cost_rub, -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) income_rub,
+    -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) loss_comp_rub,
     COUNTIF(booking_date > DATE_ADD(LAST_DAY(service_month), INTERVAL 20 DAY)) late_n
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` GROUP BY 1)
 SELECT 'LATE_INVOICE_RESTATEMENT' check_name,
-  IF(MAX(ABS(p.marketplace_costs_rub - IFNULL(l.cost_rub, 0)) + ABS(p.marketplace_income_rub - IFNULL(l.income_rub, 0))) < 0.01
+  IF(MAX(ABS(p.marketplace_costs_rub - IFNULL(l.cost_rub, 0)) + ABS(p.marketplace_income_rub - IFNULL(l.income_rub, 0))
+         + ABS(p.wb_loss_compensation_rub - IFNULL(l.loss_comp_rub, 0))) < 0.01
      AND MAX(ABS(p.late_account_bookings - IFNULL(l.late_n, 0))) = 0, 'PASS', 'FAIL') status,
   STRING_AGG(CONCAT(p.month, ': кабинет ', FORMAT('%.2f', p.marketplace_costs_rub), ' = журнал ', FORMAT('%.2f', IFNULL(l.cost_rub, 0)),
     ', поздних проводок ', CAST(p.late_account_bookings AS STRING)), '; ' ORDER BY p.month) detail
@@ -206,6 +208,7 @@ SELECT 'STATE_CONSISTENCY' check_name,
          pending_rows = 0 AND unknown_rub <= 0.5 AND unconsumed_finance_rub <= 0.5 AND deduction_source_gap_rub <= 0.5
          AND orphan_finance_base_rub = 0 AND orphan_finance_logistics_rub = 0 AND sku_month_closed AND month_finance_final
          AND ads_days > 0 AND ads_final_days = ads_days
+         AND inventory_loss_cogs_missing_qty = 0 AND inventory_loss_double_count_risk_qty = 0 AND loss_compensation_unreconciled_rows = 0
          AND (account_invoice_window_closed OR (minimum_payment_invoices > 0 AND utilization_invoices > 0)), FALSE)) = 0
      AND COUNTIF(financial_state IS NULL) = 0
      AND COUNTIF((service_month < DATE '2026-09-01') != (financial_state = 'LEGACY_PARTIAL_KNOWN_DEFECTS')) = 0, 'PASS', 'FAIL') status,

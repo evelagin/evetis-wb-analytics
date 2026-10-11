@@ -6,7 +6,7 @@
  * wb_mart.V_WB_STORE_PNL_PRESENTATION (история 2026-05..07 + Phase C с 2026-08, одна власть на месяц).
  * BigQuery — источник истины; вкладка — представление. Модуль чистый: гейт, решение, запросы. I/O — в index.ts.
  *
- * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Q (sha256)
+ * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:U (sha256)
  * лежит в developer metadata вкладки. Писать можно, только если текущее содержимое равно последнему
  * опубликованному, либо явно принятому владельцем UNITKA_STORE_PNL_ADOPT_SHA (первое подключение или
  * восстановление: владелец проверил вкладку и подтверждает ровно это содержимое). Иначе — отказ
@@ -85,7 +85,8 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
       const open = n('pending_rows') > 0 || n('unknown_rub') > 0.5 || n('unconsumed_finance_rub') > 0.5 || n('deduction_source_gap_rub') > 0.5
         || n('orphan_finance_base_rub') !== 0 || n('orphan_finance_logistics_rub') !== 0 || !b(p.sku_month_closed) || !b(p.month_finance_final)
         || n('ads_days') === 0 || n('ads_final_days') !== n('ads_days')
-        || n('inventory_loss_cogs_missing_qty') > 0 || n('inventory_loss_post_incident_orders') > 0
+        || n('inventory_loss_cogs_missing_qty') > 0 || n('inventory_loss_double_count_risk_qty') > 0
+        || n('loss_compensation_unreconciled_rows') > 0
         || !(b(p.account_invoice_window_closed) || (n('minimum_payment_invoices') > 0 && n('utilization_invoices') > 0));
       if (open) out.push(`${m}: «${st}» при открытых условиях`);
     }

@@ -106,12 +106,12 @@ SELECT 'LOSS_EVIDENCE' check_name,
   (SELECT STRING_AGG(CONCAT(FORMAT_DATE('%Y-%m', incident_month), ': ', FORMAT('%.2f', w)), '; ' ORDER BY incident_month) FROM m) detail;
 
 -- @check LOSS_NO_DOUBLE_COUNT
--- Списана только непроданная единица: ни одного заказа с пострадавшего склада после даты события (иначе единица могла
--- уйти в продажу и её себестоимость уже во «Вкладе SKU»).
+-- Списана только непроданная единица: количество отчёта WB = остаток WB склад × nm на 26.08.2026 и после этого остаток
+-- позиций не уменьшался (иначе единица могла уйти в продажу и её себестоимость уже во «Вкладе SKU»).
 WITH m AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_MONTHLY`)
 SELECT 'LOSS_NO_DOUBLE_COUNT' check_name,
-  IF(SUM(inventory_loss_post_incident_orders) = 0, 'PASS', 'FAIL') status,
-  STRING_AGG(CONCAT(FORMAT_DATE('%Y-%m', service_month), ': заказов после события ', CAST(inventory_loss_post_incident_orders AS STRING),
+  IF(SUM(inventory_loss_double_count_risk_qty) = 0, 'PASS', 'FAIL') status,
+  STRING_AGG(CONCAT(FORMAT_DATE('%Y-%m', service_month), ': ед. под риском двойного счёта ', CAST(inventory_loss_double_count_risk_qty AS STRING),
     ' (', inventory_loss_incident_list, ')'), '; ' ORDER BY service_month) detail
 FROM m;
 
@@ -124,6 +124,7 @@ SELECT 'LOSS_COMPENSATION_RECONCILED' check_name,
   IF(ABS(-SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) - ANY_VALUE(p.comp)) < 0.01
      AND ABS(-SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME' AND booking_date < DATE '2026-10-12', amount_rub, 0)) - 69479.72) < 0.01
      AND COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND category != 'LOSS_COMPENSATION') = 0
+     AND (SELECT SUM(loss_compensation_unreconciled_rows) FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION`) = 0
      AND COUNTIF(treatment = 'ACCOUNT_LEVEL_INCOME' AND LOWER(label) LIKE '%пострадавшие%') = 0, 'PASS', 'FAIL') status,
   CONCAT('журнал ', FORMAT('%.2f', -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0))), ' (',
     STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CONCAT(CAST(booking_date AS STRING), ' ', FORMAT('%.2f', -amount_rub)), NULL), ', ' ORDER BY booking_date),

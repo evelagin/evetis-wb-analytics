@@ -5,19 +5,22 @@
 перечитывает тело каждого представления из BigQuery. Больше ничего: ни таблиц, ни данных, ни прав, ни расписаний,
 ни записи в книгу. Справочник себестоимости правит отдельный инструмент (tools/cogs_bundle_start_fix.py).
 
-  новые, первыми (store_inventory_loss_v1.sql): V_WB_INVENTORY_LOSS_ITEMS → V_WB_INVENTORY_LOSS_MONTHLY
-                                  (утрата товара на складах WB; их читает V_WB_STORE_PNL_MONTHLY)
+  новые, первыми (store_inventory_loss_v1.sql): V_WB_INVENTORY_LOSS_ITEMS → V_WB_INVENTORY_LOSS_MONTHLY →
+                                  V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE (утрата товара; их читают P&L-вью)
   изменяемые (store_pnl_v1.sql):  V_WB_FINANCE_OPERATION_MAP → V_WB_STORE_FINANCE_COHORT_DAILY →
                                   V_WB_STORE_ACCOUNT_LEDGER → V_WB_FINANCE_NEW_OPERATIONS →
                                   V_WB_STORE_FINANCE_COVERAGE → V_WB_STORE_PNL_MONTHLY
   новые (store_pnl_historical_v1.sql): V_WB_FINANCE_HISTORICAL_OVERRIDES → V_WB_STORE_PNL_HISTORICAL →
                                   V_WB_STORE_PNL_PRESENTATION
 
-Порядок с образом: вью — ПЕРВЫМИ (V_WB_STORE_PNL_MONTHLY получает management_tax_rub в составе колонок, прежний образ
-читает SELECT * и колонку не использует), образ с чтением V_WB_STORE_PNL_PRESENTATION — после.
+Порядок с образом: вью — ПЕРВЫМИ, образ с чтением V_WB_STORE_PNL_PRESENTATION — сразу после, В ОДНОМ ОКНЕ при
+остановленном Scheduler. 🔴 Прежний образ с новой V_WB_STORE_PNL_MONTHLY НЕсовместим: его проверка строки не знает
+списания утраты, август расходится на сумму списания → прогон падает STORE_PNL_IDENTITY (безопасно: ничего не пишет).
+Откат — в обратном порядке: сначала прежний образ, затем --rollback вью (иначе HISTORICAL/PRESENTATION ссылаются на
+колонки, которых в откатанной MONTHLY нет).
 
 Откат (--rollback): 6 изменяемых вью получают тела production до H0 (sql/unitka/store_pnl_h0_rollback/), в обратном
-порядке. Пять новых вью остаются (их читает только новый образ; при откате сначала возвращается прежний образ), DROP —
+порядке. Шесть новых вью остаются (их читает только новый образ; при откате сначала возвращается прежний образ), DROP —
 отдельное решение владельца.
 
 Защиты (отказ ДО отправки): закрытый список; ровно один CREATE OR REPLACE VIEW своего имени в источнике; запрещённые
@@ -56,6 +59,7 @@ CHANGED = [
 LOSS = [
     ("V_WB_INVENTORY_LOSS_ITEMS", "sql/unitka/store_inventory_loss_v1.sql"),
     ("V_WB_INVENTORY_LOSS_MONTHLY", "sql/unitka/store_inventory_loss_v1.sql"),
+    ("V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE", "sql/unitka/store_inventory_loss_v1.sql"),
 ]
 NEW = [
     ("V_WB_FINANCE_HISTORICAL_OVERRIDES", "sql/unitka/store_pnl_historical_v1.sql"),

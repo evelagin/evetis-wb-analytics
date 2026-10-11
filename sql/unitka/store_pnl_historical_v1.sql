@@ -67,9 +67,13 @@ storage_fin AS (
 ledger AS (
   SELECT IFNULL(o.service_month, l.service_month) service_month,
     IFNULL(o.category, l.category) category, IFNULL(o.treatment, l.treatment) treatment, l.amount_rub, l.booking_date,
-    o.finance_row_key IS NOT NULL overridden
+    o.finance_row_key IS NOT NULL overridden,
+    -- компенсация за утрату сверяется с документами WB по номеру и сумме
+    IFNULL(e.booking_date = l.booking_date AND ABS(e.amount_rub + l.amount_rub) < 0.005, FALSE) loss_matched
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` l
-  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_HISTORICAL_OVERRIDES` o USING (finance_row_key)),
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_HISTORICAL_OVERRIDES` o USING (finance_row_key)
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` e
+    ON e.wb_document = REGEXP_EXTRACT(l.label, r'документ №\s*(\d+)')),
 acc AS (
   SELECT service_month m,
     SUM(IF(category = 'MINIMUM_PAYMENT', amount_rub, 0)) minimum_payment_rub,
@@ -81,6 +85,7 @@ acc AS (
     -SUM(IF(treatment = 'ACCOUNT_LEVEL_INCOME', amount_rub, 0)) marketplace_income_rub,
     -SUM(IF(treatment = 'LOSS_COMPENSATION_INCOME', amount_rub, 0)) wb_loss_compensation_rub,
     STRING_AGG(IF(treatment = 'LOSS_COMPENSATION_INCOME', CAST(booking_date AS STRING), NULL), ', ' ORDER BY booking_date) wb_loss_compensation_dates,
+    COUNTIF(treatment = 'LOSS_COMPENSATION_INCOME' AND NOT loss_matched) loss_compensation_unreconciled_rows,
     SUM(IF(treatment = 'UNKNOWN', ABS(amount_rub), 0)) unknown_rub,
     COUNTIF(overridden) overridden_rows,
     COUNTIF(category = 'MINIMUM_PAYMENT') minimum_payment_invoices, COUNTIF(category = 'UTILIZATION') utilization_invoices
@@ -138,9 +143,10 @@ j AS (
     IFNULL(cv.final_m46, FALSE) cohort_mature,
     IFNULL(ac.minimum_payment_invoices, 0) minimum_payment_invoices, IFNULL(ac.utilization_invoices, 0) utilization_invoices,
     IFNULL(ac.wb_loss_compensation_rub, 0) wb_loss_compensation_rub, ac.wb_loss_compensation_dates,
+    IFNULL(ac.loss_compensation_unreconciled_rows, 0) loss_compensation_unreconciled_rows,
     IFNULL(lo.inventory_loss_writeoff_rub, 0) inventory_loss_writeoff_rub, IFNULL(lo.inventory_loss_qty, 0) inventory_loss_qty,
     IFNULL(lo.inventory_loss_cogs_missing_qty, 0) inventory_loss_cogs_missing_qty,
-    IFNULL(lo.inventory_loss_post_incident_orders, 0) inventory_loss_post_incident_orders, lo.inventory_loss_incident_list
+    IFNULL(lo.inventory_loss_double_count_risk_qty, 0) inventory_loss_double_count_risk_qty, lo.inventory_loss_incident_list
   FROM months mo LEFT JOIN sku s ON s.m = mo.m LEFT JOIN ads a ON a.m = mo.m LEFT JOIN storage_fin sf ON sf.m = mo.m
   LEFT JOIN acc ac ON ac.m = mo.m LEFT JOIN uncovered u ON u.m = mo.m LEFT JOIN ext e ON e.m = mo.m LEFT JOIN cov cv ON cv.m = mo.m
   LEFT JOIN coh_base cb ON cb.m = mo.m
@@ -171,8 +177,8 @@ SELECT
   CASE WHEN unknown_rub > 0.5 OR unconsumed_finance_rub > 0.5 OR cogs_missing_qty > 0
          OR NOT external_marketing_covered OR cohort_join_gap > 0.005
          -- утрата: каждая единица с доказанной себестоимостью, ни одного заказа со склада после события
-         OR inventory_loss_cogs_missing_qty > 0 OR inventory_loss_post_incident_orders > 0 THEN 'UNKNOWN_COST_PRESENT'
-       WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
+         OR inventory_loss_cogs_missing_qty > 0 OR inventory_loss_double_count_risk_qty > 0 THEN 'UNKNOWN_COST_PRESENT'
+       WHEN pending_rows > 0 OR loss_compensation_unreconciled_rows > 0 THEN 'PENDING_CLASSIFICATION'
        WHEN NOT month_finance_final OR ads_days = 0 OR ads_final_days < ads_days OR provisional_rows > 0 THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT account_invoice_window_closed AND (minimum_payment_invoices = 0 OR utilization_invoices = 0) THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT cohort_mature THEN 'FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE'
@@ -186,8 +192,8 @@ SELECT
   -- раскрытие
   wb_take_rub, logistics_rub, sold_qty, cogs_rub, cogs_missing_qty, ads_billing_rub, ads_attributed_rub,
   ads_final_days, ads_days, storage_finance_rub, external_marketing_rub, external_marketing_covered, cohort_join_gap, unknown_rub,
-  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
-  wb_loss_compensation_dates, unconsumed_finance_rub, pending_rub, pending_rows,
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_double_count_risk_qty, inventory_loss_incident_list,
+  wb_loss_compensation_dates, loss_compensation_unreconciled_rows, unconsumed_finance_rub, pending_rub, pending_rows,
   overridden_rows, month_finance_final, cohort_mature, TRUE sku_month_closed, account_invoice_window_closed,
   minimum_payment_invoices, utilization_invoices, 0 orphan_finance_base_rub, 0 orphan_finance_logistics_rub,
   0 deduction_source_gap_rub
@@ -205,8 +211,8 @@ SELECT month, service_month, authority, revenue_rub, sku_contribution_rub, manag
   financial_state, double_count_residual_rub, pending_rows, unknown_rub, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub, sku_month_closed, month_finance_final, ads_days, ads_final_days,
   account_invoice_window_closed, minimum_payment_invoices, utilization_invoices,
-  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
-  wb_loss_compensation_dates
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_double_count_risk_qty, inventory_loss_incident_list,
+  wb_loss_compensation_dates, loss_compensation_unreconciled_rows
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_HISTORICAL`
 UNION ALL
 SELECT month, service_month, 'CURRENT_PHASE_C' authority, revenue_rub, sku_contribution_rub, management_tax_rub, minimum_payment_rub, utilization_rub, penalty_rub, transit_rub,
@@ -217,6 +223,6 @@ SELECT month, service_month, 'CURRENT_PHASE_C' authority, revenue_rub, sku_contr
   financial_state, double_count_residual_rub, pending_rows, unknown_rub, unconsumed_finance_rub, deduction_source_gap_rub,
   orphan_finance_base_rub, orphan_finance_logistics_rub, sku_month_closed, month_finance_final, ads_days, ads_final_days,
   account_invoice_window_closed, minimum_payment_invoices, utilization_invoices,
-  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_post_incident_orders, inventory_loss_incident_list,
-  wb_loss_compensation_dates
+  inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_double_count_risk_qty, inventory_loss_incident_list,
+  wb_loss_compensation_dates, loss_compensation_unreconciled_rows
 FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`;

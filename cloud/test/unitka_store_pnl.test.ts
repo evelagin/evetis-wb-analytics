@@ -176,6 +176,7 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
     storage_adjustment_rub: 1, commission_adjustment_rub: 5, price_adjustment_rub: 2, mature_cohort_adjustment_rub: 0,
     timing_bridge_logistics_rub: 40, timing_bridge_unsettled_margin_rub: 300, management_net_store_profit_rub: 118, management_tax_rub: 20,
     management_net_store_margin: 0.118, financial_state: 'PARTIAL_AWAITING_ACCOUNT_INVOICE', double_count_residual_rub: 0,
+    inventory_loss_writeoff_rub: 0, wb_loss_compensation_rub: 0, force_majeure_net_effect_rub: 0,
     service_month: `${String(o.month ?? '2026-09')}-01`,
     authority: `${String(o.month ?? '2026-09')}-01` < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C', ...o,
   };
@@ -438,7 +439,7 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
     });
   });
 
-  it('управляемая миграция: точный отпечаток контракта → одна атомарная запись A:R, заметки, два отпечатка; дальше NOOP без допусков', async () => {
+  it('управляемая миграция: точный отпечаток контракта → одна атомарная запись A:U, заметки, два отпечатка; дальше NOOP без допусков', async () => {
     const adopt = contentSha(tabState.values);
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt,
       UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
@@ -548,7 +549,13 @@ describe('Утрата товара: списание и компенсация 
       ads_final_days: 31, account_invoice_window_closed: true };
     expect(publishGate([pnlRow(closed)])).toEqual([]);
     expect(publishGate([pnlRow({ ...closed, inventory_loss_cogs_missing_qty: 1 })]).join()).toMatch(/открытых условиях/);
-    expect(publishGate([pnlRow({ ...closed, inventory_loss_post_incident_orders: 2 })]).join()).toMatch(/открытых условиях/);
+    expect(publishGate([pnlRow({ ...closed, inventory_loss_double_count_risk_qty: 2 })]).join()).toMatch(/открытых условиях/);
+    expect(publishGate([pnlRow({ ...closed, loss_compensation_unreconciled_rows: 1 })]).join()).toMatch(/открытых условиях/);
+  });
+  it('вью без колонок утраты/налога (старая схема) — отказ, а не молчаливые нули', () => {
+    const old = pnlRow();
+    delete (old as Record<string, unknown>).inventory_loss_writeoff_rub;
+    expect(() => buildTabPlan([old])).toThrow(/нет колонок inventory_loss_writeoff_rub/);
   });
 });
 
