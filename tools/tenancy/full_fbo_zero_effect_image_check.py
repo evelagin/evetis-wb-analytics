@@ -71,7 +71,11 @@ def check():
   except BF.B.EvidenceError as error:assert 'owner priority authority absent' in str(error)
   else:raise AssertionError('fresh observation bypassed owner priority authority')
  assert not effects
- return dict(fbo_zero_effect_exact_owner_settlement='PASS',fbo_one_natural_attempt_failed_stops='PASS',fbo_unknown_predicate_blocks='PASS',fbo_no_success_recon_fabrication='PASS',fbo_fresh_observation_owner_authority='PASS')
+ evidence=dict(raw=[dict(table_name='RAW_B',n=0),dict(table_name='RAW_A',n=0)],state={'sequence':0})
+ assert D.digest(R.stable_source_evidence(evidence))==D.digest(R.stable_source_evidence(dict(evidence,raw=list(reversed(evidence['raw'])))))
+ changed=deepcopy(evidence);changed['raw'][0]['n']=1
+ assert D.digest(R.stable_source_evidence(evidence))!=D.digest(R.stable_source_evidence(changed))
+ return dict(fbo_zero_effect_exact_owner_settlement='PASS',fbo_one_natural_attempt_failed_stops='PASS',fbo_unknown_predicate_blocks='PASS',fbo_no_success_recon_fabrication='PASS',fbo_fresh_observation_owner_authority='PASS',fbo_fresh_effect_unordered_query_evidence='PASS')
 
 if __name__=='__main__':
  import json

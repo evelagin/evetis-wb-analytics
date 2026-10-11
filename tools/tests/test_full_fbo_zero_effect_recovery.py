@@ -6,6 +6,14 @@ from tools.tenancy.full_fbo_zero_effect_image_check import fixture,check
 
 def test_packaged_owner_contract():assert set(check().values())=={'PASS'}
 
+def test_fresh_effect_hash_ignores_query_row_order_but_preserves_any_nonzero_effect():
+ e=dict(raw=[dict(table_name='RAW_B',n=0),dict(table_name='RAW_A',n=0)],journal=['immutable'],state={'sequence':0})
+ original=deepcopy(e);reordered=deepcopy(e);reordered['raw'].reverse()
+ assert D.digest(R.stable_source_evidence(e))==D.digest(R.stable_source_evidence(reordered))
+ changed=deepcopy(reordered);changed['raw'][0]['n']=1
+ assert D.digest(R.stable_source_evidence(e))!=D.digest(R.stable_source_evidence(changed))
+ assert e==original and R.stable_source_evidence(e)['journal']==e['journal']
+
 def test_owner_observation_requires_real_priority_loader_before_effect_checks(monkeypatch):
  from tools.tenancy import full_leaf_recovery as FL
  m,p,b,root,sh,objects,rows,effects,*_=fixture();calls=[]
