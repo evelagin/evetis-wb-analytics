@@ -72,7 +72,7 @@ def _req(cond: bool, msg: str) -> None:
 def money(v) -> Decimal:
     s = str(v)
     _req(bool(MONEY_RE.match(s)), f"сумма {s!r} — не число с копейками")
-    return Decimal(s)
+    return Decimal(s).quantize(CENT)     # одна форма «123.40» и в манифесте, и при перечитывании таблицы
 
 
 def canonical(obj) -> str:

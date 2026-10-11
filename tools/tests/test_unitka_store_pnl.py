@@ -1,5 +1,6 @@
 """Phase C (2026-10-09): P&L магазина WB — вью, QA, развёртывание, Terraform. Только офлайн-проверки контракта."""
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -246,25 +247,52 @@ def test_inventory_loss_reads_private_evidence_and_is_not_netted():
     led = b["V_WB_STORE_ACCOUNT_LEDGER"]
     assert "WHEN deduction_class = 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION_INCOME'" in led
     assert "WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'" in led
-    assert "V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in led and "e.attributed_incident_month IS NOT NULL AND le.loss_evidence_matched" in led
+    assert "V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE" in led and "x.doc_match AND x.doc_rows = 1 AND x.attributed_incident_month IS NOT NULL" in led
+    assert "OVER (PARTITION BY d.wb_document) doc_rows" in led                     # дубль строки финотчёта не сверяется
+
+
+# Отпечатки (sha256) закрытых значений: номера документов WB, претензия, суммы претензии (только цифры). Сами значения
+# в публичном дереве не хранятся — даже в этом тесте.
+_PRIVATE_TOKEN_SHA256 = {
+    "3c577ec07a262c85b5c2c62b75de5e9796fdc996ca38ae7f550d5653aa2b26c0",
+    "2de988fb23a86389ea36b3913c918dfe88b759422db0d43215f9721d512347a5",
+    "6b2b0319274ba4435e41fa0bcff743297dd3192d6a84285a3ca90c8b4f928217",
+    "452ec28aa8ab4f64e2883db940778922d52042730b33baaf4751e91efe5e6b7c",
+    "bca05becdb8c58e906460cde62d316a58afc455b8d2f60156bc127c1b0a4456f",
+}
+
+
+def _private_hits(text: str) -> list[str]:
+    import hashlib
+    hits = []
+    for tok in set(re.findall(r"(?<![\d.,])\d{7,8}(?![\d])", text)):                 # номера документов / претензии
+        if hashlib.sha256(tok.encode()).hexdigest() in _PRIVATE_TOKEN_SHA256:
+            hits.append("документ/претензия")
+    for tok in set(re.findall(r"\b\d{3}[ \u00a0]?\d{3}[,.]\d{2}\b", text)):         # суммы «123 456,78»
+        if hashlib.sha256(re.sub(r"\D", "", tok).encode()).hexdigest() in _PRIVATE_TOKEN_SHA256:
+            hits.append("сумма претензии")
+    for pat in (r"damaged-product-report-\d+", r"FM-\d{4}-\d\d-\d\d-[A-Z]{3}"):        # ссылки на отчёты WB, id событий
+        if re.search(pat, text):
+            hits.append(pat)
+    return hits
 
 
 def test_public_tree_holds_no_itemized_loss_or_claim_evidence():
     # OWNER DECISION 11.10: поштучные доказательства, документы WB и претензия — только в закрытых таблицах wb_ops.
-    paths = [p for d in ("sql", "docs", "tools", "cloud/src", "cloud/test", "infra") for p in (ROOT / d).rglob("*")
-             if p.is_file() and p.suffix in {".sql", ".md", ".py", ".ts", ".tf", ".json"}]
-    paths.append(ROOT / "CHANGELOG.md")
-    # Вне области: отчёт Ozon 3.4A (уже в main до H0) упоминает сумму претензии — отдельное решение владельца.
-    skip = {ROOT / "tools/tests/test_unitka_store_pnl.py", ROOT / "docs/ozon/STAGE_3_4A_COGS_PROVENANCE_REPORT.md"}
-    paths = [p for p in paths if p not in skip]
-    bad = []
-    for p in paths:
-        t = p.read_text(errors="ignore")
-        for pat in (r"damaged-product-report", r"FM-2026-0\d-\d\d-[A-Z]{3}", r"\b2270352\b", r"\b2336254\b", r"\b91705474\b",
-                    r"698[ \u00a0]?420[,.]03", r"628[ \u00a0]?940[,.]31"):
-            if re.search(pat, t):
-                bad.append(f"{p.relative_to(ROOT)}: {pat}")
+    exts = {".sql", ".md", ".py", ".ts", ".tf", ".json", ".csv", ".txt", ".yml", ".yaml", ".gs", ".js", ".sh", ".html", ".tsv"}
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    paths = [ROOT / f for f in out if Path(f).suffix in exts or "/" not in f]
+    # Вне области: отчёт Ozon 3.4A (в main до H0) упоминает сумму претензии — отдельное решение владельца.
+    skip = {ROOT / "docs/ozon/STAGE_3_4A_COGS_PROVENANCE_REPORT.md"}
+    bad = [f"{p.relative_to(ROOT)}: {h}" for p in paths if p not in skip and p.is_file()
+           for h in _private_hits(p.read_text(errors="ignore"))]
     assert not bad, bad
+
+
+def test_private_token_scan_detects_its_targets():
+    # самопроверка без самих значений: формат ловится, посторонние числа — нет
+    assert _private_hits("см. damaged-product-" + "report-1 и FM-" + "2026-07-18-ABC")   # склеено, чтобы файл сам не совпал
+    assert not _private_hits("выручка 1 073 229,47; заказ 12345678; nm 438775617")
 
 
 def test_inventory_loss_tables_are_read_only_for_the_loader():

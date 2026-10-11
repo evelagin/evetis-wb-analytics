@@ -177,6 +177,7 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
     timing_bridge_logistics_rub: 40, timing_bridge_unsettled_margin_rub: 300, management_net_store_profit_rub: 118, management_tax_rub: 20,
     management_net_store_margin: 0.118, financial_state: 'PARTIAL_AWAITING_ACCOUNT_INVOICE', double_count_residual_rub: 0,
     inventory_loss_writeoff_rub: 0, wb_loss_compensation_rub: 0, force_majeure_net_effect_rub: 0,
+    inventory_loss_evidence_rows: 131, inventory_loss_evidence_runs: 1,
     service_month: `${String(o.month ?? '2026-09')}-01`,
     authority: `${String(o.month ?? '2026-09')}-01` < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C', ...o,
   };
@@ -551,6 +552,11 @@ describe('Утрата товара: списание и компенсация 
     expect(publishGate([pnlRow({ ...closed, inventory_loss_cogs_missing_qty: 1 })]).join()).toMatch(/открытых условиях/);
     expect(publishGate([pnlRow({ ...closed, inventory_loss_double_count_risk_qty: 2 })]).join()).toMatch(/открытых условиях/);
     expect(publishGate([pnlRow({ ...closed, loss_compensation_unreconciled_rows: 1 })]).join()).toMatch(/открытых условиях/);
+  });
+  it('доказательства утраты не загружены (пустая закрытая таблица) или загружены двумя импортами — стоп публикации', () => {
+    expect(publishGate([pnlRow({ inventory_loss_evidence_rows: 0, inventory_loss_evidence_runs: 0 })]).join()).toMatch(/не загружены/);
+    expect(publishGate([pnlRow({ inventory_loss_evidence_runs: 2 })]).join()).toMatch(/не одним импортом/);
+    expect(publishGate([pnlRow()])).toEqual([]);
   });
   it('вью без колонок утраты/налога (старая схема) — отказ, а не молчаливые нули', () => {
     const old = pnlRow();

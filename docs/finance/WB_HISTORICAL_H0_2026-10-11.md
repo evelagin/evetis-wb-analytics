@@ -76,8 +76,9 @@ Executive V2 подхватят новые интервалы при перес�
 один атомарный batchUpdate: значения A1:U, форматы строк данных, заметки 21 ячейки заголовка, два отпечатка;
 перечитывание значений, отпечатков и заметок.
 
-Порядок: выключить публикацию / пауза Scheduler → merge → `tools/unitka_store_pnl_h0_deploy.py --apply` (вью до образа) →
-deploy-prod → правка наборов `tools/cogs_bundle_start_fix.py` → ближайшая публикация копии `sp_publish_unitka_cogs` (:50) →
+Порядок: выключить публикацию / пауза Scheduler → merge (только squash) → targeted apply `wb_inventory_loss.tf` (3 закрытые
+таблицы + 2 права на чтение) → `tools/wb_inventory_loss_import.py` (PLAN → APPLY по отпечатку → перечитывание) →
+`tools/unitka_store_pnl_h0_deploy.py --apply` (12 вью, до образа) → deploy-prod в том же окне → правка наборов `tools/cogs_bundle_start_fix.py` → ближайшая публикация копии `sp_publish_unitka_cogs` (:50) →
 QA `COGS_COVERAGE` = PASS → read-only preflight: точный план A:U → OWNER ACK → разовый прогон с допуском миграции →
 обратное чтение → убрать допуск → включить публикацию и Scheduler.
 
@@ -88,7 +89,7 @@ QA `COGS_COVERAGE` = PASS → read-only preflight: точный план A:U →
 
 ## 7. Откат
 - Вью: `tools/unitka_store_pnl_h0_deploy.py --rollback --apply` — 6 изменяемых вью получают тела production до H0
-  (`sql/unitka/store_pnl_h0_rollback/`); три новых остаются (DROP — отдельно). Сначала вернуть прежний образ.
+  (`sql/unitka/store_pnl_h0_rollback/`); семь новых остаются (DROP — отдельно). Сначала вернуть прежний образ.
 - Наборы: `tools/cogs_bundle_start_fix.py --rollback --manifest-dir … --apply`.
 - Вкладка: выключить публикацию; вернуть A:Q — прежний образ + запись по манифесту 09.10 (отпечаток последней A:Q-публикации
   в metadata) — отдельным решением.

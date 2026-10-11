@@ -86,7 +86,7 @@ WITH w AS (SELECT SUM(inventory_loss_writeoff_rub) writeoff, SUM(lost_qty) qty
 comp AS (
   SELECT c.claim_id,
     -SUM(l.amount_rub) received_total,
-    -SUM(IF(l.booking_date > c.filed_date, l.amount_rub, 0)) received_after_claim
+    -SUM(IF(l.booking_date >= c.filed_date, l.amount_rub, 0)) received_after_claim   -- в день подачи и позже; до — в претензии
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.WB_INVENTORY_LOSS_CLAIM` c
   CROSS JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` l
   WHERE l.treatment = 'LOSS_COMPENSATION_INCOME' GROUP BY 1)

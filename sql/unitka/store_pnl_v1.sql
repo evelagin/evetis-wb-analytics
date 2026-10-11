@@ -133,7 +133,7 @@ SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONT
     WHEN 'UTILIZATION' THEN 'UTILIZATION'
     WHEN 'TRANSIT_DEDUCTION' THEN 'TRANSIT'
     -- «Добровольная выплата за товары, пострадавшие в результате обстоятельств непреодолимой силы» — отдельная строка
-    -- P&L «Компенсация WB за утрату товара» (FIRE/LOST INVENTORY, OWNER ACK 11.10), месяц — месяц проводки
+    -- P&L «Компенсация WB за утрату товара» (FIRE/LOST INVENTORY, OWNER ACK 11.10); месяц — ниже, по документу WB
     WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'LOSS_COMPENSATION'
     WHEN 'MARKETPLACE_COMPENSATION' THEN 'COMPENSATION_INCOME'
     -- «Баллы за отзывы»: аванс и возврат его остатка — один расход кабинета со знаком (H0, OWNER ACK 11.10)
@@ -161,22 +161,25 @@ periods AS (
 -- Три даты раздельно (OWNER ACK 09.10): месяц услуги (service_month), дата операции в отчёте WB
 -- (source_operation_date = booking_date, по ней окна), дата отчёта WB, в котором строка пришла (report_date).
 -- Поздний счёт за прошлый месяц услуги ложится в СВОЙ месяц услуги — P&L этого месяца пересчитывается сам.
--- Компенсация за утрату товара (FIRE/LOST INVENTORY): сверка с документом WB по номеру, дате и сумме; месяц услуги —
--- месяц события, только если документ его доказывает (DOCUMENT_LINKED), иначе месяц проводки (BOOKING_MONTH).
-SELECT l.* REPLACE (
-    IF(l.treatment = 'LOSS_COMPENSATION_INCOME' AND e.attributed_incident_month IS NOT NULL AND le.loss_evidence_matched,
-       e.attributed_incident_month, l.service_month) AS service_month,
-    IF(l.treatment = 'LOSS_COMPENSATION_INCOME', IF(le.loss_evidence_matched, e.attribution_basis, 'UNRECONCILED'),
-       l.service_period_basis) AS service_period_basis),
-  l.booking_date source_operation_date, p.pt report_date,
-  IF(l.treatment = 'LOSS_COMPENSATION_INCOME', le.wb_document, NULL) wb_document,
-  IF(l.treatment = 'LOSS_COMPENSATION_INCOME', le.loss_evidence_matched, NULL) loss_evidence_matched
-FROM l LEFT JOIN periods p ON l.booking_date BETWEEN p.pf AND p.pt
-CROSS JOIN UNNEST([STRUCT(REGEXP_EXTRACT(l.label, r'документ №\s*(\d+)') AS wb_document)]) d
-LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` e ON e.wb_document = d.wb_document
-CROSS JOIN UNNEST([STRUCT(d.wb_document AS wb_document,
-  IFNULL(e.booking_date = l.booking_date AND ABS(e.amount_rub + l.amount_rub) < 0.005, FALSE) AS loss_evidence_matched)]) le
-QUALIFY ROW_NUMBER() OVER (PARTITION BY l.finance_row_key, l.label, l.amount_rub ORDER BY p.pt) = 1;
+-- Компенсация за утрату товара (FIRE/LOST INVENTORY): сверка с документом WB по номеру, дате и сумме, и одна выплата —
+-- одна строка финотчёта (дубль строки с тем же документом не сверен, иначе доход удвоился бы); месяц услуги — месяц
+-- события, только если документ его доказывает (DOCUMENT_LINKED), иначе месяц проводки (BOOKING_MONTH).
+SELECT x.* EXCEPT (doc_match, attributed_incident_month, attribution_basis, doc_rows) REPLACE (
+    IF(x.treatment = 'LOSS_COMPENSATION_INCOME' AND x.doc_match AND x.doc_rows = 1 AND x.attributed_incident_month IS NOT NULL,
+       x.attributed_incident_month, x.service_month) AS service_month,
+    IF(x.treatment = 'LOSS_COMPENSATION_INCOME', IF(x.doc_match AND x.doc_rows = 1, x.attribution_basis, 'UNRECONCILED'),
+       x.service_period_basis) AS service_period_basis,
+    IF(x.treatment = 'LOSS_COMPENSATION_INCOME', x.wb_document, NULL) AS wb_document),
+  IF(x.treatment = 'LOSS_COMPENSATION_INCOME', x.doc_match AND x.doc_rows = 1, NULL) loss_evidence_matched
+FROM (
+  SELECT l.*, l.booking_date source_operation_date, p.pt report_date, d.wb_document,
+    IFNULL(e.booking_date = l.booking_date AND ABS(e.amount_rub + l.amount_rub) < 0.005, FALSE) doc_match,
+    e.attributed_incident_month, e.attribution_basis,
+    COUNT(DISTINCT IF(l.treatment = 'LOSS_COMPENSATION_INCOME', l.finance_row_key, NULL)) OVER (PARTITION BY d.wb_document) doc_rows
+  FROM l LEFT JOIN periods p ON l.booking_date BETWEEN p.pf AND p.pt
+  CROSS JOIN UNNEST([STRUCT(REGEXP_EXTRACT(l.label, r'документ №\s*(\d+)') AS wb_document)]) d
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_INVENTORY_LOSS_COMPENSATION_EVIDENCE` e ON e.wb_document = d.wb_document
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY l.finance_row_key, l.label, l.amount_rub ORDER BY p.pt) = 1) x;
 
 -- ─── 4. Новые / неутверждённые операции (C4): операция вне карты или с классом PENDING / UNKNOWN ─────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_NEW_OPERATIONS` AS
@@ -479,7 +482,8 @@ SELECT
   sku_contribution_rub, management_tax_rub,
   minimum_payment_rub, utilization_rub, penalty_rub, transit_rub, acceptance_rub, other_marketplace_cost_rub,
   marketplace_costs_rub, marketplace_income_rub,
-  -- Утрата товара (FIRE/LOST INVENTORY): списание — расход месяца события, компенсация WB — доход месяца проводки,
+  -- Утрата товара (FIRE/LOST INVENTORY): списание — расход месяца события, компенсация WB — доход (месяц события по
+  -- документу WB, иначе месяц проводки),
   -- обе строки отдельно, чистый эффект — только справочно (в прибыль входит через эти две строки).
   inventory_loss_writeoff_rub, wb_loss_compensation_rub, wb_loss_compensation_rub - inventory_loss_writeoff_rub force_majeure_net_effect_rub,
   ads_adjustment_rub, storage_adjustment_rub, commission_adjustment_rub, price_adjustment_rub, reconciliation_adjustments_rub,

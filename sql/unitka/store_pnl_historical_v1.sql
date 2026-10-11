@@ -155,7 +155,8 @@ k AS (
     ads_attributed_rub - ads_billing_rub ads_adjustment_rub,
     0 - storage_finance_rub storage_adjustment_rub,
     minimum_payment_rub + utilization_rub + penalty_rub + transit_rub + acceptance_rub + other_marketplace_cost_rub marketplace_costs_rub,
-    -- Утрата товара: списание (расход месяца события) и компенсация WB (доход месяца проводки) — отдельными строками.
+    -- Утрата товара: списание (расход месяца события) и компенсация WB (доход; месяц события по документу WB, иначе месяц
+    -- проводки) — отдельными строками.
     wb_loss_compensation_rub - inventory_loss_writeoff_rub force_majeure_net_effect_rub
   FROM j)
 SELECT
@@ -199,6 +200,13 @@ FROM k;
 -- Исторический слой — месяцы [2026-05, 2026-08), CURRENT_PHASE_C — с 2026-08 (V_WB_STORE_PNL_MONTHLY, нижняя граница
 -- там же). Пересечения нет по построению границ; QA SINGLE_AUTHORITY проверяет это на живых данных.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_PRESENTATION` AS
+-- Доказательства утраты загружены (закрытая таблица): пустая таблица = списание молча 0 — гейт публикации отказывает.
+WITH ev AS (
+  SELECT COUNT(*) inventory_loss_evidence_rows, COUNT(DISTINCT import_run_id) inventory_loss_evidence_runs,
+    IFNULL(SUM(lost_qty), 0) inventory_loss_evidence_units
+  FROM `project-fa311fc0-4d87-4781-986.wb_ops.WB_INVENTORY_LOSS_EVIDENCE`)
+SELECT u.*, ev.inventory_loss_evidence_rows, ev.inventory_loss_evidence_runs, ev.inventory_loss_evidence_units
+FROM (
 SELECT month, service_month, authority, revenue_rub, sku_contribution_rub, management_tax_rub, minimum_payment_rub, utilization_rub, penalty_rub, transit_rub,
   acceptance_rub, other_marketplace_cost_rub, marketplace_costs_rub, marketplace_income_rub,
   inventory_loss_writeoff_rub, wb_loss_compensation_rub, force_majeure_net_effect_rub, ads_adjustment_rub, storage_adjustment_rub,
@@ -221,4 +229,5 @@ SELECT month, service_month, 'CURRENT_PHASE_C' authority, revenue_rub, sku_contr
   account_invoice_window_closed, minimum_payment_invoices, utilization_invoices,
   inventory_loss_qty, inventory_loss_cogs_missing_qty, inventory_loss_double_count_risk_qty, inventory_loss_incident_list,
   wb_loss_compensation_dates, loss_compensation_unreconciled_rows
-FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`;
+FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_MONTHLY`
+) u CROSS JOIN ev;

@@ -92,7 +92,7 @@ const r2 = (x: number): number => Math.round(x * 100) / 100;
 
 /** Колонки вью, без которых строка вкладки была бы молча нулевой (toNum(undefined) = 0): их отсутствие — отказ. */
 export const REQUIRED_PNL_COLUMNS = ['management_tax_rub', 'inventory_loss_writeoff_rub', 'wb_loss_compensation_rub',
-  'force_majeure_net_effect_rub', 'management_net_store_profit_rub', 'authority'] as const;
+  'force_majeure_net_effect_rub', 'management_net_store_profit_rub', 'authority', 'inventory_loss_evidence_rows'] as const;
 
 export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
   const rows: TabCell[][] = [];
