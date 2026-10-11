@@ -20,6 +20,10 @@ def handoff():
         release['schema_version']=3
         release.pop('cadence_policy')
         release['verification'].pop('cadence_overlap_adapter')
+        # This fixture intentionally models the legacy v3 profile. The
+        # qualified extended timeout belongs only to the current v4 profile.
+        release.pop('controller_timeout_seconds',None)
+        release['verification'].pop('terminal_controller_adapter',None)
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
     # Synthetic current replacement, paired with the elected runtime. The
@@ -27,6 +31,7 @@ def handoff():
     release['runtime_image']=c['marketplaces']['ozon']['runtime_image']
     settings={'release':source,'root_hash':B.QF.ROOT,'scheduler_state':'PAUSED'}
     c['orchestration']=O.block(c,settings,B.REPO,release)
+    assert c['orchestration']['job']['timeout']=='600s'
     base,_=B.resources(c)
     receipt={'run_id':'bf-synthetic-terminal','lease_generation':70,'ack_hash':doc['ack_hash'],'operation':base+'/operations/synthetic'}
     prep={k:receipt[k] for k in ('run_id','lease_generation','ack_hash')}
