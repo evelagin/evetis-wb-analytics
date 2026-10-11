@@ -54,7 +54,15 @@ def validate_policy(p,manifest,release,*,historical=False):
         # Same nineteen predicates; an exact qualified owner handoff changes
         # artifact provenance only. Retained certificates use original policy.
         from tools.tenancy import full_runtime_handoff as FH
-        current=FH.runtime_facts(BF.target(manifest['tenant']),manifest)
+        contract=BF.target(manifest['tenant'])
+        if historical:
+            from copy import deepcopy
+            contract=deepcopy(contract);contract['marketplaces']['ozon']['runtime_image']=p['runtime_image']
+            retained=FH.release_for(contract);facts=retained['verification']['built_artifact']
+            current=dict(runtime_source=retained['source']['commit'],runtime_image=retained['image'],runtime_implementation_hash=facts['backfill_implementation_hash'])
+            if facts.get('full_resume_root')!=manifest['hash'] or facts.get('full_current_snapshot_adapters')!='PASS':fail('historical runtime unqualified')
+            if (release['runtime_image'],release['runtime_implementation_hash'])!=(p['runtime_image'],p['runtime_implementation_hash']):fail('historical runtime pair changed')
+        else:current=FH.runtime_facts(contract,manifest)
         if any(p[k]!=v for k,v in current.items()):fail('runtime provenance changed')
     if (p['controller_source'],p['controller_image'],p['controller_implementation_hash'])!=(release['source_sha'],release['image'],release['controller_implementation_hash']):
         fail('unqualified policy artifact')

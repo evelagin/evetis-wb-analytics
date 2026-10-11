@@ -19,6 +19,13 @@ class EvidenceError(RuntimeError):
     pass
 
 
+class FboWindowError(EvidenceError):
+    """A rejected FBO timestamp; the message never contains a source value."""
+    def __init__(self, evidence):
+        super().__init__('FBO_WINDOW_' + evidence['validation_class'])
+        self.fbo_window_evidence = evidence
+
+
 class CapacityReached(EvidenceError):
     """A full nonterminal source window must split, never silently truncate."""
 

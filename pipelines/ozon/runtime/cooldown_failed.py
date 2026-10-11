@@ -62,3 +62,18 @@ def proof(v,p):
         if not valid:fail('timestamp unknown')
     if v['lease_release']!='LD_50c5d90dbf43ac9c_0169':fail('lease target differs')
     return v
+
+COMPAT_FIELDS=frozenset({'version','type','tenant','project','root','certificate_hash','policy_hash',
+ 'runtime_source','runtime_image','runtime_implementation_hash','owner_ack_sha256','source_budget','hash'})
+
+def compatible_attestation(v,p,proof,current_implementation):
+    """Owner pinned forward read of the same exact legacy certificate."""
+    if not isinstance(v,dict) or set(v)!=COMPAT_FIELDS or v.get('version')!=1 or type(v['version']) is not int or v.get('type')!='FAILED_COOLDOWN_EXACT_ARTIFACT_HANDOFF':fail('closed compatible attestation required')
+    if v['hash']!=B.digest({k:x for k,x in v.items() if k!='hash'}):fail('compatible attestation digest differs')
+    if any(v[k]!=p[k] for k in ('tenant','project','root')) or (v['policy_hash'],v['certificate_hash'])!=(p['hash'],proof['hash']):fail('foreign compatible incident')
+    if v['runtime_implementation_hash']!=current_implementation or v['source_budget']!=0 or type(v['source_budget']) is not int:fail('compatible artifact/source budget differs')
+    for k in ('runtime_implementation_hash','owner_ack_sha256','hash'):
+        if not isinstance(v[k],str) or not re.fullmatch('[0-9a-f]{64}',v[k]):fail('compatible artifact hash unproven')
+    if not isinstance(v['runtime_source'],str) or not re.fullmatch('[0-9a-f]{40}',v['runtime_source']):fail('compatible runtime source unproven')
+    if not isinstance(v['runtime_image'],str) or not re.fullmatch(r'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:[0-9a-f]{64}',v['runtime_image']):fail('compatible runtime image unproven')
+    return v

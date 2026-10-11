@@ -60,7 +60,7 @@ def terminal_timeout(b,claim):
  settings=dict(release=claim['source'],root_hash=claim['root'],scheduler_state=env.get('HISTORICAL_SCHEDULER_STATE'))
  marker=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(**dict(source=settings['release'],root=settings['root_hash'],state=settings['scheduler_state'])))
  if not marker or parse(marker[1])!={'settings':settings,'release':release} or release['image']!=claim['image']:fail('original deployment unknown')
- O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},O.block(b.c,settings,BF.REPO,release))
+ O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},O.block(O.historical_contract(b.c,release),settings,BF.REPO,release))
  conditions=x.get('conditions',[]);completed=[v for v in conditions if v.get('type')=='Completed']
  if (x.get('name')!=claim['execution'] or x.get('failedCount')!=1 or x.get('succeededCount',0)
      or x.get('cancelledCount',0) or x.get('retriedCount',0) or x.get('runningCount',0) or x.get('reconciling',False)
@@ -90,7 +90,7 @@ def validate(p,b,m,records,*,final=True):
  marker=b.tables.get_table(ds,C.descriptor_name(p['new_source'],p['root'],'PAUSED'))
  desc=parse(marker[1]) if marker else {};settings=dict(release=p['new_source'],root_hash=p['root'],scheduler_state='PAUSED')
  if set(desc)!={'settings','release'} or desc['settings']!=settings:fail('replacement descriptor absent')
- r=desc['release'];O.block(b.c,settings,BF.REPO,r)
+ r=desc['release'];O.block(O.historical_contract(b.c,r,m),settings,BF.REPO,r)
  if (r['source_sha'],r['image'],r['controller_implementation_hash'],r['runtime_image'],r.get('controller_timeout_seconds'),r['verification'].get('terminal_controller_adapter'))!=(p['new_source'],p['new_image'],p['new_implementation_hash'],p['runtime_image'],1800,'PASS'):fail('qualified replacement differs')
  if b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']==p['new_source']:O.verify_artifact_source(r,BF.REPO)
  elif parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['new_source']}.json").read_text())!=r:fail('historical replacement differs')

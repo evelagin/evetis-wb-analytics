@@ -105,7 +105,7 @@ def validate(p,b,m,records):
     else:
         historical=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['new_source']}.json").read_text())
         if historical!=release:fail('historical replacement registration differs')
-    O.block(b.c,settings,BF.REPO,release)
+    O.block(O.historical_contract(b.c,release,m),settings,BF.REPO,release)
     copies=[r for r in records if r['kind']==KIND]
     if len(copies)>1 or any(r['root_hash']!=p['root'] or r['sequence']!=0 or r['payload']!=p for r in copies):
         fail('conflicting recovery record')
