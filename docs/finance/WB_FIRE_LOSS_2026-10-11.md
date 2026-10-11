@@ -38,8 +38,8 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 | Субъект | Откуда право | Данные `wb_secure` |
 |---|---|---|
 | владелец (`roles/owner`) | ACL датасета `projectOwners` → OWNER | чтение и запись всех таблиц |
-| `sa-terraform-apply` | проект: `roles/bigquery.admin` (+ `resourcemanager.projectIamAdmin`) | чтение и запись — уровень администратора, сузить нельзя: учётка может выдать себе любое право |
-| `metabase-read-only` | проект: `roles/bigquery.dataViewer` без условия (выдано не через Terraform) | 🔴 **чтение всех трёх таблиц в обход ACL** |
+| `sa-terraform-apply` | проект: `roles/bigquery.admin` (+ `resourcemanager.projectIamAdmin`) | чтение и запись. Доверенный администратор, режим break-glass: ни одна среда выполнения его не использует (Cloud Run, Scheduler — нет), пользовательских ключей нет, работает только через WIF в `infra.yml` и `scheduler-control.yml` из `main`; действия видны в Admin Activity audit log |
+| `metabase-read-only` | было: проект `roles/bigquery.dataViewer` без условия (вручную); стало: `dataViewer` на 11 датасетов (`metabase_access.tf`), проектная роль снята | было: 🔴 чтение `wb_secure` в обход ACL; стало: нет (проверяется запросами от имени Metabase) |
 | `sa-loaders-prod` | табличные права `dataViewer` на 2 таблицы | чтение `…_EVIDENCE` и `…_COMPENSATION_EVIDENCE`; претензии нет; записи нет |
 | `sa-ozon-ingestion` | проект: `dataEditor`/`dataViewer` с условием `ozon_raw` / `evetis_ref` | нет |
 | `sa-ae-reader` | проект: своя роль `jobs.create` + `bigquery.resourceViewer` | данных нет; 🔴 видит **метаданные заданий всех пользователей** (`jobs.listAll`) |
@@ -47,10 +47,13 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 | `sa-ops-health` и прочие с `jobUser` | — | нет |
 | `projectReaders` / `projectWriters` | в ACL нет | нет |
 
-**Блокер до импорта.** Изоляцию обходит `metabase-read-only`: роль `bigquery.dataViewer` на весь проект, без условия.
-Предложение — заменить её условной привязкой: `!resource.name.startsWith("projects/<P>/datasets/wb_secure")`.
-Это изменение IAM Metabase в production, оно требует отдельного решения владельца. Пока его нет, импорт не делается
-(STOP по решению 11.10).
+**Блокер до импорта (F-20) снят решением владельца 11.10.** У Metabase проектная роль `dataViewer` заменяется на явный
+белый список из 11 датасетов (`infra/terraform/metabase_access.tf`, без отрицательных условий). Список составлен по
+фактической нагрузке за 90 дней; `wb_secure` и будущие датасеты в него не входят. После применения нужно доказать
+запросами от имени Metabase:
+- A — рабочий запрос дашборда проходит;
+- B — запрос к витрине проходит;
+- C, D, E — прямой SELECT из каждой из трёх таблиц `wb_secure` возвращает Access Denied.
 
 **История.** Первый PR этой работы (#328) закрыт без слияния: его ранние коммиты содержали доказательства. Эта ветка
 создана заново от `main` и содержит только итоговое очищенное дерево. Тест
@@ -156,12 +159,16 @@ FIRE/LOST INVENTORY + H0/H1 FINALIZATION».
 `LOSS_COMPENSATION_RECONCILED`.
 
 ## 7. Развёртывание
-1. Targeted plan и apply `wb_secure.tf`: датасет, 3 таблицы, 2 табличных права — 6 to add.
-2. Матрица фактического доступа (§0). Если изоляцию что-то обходит — STOP.
-3. Импорт: `tools/wb_inventory_loss_import.py` в режиме PLAN (итоги `--expect-rows 131 --expect-units 3460
+1. Targeted plan и apply `wb_secure.tf` и `metabase_access.tf`: датасет, 3 таблицы, 2 табличных права и 11 членов ACL
+   датасетов — 17 to add, 0 to change, 0 to destroy.
+2. Снять проектную `roles/bigquery.dataViewer` у `metabase-read-only` (выдана вручную, не в Terraform), например:
+   `gcloud projects remove-iam-policy-binding <P> --member=serviceAccount:metabase-read-only@<P>.iam.gserviceaccount.com
+   --role=roles/bigquery.dataViewer --condition=None`.
+3. Матрица фактического доступа (§0) и проверки A–E от имени Metabase. Если изоляцию что-то обходит — STOP.
+4. Импорт: `tools/wb_inventory_loss_import.py` в режиме PLAN (итоги `--expect-rows 131 --expect-units 3460
    --expect-writeoff 657065.17`), затем APPLY по отпечатку (load-задания) и обратное чтение.
-4. Вью: `tools/unitka_store_pnl_h0_deploy.py --apply` (`wb_secure` + `wb_mart`).
-5. `deploy-prod` в том же окне при остановленном Scheduler. Старый образ с новой `V_WB_STORE_PNL_MONTHLY`
+5. Вью: `tools/unitka_store_pnl_h0_deploy.py --apply` (`wb_secure` + `wb_mart`).
+6. `deploy-prod` в том же окне при остановленном Scheduler. Старый образ с новой `V_WB_STORE_PNL_MONTHLY`
    несовместим: прогон остановится на `STORE_PNL_IDENTITY` и ничего не запишет.
 
 Откат — в обратном порядке: прежний образ → вью → `tools/wb_inventory_loss_import.py --rollback --apply`.

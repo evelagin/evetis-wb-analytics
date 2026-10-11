@@ -417,3 +417,18 @@ def test_no_comment_line_ends_with_semicolon_in_historical_sql():
 def test_no_comment_line_ends_with_semicolon_in_loss_sql():
     loss = (ROOT / "sql/unitka/store_inventory_loss_v1.sql").read_text()
     assert not re.findall(r"^\s*--.*;\s*$", loss, flags=re.M)
+
+
+def test_metabase_reads_only_an_explicit_dataset_allowlist():
+    # F-20 (OWNER DECISION 11.10): позитивный список датасетов вместо проектного dataViewer; wb_secure — никогда.
+    tf = (ROOT / "infra/terraform/metabase_access.tf").read_text()
+    code = re.sub(r"#[^\n]*", "", tf)
+    ds = set(re.findall(r'"([a-z_]+)"', code.split("metabase_read_datasets = toset([")[1].split("])")[0]))
+    assert ds == {"wb_raw", "wb_mart", "wb_ops", "ozon_raw", "ozon_stg", "ozon_mart", "evetis_ref", "evetis_ops", "evetis_mart",
+                  "evetis_health", "evetis_communications"}
+    assert "wb_secure" not in ds and "!resource.name" not in code and "condition" not in code      # без отрицательных условий
+    assert re.findall(r'resource "(google_[a-z_]+)"', code) == ["google_bigquery_dataset_iam_member"]
+    assert re.findall(r'role\s*=\s*"([^"]+)"', code) == ["roles/bigquery.dataViewer"]
+    for p in (ROOT / "infra/terraform").glob("*.tf"):                                             # нигде нет проектной роли
+        t = re.sub(r"#[^\n]*", "", p.read_text())
+        assert not re.search(r'google_project_iam_\w+"[^}]*metabase', t, re.S), p.name
