@@ -19,6 +19,7 @@ KINDS = KINDS | {'FULL_LEAF_STOP_RECOVERED','FULL_FIRST_RECEIPT_STOP_RECOVERED'}
 KINDS = KINDS | {'FULL_COOLDOWN_FAILED_RECOVERED','FAILED_SOURCE_ATTEMPT_SUPERSEDED'}
 KINDS = KINDS | {'FULL_POLICY_BOOTSTRAP_STOP_RECOVERED','FULL_CONTROLLER_CLOSURE_RECOVERED'}
 KINDS = KINDS | {'FULL_PRETRANSPORT_STOP_RECOVERED','DISPATCH_PRETRANSPORT_REJECTED'}
+KINDS = KINDS | {'FULL_FBO_ZERO_EFFECT_FAILED_RECOVERED','DISPATCH_ZERO_EFFECT_FAILED_CLOSED'}
 MAX_RECORD_BYTES = 900000
 
 
@@ -275,7 +276,7 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
-def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=(), verified_pretransport=()):
+def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=(), verified_pretransport=(), verified_fbo_zero_effect=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
     Never dispatch after an intent lacking a receipt. Reconcile terminal receipts
@@ -288,6 +289,13 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
     if any(not any(r['kind']=='FAILED_PRE_SOURCE' and r['payload']==p and r['sequence']==p['dispatch_sequence'] for r in current) for p in verified_failures):
         raise BF.B.EvidenceError('verified failure lacks its immutable recovery record')
     recovered={p['dispatch_sequence'] for p in verified_failures}
+    for proof in verified_fbo_zero_effect:
+        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
+        from pipelines.ozon.runtime import full_resume as FR
+        ZE.header(proof,FR.manifest())
+        if proof['shard']!=plan_hash:raise BF.B.EvidenceError('foreign FBO zero-effect closure')
+        ZE.verify_shard(proof,current)
+        recovered.add(proof['receipt_sequence'])
     for proof in verified_pretransport:
         from tools.tenancy import full_pretransport_recovery as PT
         from pipelines.ozon.runtime import full_resume as FR

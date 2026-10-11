@@ -306,6 +306,9 @@ class Backend(C.Backend):
         return result
 
     def reconcile_failed(self, doc, receipt, operation):
+        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
+        if ZE.protected_retry(self,doc,receipt):
+            raise BF.B.EvidenceError('FBO_DIAGNOSTIC_RETRY_FAILED_NO_AUTOMATIC_REPEAT')
         p = doc['runtime_plan']; state = self.state(doc)
         if (state['progress'].get('report') or {}).get('phase') == 'INTENT':
             raise BF.B.EvidenceError('ambiguous report intent; never repeat source POST')
@@ -448,6 +451,7 @@ def wake(base, root):
         from tools.tenancy import full_cooldown_recovery as FC
         from tools.tenancy import full_policy_bootstrap_recovery as PB
         from tools.tenancy import full_pretransport_recovery as PT, full_first_receipt_recovery as FR
+        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
         with gate('MANIFEST_ROOT'):
             approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
             failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
@@ -455,9 +459,12 @@ def wake(base, root):
             rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
         backend.verified_cooldown_failures=failed
         backend.verified_pretransport_rejections=rejected
+        zero_effect=ZE.load(backend,manifest,records) if any(r['kind']==ZE.KIND for r in records) else []
+        backend.verified_fbo_zero_effect_failures=zero_effect
         approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
         from tools.tenancy import full_controller_closure_recovery as CR
         approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
+        approved += zero_effect
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -569,7 +576,8 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
         return import_accepted_sku90(backend,manifest,index,item,records,history),backend
     with gate('QUOTA'):quota=backend.quota(leaf,backend.clock())
     decision=D.decide_tick(history,shard,quota,backend.active_runtime_execution(),verified_failed_cooldown=[p for p in getattr(backend,'verified_cooldown_failures',[]) if p['shard']==shard],
-        verified_pretransport=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==shard])
+        verified_pretransport=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==shard],
+        verified_fbo_zero_effect=[p for p in getattr(backend,'verified_fbo_zero_effect_failures',[]) if p['shard']==shard])
     action=decision['action'];sequence=decision.get('sequence')
     if action=='MONITOR':return {'status':'MONITORING','source_dispatches':0,'index':index},backend
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:

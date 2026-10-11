@@ -102,7 +102,7 @@ def validate(p,b,m,records,*,final=True):
  if (release['source_sha'],release['image'],release['controller_implementation_hash'],release['runtime_image'])!=(p['new_source'],p['new_image'],p['new_implementation_hash'],p['runtime_image']):fail('qualified replacement differs')
  if b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']==p['new_source']:O.verify_artifact_source(release,BF.REPO)
  elif parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['new_source']}.json").read_text())!=release:fail('historical replacement differs')
- O.block(b.c,settings,BF.REPO,release)
+ O.block(O.historical_contract(b.c,release,m),settings,BF.REPO,release)
  return doc
 
 def load(b,m,records):

@@ -17,7 +17,7 @@ def protocol(monkeypatch):
     m=FR.manifest();c=deepcopy(BF.target('client_001'))
     old=D.parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{R.EXACT['original_source']}.json").read_text())
     release=deepcopy(old);release.update(source_sha='2'*40,image=old['image'].split('@')[0]+'@sha256:'+'2'*64,
-        controller_implementation_hash=O.implementation_hash(BF.REPO))
+        controller_implementation_hash=O.implementation_hash(BF.REPO),runtime_implementation_hash=BF.B.implementation_hash())
     settings=dict(release=release['source_sha'],root_hash=m['hash'],scheduler_state='PAUSED')
     c['orchestration']=O.block(c,settings,BF.REPO,release)
     claim=CC.sealed(dict(version=1,tenant=m['tenant'],project=m['project'],root=m['hash'],policy_hash=D.digest(old['cadence_policy']),
@@ -67,7 +67,13 @@ def protocol(monkeypatch):
     return b,m,p,records,objects,writes,reads,journal,x
 
 
-def test_packaged_descriptor_and_unknown_predicates_are_network_free():assert set(CHECK.check().values())=={'PASS'}
+def test_packaged_descriptor_and_unknown_predicates_are_network_free(monkeypatch):
+    # Unit tests run before the candidate runtime can be registered. The exact
+    # image invokes the same check without this fixture after registration.
+    from tools.tenancy import full_runtime_handoff as FH
+    monkeypatch.setattr(FH,'runtime_facts',lambda c,m:dict(runtime_source='2'*40,
+        runtime_image=c['marketplaces']['ozon']['runtime_image'],runtime_implementation_hash=BF.B.implementation_hash()))
+    assert set(CHECK.check().values())=={'PASS'}
 
 
 def test_additive_owner_publish_keeps_stop_failed4_and_closed_wake_immutable(monkeypatch):

@@ -6,7 +6,22 @@ from tools.tenancy import full_controller as H,full_leaf_recovery as FL,full_coo
 from datetime import datetime,timezone
 from types import SimpleNamespace
 
-def test_packaged_real_boundary_and_unknown_recovery_blocks():assert set(CHECK.check().values())=={'PASS'}
+def candidate_runtime(monkeypatch):
+ # Keep canonical plan/environment validation real; only release facts are a
+ # candidate fixture before image build/registration. Packaged checks use the
+ # actual newly registered runtime without this fixture.
+ reader=BF.parse_tenant_json
+ def release(text):
+  value=reader(text)
+  facts=value.get('verification',{}).get('built_artifact') if isinstance(value,dict) else None
+  if facts is not None:
+   value=deepcopy(value);value['verification']['built_artifact']['backfill_implementation_hash']=BF.B.implementation_hash()
+  return value
+ monkeypatch.setattr(BF,'parse_tenant_json',release)
+
+def test_packaged_real_boundary_and_unknown_recovery_blocks(monkeypatch):
+ candidate_runtime(monkeypatch)
+ assert set(CHECK.check().values())=={'PASS'}
 
 @pytest.mark.parametrize('fault',['body_root','body_shard','body_extra','wrong_plan','wrong_intent','no_intent','no_authority','duplicate_env','uncommitted_context','other_run','bool_sequence','bool_index'])
 def test_full_context_or_environment_drift_never_obtains_token_or_sends(fault):
@@ -31,7 +46,8 @@ def test_full_context_or_environment_drift_never_obtains_token_or_sends(fault):
  with pytest.raises((A.TT.TableError,BF.B.EvidenceError)):access.dispatch(doc,job,body,full_authority=auth,full_intent=intent)
  assert not calls and not tokens
 
-def test_real_backend_passes_only_context_of_the_committed_preparation():
+def test_real_backend_passes_only_context_of_the_committed_preparation(monkeypatch):
+ candidate_runtime(monkeypatch)
  _,doc,job,body,auth,intent=CHECK.fixture();calls=[]
  class Tokens:
   def token(self,kind):return 'SYNTHETIC_NON_CREDENTIAL'
@@ -49,7 +65,7 @@ def test_closed_attempt_never_fabricates_success_or_allows_unknown_intent():
 def protocol(monkeypatch):
  m,doc,_,_,_,intent=CHECK.fixture();now=datetime(2026,10,10,15,tzinfo=timezone.utc)
  c=deepcopy(BF.target('client_001'));release=D.parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{R.EXACT['original_source']}.json").read_text())
- release.update(source_sha='2'*40,image=release['image'].split('@')[0]+'@sha256:'+'2'*64,controller_implementation_hash=O.implementation_hash(BF.REPO))
+ release.update(source_sha='2'*40,image=release['image'].split('@')[0]+'@sha256:'+'2'*64,controller_implementation_hash=O.implementation_hash(BF.REPO),runtime_implementation_hash=BF.B.implementation_hash())
  settings={'release':release['source_sha'],'root_hash':m['hash'],'scheduler_state':'PAUSED'};c['orchestration']=O.block(c,settings,BF.REPO,release)
  def record(kind,payload,seq=0):return {'version':D.VERSION,'root_hash':m['hash'],'kind':kind,'sequence':seq,'payload':payload}
  stop=record('STOPPED',{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':R.EXACT['execution'],'diagnostic':{'version':1,'stage':'SOURCE_DISPATCH_BOUNDARY','category':'CLOUD_METADATA'}})

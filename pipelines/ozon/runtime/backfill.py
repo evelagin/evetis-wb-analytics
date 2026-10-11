@@ -8,10 +8,11 @@ from __future__ import annotations
 import catalog_identity as CI
 import copy
 import json
+import hashlib
 import os
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import backfill_core as B
 import common as C
@@ -23,6 +24,41 @@ from google.cloud import bigquery
 
 
 QUOTA_EVIDENCE = {}
+
+
+def validate_fbo_timestamp(value, a, b, *, page_ordinal, request_ordinal, record_ordinal):
+    """Strict half-open UTC membership with bounded, redacted failure evidence.
+
+    No posting/product identifiers or response bodies enter this diagnostic.
+    A timezone is mandatory; an adjacent-window record is always rejected.
+    """
+    category = 'INVALID_TIMESTAMP_FORMAT'
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+        instant = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            category = 'MISSING_TIMEZONE'
+            raise ValueError
+        delta = instant.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+        micros = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+        if not a * 1000 <= micros < b * 1000:
+            category = 'OUTSIDE_REQUESTED_INTERVAL'
+            raise ValueError
+        return instant
+    except (ValueError, TypeError, OverflowError):
+        # Never stringify structured input or copy an API body. Strings are
+        # redacted before truncation and hashing, including malformed values.
+        safe = C.safe_error_text(value, len(value)) if isinstance(value, str) else None
+        evidence = dict(version=1, validation_class=category,
+            requested_utc_from=B.stamp(a), requested_utc_to=B.stamp(b - 1),
+            utc_until_exclusive=B.stamp(b), timestamp_type=type(value).__name__,
+            timestamp_value=safe[:1024] if safe is not None else None,
+            timestamp_truncated=safe is not None and len(safe) > 1024,
+            timestamp_sha256=hashlib.sha256(safe.encode()).hexdigest() if safe is not None else None,
+            page_ordinal=page_ordinal, request_ordinal=request_ordinal,
+            request_ordinal_basis='ENTITY_LOGICAL_CALL', record_ordinal=record_ordinal)
+        raise B.FboWindowError(evidence) from None
 
 
 def export_budget(cap=15, p=None):
@@ -135,7 +171,7 @@ class Engine:
             return {}, {"action": "SPLIT_CONFIGURED_WINDOW"}
         rows, cursor, seen, postings = [], "", set(), 0
         cap = self.p["fbo_page_cap"]
-        for _ in range(cap):
+        for page_ordinal in range(1, cap + 1):
             d = self.call("/v3/posting/fbo/list", {"cursor": cursor,
                           "filter": {"since": B.stamp(a), "to": B.stamp(b - 1)},
                           "limit": 100, "with": {"analytics_data": True, "financial_data": True}})
@@ -143,13 +179,11 @@ class Engine:
             if not isinstance(page, list) or len(page) > 100:
                 raise B.EvidenceError("FBO source page shape invalid")
             self.pages += 1
-            for item in page:
-                try:
-                    dt = datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
-                    if dt.tzinfo is None or not a <= int(dt.timestamp() * 1000) < b:
-                        raise ValueError
-                except (ValueError, KeyError, TypeError):
-                    raise B.EvidenceError("FBO record outside requested UTC interval") from None
+            for record_ordinal, item in enumerate(page, 1):
+                if not isinstance(item, dict):
+                    raise B.EvidenceError('FBO source record shape invalid')
+                validate_fbo_timestamp(item.get('created_at'), a, b, page_ordinal=page_ordinal,
+                    request_ordinal=self.requests, record_ordinal=record_ordinal)
                 if not item.get("products") or any(product.get("sku") in (None,"",0,"0") for product in item["products"]):
                     raise B.EvidenceError("FBO posting without stable product grain")
             rows.extend(E._fbo_rows(page, self.run_id, self.ts))
@@ -780,6 +814,8 @@ def run_backfill(p, run_id, ts):
         return engine.run(persist)
     except Exception as error:
         error.backfill_failure_evidence = failure_evidence(p, engine.state)
+        if isinstance(error, B.FboWindowError):
+            error.backfill_failure_evidence['fbo_window_validation'] = error.fbo_window_evidence
         raise
 
 
@@ -893,7 +929,12 @@ def read_failed_cooldown_attestations():
         t=client.get_table(f'{C.PROJECT}.{C.REF_DATASET}.{name}');doc=json.loads(t.description or '{}')
         if set(doc)!={'policy','proof'} or t.labels!={'kind':'failed_cooldown'}:CF.fail('closed accepted owner attestation required')
         p=CF.policy(doc['policy']);proof=CF.proof(doc['proof'],p)
-        if name!='BFCF_ACCEPTED_'+proof['hash'] or p['runtime_implementation_hash']!=B.implementation_hash():CF.fail('accepted recovery/artifact differs')
+        if name!='BFCF_ACCEPTED_'+proof['hash']:CF.fail('accepted recovery identity differs')
+        if p['runtime_implementation_hash']!=B.implementation_hash():
+            n='BFCF_COMPAT_'+proof['hash']+'_'+B.implementation_hash()
+            compatible=client.get_table(f'{C.PROJECT}.{C.REF_DATASET}.{n}')
+            if compatible.labels!={'kind':'failed_cooldown_compat'}:CF.fail('compatible owner label differs')
+            CF.compatible_attestation(json.loads(compatible.description or '{}'),p,proof,B.implementation_hash())
         config=bigquery.QueryJobConfig(use_legacy_sql=False,maximum_bytes_billed=1073741824,
             query_parameters=[bigquery.ScalarQueryParameter('run','STRING',proof['run_id'])])
         rows=list(client.query(f"SELECT status,backfill_plan_id,backfill_sequence,error_message,requests,retry_count,rows_received,rows_inserted,rows_updated FROM `{C.PROJECT}.{C.DATASET}.{C.RUNS_TABLE}` WHERE ingestion_run_id=@run AND entity='ads_sku_daily' LIMIT 2",job_config=config,location=C.LOCATION).result())

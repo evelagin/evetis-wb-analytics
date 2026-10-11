@@ -128,15 +128,10 @@ def historical_policy(backend,manifest,active,source):
     contract=backend.c
     if release['runtime_image']!=contract['marketplaces']['ozon']['runtime_image']:
         from tools.tenancy import full_runtime_handoff as FH
-        if any(old[k]!=manifest[k.replace('runtime_source','runtime_source_sha')]
-               for k in ('runtime_source','runtime_image','runtime_implementation_hash')):
-            fail('historical runtime is not frozen manifest runtime')
         if (release['runtime_image'],release['runtime_implementation_hash'])!=(old['runtime_image'],old['runtime_implementation_hash']):
             fail('historical runtime release differs')
         FH.policy(backend,manifest)
-        from copy import deepcopy
-        contract=deepcopy(contract)
-        contract['marketplaces']['ozon']['runtime_image']=old['runtime_image']
+        contract=O.historical_contract(backend.c,release,manifest)
     O.block(contract,dict(release=source,root_hash=manifest['hash'],scheduler_state='PAUSED'),BF.REPO,release)
     return old
 
@@ -200,6 +195,12 @@ def pending_receipts(backend,plans):
                 if commit!=expected:fail('reconciliation commit metadata differs')
                 accepted=recon
         if intent>accepted:
+            settled=[p for p in getattr(backend,'verified_fbo_zero_effect_failures',[]) if p['shard']==shard and p['receipt_sequence']==intent]
+            if settled:
+                from tools.tenancy import full_fbo_zero_effect_recovery as ZE
+                if len(settled)!=1:fail('ambiguous FBO settlement')
+                ZE.verify_shard(settled[0],backend.store.history(shard,max_records=F.MAX_LEAF_RECORDS))
+                continue
             rejected=[p for p in getattr(backend,'verified_pretransport_rejections',[]) if p['shard']==shard and p['receipt_sequence']==intent]
             if rejected:
                 from tools.tenancy import full_pretransport_recovery as PT

@@ -17,12 +17,40 @@ SOURCE_FILES = (
     'full_policy_bootstrap_recovery.py','full_policy_bootstrap_image_check.py',
     'full_pretransport_recovery.py','full_pretransport_image_check.py',
     'full_controller_closure_recovery.py','full_controller_closure_image_check.py',
+    'full_fbo_zero_effect_recovery.py','full_fbo_zero_effect_image_check.py',
 )
 
 
 def implementation_hash(repo):
     from tools.tenancy import tenant_backfill as BF
     return BF.B.digest({n:hashlib.sha256((repo/'tools/tenancy'/n).read_bytes()).hexdigest() for n in SOURCE_FILES})
+
+
+def historical_contract(c,release,manifest=None):
+    """Validate a retained release against its own registered runtime pair.
+
+    Only a read context is copied. Current deployment/runtime qualification is
+    still checked independently; historical certificates are never rewritten.
+    """
+    if release['runtime_image']==c['marketplaces']['ozon']['runtime_image']:return c
+    from copy import deepcopy
+    from tools.tenancy import tenant_backfill as BF,full_runtime_handoff as FH,full_history as F
+    retained=parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{release['source_sha']}.json").read_text())
+    if retained!=release:raise ValueError('historical controller registration differs')
+    old=deepcopy(c);old['marketplaces']['ozon']['runtime_image']=release['runtime_image']
+    from pipelines.ozon.runtime import full_resume as FR
+    manifest=manifest or FR.manifest()
+    F.validate_manifest(manifest)
+    if release['runtime_image']==manifest['runtime_image']:
+        if release['runtime_implementation_hash']!=manifest['runtime_implementation_hash']:
+            raise BF.B.EvidenceError('historical runtime release differs')
+        return old
+    runtime=FH.release_for(old);facts=runtime['verification']['built_artifact']
+    if (facts['backfill_implementation_hash']!=release['runtime_implementation_hash']
+        or facts.get('full_resume_root')!=FR.manifest()['hash']
+        or facts.get('full_current_snapshot_adapters')!='PASS'):
+        raise ValueError('historical runtime pair unqualified')
+    return old
 
 
 def block(c, settings, repo, release=None):
@@ -37,6 +65,11 @@ def block(c, settings, repo, release=None):
     expected={'schema_version','image','source_sha','runtime_image','runtime_implementation_hash','controller_implementation_hash','verification'}
     if release.get('schema_version')==4:expected.add('cadence_policy')
     extended='controller_timeout_seconds' in release
+    diagnostic_recovery='fbo_zero_effect_recovery_version' in release
+    if diagnostic_recovery:
+        expected.add('fbo_zero_effect_recovery_version')
+        if release.get('schema_version')!=4 or type(release['fbo_zero_effect_recovery_version']) is not int or release['fbo_zero_effect_recovery_version']!=1:
+            raise ValueError('unqualified FBO diagnostic recovery')
     if extended:
         expected.add('controller_timeout_seconds')
         if release.get('schema_version')!=4 or type(release['controller_timeout_seconds']) is not int or release['controller_timeout_seconds']!=1800:
@@ -52,6 +85,7 @@ def block(c, settings, repo, release=None):
     if release['schema_version']>=3:required.add('recent_priority_adapter')
     if release['schema_version']==4:required.add('cadence_overlap_adapter')
     if extended:required.add('terminal_controller_adapter')
+    if diagnostic_recovery:required.add('fbo_zero_effect_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

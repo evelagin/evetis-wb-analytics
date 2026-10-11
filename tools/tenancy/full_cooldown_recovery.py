@@ -237,3 +237,21 @@ def publish_accepted(b,m):
     if old is None:b.tables.create_marker(b.c['datasets']['ref'],n,*v)
     if b.tables.get_table(b.c['datasets']['ref'],n)!=v:fail('accepted quota attestation differs')
     return n
+
+def publish_compatible_accepted(b,m,owner_ack_sha256):
+    """Preserve the original accepted marker; add an exact qualified image pin."""
+    from tools.tenancy import full_runtime_handoff as FH
+    found=load(b,m,b.store.history(m['hash']))
+    if len(found)!=1:fail('single accepted legacy incident required')
+    proof=found[0];old=b.tables.get_table(b.c['datasets']['ref'],'BFCF_ACCEPTED_'+proof['hash'])
+    accepted=parse(old[1]) if old else {};p=accepted.get('policy',{})
+    if set(accepted)!={'policy','proof'} or accepted['proof']!=proof or old[0]!={'kind':'failed_cooldown'}:fail('original accepted attestation differs')
+    CF.proof(proof,p);facts=FH.runtime_facts(b.c,m);FH.policy(b,m)
+    v=CF.sealed(dict(version=1,type='FAILED_COOLDOWN_EXACT_ARTIFACT_HANDOFF',tenant=m['tenant'],project=m['project'],root=m['hash'],
+        certificate_hash=proof['hash'],policy_hash=p['hash'],owner_ack_sha256=owner_ack_sha256,source_budget=0,**facts))
+    CF.compatible_attestation(v,p,proof,BF.B.implementation_hash())
+    n='BFCF_COMPAT_'+proof['hash']+'_'+facts['runtime_implementation_hash'];wanted=({'kind':'failed_cooldown_compat'},D.encoded(v))
+    old=b.tables.get_table(b.c['datasets']['ref'],n)
+    if old is None:b.tables.create_marker(b.c['datasets']['ref'],n,*wanted)
+    if b.tables.get_table(b.c['datasets']['ref'],n)!=wanted:fail('compatible attestation conflict')
+    return n
