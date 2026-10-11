@@ -128,6 +128,10 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
       if (!tab || tab.title !== plan.tab) {
         throw new LoaderError(`вкладка sheetId=${sheetId} ${tab ? `называется «${tab.title}»` : 'не найдена'}, ожидалась «${plan.tab}»`, 'STORE_PNL_TAB_MISSING');
       }
+      // Сетка нужна для чтения заметок и расширения колонок; без неё (columnCount 0) — fail-closed, без записи.
+      if (!(tab.rowCount > 0 && tab.columnCount > 0)) {
+        throw new LoaderError(`сетка вкладки «${plan.tab}» не прочитана (${tab.rowCount}×${tab.columnCount})`, 'STORE_PNL_TAB_MISSING');
+      }
       const metas = tab.metadata.filter((m) => m.key === PUBLISH_META_KEY);
       if (metas.length > 1) throw new LoaderError(`${metas.length} отпечатков публикации у вкладки`, 'STORE_PNL_TAB_EDITED');
       const contracts = tab.metadata.filter((m) => m.key === CONTRACT_META_KEY);
@@ -141,11 +145,15 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
     const c = decideContract({ publishedContract: t.contracts[0]?.value, allowMigrationTo: pub.migrateContract });
     if (!c.ok) throw new LoaderError(c.message, 'STORE_PNL_CONTRACT_MIGRATION_REQUIRED');
     // Заметки заголовка — системные: расхождение с контрактом (ручная правка) восстанавливается записью, как и миграция.
-    const readHeaderNotes = async (): Promise<number> => {
-      const notes = await sheets.readNotes(plan.tab, TAB_NOTES.map((_, i) => ({ row: 1, col: i + 1 })));
-      return TAB_NOTES.findIndex((n, i) => notes.get(`1|${i + 1}`) !== n);
+    // Читать заметки можно только внутри сетки вкладки: Sheets API отказывает на ячейках за её пределами («exceeds grid
+    // limits» — так 11.10 упал прогон миграции A:Q → A:U, сетка 17 колонок). Колонка за сеткой = заметки нет = расхождение,
+    // запись сама расширит сетку (appendDimension COLUMNS) в том же batchUpdate.
+    const readHeaderNotes = async (gridCols: number): Promise<number> => {
+      const inGrid = Math.min(TAB_NOTES.length, gridCols);
+      const notes = inGrid > 0 ? await sheets.readNotes(plan.tab, TAB_NOTES.slice(0, inGrid).map((_, i) => ({ row: 1, col: i + 1 }))) : new Map<string, string>();
+      return TAB_NOTES.findIndex((n, i) => i >= inGrid || notes.get(`1|${i + 1}`) !== n);
     };
-    const notesOff = await readHeaderNotes();
+    const notesOff = await readHeaderNotes(t.columnCount);
     let d = decidePublish({ current: t.values, publishedSha: t.metas[0]?.value, adoptSha: pub.adoptSha, plan });
     if (d.action === 'REFUSE') throw new LoaderError(d.message, d.code);
     // NOOP по значениям не должен оставить миграцию без отпечатка контракта или заметки не по контракту.
@@ -165,7 +173,7 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
       throw new LoaderError('перечитанная вкладка, её отпечаток или контракт не равны опубликованному плану', 'STORE_PNL_PUBLISH_READBACK');
     }
     // Заметки заголовка после прогона — ровно тексты контракта (и после NOOP).
-    const bad = await readHeaderNotes();
+    const bad = await readHeaderNotes(after.columnCount);
     if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}1 не равна контракту`, 'STORE_PNL_PUBLISH_READBACK');
   } else {
     const gate = publishGate(pnl);

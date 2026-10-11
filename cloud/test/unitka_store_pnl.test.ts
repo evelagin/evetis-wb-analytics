@@ -229,8 +229,11 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
         calls.ranges = ranges; return [[...grid(MAY), ...grid(JUN), ...grid(JUL), ...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]];
       },
       readSheetMetadata: async (id: number) => (id === TAB_ID ? { title: tabState.title, rowCount: 20, columnCount: tabState.cols, metadata: tabState.meta } : null),
-      readNotes: async (_n: string, cells: ReadonlyArray<{ row: number; col: number }>) =>
-        new Map(cells.filter((c) => tabState.notes[c.col - 1]).map((c) => [`${c.row}|${c.col}`, tabState.notes[c.col - 1]!] as [string, string])),
+      readNotes: async (_n: string, cells: ReadonlyArray<{ row: number; col: number }>) => {
+        // как Sheets API: ячейка за пределами сетки — ошибка всего запроса
+        if (cells.some((c) => c.col > tabState.cols)) throw new Error('exceeds grid limits');
+        return new Map(cells.filter((c) => tabState.notes[c.col - 1]).map((c) => [`${c.row}|${c.col}`, tabState.notes[c.col - 1]!] as [string, string]));
+      },
       structureWrite: async (reqs) => { applyRequests(reqs); calls.requests.push(...reqs); calls.writes.push(...reqs.filter((r) => 'updateCells' in r).map(() => 'updateCells')); return reqs.length; },
     }),
     makeBq: () => ({
@@ -295,6 +298,8 @@ function applyRequests(reqs: Record<string, unknown>[]): void {
       const next = u.rows.map((row) => row.values.map((c) => (c.userEnteredValue?.numberValue ?? c.userEnteredValue?.stringValue ?? '') as CellValue));
       for (let k = 0; k < next.length; k++) tabState.values[k] = next[k]!;
     }
+    const ad = (r as { appendDimension?: { dimension: string; length: number } }).appendDimension;
+    if (ad && ad.dimension === 'COLUMNS') tabState.cols += ad.length;
     const c = (r as { createDeveloperMetadata?: { developerMetadata: { metadataKey: string; metadataValue: string } } }).createDeveloperMetadata;
     if (c) tabState.meta.push({ id: nextMetaId++, key: c.developerMetadata.metadataKey, value: c.developerMetadata.metadataValue });
     const up = (r as { updateDeveloperMetadata?: { dataFilters: Array<{ developerMetadataLookup: { metadataId: number } }>; developerMetadata: { metadataValue: string } } }).updateDeveloperMetadata;
@@ -418,6 +423,16 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
     try { await f(); } finally { for (const k of Object.keys(env)) delete process.env[k]; Object.assign(process.env, keep); }
   };
 
+  it('сетка вкладки не прочитана (columnCount 0): STORE_PNL_TAB_MISSING, записей нет', async () => {
+    const cols = tabState.cols; tabState.cols = 0;
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const a = deps(PNL);
+      await expect(unitkaStorePnlLoader(ctx(), a.d)).rejects.toMatchObject({ code: 'STORE_PNL_TAB_MISSING' });
+      expect(a.calls.writes).toEqual([]);
+    });
+    tabState.cols = cols;
+  });
+
   it('без флага: шлюз readonly, записей нет', async () => {
     const { d, calls } = deps(PNL);
     await unitkaStorePnlLoader(ctx(), d);
@@ -427,7 +442,8 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
 
   it('схема A:Q без отпечатка контракта: плановый прогон НЕ мигрирует (STORE_PNL_CONTRACT_MIGRATION_REQUIRED), записей нет', async () => {
     const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
-    tabState.values = [[...init.header], ...init.rows]; tabState.meta = []; tabState.notes = []; tabState.title = TAB_NAME;
+    // живая вкладка A:Q: сетка 17 колонок (11.10 чтение заметок R1..U1 падало «exceeds grid limits»)
+    tabState.values = [[...init.header], ...init.rows]; tabState.meta = []; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 17;
     const adopt = contentSha(tabState.values);
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt }, async () => {
       const a = deps(PNL);
@@ -441,14 +457,18 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
   });
 
   it('управляемая миграция: точный отпечаток контракта → одна атомарная запись A:U, заметки, два отпечатка; дальше NOOP без допусков', async () => {
-    const adopt = contentSha(tabState.values);
-    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt,
+    // как в production 11.10: вкладка A:Q на сетке 17 колонок, свой отпечаток публикации, без заметок и контракта — ADOPT не нужен
+    const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
+    tabState.values = [[...init.header], ...init.rows]; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 17;
+    tabState.meta = [{ id: nextMetaId++, key: PUBLISH_META_KEY, value: contentSha(tabState.values) }];
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID),
       UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
       const a = deps(PNL);
       await unitkaStorePnlLoader(ctx(), a.d);
       expect(a.calls.readonly).toBe(false);
       expect(a.calls.writes).toEqual(['updateCells', 'updateCells']); // значения + заметки, один batchUpdate
       expect(tabState.values[0]).toHaveLength(TAB_COLS);
+      expect(tabState.cols).toBe(TAB_COLS);                     // сетка расширена в том же batchUpdate
       expect(tabState.notes).toEqual([...TAB_NOTES]);
       expect(tabState.meta.map((m) => m.key).sort()).toEqual([CONTRACT_META_KEY, PUBLISH_META_KEY].sort());
       expect(tabState.meta.find((m) => m.key === PUBLISH_META_KEY)!.value).toBe(contentSha(tabState.values));
