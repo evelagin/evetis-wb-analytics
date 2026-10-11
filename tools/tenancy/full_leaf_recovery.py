@@ -6,6 +6,7 @@ only after that initial incident has a committed recovery and shard RECON.
 Generic/security/dispatch STOPs never become an automatic exemption.
 """
 import re
+import sys
 from tools.tenancy import durable_plan as D, tenant_backfill as BF, full_history as F
 from tools.tenancy.validation import parse_tenant_json as parse
 
@@ -103,16 +104,29 @@ def one(records,kind,h):
 
 
 def validate(proof,manifest,p,root_records,shard_records,*,final=False):
-    if not isinstance(proof,dict) or set(proof)!=FIELDS:fail('closed recovery certificate required')
-    if proof['type']!=TYPE or type(proof['version']) is not int or proof['version']!=VERSION:fail('unsupported class')
+    return _validate(proof,manifest,p,root_records,shard_records,final=final)
+
+
+def _family(first):
+    if first:
+        from tools.tenancy import full_first_receipt_recovery as contract
+        return contract
+    return sys.modules[__name__]
+
+
+def _validate(proof,manifest,p,root_records,shard_records,*,final=False,first=False):
+    contract=_family(first)
+    fields=contract.FIELDS;predicates=contract.PREDICATES
+    if not isinstance(proof,dict) or set(proof)!=fields:fail('closed recovery certificate required')
+    if proof['type']!=contract.TYPE or type(proof['version']) is not int or proof['version']!=VERSION:fail('unsupported class')
     if proof['hash']!=D.digest({k:v for k,v in proof.items() if k!='hash'}):fail('certificate digest differs')
-    if not isinstance(proof['predicates'],dict) or set(proof['predicates'])!=PREDICATES or any(v is not True for v in proof['predicates'].values()):fail('mandatory predicate unknown/false')
-    for k in FIELDS:
+    if not isinstance(proof['predicates'],dict) or set(proof['predicates'])!=predicates or any(v is not True for v in proof['predicates'].values()):fail('mandatory predicate unknown/false')
+    for k in fields:
         if k.endswith('_hash') or k in {'root','shard','hash'}:D.check_hash(proof[k])
     if (proof['tenant'],proof['project'],proof['root'],proof['manifest_hash'],proof['policy_hash'])!=(p['tenant'],p['project'],p['root'],p['manifest_hash'],p['hash']):fail('foreign authority')
     if (proof['implementation_source'],proof['controller_image'],proof['runtime_source'],proof['runtime_image'])!=(p['controller_source'],p['controller_image'],p['runtime_source'],p['runtime_image']):fail('artifact changed')
     index=proof['index'];seq=proof['receipt_sequence']
-    if type(index) is not int or not 0<=index<len(manifest['programs']) or type(seq) is not int or seq<2:fail('predecessor authority required')
+    if type(index) is not int or not 0<=index<len(manifest['programs']) or type(seq) is not int or (seq!=1 if first else seq<2):fail('receipt authority required')
     for key in ('generation','unit_start','unit_end'):
         if type(proof[key]) is not int or proof[key]<1:fail('invalid generation/unit range')
     F.stamp(proof['verified_at'])
@@ -126,10 +140,19 @@ def validate(proof,manifest,p,root_records,shard_records,*,final=False):
     if F.shard_root(manifest,index,doc)!=proof['shard']:fail('leaf shard differs')
     F.validate_leaf(manifest,index,doc,F.stamp(proof['verified_at']).astimezone(BF.B.MSK).date(),artifact=False)
     intent=one(shard_records,'DISPATCH_INTENT',proof['intent_hash']);rec=one(shard_records,'DISPATCH_RECEIPT',proof['receipt_hash'])
-    previous=one(shard_records,'DISPATCH_RECEIPT',proof['prior_receipt_hash']);prior=one(shard_records,'RECONCILED',proof['prior_recon_hash'])
-    if any(r['root_hash']!=proof['shard'] or r['version']!=D.VERSION for r in (intent,rec,previous,prior)):fail('foreign shard evidence')
-    if any(r['sequence']!=n for r,n in ((intent,seq),(rec,seq),(previous,seq-1),(prior,seq-1))):fail('receipt sequence differs')
-    if any(r['payload']['plan']!=doc for r in (intent,rec,previous)):fail('plan drift')
+    if first:
+        previous=prior=None
+        source_records=[r for r in shard_records if r['kind'] in {'DISPATCH_INTENT','DISPATCH_RECEIPT','RECONCILED'}]
+        if any(r['sequence']!=1 for r in source_records) or len([r for r in source_records if r['kind']=='DISPATCH_INTENT'])!=1 or len([r for r in source_records if r['kind']=='DISPATCH_RECEIPT'])!=1:fail('not a first authority path')
+        if proof['unit_start']!=1 or proof['initial_state_hash']!=D.digest(BF.B.initial(doc['runtime_plan'])):fail('initial source prefix differs')
+    else:
+        previous=one(shard_records,'DISPATCH_RECEIPT',proof['prior_receipt_hash']);prior=one(shard_records,'RECONCILED',proof['prior_recon_hash'])
+    authorities=(intent,rec) if first else (intent,rec,previous,prior)
+    sequences=((intent,seq),(rec,seq)) if first else ((intent,seq),(rec,seq),(previous,seq-1),(prior,seq-1))
+    plan_records=(intent,rec) if first else (intent,rec,previous)
+    if any(r['root_hash']!=proof['shard'] or r['version']!=D.VERSION for r in authorities):fail('foreign shard evidence')
+    if any(r['sequence']!=n for r,n in sequences):fail('receipt sequence differs')
+    if any(r['payload']['plan']!=doc for r in plan_records):fail('plan drift')
     receipt=rec['payload']['receipt']
     if any(receipt[k]!=proof[v] for k,v in [('run_id','run_id'),('lease_generation','generation')]):fail('run/generation differs')
     if receipt['ack_hash']!=doc['ack_hash'] or any(intent['payload']['preparation'][k]!=receipt[k] for k in ('run_id','lease_generation','ack_hash')):fail('intent/receipt linkage differs')
@@ -141,7 +164,7 @@ def validate(proof,manifest,p,root_records,shard_records,*,final=False):
     if not isinstance(proof['run_id'],str) or not re.fullmatch(r'bf-[A-Za-z0-9-]+',proof['run_id']):fail('run id differs')
     result=proof['reconciliation']
     if result.get('state_hash')!=proof['state_hash'] or D.digest(result.get('coverage_readback'))!=proof['coverage_hash']:fail('persisted result linkage differs')
-    if prior['payload'].get('persisted_reconciled') is not True or prior['payload']['sequence']!=proof['unit_start']-1:fail('accepted predecessor differs')
+    if not first and (prior['payload'].get('persisted_reconciled') is not True or prior['payload']['sequence']!=proof['unit_start']-1):fail('accepted predecessor differs')
     if proof['unit_end']<proof['unit_start'] or proof['reconciliation'].get('sequence')!=proof['unit_end'] or proof['reconciliation'].get('persisted_reconciled') is not True:fail('result/source range differs')
     expected={'version':D.VERSION,'root_hash':proof['shard'],'kind':'RECONCILED','sequence':seq,'payload':proof['reconciliation']}
     if D.digest(expected)!=proof['reconciliation_hash']:fail('result digest differs')
@@ -201,27 +224,36 @@ def observer(base,manifest,index):
 
 
 def observe(base,manifest,stop_hash,index,*,automatic=False,existing=None):
+    return _observe(base,manifest,stop_hash,index,automatic=automatic,existing=existing)
+
+
+def _observe(base,manifest,stop_hash,index,*,automatic=False,existing=None,first=False):
     """Fresh bounded metadata/SELECT predicates, no source or resource writes."""
     from tools.tenancy import full_controller as H, cloud_controller as C
+    contract=_family(first)
     root_records=base.store.history(manifest['hash']);stop=one(root_records,'STOPPED',stop_hash)
     plans=[r['payload'] for r in root_records if r['kind']=='CHUNK_PLAN' and r['sequence']==index]
     if len(plans)!=1:fail('exact leaf plan required')
     item=plans[0];doc=item['plan'];shard=item['shard_root'];b=observer(base,manifest,index)
-    H.verify_authority(b,manifest);p=policy(b,manifest)
+    H.verify_authority(b,manifest);p=contract.policy(b,manifest)
     sh=base.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
     receipts=[r for r in sh if r['kind']=='DISPATCH_RECEIPT'];rec=max(receipts,key=lambda r:r['sequence']) if receipts else None
-    if not rec or rec['sequence']<2:fail('no exact terminal predecessor')
+    if not rec or (rec['sequence']!=1 if first else rec['sequence']<2):fail('no exact terminal receipt authority')
     seq=rec['sequence'];receipt=rec['payload']['receipt']
     intents=[r for r in sh if r['kind']=='DISPATCH_INTENT' and r['sequence']==seq]
     previous=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==seq-1]
     prior=[r for r in sh if r['kind']=='RECONCILED' and r['sequence']==seq-1]
-    if len(intents)!=1 or len(previous)!=1 or len(prior)!=1:fail('predecessor/intent missing')
-    intent=intents[0];previous=previous[0];prior=prior[0]
+    if first:
+        if len(intents)!=1 or len(receipts)!=1 or previous or prior or any(r['kind']=='RECONCILED' for r in sh) and existing is None:fail('not first unreconciled authority')
+        intent=intents[0];previous=prior=None
+    else:
+        if len(intents)!=1 or len(previous)!=1 or len(prior)!=1:fail('predecessor/intent missing')
+        intent=intents[0];previous=previous[0];prior=prior[0]
     if automatic:
         diagnostic=stop['payload'].get('diagnostic',{})
         context={'index':index,'shard':shard,'sequence':seq,'intent_hash':D.digest(intent),'receipt_hash':D.digest(rec)}
         if type(diagnostic.get('version')) is not int or diagnostic.get('version')!=1 or diagnostic.get('stage') not in AUTO_STAGES or diagnostic.get('context')!=context:fail('unsupported automatic STOP stage/scope')
-        accepted=load(base,manifest,root_records)
+        accepted=contract.load(base,manifest,root_records)
         if not any(x['stop_hash']==p['initial_stop'] and x['receipt_hash']==p['initial_receipt'] for x in accepted):fail('initial exact recovery not accepted')
     elif (stop_hash,D.digest(rec),D.digest(intent),receipt['lease_generation'])!=(p['initial_stop'],p['initial_receipt'],p['initial_intent'],p['initial_generation']):fail('initial owner incident differs')
     if not automatic and (b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED'):fail('owner recovery requires frozen inactive observation')
@@ -239,10 +271,11 @@ def observe(base,manifest,stop_hash,index,*,automatic=False,existing=None):
     rp=doc['runtime_plan']
     expected.update(SINCE=rp['from'],UNTIL=rp['to'],BACKFILL_GENERATION=rp['generation'],BACKFILL_ORIGIN=rp['origin'],BACKFILL_MODE=BF.B.VERSION,BACKFILL_MAX_REQUESTS=str(doc['max_requests']),BACKFILL_MAX_UNITS=str(doc['max_units']))
     if any(env.get(k)!=v for k,v in expected.items()):fail('runtime source budget/scope differs')
-    state=BF.read_proof(b.c,doc,receipt['run_id'],request=b.request)['state']
+    runtime_proof=BF.read_proof(b.c,doc,receipt['run_id'],request=b.request)
+    state=runtime_proof['state']
     if (state['progress'].get('report') or {}).get('phase')=='INTENT':fail('not proven partial terminal source')
     if b.state(doc)!=state:fail('source state drift')
-    start=prior['payload']['sequence']+1;end=state['sequence']
+    start=1 if first else prior['payload']['sequence']+1;end=state['sequence']
     if not automatic and (start,end)!=(p['initial_unit_start'],p['initial_unit_end']):fail('owner source range differs')
     params={'origin':('TIMESTAMP',rp['origin']),'pid':('STRING',rp['plan_id']),'entity':('STRING',rp['entity'])}
     units=b.select(f"SELECT ingestion_run_id,status,backfill_sequence,backfill_detail_json FROM `{b.journal}` WHERE started_at>=@origin AND backfill_plan_id=@pid AND entity=@entity AND backfill_sequence IS NOT NULL ORDER BY backfill_sequence",params)
@@ -255,10 +288,20 @@ def observe(base,manifest,stop_hash,index,*,automatic=False,existing=None):
             if u['ingestion_run_id']!=receipt['run_id']+'-u'+str(n) or type(raw.get('transport_requests')) is not int or type(raw.get('transport_retries')) is not int or raw['transport_retries']!=0:fail('unit attribution/retry ambiguity')
             owned.append(n)
     if sequences!=list(range(1,end+1)) or owned!=list(range(start,end+1)):fail('duplicate/unit gap/successor')
-    cp=b.select(f"SELECT lease_generation,lease_owner,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND plan_hash=@ack AND lease_generation BETWEEN @previous AND @current",{'entity':('STRING',rp['entity']),'ack':('STRING',doc['ack_hash']),'previous':('INT64',receipt['lease_generation']-1),'current':('INT64',receipt['lease_generation'])})
+    if first:
+        cp=b.select(f"SELECT status,lease_generation,lease_owner,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND plan_hash=@ack LIMIT 1000",{'entity':('STRING',rp['entity']),'ack':('STRING',doc['ack_hash'])})
+        if not cp or len(cp)>=1000 or any(r['lease_generation']!=receipt['lease_generation'] for r in cp):fail('prior/other checkpoint authority exists')
+        for row in cp:
+            value=parse(row['evidence_json'])
+            if set(value)!={'mode','proof'} or value['mode']!='BOUNDED_PILOT':fail('unknown first checkpoint schema')
+            if value['proof'] is None:
+                if row['status']!='RUNNING':fail('unknown first initial checkpoint')
+            elif value['proof']!=runtime_proof or row['status']!=('DONE' if state['complete'] else 'RUNNING'):fail('first terminal checkpoint differs')
+    else:
+        cp=b.select(f"SELECT lease_generation,lease_owner,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND plan_hash=@ack AND lease_generation BETWEEN @previous AND @current",{'entity':('STRING',rp['entity']),'ack':('STRING',doc['ack_hash']),'previous':('INT64',receipt['lease_generation']-1),'current':('INT64',receipt['lease_generation'])})
     states=[(r['lease_generation'],r['lease_owner'],(parse(r['evidence_json']).get('proof') or {}).get('state')) for r in cp]
     current=[s for g,o,s in states if g==receipt['lease_generation'] and s is not None]
-    if not current or any(s!=state for s in current) or any(o!=receipt['run_id'] for g,o,s in states if g==receipt['lease_generation']) or not any(isinstance(s,dict) and s.get('sequence')==start-1 and D.digest(s)==prior['payload']['state_hash'] for g,o,s in states if g==receipt['lease_generation']-1):fail('existing checkpoint chain differs')
+    if not current or any(s!=state for s in current) or any(o!=receipt['run_id'] for g,o,s in states if g==receipt['lease_generation']) or (not first and not any(isinstance(s,dict) and s.get('sequence')==start-1 and D.digest(s)==prior['payload']['state_hash'] for g,o,s in states if g==receipt['lease_generation']-1)):fail('existing checkpoint chain differs')
     later=b.select(f"SELECT COUNT(*) AS n FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE JSON_VALUE(evidence_json,'$.mode')='BOUNDED_PILOT' AND lease_generation>@current",{'current':('INT64',receipt['lease_generation'])})
     if later!=[{'n':0}]:fail('later checkpoint generation')
     cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',p['project']])[:16];gen=receipt['lease_generation'];ln=f'L_{cid}_{gen:04d}';ld=f'LD_{cid}_{gen:04d}'
@@ -267,8 +310,10 @@ def observe(base,manifest,stop_hash,index,*,automatic=False,existing=None):
     for n,labels,created in b.tables.list_tables(b.c['datasets']['tenant_locks']):
         match=BF.CK.LEASE_RE.match(n)
         if match and match.group(1)==cid and int(match.group(2))>gen:fail('later generation')
-    timeline=b.select(f"SELECT evidence_json,updated_at FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='orchestration' AND plan_hash=@shard AND backfill_id=@prior LIMIT 2",{'shard':('STRING',shard),'prior':('STRING',D.digest(prior)[:16])})
-    if len(timeline)!=1 or D.digest(parse(timeline[0]['evidence_json']))!=D.digest(prior):fail('predecessor time ambiguous')
+    boundary=next(r for r in root_records if r['kind']=='CHUNK_PLAN' and r['sequence']==index and r['payload']==item) if first else prior
+    boundary_root=manifest['hash'] if first else shard
+    timeline=b.select(f"SELECT evidence_json,updated_at FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='orchestration' AND plan_hash=@shard AND backfill_id=@prior LIMIT 2",{'shard':('STRING',boundary_root),'prior':('STRING',D.digest(boundary)[:16])})
+    if len(timeline)!=1 or D.digest(parse(timeline[0]['evidence_json']))!=D.digest(boundary):fail('initial/predecessor time ambiguous')
     after=C.timestamp(timeline[0]['updated_at']);children=[]
     jobs=b.request('GET',BF.RUN_API+'/'+base_name+'/jobs?pageSize=1000')
     expected_jobs=set(b.c['marketplaces']['ozon']['jobs'])|{'tenant-control','tenant-backfill-controller'}
@@ -289,73 +334,90 @@ def observe(base,manifest,stop_hash,index,*,automatic=False,existing=None):
         h=D.digest(parse(row['evidence_json']));at=C.timestamp(row['updated_at'])
         if h in by and by[h]!=at:fail('incident timestamp conflict')
         by[h]=at
-    if set(by)!={stop_hash,D.digest(intent),D.digest(rec)} or not after<by[D.digest(intent)]<=by[D.digest(rec)]<by[stop_hash] or C.timestamp(execution['completionTime'])>by[stop_hash]:fail('post-dispatch terminal chronology differs')
+    if set(by)!={stop_hash,D.digest(intent),D.digest(rec)} or not (after<=by[D.digest(intent)] if first else after<by[D.digest(intent)]) or not by[D.digest(intent)]<=by[D.digest(rec)]<by[stop_hash] or C.timestamp(execution['completionTime'])>by[stop_hash]:fail('post-dispatch terminal chronology differs')
     controller=stop['payload'].get('controller_execution','')
     if not re.fullmatch(re.escape(base_name+'/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-')+'[a-z0-9]+',controller):fail('STOP controller attribution missing')
     stopped=b.request('GET',BF.RUN_API+'/'+controller)
     if not stopped.get('completionTime') or not C.timestamp(stopped['startTime'])<=by[stop_hash]<=C.timestamp(stopped['completionTime']):fail('STOP outside controller execution')
     if base.clock()<by[stop_hash]:fail('future STOP')
-    coverage=BF.verify_coverage(doc,doc['ack_hash'],backend=b)
+    coverage=(BF.verify_persistence if first else BF.verify_coverage)(doc,doc['ack_hash'],backend=b)
     result={'checkpoint':'DONE' if state['complete'] else 'RUNNING','sequence':end,'rows_observed':state['rows'],'orders':state['orders'],'supplies':state['supplies'],'bundles':state['bundles'],'coverage':'UNPROVEN_PENDING_DQ','lifecycle_changed':False,'scheduler_changed':False,'coverage_readback':coverage,'source_complete':state['complete'],'persisted_reconciled':True,'state_hash':D.digest(state)}
-    proof={'version':VERSION,'type':TYPE,'tenant':p['tenant'],'project':p['project'],'root':manifest['hash'],'manifest_hash':D.digest(manifest),'index':index,'shard':shard,'stop_hash':stop_hash,'intent_hash':D.digest(intent),'receipt_hash':D.digest(rec),'prior_receipt_hash':D.digest(previous),'prior_recon_hash':D.digest(prior),'receipt_sequence':seq,'runtime_execution':name,'run_id':receipt['run_id'],'generation':gen,'unit_start':start,'unit_end':end,'state_hash':D.digest(state),'lease_release':ld,'lease_release_hash':D.digest(release),'unit_evidence_hash':D.digest(units),'coverage_hash':D.digest(coverage),'policy_hash':p['hash'],'implementation_source':p['controller_source'],'controller_image':p['controller_image'],'runtime_source':p['runtime_source'],'runtime_image':p['runtime_image'],'reconciliation':result,'reconciliation_hash':D.digest({'version':D.VERSION,'root_hash':shard,'kind':'RECONCILED','sequence':seq,'payload':result}),'predicates':{k:True for k in PREDICATES},'verified_at':base.clock().isoformat()}
-    proof=sealed(proof);validate(proof,manifest,p,root_records,sh)
+    proof={'version':VERSION,'type':contract.TYPE,'tenant':p['tenant'],'project':p['project'],'root':manifest['hash'],'manifest_hash':D.digest(manifest),'index':index,'shard':shard,'stop_hash':stop_hash,'intent_hash':D.digest(intent),'receipt_hash':D.digest(rec),**({'initial_state_hash':D.digest(BF.B.initial(rp))} if first else {'prior_receipt_hash':D.digest(previous),'prior_recon_hash':D.digest(prior)}),'receipt_sequence':seq,'runtime_execution':name,'run_id':receipt['run_id'],'generation':gen,'unit_start':start,'unit_end':end,'state_hash':D.digest(state),'lease_release':ld,'lease_release_hash':D.digest(release),'unit_evidence_hash':D.digest(units),'coverage_hash':D.digest(coverage),'policy_hash':p['hash'],'implementation_source':p['controller_source'],'controller_image':p['controller_image'],'runtime_source':p['runtime_source'],'runtime_image':p['runtime_image'],'reconciliation':result,'reconciliation_hash':D.digest({'version':D.VERSION,'root_hash':shard,'kind':'RECONCILED','sequence':seq,'payload':result}),'predicates':{k:True for k in contract.PREDICATES},'verified_at':base.clock().isoformat()}
+    proof=sealed(proof);contract.validate(proof,manifest,p,root_records,sh)
     return proof
 
 
 def load(backend,manifest,records):
-    p=policy(backend,manifest);approved=[]
+    return _load(backend,manifest,records)
+
+
+def _load(backend,manifest,records,*,first=False):
+    contract=_family(first)
+    p=contract.policy(backend,manifest);approved=[]
     for r in records:
-        if r['kind']!=KIND:continue
+        if r['kind']!=contract.KIND:continue
         proof=r['payload'];sh=backend.store.history(proof['shard'],max_records=F.MAX_LEAF_RECORDS)
         prefix=[x for x in sh if x['sequence']<=proof['receipt_sequence']]
         authority=p
         if proof['implementation_source']!=p['controller_source']:
             from tools.tenancy import recent_priority as RP
-            authority=RP.historical_policy(backend,manifest,p,proof['implementation_source'])
-        validate(proof,manifest,authority,records,prefix,final=True)
+            authority=contract.historical_policy(backend,manifest,p,proof['implementation_source']) if first else RP.historical_policy(backend,manifest,p,proof['implementation_source'])
+        contract.validate(proof,manifest,authority,records,prefix,final=True)
         if r['root_hash']!=manifest['hash'] or r['sequence']!=proof['index']:fail('recovery record scope differs')
-        fence=backend.tables.get_table(backend.c['datasets']['tenant_locks'],f"BFFLR_{proof['root']}_{proof['stop_hash']}")
-        if fence!=({'kind':'full_leaf_recovery','root':proof['root'][:16]},D.encoded(proof)):fail('certificate fence absent/conflicting')
+        fence=backend.tables.get_table(backend.c['datasets']['tenant_locks'],contract.fence_name(proof) if first else f"BFFLR_{proof['root']}_{proof['stop_hash']}")
+        if fence!=(contract.fence_value(proof) if first else ({'kind':'full_leaf_recovery','root':proof['root'][:16]},D.encoded(proof))):fail('certificate fence absent/conflicting')
         approved.append(proof)
     if len({p['stop_hash'] for p in approved})!=len(approved):fail('duplicate recovery scope')
     return approved
 
 
 def apply(base,manifest,stop_hash,index,*,automatic=False):
+    return _apply(base,manifest,stop_hash,index,automatic=automatic)
+
+
+def accepted_recoveries(base,manifest,records):
+    # Retained STOPs are closed only through independently validated certificates.
+    from tools.tenancy import full_cooldown_recovery as FC, full_policy_bootstrap_recovery as PB, full_pretransport_recovery as PT, full_first_receipt_recovery as FR
+    modules=(sys.modules[__name__],FC,PB,PT,FR)
+    return [proof for mod in modules if any(r['kind']==mod.KIND for r in records) for proof in mod.load(base,manifest,records)]
+
+
+def _apply(base,manifest,stop_hash,index,*,automatic=False,first=False):
     """Only two canonical authority records; existing checkpoint/LD untouched."""
-    p=policy(base,manifest);records=base.store.history(manifest['hash'])
-    approved=load(base,manifest,records)
+    contract=_family(first)
+    p=contract.policy(base,manifest);records=base.store.history(manifest['hash'])
+    approved=accepted_recoveries(base,manifest,records)
     previous=next((x for x in approved if x['stop_hash']==stop_hash),None)
-    if previous:return {'accepted_sequence':previous['unit_end'],'lease_release':previous['lease_release'],'record_hash':D.digest({'version':D.VERSION,'root_hash':manifest['hash'],'kind':KIND,'sequence':index,'payload':previous}),'reconciliation_hash':previous['reconciliation_hash'],'source_calls':0,'source_dispatches':0}
+    if previous:return {'accepted_sequence':previous['unit_end'],'lease_release':previous['lease_release'],'record_hash':D.digest({'version':D.VERSION,'root_hash':manifest['hash'],'kind':contract.KIND,'sequence':index,'payload':previous}),'reconciliation_hash':previous['reconciliation_hash'],'source_calls':0,'source_dispatches':0}
     unresolved={D.digest(r) for r in records if r['kind']=='STOPPED'}-{x['stop_hash'] for x in approved}
-    from tools.tenancy import full_cooldown_recovery as FC
-    if any(r['kind']==FC.KIND for r in records):
-        unresolved-={x['stop_hash'] for x in FC.load(base,manifest,records)}
     if unresolved!={stop_hash}:fail('another unresolved STOP')
-    name=f'BFFLR_{manifest["hash"]}_{stop_hash}';existing=base.tables.get_table(base.c['datasets']['tenant_locks'],name)
-    proof=observe(base,manifest,stop_hash,index,automatic=automatic,existing=parse(existing[1]) if existing else None)
+    name=contract.fence_name({'root':manifest['hash'],'stop_hash':stop_hash}) if first else f'BFFLR_{manifest["hash"]}_{stop_hash}';existing=base.tables.get_table(base.c['datasets']['tenant_locks'],name)
+    proof=contract.observe(base,manifest,stop_hash,index,automatic=automatic,existing=parse(existing[1]) if existing else None)
     if existing:
-        old=parse(existing[1]);old_sh=base.store.history(old['shard']);validate(old,manifest,p,records,old_sh)
+        old=parse(existing[1]);old_sh=base.store.history(old['shard']);contract.validate(old,manifest,p,records,old_sh)
         # Freeze the certificate/RECON payload across a lost append acknowledgement.
         for k in ('state_hash','unit_evidence_hash','lease_release_hash','coverage_hash','receipt_hash','intent_hash'):
             if old[k]!=proof[k]:fail('recovery retry evidence changed')
         proof=old
-    value=({'kind':'full_leaf_recovery','root':manifest['hash'][:16]},D.encoded(proof))
+    value=contract.fence_value(proof) if first else ({'kind':'full_leaf_recovery','root':manifest['hash'][:16]},D.encoded(proof))
     if existing is None:base.tables.create_marker(base.c['datasets']['tenant_locks'],name,*value)
     if base.tables.get_table(base.c['datasets']['tenant_locks'],name)!=value:fail('certificate CAS conflict')
     # No BF.reconcile: terminal checkpoint and LD already exist and must not repeat.
     rh=base.store.commit(proof['shard'],'RECONCILED',proof['receipt_sequence'],proof['reconciliation'],base.clock())
     if rh!=proof['reconciliation_hash']:fail('canonical RECON digest changed')
-    h=base.store.commit(manifest['hash'],KIND,index,proof,base.clock())
-    load(base,manifest,base.store.history(manifest['hash']))
+    h=base.store.commit(manifest['hash'],contract.KIND,index,proof,base.clock())
+    contract.load(base,manifest,base.store.history(manifest['hash']))
     return {'record_hash':h,'reconciliation_hash':rh,'accepted_sequence':proof['unit_end'],'lease_release':proof['lease_release'],'source_calls':0,'source_dispatches':0}
 
 
 def recover_pending(backend,manifest,records):
+    return _recover_pending(backend,manifest,records)
+
+
+def _recover_pending(backend,manifest,records,*,first=False):
     """Only explicitly enabled, typed, fully proven class C; never generic STOP."""
-    approved=load(backend,manifest,records)
-    from tools.tenancy import full_cooldown_recovery as FC
-    approved+=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
+    contract=_family(first)
+    approved=accepted_recoveries(backend,manifest,records)
     unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {x['stop_hash'] for x in approved}]
     if len(unresolved)!=1:return None
     stop=unresolved[0];diag=stop['payload'].get('diagnostic',{})
@@ -367,8 +429,9 @@ def recover_pending(backend,manifest,records):
         receipts=[x for x in sh if x['kind']=='DISPATCH_RECEIPT']
         if receipts:
             last=max(receipts,key=lambda x:x['sequence'])
-            fence=backend.tables.get_table(backend.c['datasets']['tenant_locks'],f"BFFLR_{manifest['hash']}_{D.digest(stop)}")
+            if (last['sequence']!=1 if first else last['sequence']<2):continue
+            fence=backend.tables.get_table(backend.c['datasets']['tenant_locks'],contract.fence_name({'root':manifest['hash'],'stop_hash':D.digest(stop)}) if first else f"BFFLR_{manifest['hash']}_{D.digest(stop)}")
             finishing=fence is not None and parse(fence[1]).get('receipt_hash')==D.digest(last) and parse(fence[1]).get('index')==r['sequence']
             if finishing or not any(x['kind']=='RECONCILED' and x['sequence']==last['sequence'] for x in sh):candidates.append(r['sequence'])
     if len(candidates)!=1:return None
-    return apply(backend,manifest,D.digest(stop),candidates[0],automatic=True)
+    return contract.apply(backend,manifest,D.digest(stop),candidates[0],automatic=True)

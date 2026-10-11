@@ -159,7 +159,7 @@ class CloudAccess:
                 elif match[1] == c["datasets"]["tenant_locks"] and match[2] is None:
                     ref = (body or {}).get("tableReference", {})
                     marker = ref.get("tableId", "")
-                    permitted = ref == {"projectId": c["project_id"], "datasetId": match[1], "tableId": marker} and bool(re.fullmatch(r"BFFLR_[0-9a-f]{64}_[0-9a-f]{64}|BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|L_[0-9a-f]{16}_[0-9]{4,10}|LD_[0-9a-f]{16}_[0-9]{4,10}", marker)) and not set(body) - {"tableReference", "schema", "labels", "description", "expirationTime"}
+                    permitted = ref == {"projectId": c["project_id"], "datasetId": match[1], "tableId": marker} and bool(re.fullmatch(r"(?:BFFLR|BFFRF)_[0-9a-f]{64}_[0-9a-f]{64}|BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|L_[0-9a-f]{16}_[0-9]{4,10}|LD_[0-9a-f]{16}_[0-9]{4,10}", marker)) and not set(body) - {"tableReference", "schema", "labels", "description", "expirationTime"}
                     # The registered overlap profile adds only immutable wake
                     # claim/closure markers in this same append-only dataset.
                     # It grants no SOURCE lease, owner authority or wider IAM.

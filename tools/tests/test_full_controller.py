@@ -190,3 +190,33 @@ def test_arbitrary_snapshot_replacement_without_rollover_proof_fails(pilot):
     doc=F.render_leaf(p.m,i,day);fresh={'index':i,'plan':doc,'shard_root':F.shard_root(p.m,i,doc)}
     rows=[{'kind':'CHUNK_PLAN','sequence':i,'payload':x} for x in (it,fresh)]
     with pytest.raises(BF.B.EvidenceError,match='rollover proof'):H.reconstruct_plans(rows,p.m,NOW.replace(day=8))
+
+
+
+def test_complete_source_cannot_complete_leaf_before_current_catalog(pilot,monkeypatch):
+    p=pilot;index,it=item(p,next(i for i,x in enumerate(p.m['programs']) if x['entity']=='finance_accrual'))
+    p.b.store.commit(p.m['hash'],'CHUNK_PLAN',index,it,NOW)
+    history=p.b.store
+    prep={'run_id':'synthetic-current','lease_generation':1,'ack_hash':it['plan']['ack_hash']}
+    history.commit(it['shard_root'],'DISPATCH_INTENT',1,dict(plan=it['plan'],preparation=prep),NOW)
+    history.commit(it['shard_root'],'DISPATCH_RECEIPT',1,dict(plan=it['plan'],receipt=prep),NOW)
+    history.commit(it['shard_root'],'RECONCILED',1,dict(persisted_reconciled=True,source_complete=True,sequence=1),NOW)
+    state=BF.B.initial(it['plan']['runtime_plan']);state['complete']=True;state['sequence']=1;p.states[it['plan']['ack_hash']]=state
+    monkeypatch.setattr(BF,'verify_coverage',lambda *a,**kw:(_ for _ in ()).throw(AssertionError('no full coverage before Catalog')))
+    b=H.Backend(p.b,p.m);out,_=H.leaf_wake(b,p.m,index,it,p.b.store.history(p.m['hash']))
+    assert out['status']=='RECONCILED_BOUNDARY' and out['basis']=='WAIT_CURRENT_CATALOG' and out['source_dispatches']==0
+    assert not any(r['kind']=='CHUNK_COMPLETE' for r in p.b.store.history(p.m['hash']))
+
+
+def test_drained_completed_source_yields_to_dependency_election(pilot,monkeypatch):
+    p=pilot;index,it=item(p,next(i for i,x in enumerate(p.m['programs']) if x['entity']=='finance_accrual'))
+    p.b.store.commit(p.m['hash'],'CHUNK_PLAN',index,it,NOW)
+    prep={'run_id':'synthetic-current','lease_generation':1,'ack_hash':it['plan']['ack_hash']}
+    p.b.store.commit(it['shard_root'],'DISPATCH_INTENT',1,dict(plan=it['plan'],preparation=prep),NOW)
+    p.b.store.commit(it['shard_root'],'DISPATCH_RECEIPT',1,dict(plan=it['plan'],receipt=prep),NOW)
+    state=BF.B.initial(it['plan']['runtime_plan']);state.update(complete=True,sequence=1);p.states[it['plan']['ack_hash']]=state
+    monkeypatch.setattr(H.Backend,'reconcile',lambda *a:dict(source_complete=True,persisted_reconciled=True,sequence=1))
+    b=H.Backend(p.b,p.m);out,_=H.leaf_wake(b,p.m,index,it,p.b.store.history(p.m['hash']),defer_next=True)
+    assert out['status']=='RECONCILED_BOUNDARY' and out['source_dispatches']==0
+    assert len([r for r in p.b.store.history(it['shard_root']) if r['kind']=='RECONCILED'])==1
+    assert not any(r['kind']=='CHUNK_COMPLETE' for r in p.b.store.history(p.m['hash']))

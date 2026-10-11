@@ -10,7 +10,7 @@ SOURCE_FILES = (
     'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py',
     'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py','controller_stop_recovery.py','controller_stop_image_check.py','controller_dispatch_recovery.py','controller_dispatch_image_check.py',
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
-    'full_leaf_recovery.py','full_leaf_image_check.py','controller_diagnostics.py',
+    'full_leaf_recovery.py','full_leaf_image_check.py','full_first_receipt_recovery.py','full_first_receipt_image_check.py','controller_diagnostics.py',
     'recent_priority.py','recent_priority_image_check.py',
     'controller_cadence.py','controller_cadence_image_check.py',
     'full_runtime_handoff.py','full_cooldown_recovery.py','full_cooldown_image_check.py',

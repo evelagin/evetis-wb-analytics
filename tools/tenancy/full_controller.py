@@ -230,7 +230,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFCF_','BFPB_','BFPT_','BFCW_','BFCX_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCW_','BFCX_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -294,7 +294,7 @@ class Backend(C.Backend):
         with gate('CHECKPOINT'):
             result = BF.reconcile(doc, doc['ack_hash'], receipt, backend=self)
         with gate('PERSISTED_SOURCE_RECONCILIATION'):
-            result['coverage_readback'] = BF.verify_coverage(doc, doc['ack_hash'], backend=self)
+            result['coverage_readback'] = (BF.verify_persistence if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'} else BF.verify_coverage)(doc, doc['ack_hash'], backend=self)
             state = self.state(doc)
         result['source_complete'] = state['complete']
         result['persisted_reconciled'] = True
@@ -447,7 +447,7 @@ def wake(base, root):
         from tools.tenancy import full_leaf_recovery as FL
         from tools.tenancy import full_cooldown_recovery as FC
         from tools.tenancy import full_policy_bootstrap_recovery as PB
-        from tools.tenancy import full_pretransport_recovery as PT
+        from tools.tenancy import full_pretransport_recovery as PT, full_first_receipt_recovery as FR
         with gate('MANIFEST_ROOT'):
             approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
             failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
@@ -455,7 +455,7 @@ def wake(base, root):
             rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
         backend.verified_cooldown_failures=failed
         backend.verified_pretransport_rejections=rejected
-        approved=approved+failed+paused_bootstrap+rejected
+        approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -464,7 +464,7 @@ def wake(base, root):
                 # no-conflicting-execution predicate while a known peer waits.
                 from tools.tenancy.cloud_tick import OverlapWait
                 raise OverlapWait('WAIT_ACTIVE_CONTROLLER')
-            recovered=FL.recover_pending(backend,manifest,records) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
+            recovered=(FR.recover_pending(backend,manifest,records) or FL.recover_pending(backend,manifest,records)) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
             if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},backend
             return {'status':'STOPPED','source_dispatches':0}, backend
     done = completed(records,manifest)
@@ -589,7 +589,14 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
             raise
         return leaf_wake(backend,manifest,index,item,records,dependency=dependency,reconciled=True,defer_next=defer_next)
     state=backend.state(doc)
+    if defer_next and reconciled:
+        return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
     if state['complete']:
+        if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'}:
+            day=str(backend.clock().astimezone(BF.B.MSK).date())
+            fresh=backend.store.history(root)
+            if not any(r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day for r in fresh):
+                return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAIT_CURRENT_CATALOG'},backend
         proof=BF.verify_coverage(doc,doc['ack_hash'],backend=backend)
         payload={'index':index,'shard_root':shard,'ack_hash':doc['ack_hash'],'state_hash':D.digest(state),
             'sequence':state['sequence'],'dispatch_attempts':sum(r['kind']=='DISPATCH_INTENT' for r in history),
