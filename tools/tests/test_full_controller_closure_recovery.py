@@ -1,0 +1,114 @@
+"""Terminal control bookkeeping recovery must never weaken source fences."""
+from copy import deepcopy
+from datetime import timedelta
+import pytest
+from tools.tenancy import full_controller_closure_recovery as R, controller_cadence as CC, orchestration_contract as O, tenant_backfill as BF, durable_plan as D
+from tools.tenancy.full_controller_closure_image_check import fixture,check,NOW
+
+
+def test_packaged_recovery():assert check()['terminal_controller_recovery']=='PASS'
+
+@pytest.mark.parametrize('field',sorted(R.PREDICATES))
+@pytest.mark.parametrize('value',[False,None,1])
+def test_every_unknown_or_false_predicate_blocks_before_any_write(field,value):
+ m,p,b,root,objects,*_=fixture();before=deepcopy(objects)
+ q=deepcopy(p);q['predicates'][field]=value;q=R.sealed({k:v for k,v in q.items() if k!='hash'})
+ with pytest.raises(BF.B.EvidenceError,match='unknown mandatory'):R.publish(b,q,m)
+ assert objects==before
+
+@pytest.mark.parametrize('fault',['root','claim','stop','protected','receipt','recon','closure','source_budget','source','extra'])
+def test_certificate_conflicts_do_not_close_control_or_change_source(fault):
+ m,p,b,root,objects,*_=fixture();before=deepcopy(objects);q=deepcopy(p)
+ if fault=='root':q['root']='1'*64
+ if fault=='claim':q['claim']['generation']=2
+ if fault=='stop':q['stop_hashes']=['1'*64]
+ if fault=='protected':q['protected_root_hashes']=['1'*64]
+ if fault=='receipt':q['last_source']['receipt_hash']='1'*64
+ if fault=='recon':q['last_source']['recon_hash']='1'*64
+ if fault=='closure':q['closure']['source_dispatches']=1
+ if fault=='source_budget':q['source_budget']=1
+ if fault=='source':q['new_source']=q['claim']['source']
+ if fault=='extra':q['unrecognized']=True
+ q=R.sealed({k:v for k,v in q.items() if k!='hash'})
+ with pytest.raises((BF.B.EvidenceError,ValueError)):R.validate(q,b,m,root,final=False)
+ assert objects==before
+
+@pytest.mark.parametrize('seconds',[600,1799,1801,3600,'1800',True])
+def test_unqualified_timeout_not_an_override(seconds):
+ m,p,b,root,objects,r,*_=fixture();r=deepcopy(r);r['controller_timeout_seconds']=seconds
+ with pytest.raises(ValueError):O.block(b.c,dict(release=r['source_sha'],root_hash=m['hash'],scheduler_state='PAUSED'),BF.REPO,r)
+
+
+def test_timeout_gate_required_and_historical_release_unchanged():
+ m,p,b,root,objects,r,*_=fixture();r=deepcopy(r);r['verification'].pop('terminal_controller_adapter')
+ with pytest.raises(ValueError):O.block(b.c,dict(release=r['source_sha'],root_hash=m['hash'],scheduler_state='PAUSED'),BF.REPO,r)
+ r.pop('controller_timeout_seconds');settings=dict(release=r['source_sha'],root_hash=m['hash'],scheduler_state='PAUSED')
+ assert O.block(b.c,settings,BF.REPO,r)['job']['timeout']=='600s'
+
+
+def test_missing_owner_certificate_is_not_a_blanket_stop_exemption():
+ m,p,b,root,objects,*_=fixture();root.append(dict(version=D.VERSION,root_hash=m['hash'],kind=R.KIND,sequence=p['claim']['generation'],payload=p))
+ objects[CC.names(m['hash'],p['claim']['generation'])[1]]=({'kind':'controller_close','root':m['hash'][:16]},D.encoded(p['closure']))
+ with pytest.raises(BF.B.EvidenceError,match='owner authority'):R.load(b,m,root)
+
+@pytest.mark.parametrize('fault',['valid_timeout','ordinary_failure','cancelled','retried','active','source_image','root','unregistered_descriptor'])
+def test_only_exact_registered_controller_timeout_supported(monkeypatch,tmp_path,fault):
+ from tools.tenancy import cloud_controller as C
+ m,p,b,root,objects,new,x=fixture();old=deepcopy(new)
+ old.update(source_sha=p['claim']['source'],image=p['claim']['image']);old.pop('controller_timeout_seconds');old['verification'].pop('terminal_controller_adapter')
+ path=tmp_path/'infra/tenant/releases/backfill';path.mkdir(parents=True);(path/(old['source_sha']+'.json')).write_text(D.encoded(old))
+ monkeypatch.setattr(BF,'REPO',tmp_path)
+ settings=dict(release=old['source_sha'],root_hash=m['hash'],scheduler_state='ENABLED');dn=C.descriptor_name(old['source_sha'],m['hash'],'ENABLED')
+ objects[dn]=({},D.encoded(dict(settings=settings,release=old)))
+ holder=x[0];holder.update(completionTime=NOW.isoformat(),failedCount=1,conditions=[dict(type='Completed',state='CONDITION_FAILED',message='The configured timeout was reached.')])
+ if fault=='ordinary_failure':holder['conditions'][0]['message']='unrelated failure'
+ if fault=='cancelled':holder['cancelledCount']=1
+ if fault=='retried':holder['retriedCount']=1
+ if fault=='active':holder.pop('completionTime')
+ if fault=='source_image':holder['template']['containers'][0]['image']=new['runtime_image']
+ if fault=='root':holder['template']['containers'][0]['env'].append(dict(name='BACKFILL_ROOT_HASH',value='f'*64))
+ if fault=='unregistered_descriptor':objects.pop(dn)
+ before=deepcopy(objects)
+ if fault=='valid_timeout':assert R.terminal_timeout(b,p['claim'])==holder
+ else:
+  with pytest.raises((BF.B.EvidenceError,ValueError)):R.terminal_timeout(b,p['claim'])
+ assert objects==before
+
+@pytest.mark.parametrize('fault',['active_controller','active_source','new_runtime','new_control_generation','journal_effect','new_source_intent','unknown_source_time','unpaused_scheduler'])
+def test_live_effect_and_ownership_guards_block_without_mutations(monkeypatch,fault):
+ from tools.tenancy import full_controller as H
+ m,p,b,root,objects,new,x=fixture();base,_=BF.resources(b.c);before=deepcopy(objects)
+ monkeypatch.setattr(R,'terminal_timeout',lambda *a:x[0])
+ import pathlib
+ old=deepcopy(new);old.update(source_sha=p['claim']['source'],image=p['claim']['image']);old.pop('controller_timeout_seconds');old['verification'].pop('terminal_controller_adapter')
+ read=pathlib.Path.read_text
+ monkeypatch.setattr(pathlib.Path,'read_text',lambda path,*a,**kw:D.encoded(old) if path.name==old['source_sha']+'.json' else read(path,*a,**kw))
+ # Keep concrete freeze/election/SELECT guards; historical source certificates
+ # are beyond these injected early failures and must never be reached.
+ root[:]=[r for r in root if r['kind']!='STOPPED'];p['stop_hashes']=[]
+ original_list=b.tables.list_tables
+ def tables(ds,with_expiry=False):
+  values=original_list(ds,with_expiry)
+  if fault=='new_control_generation':values.append((CC.names(m['hash'],2)[0],{},NOW,None))
+  if fault in {'new_source_intent','unknown_source_time'}:
+   values.append((f"BFQ_{p['last_source']['shard']}_0000000002_DISPATCH_INTENT",{},None if fault=='unknown_source_time' else NOW,None))
+  return values
+ b.tables.list_tables=tables
+ def request(method,url,body=None):
+  assert method=='GET'
+  if '/jobs?pageSize=100' in url:return dict(jobs=[dict(state='ENABLED' if fault=='unpaused_scheduler' else 'PAUSED') for _ in range(4)])
+  if '/executions?' in url:
+   job=url.split('/jobs/')[1].split('/')[0]
+   if job==O.JOB:
+    holder=deepcopy(x[0]);holder.update(completionTime=NOW.isoformat(),failedCount=1)
+    if fault=='active_controller':holder.pop('completionTime')
+    return dict(executions=[holder])
+   if job=='ozon-runtime-fast' and fault in {'active_source','new_runtime'}:
+    v=dict(name=base+'/jobs/'+job+'/executions/'+job+'-example',createTime=NOW.isoformat())
+    if fault=='new_runtime':v['completionTime']=NOW.isoformat()
+    return dict(executions=[v])
+   return dict(executions=[])
+  raise AssertionError(url)
+ b.request=request;b.journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS';b.select=lambda *a:[dict(n=1 if fault=='journal_effect' else 0)]
+ with pytest.raises(BF.B.EvidenceError):R.live_freeze(b,p,m,root)
+ assert objects==before

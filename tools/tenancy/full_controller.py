@@ -230,7 +230,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCW_','BFCX_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFCW_','BFCX_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -456,6 +456,8 @@ def wake(base, root):
         backend.verified_cooldown_failures=failed
         backend.verified_pretransport_rejections=rejected
         approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
+        from tools.tenancy import full_controller_closure_recovery as CR
+        approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.

@@ -231,3 +231,34 @@ not reclaim an uncertain lease or repeat a submitted report. Reverting Git
 configuration does not undo IAM or data. Any infrastructure rollback needs its
 own reviewed canonical tenant-only Terraform plan; no broad IAM removal,
 RAW deletion, ordinary-schedule activation or trial cleanup is implied.
+
+## Terminal controller closure contract (2026-10-11)
+
+A platform deadline can end a controller after canonical source reconciliation
+and leaf completion but before its `BFCX` control closure. That is a control
+bookkeeping failure, not a failed source runtime or permission to replay work.
+Subsequent wakes retain the missing-closure STOP fence.
+
+`full_controller_closure_recovery.py` provides an owner-only reusable recovery
+for a registered terminal controller timeout with no source dispatch since its
+control claim. All 22 closed predicates must be TRUE. Fresh publication rechecks
+the latest contiguous control generation, inactive jobs, paused Schedulers,
+absence of new runtime/journal/source elections and pending authority, exact
+historical deployment, prior certificates, binding gates and accepted source
+receipt/RECON/lease/LD, source state, natural keys and current Catalog linkage.
+The owner attests the exact source-free guard reproduction and unchanged
+security/evidence. Unknown predicates and unrelated failures remain blocked.
+
+The certificate covers only its exact dependent `MANIFEST_ROOT / EVIDENCE`
+STOP hashes. It adds owner authority, a certificate, the missing control closure
+with `source_dispatches=0`, and a root recovery record. Original STOPs, control
+claim, source intents, receipts, checkpoints, leases and business rows remain
+unchanged. There is no automatic recovery or source lease release in this
+contract; existing terminal-success source recovery contracts remain separate.
+
+A schema-v4 release may explicitly qualify `controller_timeout_seconds=1800`
+with `terminal_controller_adapter=PASS`. Python and Terraform accept that exact
+registered deadline only; older releases retain 600 seconds. Runtime deadlines,
+source concurrency, retries, batch sizes, caps, quotas, FULL root and RECENT
+selection are unaffected. Registration, deployment, recovery and natural cloud
+acceptance are distinct steps.

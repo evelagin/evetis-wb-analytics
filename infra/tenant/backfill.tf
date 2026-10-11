@@ -195,7 +195,11 @@ resource "terraform_data" "backfill_guard" {
         length(var.contract.orchestration.dataset_grants) == 6 &&
         toset([for g in var.contract.orchestration.dataset_grants : "${g.email}|${g.role}|projects/${var.contract.project_id}/datasets/${lookup(var.contract.datasets, g.dataset_key, "invalid")}"]) == toset(slice(local.backfill_expected_bindings, 0, 6)) &&
         var.contract.orchestration.job.name == "tenant-backfill-controller" &&
-        var.contract.orchestration.job.timeout == "600s" &&
+        var.contract.orchestration.job.timeout == (
+          try(local.backfill_cadence_release.controller_timeout_seconds, 600) == 1800 &&
+          try(local.backfill_cadence_release.verification.terminal_controller_adapter, "") == "PASS" &&
+          local.backfill_cadence_3_authorized ? "1800s" : "600s"
+        ) &&
         can(regex("^europe-west1-docker\\.pkg\\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}$", var.contract.orchestration.job.image)) &&
         lookup(var.contract.orchestration.job.env, "TENANT_BINDING_REQUIRED", "") == "1" &&
         lookup(var.contract.orchestration.job.env, "STRICT_PAGE_CAPS", "") == "1" &&
