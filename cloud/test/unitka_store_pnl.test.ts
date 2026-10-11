@@ -176,7 +176,8 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
     storage_adjustment_rub: 1, commission_adjustment_rub: 5, price_adjustment_rub: 2, mature_cohort_adjustment_rub: 0,
     timing_bridge_logistics_rub: 40, timing_bridge_unsettled_margin_rub: 300, management_net_store_profit_rub: 118, management_tax_rub: 20,
     management_net_store_margin: 0.118, financial_state: 'PARTIAL_AWAITING_ACCOUNT_INVOICE', double_count_residual_rub: 0,
-    service_month: `${String(o.month ?? '2026-09')}-01`, ...o,
+    service_month: `${String(o.month ?? '2026-09')}-01`,
+    authority: `${String(o.month ?? '2026-09')}-01` < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C', ...o,
   };
 }
 
@@ -225,7 +226,7 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
         if (ranges[0]!.startsWith(`'${TAB_NAME}'`)) return [tabState.values];
         calls.ranges = ranges; return [[...grid(MAY), ...grid(JUN), ...grid(JUL), ...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]];
       },
-      readSheetMetadata: async (id: number) => (id === TAB_ID ? { title: tabState.title, rowCount: 20, metadata: tabState.meta } : null),
+      readSheetMetadata: async (id: number) => (id === TAB_ID ? { title: tabState.title, rowCount: 20, columnCount: tabState.cols, metadata: tabState.meta } : null),
       readNotes: async (_n: string, cells: ReadonlyArray<{ row: number; col: number }>) =>
         new Map(cells.filter((c) => tabState.notes[c.col - 1]).map((c) => [`${c.row}|${c.col}`, tabState.notes[c.col - 1]!] as [string, string])),
       structureWrite: async (reqs) => { applyRequests(reqs); calls.requests.push(...reqs); calls.writes.push(...reqs.filter((r) => 'updateCells' in r).map(() => 'updateCells')); return reqs.length; },
@@ -279,8 +280,8 @@ describe('Phase C — наследие августа', () => {
 });
 
 const TAB_ID = 989153123;
-const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }>; notes: string[] } =
-  { title: TAB_NAME, values: [], meta: [], notes: [] };
+const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }>; notes: string[]; cols: number } =
+  { title: TAB_NAME, values: [], meta: [], notes: [], cols: 26 };
 let nextMetaId = 7;
 
 /** Фейковый Sheets: применяет updateCells и metadata к состоянию вкладки так, как это сделал бы API. */
@@ -332,8 +333,11 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 20, d, 7);
-    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell',
+    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell',
       'updateCells', 'updateDeveloperMetadata', 'createDeveloperMetadata']);
+    // сброс форматов строк данных A:R — до записи новых форматов (смена схемы не оставляет фон/цвет прежних колонок)
+    expect(reqs[1]).toEqual({ repeatCell: { range: { sheetId: TAB_ID, startRowIndex: 1, endRowIndex: plan.rows.length + 1, startColumnIndex: 0, endColumnIndex: 18 },
+      cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } });
     // строка 1: только заметки заголовка (fields = note); форматы — только строки данных
     const rowZero = reqs.filter((r) => JSON.stringify(r).includes('"startRowIndex":0'));
     expect(rowZero.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'updateCells']);
@@ -353,6 +357,14 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     expect(uc.rows).toHaveLength(4);
   });
 
+  it('в сетке меньше 18 колонок → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
+    const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
+    if (d.action !== 'WRITE') throw new Error('ожидалась запись');
+    const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, 17);
+    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'COLUMNS', length: 1 } });
+    expect(publishRequests(plan, TAB_ID, 20, d, 7, undefined, 18).some((r) => 'appendDimension' in r)).toBe(false);
+  });
+
   it('assertOnlyTab: чужой sheetId, чужой тип запроса, чужой metadataId — отказ', () => {
     expect(() => assertOnlyTab(TAB_ID, [{ repeatCell: { range: { sheetId: 0 } } }])).toThrow(/вне вкладки/);
     expect(() => assertOnlyTab(TAB_ID, [{ deleteSheet: { sheetId: TAB_ID } }])).toThrow(/вне вкладки/);
@@ -368,6 +380,10 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     expect(publishGate([pnlRow({ double_count_residual_rub: 5 })])[0]).toMatch(/тождество/);
     expect(publishGate([pnlRow({ month: '2026-08' })])[0]).toMatch(/наследия/);
     expect(publishGate([pnlRow({ financial_state: 'UNKNOWN_COST_PRESENT', unconsumed_finance_rub: 100 })])).toEqual([]);
+    // власть месяца обязательна: пустая или чужая — стоп
+    expect(publishGate([pnlRow({ authority: '' })])[0]).toMatch(/власть месяца/);
+    expect(publishGate([pnlRow({ authority: undefined })])[0]).toMatch(/власть месяца/);
+    expect(publishGate([pnlRow({ month: '2026-07', authority: 'CURRENT_PHASE_C' })])[0]).toMatch(/власть месяца/);
   });
 
   it('флаги: по умолчанию выключено; включение требует sheetId; ADOPT — sha256', () => {
@@ -441,6 +457,29 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
       await unitkaStorePnlLoader(ctx(), c.d);
       expect(c.calls.writes).toEqual([]);
       expect(tabState.meta).toHaveLength(2);
+    });
+  });
+
+  it('ручная правка заметки заголовка восстанавливается: значения равны → запись вместо NOOP; дальше снова NOOP', async () => {
+    tabState.notes[3] = 'правка владельца';
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const a = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), a.d);
+      expect(a.calls.writes).toEqual(['updateCells', 'updateCells']);
+      expect(tabState.notes).toEqual([...TAB_NOTES]);
+      const b = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), b.d);
+      expect(b.calls.writes).toEqual([]);
+    });
+  });
+
+  it('миграция при значениях, уже равных плану: пишется отпечаток контракта (не NOOP), иначе перечитывание падало бы всегда', async () => {
+    tabState.meta = tabState.meta.filter((m) => m.key !== CONTRACT_META_KEY);
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
+      const a = deps(PNL);
+      await unitkaStorePnlLoader(ctx(), a.d);
+      expect(a.calls.writes).toEqual(['updateCells', 'updateCells']);
+      expect(tabState.meta.find((m) => m.key === CONTRACT_META_KEY)!.value).toBe(contractSha());
     });
   });
 

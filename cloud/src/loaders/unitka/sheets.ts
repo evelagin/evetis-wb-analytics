@@ -320,13 +320,14 @@ export class SheetsRest implements SheetsGateway {
    * WB Store P&L: свойства листа и его developer metadata по sheetId (отпечаток последней публикации).
    * null — листа с таким sheetId нет.
    */
-  async readSheetMetadata(sheetId: number): Promise<{ title: string; rowCount: number; metadata: Array<{ id: number; key: string; value: string }> } | null> {
-    const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount)),developerMetadata(metadataId,metadataKey,metadataValue))';
+  async readSheetMetadata(sheetId: number): Promise<{ title: string; rowCount: number; columnCount: number; metadata: Array<{ id: number; key: string; value: string }> } | null> {
+    const fields = 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)),developerMetadata(metadataId,metadataKey,metadataValue))';
     const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
-    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number } }; developerMetadata?: Array<{ metadataId?: number; metadataKey?: string; metadataValue?: string }> }> }>('GET', url);
+    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } }; developerMetadata?: Array<{ metadataId?: number; metadataKey?: string; metadataValue?: string }> }> }>('GET', url);
     const s = (data.sheets ?? []).find((x) => x.properties?.sheetId === sheetId);
     if (!s) return null;
     return { title: s.properties?.title ?? '', rowCount: Number(s.properties?.gridProperties?.rowCount ?? 0),
+      columnCount: Number(s.properties?.gridProperties?.columnCount ?? 0),
       metadata: (s.developerMetadata ?? []).filter((m) => Number.isFinite(Number(m.metadataId)))
         .map((m) => ({ id: Number(m.metadataId), key: String(m.metadataKey ?? ''), value: String(m.metadataValue ?? '') })) };
   }

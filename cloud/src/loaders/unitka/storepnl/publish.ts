@@ -1,8 +1,9 @@
 /**
  * WB STORE P&L AUTO-PUBLISH — публикация плана P&L магазина во вкладку «WB Магазин P&L».
  *
- * F-18 (OWNER ACK 2026-10-09, узкое исключение): автоматическая запись разрешена ТОЛЬКО в эту вкладку
- * (sheetId из UNITKA_STORE_PNL_SHEET_ID) и только представлением wb_mart.V_WB_STORE_PNL_MONTHLY.
+ * F-18 (OWNER ACK 2026-10-09, узкое исключение; источник расширен OWNER ACK 2026-10-11 H0): автоматическая запись
+ * разрешена ТОЛЬКО в эту вкладку (sheetId из UNITKA_STORE_PNL_SHEET_ID) и только представлением
+ * wb_mart.V_WB_STORE_PNL_PRESENTATION (история 2026-05..07 + Phase C с 2026-08, одна власть на месяц).
  * BigQuery — источник истины; вкладка — представление. Модуль чистый: гейт, решение, запросы. I/O — в index.ts.
  *
  * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Q (sha256)
@@ -13,9 +14,10 @@
  *
  * Атомарность: значения (updateCells), форматы строк данных и отпечаток — ОДИН spreadsheets.batchUpdate:
  * либо легло всё, либо ничего (иначе отпечаток мог бы разойтись со значениями навсегда).
- * Что перезаписывается: значения A1:Q{n+1} (заголовок — теми же значениями), формат чисел B:O/Q и фон P
- * строк данных; ручные правки ФОРМАТА строк данных не обнаруживаются и перезаписываются. Заметки
- * строки 1 и всё вне A:Q не трогаются. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
+ * Что перезаписывается: значения A1:R{n+1} (заголовок — теми же значениями); форматы строк данных A:R сначала
+ * сбрасываются (число, фон, цвет текста — чтобы смена схемы не оставила чужих форматов), затем пишутся формат чисел
+ * B:O/R, процент P и фон Q; заметки 18 ячеек заголовка — системный контракт (ручные заметки A1:R1 перезаписываются).
+ * Всё вне A:R не трогается. Каждый запрос ограничен sheetId вкладки (assertOnlyTab).
  */
 import { createHash } from 'node:crypto';
 import type { CellValue } from '../model.js';
@@ -78,7 +80,7 @@ export function publishGate(pnl: readonly PnlRow[]): string[] {
     const legacy = sm >= '2026-08-01' && sm < '2026-09-01';
     if (legacy !== (st === 'LEGACY_PARTIAL_KNOWN_DEFECTS')) out.push(`${m}: состояние наследия не совпадает с месяцем`);
     const authority = String(p.authority ?? '');
-    if (authority && authority !== (sm < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C')) out.push(`${m}: власть месяца ${authority}`);
+    if (authority !== (sm < '2026-08-01' ? 'HISTORICAL_CANONICAL' : 'CURRENT_PHASE_C')) out.push(`${m}: власть месяца «${authority}»`);
     if (st.startsWith('FINANCIAL_COMPLETE')) {
       const open = n('pending_rows') > 0 || n('unknown_rub') > 0.5 || n('unconsumed_finance_rub') > 0.5 || n('deduction_source_gap_rub') > 0.5
         || n('orphan_finance_base_rub') !== 0 || n('orphan_finance_logistics_rub') !== 0 || !b(p.sku_month_closed) || !b(p.month_finance_final)
@@ -134,9 +136,9 @@ function metaRequest(sheetId: number, sha: string, metaId?: number): Record<stri
         developerMetadata: { metadataValue: sha }, fields: 'metadataValue' } };
 }
 
-/** Один атомарный batchUpdate: [расширение сетки] + значения + очистка + форматы строк данных + отпечаток. */
+/** Один атомарный batchUpdate: [расширение сетки] + значения + очистка + форматы строк данных + заметки + отпечатки. */
 export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number, d: Extract<PublishDecision, { action: 'WRITE' }>, metaId?: number,
-  contractMetaId?: number): Record<string, unknown>[] {
+  contractMetaId?: number, gridCols: number = TAB_COLS): Record<string, unknown>[] {
   const n = plan.rows.length;
   const grid: CellValue[][] = [[...plan.header], ...plan.rows.map((r) => [...r])];
   if (grid.some((r) => r.length !== TAB_COLS)) throw new Error(`план не ${TAB_COLS} колонок`);
@@ -145,8 +147,11 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
     ({ sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 });
   const requests: Record<string, unknown>[] = [];
   if (grid.length > gridRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: grid.length - gridRows + 10 } });
+  if (gridCols < TAB_COLS) requests.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: TAB_COLS - gridCols } });
   requests.push(
     { updateCells: { range: R(0, grid.length, 0, TAB_COLS), rows: grid.map((r) => ({ values: r.map(cellOf) })), fields: 'userEnteredValue' } },
+    // Сброс форматов строк данных (включая очищаемые): после смены схемы прежние фон/цвет/формат колонок не переезжают.
+    { repeatCell: { range: R(1, grid.length, 0, TAB_COLS), cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } },
     // A..R: 0 месяц · 1–14 деньги (выручка … доходы, чистая прибыль) · 15 маржа · 16 состояние · 17 мост сроков
     { repeatCell: { range: R(1, n + 1, 1, 15), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: R(1, n + 1, 15, 16), cell: { userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.00%' } } }, fields: 'userEnteredFormat.numberFormat' } },

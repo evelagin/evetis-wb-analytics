@@ -15,6 +15,11 @@
   повторно не входит), переименованы E, L, M, N; заметки 18 заголовков — системный контракт в коде. Миграция схемы — только
   управляемо (`UNITKA_STORE_PNL_MIGRATE_CONTRACT`), плановый прогон отказывает.
 - Снимок листа (`wb_ops.UNITKA_SKU_COMPONENTS_DAILY`) — с 2026-05 (раньше с 2026-08): история берёт из листа только внешнюю рекламу.
+- Независимое ревью (P1 нет; P2/P3 исправлены): история не читает `evetis_ref` (COGS — копия `wb_mart.UNITKA_COGS_EFFECTIVE`,
+  связка — `wb_raw.REF_SKU_MASTER`, ровно одно значение или «неизвестно»); защита от размножения строк и непокрытого снимка
+  (`UNKNOWN_COST_PRESENT`, QA `HIST_INPUTS_COMPLETE`); override только до 2026-08 (QA); сид наборов BC-28..31 с новыми датами;
+  публикатор: сброс форматов строк данных при записи, `appendDimension COLUMNS`, миграция не застревает на NOOP, заметки
+  заголовка восстанавливаются, пустая власть месяца — стоп; документы F-18 — источник `V_WB_STORE_PNL_PRESENTATION`.
 - Инструменты: `tools/unitka_store_pnl_h0_deploy.py` (вью, откат телами до H0), `tools/cogs_bundle_start_fix.py`
   (сдвиг начала двух наборов в `evetis_ref.REF_BUNDLE_COMPONENTS`, суммы без изменений). QA — `sql/unitka/qa_store_pnl_historical_v1.sql`.
 

@@ -16,14 +16,18 @@ FROM k;
 -- @check OVERRIDE_INTEGRITY
 -- Override меняет только класс и месяц услуги: каждый ключ ровно один раз в журнале, сумма — из журнала: 7 авансов/возвратов
 -- (нетто 4 831,20) + подписанный возврат −2 928 = 1 903,20 — ровно чистый расход «Баллов за отзывы».
+-- Phase C читает журнал БЕЗ override: и строка, и месяц услуги override обязаны лежать до 2026-08, иначе сумма
+-- попала бы в Phase C по исходному месяцу и в историю по override — дважды.
 WITH o AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_HISTORICAL_OVERRIDES`),
-l AS (SELECT finance_row_key, COUNT(*) n, SUM(amount_rub) rub
+l AS (SELECT finance_row_key, COUNT(*) n, SUM(amount_rub) rub, MAX(booking_date) booking_date, MAX(service_month) base_service_month
       FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_ACCOUNT_LEDGER` GROUP BY 1)
 SELECT 'OVERRIDE_INTEGRITY' check_name,
   IF(COUNT(*) = 8 AND COUNTIF(IFNULL(l.n, 0) != 1) = 0 AND ABS(SUM(l.rub) - 1903.20) < 0.005
-     AND COUNT(DISTINCT o.finance_row_key) = COUNT(*), 'PASS', 'FAIL') status,
+     AND COUNT(DISTINCT o.finance_row_key) = COUNT(*)
+     AND COUNTIF(o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01') = 0, 'PASS', 'FAIL') status,
   CONCAT('override ', CAST(COUNT(*) AS STRING), ', без строки журнала или дубль: ', CAST(COUNTIF(IFNULL(l.n, 0) != 1) AS STRING),
-         ', сумма журнала по ключам ', FORMAT('%.2f', SUM(l.rub))) detail
+         ', сумма журнала по ключам ', FORMAT('%.2f', SUM(l.rub)),
+         ', месяцы Phase C: ', CAST(COUNTIF(o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01') AS STRING)) detail
 FROM o LEFT JOIN l USING (finance_row_key);
 
 -- @check HIST_CONSERVATION
@@ -63,6 +67,16 @@ WITH h AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_
 SELECT 'COGS_COVERAGE' check_name,
   IF(SUM(cogs_missing_qty) = 0, 'PASS', 'FAIL') status,
   STRING_AGG(CONCAT(month, ': без COGS ', CAST(cogs_missing_qty AS STRING), ' ед.'), '; ' ORDER BY month) detail
+FROM h;
+
+-- @check HIST_INPUTS_COMPLETE
+-- Связки когорты не размножают строки (итоги до и после связок равны) и снимок листа покрывает историю (внешняя
+-- реклама не читается как 0 из снимка, начатого с 2026-08).
+WITH h AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_PNL_HISTORICAL`)
+SELECT 'HIST_INPUTS_COMPLETE' check_name,
+  IF(MAX(cohort_join_gap) <= 0.005 AND LOGICAL_AND(external_marketing_covered), 'PASS', 'FAIL') status,
+  STRING_AGG(CONCAT(month, ': связки ', FORMAT('%.4f', cohort_join_gap), ', снимок ', IF(external_marketing_covered, 'покрывает', 'НЕ покрывает'),
+    ', внешняя реклама ', FORMAT('%.2f', external_marketing_rub)), '; ' ORDER BY month) detail
 FROM h;
 
 -- @check TAX_NOT_DOUBLE_COUNTED

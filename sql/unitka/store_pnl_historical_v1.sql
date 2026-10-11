@@ -25,19 +25,27 @@ WITH bounds AS (SELECT DATE '2026-05-01' hist_from, DATE '2026-08-01' phase_c_fr
 months AS (
   SELECT m FROM bounds, UNNEST(GENERATE_DATE_ARRAY(hist_from, DATE_SUB(phase_c_from, INTERVAL 1 MONTH), INTERVAL 1 MONTH)) m),
 -- Когорта заказа (сутки МСК × nm): выручка по цене продавца, удержание WB, логистика — как Phase C.
+-- 🔴 Без evetis_ref (решение 1C1B/1C2A: учётки загрузчиков Unitka не читают справочный слой). Связка nm → SKU —
+-- wb_raw.REF_SKU_MASTER, себестоимость — физическая копия канона wb_mart.UNITKA_COGS_EFFECTIVE (sp_publish_unitka_cogs,
+-- ASSERT на пересечения интервалов). Обе связки — РОВНО одно значение, иначе NULL (себестоимость неизвестна, не 0).
 coh AS (
-  SELECT c.order_date_msk d, c.nm_id, c.sold_qty, c.seller_base_rub, c.wb_take_rub, c.logistics_rub, c.provisional_rows,
-    cm.internal_sku
+  SELECT c.order_date_msk d, c.nm_id, c.sold_qty, c.seller_base_rub, c.wb_take_rub, c.logistics_rub, c.provisional_rows
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COHORT_DAILY` c
-  LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.REF_SKU_CHANNEL_MAP` cm
-    ON cm.marketplace = 'WB' AND SAFE_CAST(cm.marketplace_sku AS INT64) = c.nm_id
-   AND c.order_date_msk BETWEEN cm.valid_from AND IFNULL(cm.valid_to, DATE '9999-12-31')
   WHERE c.order_date_msk >= (SELECT hist_from FROM bounds) AND c.order_date_msk < (SELECT phase_c_from FROM bounds)),
--- Каноническая себестоимость по дате заказа (V_PRODUCT_COGS_EFFECTIVE), не себестоимость листа.
-coh_cogs AS (
-  SELECT coh.*, e.product_cogs_rub cogs_unit
-  FROM coh LEFT JOIN `project-fa311fc0-4d87-4781-986.evetis_ref.V_PRODUCT_COGS_EFFECTIVE` e
-    ON e.internal_sku = coh.internal_sku AND coh.d BETWEEN e.effective_from AND IFNULL(e.effective_to, DATE '9999-12-31')),
+ref AS (
+  SELECT nm_id, IF(COUNT(DISTINCT internal_sku) = 1, ANY_VALUE(internal_sku), NULL) internal_sku
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.REF_SKU_MASTER` WHERE marketplace = 'WB' GROUP BY 1),
+unit_cogs AS (
+  SELECT k.d, k.nm_id, IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL) cogs_unit
+  FROM (SELECT DISTINCT d, nm_id FROM coh) k
+  LEFT JOIN ref USING (nm_id)
+  LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.UNITKA_COGS_EFFECTIVE` u
+    ON u.internal_sku = ref.internal_sku AND k.d BETWEEN u.effective_from AND IFNULL(u.effective_to, DATE '9999-12-31')
+  GROUP BY 1, 2),
+-- Связки агрегированы до (сутки, nm) — размножение строк когорты невозможно по построению; QA сверяет ещё и итоги.
+coh_cogs AS (SELECT coh.*, g.cogs_unit FROM coh LEFT JOIN unit_cogs g USING (d, nm_id)),
+coh_base AS (
+  SELECT DATE_TRUNC(d, MONTH) m, SUM(seller_base_rub) base_rub, SUM(sold_qty) base_qty FROM coh GROUP BY 1),
 sku AS (
   SELECT DATE_TRUNC(d, MONTH) m,
     SUM(seller_base_rub) revenue_rub, SUM(wb_take_rub) wb_take_rub, SUM(logistics_rub) logistics_rub, SUM(sold_qty) sold_qty,
@@ -84,11 +92,18 @@ uncovered AS (
   FROM months mo JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COVERAGE` c
     ON c.booking_date BETWEEN mo.m AND DATE_ADD(LAST_DAY(mo.m), INTERVAL 20 DAY)
   GROUP BY 1),
--- Внешняя реклама (блогеры, самовыкупы) — ручной ввод листа (N), как в Phase C; источник — снимок листа.
+-- Внешняя реклама (блогеры, самовыкупы) — ручной ввод листа (N), как в Phase C; источник — последний снимок листа.
+-- Снимок, начатый позже начала истории (образ до H0 снимает лист с 2026-08), НЕ даёт «внешней рекламы = 0»:
+-- ext_covered = FALSE → месяц UNKNOWN_COST_PRESENT, пока снимок не покроет историю.
+ext_snap AS (
+  SELECT snapshot_id, MIN(date_msk) <= (SELECT hist_from FROM bounds) covered
+  FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`
+  WHERE snapshot_id = (SELECT MAX(snapshot_id) FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`)
+  GROUP BY 1),
 ext AS (
   SELECT DATE_TRUNC(date_msk, MONTH) m, SUM(ads_out) external_marketing_rub
   FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`
-  WHERE snapshot_id = (SELECT MAX(snapshot_id) FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`)
+  WHERE snapshot_id = (SELECT snapshot_id FROM ext_snap)
   GROUP BY 1),
 fin_days AS (
   SELECT DISTINCT d
@@ -115,12 +130,14 @@ j AS (
     IFNULL(ac.other_marketplace_cost_rub, 0) other_marketplace_cost_rub, IFNULL(ac.marketplace_income_rub, 0) marketplace_income_rub,
     IFNULL(ac.unknown_rub, 0) unknown_rub, IFNULL(ac.overridden_rows, 0) overridden_rows,
     IFNULL(u.unconsumed_finance_rub, 0) unconsumed_finance_rub, IFNULL(u.pending_rub, 0) pending_rub, IFNULL(u.pending_rows, 0) pending_rows,
-    IFNULL(e.external_marketing_rub, 0) external_marketing_rub,
+    IFNULL(e.external_marketing_rub, 0) external_marketing_rub, IFNULL((SELECT covered FROM ext_snap), FALSE) external_marketing_covered,
+    ABS(IFNULL(cb.base_rub, 0) - IFNULL(s.revenue_rub, 0)) + ABS(IFNULL(cb.base_qty, 0) - IFNULL(s.sold_qty, 0)) cohort_join_gap,
     IFNULL(cv.final_month, FALSE) month_finance_final, IFNULL(cv.final_m20, FALSE) account_invoice_window_closed,
     IFNULL(cv.final_m46, FALSE) cohort_mature,
     IFNULL(ac.minimum_payment_invoices, 0) minimum_payment_invoices, IFNULL(ac.utilization_invoices, 0) utilization_invoices
   FROM months mo LEFT JOIN sku s ON s.m = mo.m LEFT JOIN ads a ON a.m = mo.m LEFT JOIN storage_fin sf ON sf.m = mo.m
-  LEFT JOIN acc ac ON ac.m = mo.m LEFT JOIN uncovered u ON u.m = mo.m LEFT JOIN ext e ON e.m = mo.m LEFT JOIN cov cv ON cv.m = mo.m),
+  LEFT JOIN acc ac ON ac.m = mo.m LEFT JOIN uncovered u ON u.m = mo.m LEFT JOIN ext e ON e.m = mo.m LEFT JOIN cov cv ON cv.m = mo.m
+  LEFT JOIN coh_base cb ON cb.m = mo.m),
 k AS (
   SELECT j.*,
     -- Вклад SKU (канонический): выручка − удержание WB − логистика − налог − COGS − реклама по атрибуции + внешняя реклама.
@@ -140,7 +157,8 @@ SELECT
   0 mature_cohort_adjustment_rub, 0 timing_bridge_logistics_rub, 0 timing_bridge_unsettled_margin_rub,
   sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub management_net_store_profit_rub,
   SAFE_DIVIDE(sku_contribution_rub + ads_adjustment_rub + storage_adjustment_rub - marketplace_costs_rub + marketplace_income_rub, revenue_rub) management_net_store_margin,
-  CASE WHEN unknown_rub > 0.5 OR unconsumed_finance_rub > 0.5 OR cogs_missing_qty > 0 THEN 'UNKNOWN_COST_PRESENT'
+  CASE WHEN unknown_rub > 0.5 OR unconsumed_finance_rub > 0.5 OR cogs_missing_qty > 0
+         OR NOT external_marketing_covered OR cohort_join_gap > 0.005 THEN 'UNKNOWN_COST_PRESENT'
        WHEN pending_rows > 0 THEN 'PENDING_CLASSIFICATION'
        WHEN NOT month_finance_final OR ads_days = 0 OR ads_final_days < ads_days OR provisional_rows > 0 THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
        WHEN NOT account_invoice_window_closed AND (minimum_payment_invoices = 0 OR utilization_invoices = 0) THEN 'PARTIAL_AWAITING_ACCOUNT_INVOICE'
@@ -152,7 +170,7 @@ SELECT
      + external_marketing_rub - marketplace_costs_rub + marketplace_income_rub) double_count_residual_rub,
   -- раскрытие
   wb_take_rub, logistics_rub, sold_qty, cogs_rub, cogs_missing_qty, ads_billing_rub, ads_attributed_rub,
-  ads_final_days, ads_days, storage_finance_rub, external_marketing_rub, unknown_rub, unconsumed_finance_rub, pending_rub, pending_rows,
+  ads_final_days, ads_days, storage_finance_rub, external_marketing_rub, external_marketing_covered, cohort_join_gap, unknown_rub, unconsumed_finance_rub, pending_rub, pending_rows,
   overridden_rows, month_finance_final, cohort_mature, TRUE sku_month_closed, account_invoice_window_closed,
   minimum_payment_invoices, utilization_invoices, 0 orphan_finance_base_rub, 0 orphan_finance_logistics_rub,
   0 deduction_source_gap_rub

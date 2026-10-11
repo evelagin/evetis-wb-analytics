@@ -189,14 +189,37 @@ def test_historical_layer_single_authority_and_canonical_sources():
     b = h_bodies()
     hist = b["V_WB_STORE_PNL_HISTORICAL"]
     assert "'HISTORICAL_CANONICAL' authority" in hist and "DATE '2026-05-01' hist_from, DATE '2026-08-01' phase_c_from" in hist
-    assert "evetis_ref.V_PRODUCT_COGS_EFFECTIVE" in hist and "0.02 * seller_base_rub" in hist
+    assert "wb_mart.UNITKA_COGS_EFFECTIVE" in hist and "wb_raw.REF_SKU_MASTER" in hist and "0.02 * seller_base_rub" in hist
     assert "ad_spend_financial_rub" in hist and "V_WB_FINANCE_HISTORICAL_OVERRIDES" in hist
     # формулы листа не задают экономику истории: из снимка — только внешняя реклама
-    assert hist.count("UNITKA_SKU_COMPONENTS_DAILY") == 2 and "SUM(ads_out) external_marketing_rub" in hist
+    assert hist.count("UNITKA_SKU_COMPONENTS_DAILY") == 3 and "SUM(ads_out) external_marketing_rub" in hist
     pres = b["V_WB_STORE_PNL_PRESENTATION"]
     assert "'CURRENT_PHASE_C' authority" in pres and pres.count("UNION ALL") == 1
     pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
     assert "AND date_msk >= DATE '2026-08-01'" in pnl     # Phase C начинается там, где кончается история
+
+
+def test_wb_loader_views_do_not_read_evetis_ref():
+    # 1C1B/1C2A: учётки загрузчиков Unitka не читают evetis_ref — COGS из физической копии в wb_mart.
+    for n, body in h_bodies().items():
+        code = re.sub(r"--[^\n]*", "", body)
+        assert "evetis_ref" not in code, n
+
+
+def test_historical_joins_fail_closed_and_snapshot_must_cover_history():
+    hist = h_bodies()["V_WB_STORE_PNL_HISTORICAL"]
+    assert "IF(COUNT(DISTINCT internal_sku) = 1, ANY_VALUE(internal_sku), NULL)" in hist
+    assert "IF(COUNT(u.internal_sku) = 1, MAX(u.product_cogs_rub), NULL) cogs_unit" in hist
+    assert "FROM (SELECT DISTINCT d, nm_id FROM coh) k" in hist       # связки до (сутки, nm) — без размножения
+    assert "MIN(date_msk) <= (SELECT hist_from FROM bounds) covered" in hist
+    state = hist.split("CASE WHEN unknown_rub")[1].split("'UNKNOWN_COST_PRESENT'")[0]
+    assert "NOT external_marketing_covered" in state and "cohort_join_gap > 0.005" in state
+
+
+def test_bundle_seed_matches_acked_start_dates():
+    seed = (ROOT / "sql/ref/pr_ref_cogs_history.sql").read_text()
+    for bc, d in [("BC-28", "2026-05-01"), ("BC-29", "2026-05-01"), ("BC-30", "2026-07-01"), ("BC-31", "2026-07-01")]:
+        assert re.search(rf"^\('{bc}','[^']+','[^']+',1,DATE '{d}'", seed, flags=re.M), bc
 
 
 def test_overrides_are_the_8_proven_review_points_rows():
@@ -226,7 +249,8 @@ def test_historical_qa_is_read_only_blocks():
     blocks = re.split(r"^-- @check (\S+)\n", qa, flags=re.M)[1:]
     names = blocks[0::2]
     assert names == ["SINGLE_AUTHORITY", "OVERRIDE_INTEGRITY", "HIST_CONSERVATION", "FINANCE_COVERAGE_ALL_HISTORY", "LEGACY_MEMO_GUARD",
-                     "COGS_COVERAGE", "TAX_NOT_DOUBLE_COUNTED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+                     "COGS_COVERAGE", "HIST_INPUTS_COMPLETE", "TAX_NOT_DOUBLE_COUNTED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+    assert "o.service_month >= DATE '2026-08-01' OR l.base_service_month >= DATE '2026-08-01'" in qa   # override только до Phase C
     for name, sql in zip(names, blocks[1::2]):
         bare = re.sub(r"--[^\n]*", "", sql).strip()
         code = re.sub(r"'[^']*'", "''", bare)
