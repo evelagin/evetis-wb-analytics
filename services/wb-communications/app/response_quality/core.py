@@ -42,8 +42,9 @@ class VoicePlan:
     product_capabilities: dict = field(default_factory=dict)
     service_premises: list = field(default_factory=list)
     question_targets: list = field(default_factory=list)
-    attention: str | None = None     # operator badge: MODERATE_DISCOMFORT | SAFETY_TEMPLATE
+    attention: str | None = None     # operator badge: MODERATE_DISCOMFORT | MILD_REACTION | SAFETY_TEMPLATE
     moderate_signals: list = field(default_factory=list)
+    understanding: dict = field(default_factory=dict)   # 3.1F aspect-first reading (persisted)
 
 
 @dataclass
@@ -112,6 +113,41 @@ _ASPECTS = [
 ]
 
 
+# 3.1F: a powder/particles cloud is a usability complaint (exposure context), never a symptom.
+_DUSTING = r"\bпыл(?:ит|ится|ь|ью)\b|распыл\w*[^.!?]{0,25}частич|частич\w*[^.!?]{0,40}(?:воздух|лет|разлета|вдых)|\bне\s+вдыха|вдыхать"
+_WORKAROUND = (r"(?:выня|вынул|сняла?\b|выкинул|убрал)\w*[^.!?]{0,40}(?:дозатор|крышк|пипетк|помп)|(?:высыпа|насыпа|пересыпа|перелива|отлива)\w*[^.!?]{0,40}"
+               r"(?:на\s+(?:руки|ладон|влажн)|в\s+(?:ладон|руку|баноч|другую|отдельн))|приходится\s+\w+")
+POSITIVE_KEYS = {"product_liked", "softness", "non_sticky", "texture", "fragrance_liked", "recommendation", "convenience",
+                 "delivery", "repeat_purchase", "result_liked", "future_purchase"}
+NEGATIVE_KEYS = {"no_effect", "product_disliked", "price", "sticky", "drying", "fragrance_disliked", "fragrance_harsh",
+                 "packaging_inconvenient", "dispenser_inconvenient", "powder_dusting"}
+
+
+def understand(msg, aspects, cls, policy) -> dict:
+    """Aspect-first reading of the review BEFORE any response strategy (persisted for audit)."""
+    from app.v3.safety import context_mentions, exposure_only
+    raw = _raw(msg)
+    n = normalize(raw)
+    keys = [a.key for a in aspects]
+    safety = getattr(cls, "safety", None)
+    events = [e for e in (safety.events if safety else []) if e.active or e.temporal_state == "resolved"]
+    exposure = [m.group(0) for m in re.finditer(_DUSTING, n)]
+    return {
+        "positive_aspects": [k for k in keys if k in POSITIVE_KEYS],
+        "negative_aspects": [k for k in keys if k in NEGATIVE_KEYS],
+        "product_or_packaging_issue": sorted({c for c in getattr(cls, "codes", []) if c.startswith("PACKAGING.")}
+                                             | {k for k in keys if k in ("dispenser_inconvenient", "packaging_inconvenient", "powder_dusting")}),
+        "actual_safety_symptoms": [{"type": e.type, "evidence_span": e.evidence_span[:160], "source": e.source,
+                                    "temporal_state": e.temporal_state} for e in events],
+        "safety_route": safety.route if safety else None,
+        "safety_context_not_symptoms": context_mentions(raw, policy),
+        "exposure_or_avoidance_context": exposure,
+        "exposure_only": bool(exposure) and exposure_only(raw),
+        "customer_workaround": [m.group(0) for m in re.finditer(_WORKAROUND, n)],
+        "question": bool(getattr(cls, "is_question", False)),
+    }
+
+
 def aspects_of(msg):
     t = normalize(_raw(msg))
     out = []
@@ -133,7 +169,8 @@ def aspects_of(msg):
         ('drying', r'сушит|сухость|стягива', 'Жаль, что после применения Вы ощущаете сухость.', (r'сух|стяг',)),
         ('fragrance_disliked', r'\bне\s+(?:понрав|нрав)[^.!?]{0,35}(аромат|запах)|(?:аромат|запах)[^.!?]{0,35}\bне\s+(?:понрав|нрав)', 'Жаль, что аромат Вам не понравился.', (r'аромат|запах',r'жаль|не\s+понрав')),
         ('packaging_inconvenient', r'неудобн[^.!?]{0,20}упаков|упаков[^.!?]{0,20}неудоб', 'Жаль, что упаковка оказалась для Вас неудобной.', (r'упаков',r'неудоб')),
-        ('dispenser_inconvenient', r'неудобн[^.!?]{0,20}дозатор|дозатор[^.!?]{0,20}неудоб', 'Жаль, что дозатор оказался неудобным в использовании.', (r'дозатор',r'неудоб')),
+        ('dispenser_inconvenient', r'неудобн[^.!?]{0,20}дозатор|дозатор[^.!?]{0,20}неудоб|дозатор\w*[^.!?]{0,60}(?:выня|вынул|вынуть|сняла?\b|снять|выкин|выброс|убрал|мешает|сложно|трудно)|(?:выня\w*|вынул\w*|сняла?\b|выкинул\w*|убрал\w*)[^.!?]{0,30}дозатор', 'Жаль, что дозатор оказался неудобным в использовании.', (r'дозатор',r'неудоб|мешал|не\s+удоб')),
+        ('powder_dusting', _DUSTING, 'Понимаем, что мелкие частички, которые поднимаются в воздух, доставляют неудобство.', (r'частич|пыл|распыл|воздух',r'понима|жаль|неудоб|неприятн')),
         ('result_liked', r'эффект[^.!?]{0,15}(есть|хорош)|хорош[^.!?]{0,15}(эффект|результат)|(?:кож|рук)\w*[^.!?]{0,35}(?:увлажнен|ухожен|нежн)|\bхорошо\s+увлажня', 'Рады, что Вы довольны результатом применения.', (r'результат|эффект|(?:кож|рук)[^.!?]{0,30}(?:нежн|ухожен|увлажнен)',)),
         ('future_purchase',r'буду\s+(брать|покупать|заказыв)|куплю\s+ещ[её]', 'Будем рады видеть Вас снова.', (r'снова|ещ[её]',)),
     ]
@@ -219,6 +256,7 @@ def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False, safe_gaps=Fal
                          or hard_plan.failure_code == "UNCLASSIFIED_QUESTION"):
         hard = local_hard
     p = VoicePlan(hard.strategy, "P1", 0, aspects_of(msg))
+    p.understanding = understand(msg, p.aspects, cls, snap.policy)
     if moderate_safety:
         # R2.1 operator assist only: fragrance discomfort without a serious marker gets a
         # cautious draft and an attention badge instead of an empty human-review card.
@@ -237,10 +275,10 @@ def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False, safe_gaps=Fal
         p.human_reason = hard.failure_code or "HUMAN_REVIEW"
         return p
     if hard.strategy == "SAFETY_TEMPLATE":
-        p.direct_answer = hard.deterministic_text  # no mild-discomfort recalibration
-        if moderate_safety:
-            p.attention = "SAFETY_TEMPLATE"
-        return p
+        # 3.1F: no medical escalation in machine replies — S1 contextual mild draft, S2 human,
+        # S1R keeps its approved template (see response_quality/mild.py).
+        from app.response_quality import mild
+        return mild.apply(msg, p, hard)
     if hard.strategy == "SERVICE":
         p.service_premises=hard.service_premises
         positive=[a for a in p.aspects if a.key in {'fragrance_liked','texture','softness','product_liked'}]
@@ -362,7 +400,9 @@ def make_plan(msg, snap, *, hard_plan=None, moderate_safety=False, safe_gaps=Fal
         p.clarifications.append({'unknown':'expected_result','changes':'identify the unmet expectation; no efficacy advice'})
     elif keys & {'packaging_inconvenient','dispenser_inconvenient'}:
         # Generic inconvenience names a component, but not what actually fails.
-        if not re.search(r'не (?:открыва|закрыва|выда|нажима)|застрева|слишком|туго|протека',raw):
+        # 3.1F: a customer who described the difficulty or her own workaround is never asked again.
+        if not re.search(r'не (?:открыва|закрыва|выда|нажима)|застрева|слишком|туго|протека',raw) \
+                and not p.understanding.get('customer_workaround') and 'powder_dusting' not in keys:
             p.clarifications.append({'unknown':'specific_difficulty','changes':'identify the unreported component difficulty for operator/service routing'})
     elif 'product_disliked' in keys and not specific:
         p.clarifications.append({'unknown':'specific_difficulty','changes':'identify the actual issue absent from customer report'})
@@ -419,7 +459,7 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
         return PreparedResponse("HUMAN_REVIEW", None, False, first, {"verdict":"BLOCK", "reason":p.block_reason}, q, p, [p.block_reason])
     if first["verdict"] != "BLOCK" and q.verdict == "GOOD" and not force_generation:
         return PreparedResponse("READY", original, False, first, first, q, p, [])
-    from app.response_quality.generation_contract import GenerationContractError
+    from app.response_quality.generation_contract import GenerationContractError, invented_safety_context
     contract_violations=[]
     try:
         candidate = render(msg, p, safe_v3_draft=safe_v3_draft)
@@ -430,9 +470,21 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
              validate_for_publication(candidate or "", msg, st))
     fq = evaluate(candidate, msg, p, final)
     ready = bool(candidate) and final["verdict"] != "BLOCK"
-    if not ready and first["verdict"] != "BLOCK" and not p.direct_answer:
+    if contract_violations and all(v.get("rule_id") == "INVENTED_SAFETY_CONTEXT" for v in contract_violations) \
+            and not p.direct_answer:
+        # 3.1F: the model invented a reaction / medical context the customer never reported —
+        # answer the actual review with the deterministic acknowledgement, independently gated.
+        fallback = human_voice(msg, replace(p, facts=[], explanations=[]))
+        fallback_policy = validate_for_publication(fallback or "", msg, st)
+        if fallback and fallback_policy["verdict"] != "BLOCK" and not invented_safety_context(fallback, p):
+            return PreparedResponse("READY", fallback, True, first, fallback_policy,
+                                    evaluate(fallback, msg, p, fallback_policy), p,
+                                    reasons + ["INVENTED_SAFETY_CONTEXT_FALLBACK"])
+    if not ready and (first["verdict"] != "BLOCK" or not (original or "").strip()) and not p.direct_answer:
         # Use only the existing customer-acknowledgement plan. No new expertise,
         # claims or invented clarification. Independently gate this fallback too.
+        # 3.1F: also for a NEW card (no original): a blocked model candidate must not leave the
+        # operator with an empty card when a safe acknowledgement of the review exists.
         fallback = human_voice(msg, replace(p, facts=[], explanations=[]))
         fallback_policy = validate_for_publication(fallback or "", msg, st)
         fallback_quality = evaluate(fallback,msg,p,fallback_policy)
@@ -441,7 +493,7 @@ def prepare(msg, original, snap, *, safe_v3_draft=None, hard_plan=None, render=N
         if fallback_policy['verdict'] != 'BLOCK' and fallback_missing < old_missing:
             return PreparedResponse('READY', fallback, fallback != original, first, fallback_policy,
                                     fallback_quality,p,reasons+['CUSTOMER_SIGNALS_SAFE_FALLBACK'])
-    if not ready and first["verdict"] != "BLOCK" and p.route != "MODERATE_DISCOMFORT":
+    if not ready and first["verdict"] != "BLOCK" and p.route not in ("MODERATE_DISCOMFORT", "MILD_REACTION"):
         # A failed STYLE improvement may never block the already safe operator candidate.
         # A blocked moderate-safety answer goes to a human, never back to the original.
         return PreparedResponse("READY", original, False, first, first, q, p, reasons)

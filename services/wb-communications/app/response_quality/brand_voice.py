@@ -25,7 +25,10 @@ def render(msg, p, *, safe_v3_draft=None):
     if rating_only:  # a rating without words: the planned warm thanks / regret, nothing else
         return _with_name(msg, rating_only.response)
     negative = keys & {'fragrance_harsh','fragrance_disliked','sticky','drying',
-                       'no_effect','product_disliked','price','packaging_inconvenient','dispenser_inconvenient'}
+                       'no_effect','product_disliked','price','packaging_inconvenient','dispenser_inconvenient',
+                       'powder_dusting'}
+    # The customer already explained the difficulty (more than a bare tag): never ask again.
+    explained = len(normalize(' '.join(str(msg.get(k) or '') for k in ('text','pros','cons')))) > 60
     positive = []
     if 'softness' in keys: positive.append('мягкость средства Вам понравилась')
     if 'texture' in keys: positive.append('Вы оценили текстуру')
@@ -35,6 +38,8 @@ def render(msg, p, *, safe_v3_draft=None):
     if 'result_liked' in keys: positive.append('Вы довольны результатом применения')
     if 'product_liked' in keys and not positive: positive.append('само средство Вам понравилось')
     parts = []
+    if 'product_liked' in keys and 'texture' in keys and re.search(r'качеств', normalize(_raw(msg))):
+        positive = ['Вам понравились качество средства и его текстура'] + [x for x in positive if x != 'Вы оценили текстуру']
     if positive:
         parts.append('Рады, что ' + ', а '.join(positive) + '.')
     elif not negative:
@@ -51,9 +56,14 @@ def render(msg, p, *, safe_v3_draft=None):
     if 'product_disliked' in keys and not negative-{'product_disliked'}:
         parts.append('Жаль, что покупка Вас разочаровала. Расскажите, пожалуйста, что именно не понравилось.')
     if 'price' in keys: parts.append('Ваше замечание о цене тоже услышали.')
+    if {'dispenser_inconvenient','powder_dusting'} <= keys:
+        parts.append('Жаль, что дозатор оказался неудобным, а мелкие частички поднимаются в воздух при использовании.')
     for a in p.aspects:
-        if a.key in {'packaging_inconvenient','dispenser_inconvenient'}:
-            parts.append(a.response + ' Расскажите, пожалуйста, что именно затрудняет использование.')
+        if a.key == 'powder_dusting' and 'dispenser_inconvenient' not in keys:
+            parts.append(a.response)
+        if a.key in {'packaging_inconvenient','dispenser_inconvenient'} and not (
+                a.key == 'dispenser_inconvenient' and 'powder_dusting' in keys):
+            parts.append(a.response + ('' if explained else ' Расскажите, пожалуйста, что именно затрудняет использование.'))
     # At most one relevant explanation. Existing fragrance profile is a FACT,
     # never a new claim about longevity, intensity, individual tolerance or benefit.
     for row in p.explanations:
@@ -61,7 +71,7 @@ def render(msg, p, *, safe_v3_draft=None):
         parts.append(('В этой версии средства — '+wording.rstrip('.')+'.') if row['kind']=='fact' else wording)
     if 'recommendation' in keys: parts.append('Спасибо за Вашу рекомендацию!')
     if 'delivery' in keys: parts.append('Здорово, что доставка была быстрой.')
-    if negative and not any(k in keys for k in ('packaging_inconvenient','dispenser_inconvenient','product_disliked')):
+    if negative and (explained or not keys & {'packaging_inconvenient','dispenser_inconvenient'}) and 'product_disliked' not in keys:
         closes = ('Спасибо, что рассказали об этом: Ваше впечатление для нас важно.',
                   'Спасибо за честный отзыв — Ваше впечатление для нас важно.')
         parts.append(closes[int(sha(_raw(msg))[:4],16)%len(closes)])
@@ -85,7 +95,7 @@ def assess(text,msg,p,hard_policy,*,previous_answers=()):
     if mixed_texture and not positive_texture_experience(text) and 'texture' not in missing:missing.append('texture')
     negative=bool({a.key for a in p.aspects}&{'fragrance_harsh','fragrance_disliked','sticky','drying','no_effect',
                   'product_disliked','price','service_damage','packaging_inconvenient','dispenser_inconvenient'})
-    direct=p.level=='DIRECT'; hard=p.route in {'SAFETY_TEMPLATE','HUMAN_REVIEW','MODERATE_DISCOMFORT'}
+    direct=p.level=='DIRECT'; hard=p.route in {'SAFETY_TEMPLATE','HUMAN_REVIEW','MODERATE_DISCOMFORT','MILD_REACTION'}
     answered = not p.direct_answer or normalize(p.direct_answer) in n
     from app.v3.direct_questions import diagnostics
     from app.v3.service_premise import unsupported_statement
@@ -143,7 +153,7 @@ def assess(text,msg,p,hard_policy,*,previous_answers=()):
     reasons.extend(relevance)
     # A mixed review: the customer's own praise must survive next to the complaint.
     praise={'product_liked','softness','texture','non_sticky','fragrance_liked','convenience','result_liked'}
-    complaint=negative or p.route in {'MODERATE_DISCOMFORT','SAFETY_TEMPLATE'}
+    complaint=negative or p.route in {'MODERATE_DISCOMFORT','SAFETY_TEMPLATE','MILD_REACTION'}
     if complaint and set(missing)&praise:
         reasons.append('POSITIVE_CUSTOMER_SIGNAL_IGNORED')
     extra=[]

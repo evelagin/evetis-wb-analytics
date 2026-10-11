@@ -392,7 +392,9 @@ def verify(text: Optional[str], ctx: VerifierContext, snapshot: KnowledgeSnapsho
     if safety.route in {'HUMAN_REVIEW','SAFETY_URGENT'} and not ctx.human_reviewed_safety \
             and not moderate_discomfort(ctx.customer_experience,safety):
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'customer safety event requires human; ordinary publication is forbidden')
-    elif safety.route=='S2' and normalize(snapshot.template('T-S2')) not in norm:
+    elif safety.route=='S2' and not ctx.human_reviewed_safety and normalize(snapshot.template('T-S2')) not in norm:
+        # 3.1F: a persistent/severe reaction is decided by a human (no machine draft); the
+        # human's own wording is not forced to contain the machine template's medical escalation.
         add('V-SAFETY-ROUTE','BLOCK',raw[:80],'severe/persistent reaction requires approved safety branch')
     from app.v3.service_premise import unsupported_statement
     if unsupported_statement(raw,ctx.customer_experience,policy):

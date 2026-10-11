@@ -104,7 +104,9 @@ def test_tag_evidence_allows_acknowledgement_not_brand_claim():
     ok = run(m, "Евгения, спасибо за высокую оценку! Рады, что аромат Вам понравился и пользоваться кремом удобно.")
     assert ok.status == "READY" and ok.quality.verdict == "GOOD"
     claim = run(m, "Евгения, спасибо! У крема приятный аромат.")
-    assert claim.final_policy["verdict"] == "BLOCK"
+    # the brand claim never passes; a NEW card falls back to the gated acknowledgement (3.1F)
+    assert claim.text != "Евгения, спасибо! У крема приятный аромат."
+    assert claim.final_policy["verdict"] != "BLOCK" and "CUSTOMER_SIGNALS_SAFE_FALLBACK" in claim.reasons
 
 
 def test_language_payload_carries_tags():

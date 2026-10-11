@@ -1,3 +1,4 @@
+import re
 """Offline acceptance: pinned policy, observed pairs + explicitly synthetic cases."""
 import copy
 import json
@@ -95,13 +96,21 @@ def test_mixed_sentiment_covers_both_and_quality_is_separate():
     assert 'понрав' in r.text and 'резк' in r.text
     assert evaluate(r.text,m,r.plan,r.final_policy,previous_answers=[r.text]).dimensions['repetition_penalty']=='NEEDS_IMPROVEMENT'
 
-@pytest.mark.parametrize('text', ['Жжение прошло','Кожа немного щиплет','Раздражение не проходит'])
-def test_existing_mild_safety_template_is_unchanged(text):
+@pytest.mark.parametrize('text,route', [('Жжение прошло','SAFETY_TEMPLATE'),('Кожа немного щиплет','MILD_REACTION'),
+                                        ('Раздражение не проходит','HUMAN_REVIEW')])
+def test_skin_safety_routes_without_medical_escalation(text,route):
+    # 3.1F owner decision: S1R keeps its approved (doctor-free) template, S1 is a contextual mild
+    # draft, S2 goes to a human; no machine reply sends the buyer to a doctor.
     m={'entity_type':'review','nm_id':'535581674','text':text,'rating':2}
     hard=plan(SNAP,resolve(SNAP,nm_id=m['nm_id']),classify_rules(m,SNAP),m)
     p=make_plan(m,SNAP)
-    assert p.route==hard.strategy
-    if hard.strategy=='SAFETY_TEMPLATE':assert human_voice(m,p)==hard.deterministic_text
+    assert hard.strategy=='SAFETY_TEMPLATE' and p.route==route
+    if route=='HUMAN_REVIEW':
+        assert p.human_reason=='SAFETY_ESCALATION' and human_voice(m,p) is None
+    else:
+        text_out=human_voice(m,p)
+        assert text_out and not re.search(r'врач|дерматолог|аллерголог',text_out.lower())
+        if route=='SAFETY_TEMPLATE':assert text_out==hard.deterministic_text
 
 def _cb(action,c,version=None,n=100):
     return {'update_id':n,'callback_query':{'id':str(n),'data':f'{action}:{c}'+(f':{version}' if version is not None else ''),

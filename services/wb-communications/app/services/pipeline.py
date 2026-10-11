@@ -210,6 +210,7 @@ def _v31_draft(deps, doc_id, doc, *, budgeted=True) -> dict | None:
                  "model": renderer.model if renderer and renderer.calls else "deterministic",
                  "llm_calls": renderer.calls if renderer else 0,
                  "attention": getattr(result.plan, "attention", None), "human_reason": human,
+                 "understanding": getattr(result.plan, "understanding", None) or {},
                  "restriction": "SERIOUS_SAFETY" if human == "SAFETY_ESCALATION" else None,
                  "latency_ms": int((time.monotonic() - t0) * 1000), "created_at": _now_iso()}
     except Exception as exc:  # noqa: BLE001 — the v2 card must still go out
@@ -347,6 +348,9 @@ def _primary_badges(doc) -> list[str]:
                 "Готовый ответ не публикуется — напишите свой через «✏️ Изменить».", ""]
     if draft.get("attention") == "MODERATE_DISCOMFORT":
         return ["⚠️ <b>Требует внимания оператора:</b> покупатель связывает самочувствие с ароматом. "
+                "Проверьте ответ перед публикацией.", ""]
+    if draft.get("attention") == "MILD_REACTION":
+        return ["⚠️ <b>Требует внимания оператора:</b> покупатель сообщает о дискомфорте кожи. "
                 "Проверьте ответ перед публикацией.", ""]
     if draft.get("attention") == "SAFETY_TEMPLATE":
         return ["⚠️ <b>Требует внимания оператора:</b> реакция кожи, утверждённый ответ безопасности.", ""]
