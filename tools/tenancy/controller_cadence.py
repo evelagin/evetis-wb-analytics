@@ -145,7 +145,7 @@ def historical_closed_claim(backend,claim):
             or descriptor['release']!=release or release['image']!=claim['image']
             or release.get('cadence_policy')!=backend.c['orchestration']['cadence']):
         fail('historical controller descriptor differs')
-    block=O.block(backend.c,settings,BF.REPO,release)
+    block=O.block(O.historical_contract(backend.c,release),settings,BF.REPO,release)
     O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},block)
     return claim
 

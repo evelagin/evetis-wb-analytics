@@ -17,7 +17,7 @@ def protocol(monkeypatch):
     m=FR.manifest();c=deepcopy(BF.target('client_001'))
     old=D.parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{R.EXACT['original_source']}.json").read_text())
     release=deepcopy(old);release.update(source_sha='2'*40,image=old['image'].split('@')[0]+'@sha256:'+'2'*64,
-        controller_implementation_hash=O.implementation_hash(BF.REPO),runtime_implementation_hash=BF.B.implementation_hash())
+        controller_implementation_hash=O.implementation_hash(BF.REPO),runtime_image=c['marketplaces']['ozon']['runtime_image'],runtime_implementation_hash=BF.B.implementation_hash())
     settings=dict(release=release['source_sha'],root_hash=m['hash'],scheduler_state='PAUSED')
     c['orchestration']=O.block(c,settings,BF.REPO,release)
     claim=CC.sealed(dict(version=1,tenant=m['tenant'],project=m['project'],root=m['hash'],policy_hash=D.digest(old['cadence_policy']),
@@ -25,7 +25,9 @@ def protocol(monkeypatch):
         created_at='2026-10-10T09:39:23.108630+00:00'))
     close=CC.sealed(dict(version=1,claim_hash=claim['hash'],status='STOPPED',source_dispatches=0,closed_at='2026-10-10T09:40:04.431242+00:00'))
     assert claim['hash']==R.EXACT['wake_claim_hash'] and close['hash']==R.EXACT['wake_close_hash']
-    oldsettings=dict(settings,release=old['source_sha']);oldblock=O.block(c,oldsettings,BF.REPO,old)
+    oldsettings=dict(settings,release=old['source_sha']);historical=deepcopy(c)
+    historical['marketplaces']['ozon']['runtime_image']=old['runtime_image']
+    oldblock=O.block(historical,oldsettings,BF.REPO,old)
     x=dict(name=R.EXACT['execution'],createTime='2026-10-10T09:38:42.677515Z',completionTime='2026-10-10T09:40:07.684053Z',
         failedCount=1,taskCount=1,template=dict(timeout='600s',maxRetries=0,serviceAccount=oldblock['accounts']['controller']['email'],
         containers=[dict(image=old['image'],command=['python','-m','tools.tenancy.cloud_controller'],env=[dict(name=k,value=v) for k,v in oldblock['job']['env'].items()])]))
@@ -68,11 +70,6 @@ def protocol(monkeypatch):
 
 
 def test_packaged_descriptor_and_unknown_predicates_are_network_free(monkeypatch):
-    # Unit tests run before the candidate runtime can be registered. The exact
-    # image invokes the same check without this fixture after registration.
-    from tools.tenancy import full_runtime_handoff as FH
-    monkeypatch.setattr(FH,'runtime_facts',lambda c,m:dict(runtime_source='2'*40,
-        runtime_image=c['marketplaces']['ozon']['runtime_image'],runtime_implementation_hash=BF.B.implementation_hash()))
     assert set(CHECK.check().values())=={'PASS'}
 
 
