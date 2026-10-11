@@ -15,12 +15,35 @@ import type { PnlRow } from './bq.js';
 
 export const TAB_NAME = 'WB Магазин P&L';
 
-export const TAB_HEADER = [
-  'Месяц', 'Выручка', 'Вклад SKU', 'Минимальный платёж', 'Утилизация', 'Штрафы', 'Транзит',
-  'Поправка рекламы', 'Поправка хранения', 'Поправка комиссии и цены', 'Созревшая когорта (логистика и непроданные)',
-  'Прочие расходы площадки', 'Доходы площадки', 'Управленческая чистая прибыль магазина',
-  'Управленческая чистая маржа', 'Финансовое состояние', 'Мост сроков (справочно, вне прибыли)',
+/**
+ * Контракт представления (OWNER ACK 11.10.2026): 18 колонок A:R, заголовок и заметка каждой — системные данные.
+ * Заметки пишутся в ячейки заголовка (Sheets NOTE, не комментарии) и входят в отпечаток плана: изменение текста
+ * заметки = изменение контракта. «Налог 2 %» — РАСШИФРОВКА: он уже внутри «Вклада SKU», в прибыль повторно не входит.
+ */
+export const TAB_COLUMNS = [
+  { header: 'Месяц', note: 'Месяц услуги (P&L по месяцу услуги WB). Источник: wb_mart.V_WB_STORE_PNL_PRESENTATION.' },
+  { header: 'Выручка', note: 'Продажи по цене продавца (до СПП), за вычетом возвратов. История — база финотчёта WB по проданным единицам; текущие месяцы до созревания — выкупы Юнитки по цене продавца с поправкой на факт. Справочно: в прибыль не складывается отдельно.' },
+  { header: 'Вклад SKU', note: 'Сумма вклада товаров: выручка − удержание WB (комиссия, эквайринг) − логистика − налог 2 % − себестоимость − реклама по атрибуции + внешняя реклама. Уже включает налог 2 % и себестоимость. Входит в прибыль.' },
+  { header: 'Налог 2% (в составе вклада SKU)', note: 'Расшифровка: управленческий налог 2 % от цены продавца, УЖЕ вычтенный внутри «Вклада SKU». В чистую прибыль повторно НЕ вычитается. Реальный налог УСН 15 % не моделируется.' },
+  { header: 'Минимальный платёж WB', note: 'Счёт WB «Остаток по минимальному платежу», отнесён к месяцу услуги. Расход: уменьшает прибыль. В «Вкладе SKU» не учтён.' },
+  { header: 'Утилизация', note: 'Счёт WB за утилизацию «за <месяц> <год>», по месяцу услуги из подписи. Расход: уменьшает прибыль.' },
+  { header: 'Штрафы', note: 'Штрафы WB без привязки к заказу, по месяцу проводки. Расход: уменьшает прибыль.' },
+  { header: 'Транзит', note: 'Удержания WB за транзит поставок. Расход: уменьшает прибыль.' },
+  { header: 'Поправка рекламы', note: 'Атрибуция рекламы в SKU минус фактический биллинг WB по дате услуги. «+» — биллинг меньше атрибуции, прибыль выше. Входит в прибыль; документы «WB Продвижение» не используются.' },
+  { header: 'Поправка хранения', note: 'Хранение, учтённое в SKU, минус факт платного хранения WB. «−» — факт больше. Входит в прибыль. В истории хранения по SKU нет — вся сумма факта здесь.' },
+  { header: 'Поправка комиссии и цены', note: 'Модельная комиссия и цена листа против фактического удержания WB и базы финотчёта на тех же проданных единицах. В истории 0: вклад уже на факте. Входит в прибыль.' },
+  { header: 'Поправка зрелой когорты', note: 'После созревания когорты (финотчёты покрыли месяц + 46 суток): фактическая логистика против модели минус ожидаемый вклад так и не проданных единиц. До созревания 0, сумма — в «Мосте сроков». Входит в прибыль.' },
+  { header: 'Прочие расходы WB', note: 'Прочие счета кабинета WB (платная приёмка, «Баллы за отзывы» — аванс минус возврат остатка и т. п.). Расход: уменьшает прибыль.' },
+  { header: 'Доходы / компенсации от WB', note: 'Компенсации и возвраты WB уровня кабинета (например, форс-мажорная компенсация). Доход: увеличивает прибыль. Возмещения издержек WB — MEMO, сюда не входят.' },
+  { header: 'Управленческая чистая прибыль магазина', note: 'Вклад SKU + поправки (реклама, хранение, комиссия и цена, зрелая когорта) − расходы WB + доходы WB. Налог 2 % уже внутри вклада. Не бухгалтерская: УСН, OPEX и фулфилмент не входят.' },
+  { header: 'Управленческая чистая маржа', note: 'Управленческая чистая прибыль ÷ выручка.' },
+  { header: 'Финансовое состояние', note: 'Закрыт; Закрыт, когорта дозревает; Ждём счета WB; Есть неразобранные операции; Есть неизвестные расходы; Справочно: наследие (август 2026 — сравнение). Не влияет на сумму.' },
+  { header: 'Мост сроков (справочно, вне прибыли)', note: 'Пока когорта не созрела: логистика модели минус факт и ожидаемый вклад ещё не проданных единиц. В прибыль НЕ входит — это сроки WB, а не экономия.' },
 ] as const;
+
+export const TAB_HEADER = TAB_COLUMNS.map((c) => c.header);
+export const TAB_NOTES = TAB_COLUMNS.map((c) => c.note);
+export const TAB_COLS = TAB_COLUMNS.length;
 
 export const STATE_LABEL: Readonly<Record<string, string>> = {
   LEGACY_PARTIAL_KNOWN_DEFECTS: 'Справочно: наследие, известные дефекты',
@@ -36,6 +59,7 @@ export interface TabPlan {
   tab: string;
   range: string;
   header: readonly string[];
+  notes: readonly string[];
   rows: TabCell[][];
   /** Проверка сложения каждой строки: |Σ слагаемых − чистая прибыль| ≤ 0,02 ₽. */
   rowIdentityMaxAbs: number;
@@ -60,6 +84,7 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const label = STATE_LABEL[state];
     if (!label) throw new Error(`${String(p.month)}: неизвестное состояние «${state}»`);
     const sku = r2(n('sku_contribution_rub'));
+    const tax = r2(n('management_tax_rub'));
     const minPay = r2(n('minimum_payment_rub')), util = r2(n('utilization_rub')), pen = r2(n('penalty_rub')), tr = r2(n('transit_rub'));
     const other = r2(n('acceptance_rub') + n('other_marketplace_cost_rub'));
     const ads = r2(n('ads_adjustment_rub')), stor = r2(n('storage_adjustment_rub'));
@@ -70,10 +95,12 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const margin = Math.round(n('management_net_store_margin') * 1e6) / 1e6;
     const bridge = r2(n('timing_bridge_logistics_rub') - n('timing_bridge_unsettled_margin_rub'));
     maxAbs = Math.max(maxAbs, Math.abs(sku + ads + stor + comm + logi - minPay - util - pen - tr - other + inc - net));
-    rows.push([String(p.month), r2(n('revenue_rub')), sku, minPay, util, pen, tr, ads, stor, comm, logi, other, inc, net, margin, label, bridge]);
+    // Налог — расшифровка внутри вклада: в сумму строки НЕ входит (инвариант, OWNER ACK 11.10).
+    rows.push([String(p.month), r2(n('revenue_rub')), sku, tax, minPay, util, pen, tr, ads, stor, comm, logi, other, inc, net, margin, label, bridge]);
   }
   const header = [...TAB_HEADER];
+  const notes = [...TAB_NOTES];
   const range = `'${TAB_NAME}'!A1:${String.fromCharCode(64 + header.length)}${rows.length + 1}`;
-  const fingerprint = createHash('sha256').update(JSON.stringify({ tab: TAB_NAME, range, header, rows })).digest('hex');
-  return { tab: TAB_NAME, range, header, rows, rowIdentityMaxAbs: Math.round(maxAbs * 100) / 100, fingerprint };
+  const fingerprint = createHash('sha256').update(JSON.stringify({ tab: TAB_NAME, range, header, notes, rows })).digest('hex');
+  return { tab: TAB_NAME, range, header, notes, rows, rowIdentityMaxAbs: Math.round(maxAbs * 100) / 100, fingerprint };
 }

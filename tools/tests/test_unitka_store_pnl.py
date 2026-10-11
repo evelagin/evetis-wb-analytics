@@ -70,17 +70,26 @@ def test_service_period_rules_r1():
         assert rx.count("(") == 1, rx
 
 
-def test_reimbursements_are_memo_r2_and_pending_ops_stay_pending():
+def test_reimbursements_are_memo_r2_and_historical_classes_are_period_bounded():
     m = bodies()["V_WB_FINANCE_OPERATION_MAP"]
     for op in ["Возмещение издержек по перевозке/по складским операциям с товаром",
                "Возмещение издержек по перемещению и операционной обработке товара",
                "Возмещение за выдачу и возврат товаров на ПВЗ"]:
         assert re.search(rf"'{re.escape(op)}', 'MEMO_NON_PNL'", m), op
-    # операции, которые модель не читает, утверждёнными быть не могут (ревью M2)
-    for op in ["Коррекция продаж", "Корректировка эквайринга", "Добровольная компенсация при возврате", "Компенсация ущерба",
-               "Стоимость участия в программе лояльности", "Сумма удержанная за начисленные баллы программы лояльности"]:
-        assert re.search(rf"'{re.escape(op)}', 'PENDING_CLASSIFICATION'", m), op
-    assert "ACCOUNT_LEVEL_INCOME" not in m
+    # H0 (OWNER ACK 11.10): доказанные исторические классы — только в доказанном периоде
+    proven = {
+        "Коррекция продаж": ("DIRECT_SKU", "2024-09-01", "2025-07-31"),
+        "Корректировка эквайринга": ("DIRECT_SKU", "2024-09-01", "2025-01-31"),
+        "Добровольная компенсация при возврате": ("ACCOUNT_LEVEL_INCOME", "2024-11-01", "2026-04-30"),
+        "Компенсация ущерба": ("ACCOUNT_LEVEL_INCOME", "2024-12-01", "2025-02-28"),
+        "Стоимость участия в программе лояльности": ("DIRECT_SKU", "2025-08-01", "2025-09-30"),
+    }
+    for op, (tr, a, b) in proven.items():
+        assert re.search(rf"'{re.escape(op)}', '{tr}', '[A-Z_]+', '[^']*', DATE '{a}', DATE '{b}'\)", m), op
+    assert re.search(r"'Сумма удержанная за начисленные баллы программы лояльности', 'PENDING_CLASSIFICATION'", m)
+    assert re.search(r"'Компенсация скидки по программе лояльности', 'MEMO_NON_PNL', 'LOYALTY', '[^']*', DATE '2025-08-01', NULL", m)
+    cov = bodies()["V_WB_STORE_FINANCE_COVERAGE"]
+    assert "WHEN NOT in_period THEN 'PENDING_CLASSIFICATION'" in cov
 
 
 def test_every_mapped_treatment_has_a_consumer_in_coverage():
@@ -148,6 +157,82 @@ def test_late_invoice_lands_in_its_service_month():
     assert "SELECT service_month m," in acc and "WHERE" not in acc.split("FROM")[-1], "кабинет — по месяцу услуги без фильтра по дате проводки"
 
 
-def test_memo_is_not_inherited_without_row_identity():
+def test_memo_guard_is_schema_aware_and_fails_closed():
     cov = bodies()["V_WB_STORE_FINANCE_COVERAGE"]
-    assert "m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'PENDING_CLASSIFICATION'" in cov
+    # MEMO не наследуется: без доказанного основания — PENDING
+    assert "map_treatment = 'MEMO_NON_PNL' AND op LIKE 'Возмещение%' AND memo_basis IS NULL THEN 'PENDING_CLASSIFICATION'" in cov
+    # camelCase — прежнее тождество; LEGACY snake_case — НДС 1,20 до 2026-01-01, 1,22 после; иначе UNKNOWN → PENDING
+    assert "ABS(IFNULL(c_rb, 0) + IFNULL(c_pr, 0) + IFNULL(c_vw, 0) + IFNULL(c_nds, 0))" in cov
+    assert "s_vw * IF(booking_date < DATE '2026-01-01', 1.20, 1.22)" in cov
+    assert "ELSE 'UNKNOWN' END memo_schema" in cov
+    # ПВЗ LEGACY: MEMO только при нулевом денежном эффекте строки
+    assert "THEN IF(zero_cash, 'LEGACY_ZERO_CASH', NULL)" in cov
+    assert "IFNULL(s_fp, 0) = 0" in cov and "fp + retail + lg + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz = 0" in cov
+
+
+def test_management_tax_is_exposed_but_not_in_net():
+    pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
+    assert "SUM(realized * tax_per_unit) management_tax_rub" in pnl
+    net = re.search(r"\n  sku_contribution_rub \+ reconciliation_adjustments_rub.*?management_net_store_profit_rub", pnl, re.S).group(0)
+    assert "management_tax_rub" not in net
+
+
+H_SQL = (ROOT / "sql/unitka/store_pnl_historical_v1.sql").read_text()
+
+
+def h_bodies():
+    import unitka_store_pnl_h0_deploy as h
+    return {n: b for n, _, b in h.plan(False)}
+
+
+def test_historical_layer_single_authority_and_canonical_sources():
+    b = h_bodies()
+    hist = b["V_WB_STORE_PNL_HISTORICAL"]
+    assert "'HISTORICAL_CANONICAL' authority" in hist and "DATE '2026-05-01' hist_from, DATE '2026-08-01' phase_c_from" in hist
+    assert "evetis_ref.V_PRODUCT_COGS_EFFECTIVE" in hist and "0.02 * seller_base_rub" in hist
+    assert "ad_spend_financial_rub" in hist and "V_WB_FINANCE_HISTORICAL_OVERRIDES" in hist
+    # формулы листа не задают экономику истории: из снимка — только внешняя реклама
+    assert hist.count("UNITKA_SKU_COMPONENTS_DAILY") == 2 and "SUM(ads_out) external_marketing_rub" in hist
+    pres = b["V_WB_STORE_PNL_PRESENTATION"]
+    assert "'CURRENT_PHASE_C' authority" in pres and pres.count("UNION ALL") == 1
+    pnl = bodies()["V_WB_STORE_PNL_MONTHLY"]
+    assert "AND date_msk >= DATE '2026-08-01'" in pnl     # Phase C начинается там, где кончается история
+
+
+def test_overrides_are_the_8_proven_review_points_rows():
+    ov = h_bodies()["V_WB_FINANCE_HISTORICAL_OVERRIDES"]
+    keys = re.findall(r"\('(\d+#\d+)', 'REVIEW_POINTS', 'ACCOUNT_LEVEL', DATE '(2026-0[56])-01'", ov)
+    assert len(keys) == 8 and len({k for k, _ in keys}) == 8
+    assert sorted(m for _, m in keys) == ["2026-05"] * 6 + ["2026-06"] * 2
+    assert "amount" not in ov.split("UNNEST")[1].split("]")[0].lower()   # override не несёт сумм
+
+
+def test_h0_deploy_tool_order_and_rollback_bodies_exist():
+    import unitka_store_pnl_h0_deploy as h
+    names = [n for n, _, _ in h.plan(False)]
+    assert names[:6] == [n for n, _ in h.CHANGED] and names[6:] == [n for n, _ in h.NEW]
+    rb = [n for n, _, _ in h.plan(True)]
+    assert rb == [n for n, _ in reversed(h.CHANGED)]
+    b = {n: body for n, _, body in h.plan(False)}
+    for i, n in enumerate(names):
+        later = [x for x in names[i + 1:] if f".wb_mart.{x}`" in b[n]]
+        assert not later, f"{n} читает {later}"
+    with pytest.raises(SystemExit, match="не совпадает"):
+        h.main(["--project", "other"])
+
+
+def test_historical_qa_is_read_only_blocks():
+    qa = (ROOT / "sql/unitka/qa_store_pnl_historical_v1.sql").read_text()
+    blocks = re.split(r"^-- @check (\S+)\n", qa, flags=re.M)[1:]
+    names = blocks[0::2]
+    assert names == ["SINGLE_AUTHORITY", "OVERRIDE_INTEGRITY", "HIST_CONSERVATION", "FINANCE_COVERAGE_ALL_HISTORY", "LEGACY_MEMO_GUARD",
+                     "COGS_COVERAGE", "TAX_NOT_DOUBLE_COUNTED", "ADS_RECONCILES", "STORAGE_RECONCILES", "HIST_STATE"]
+    for name, sql in zip(names, blocks[1::2]):
+        bare = re.sub(r"--[^\n]*", "", sql).strip()
+        code = re.sub(r"'[^']*'", "''", bare)
+        assert re.match(r"^(SELECT|WITH)\b", bare) and code.count(";") == 1, name
+        assert not re.search(r"\b(INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|ALTER|TRUNCATE|CALL)\b", code), name
+
+
+def test_no_comment_line_ends_with_semicolon_in_historical_sql():
+    assert not re.findall(r"^\s*--.*;\s*$", H_SQL, flags=re.M)

@@ -21,11 +21,12 @@ import { quoteSheet } from '../section.js';
 import { parseUnitkaComponents } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan } from './tabplan.js';
-import { decidePublish, publishRequests, publishGate, metaOnly, PUBLISH_META_KEY, TAB_COLS } from './publish.js';
+import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, PUBLISH_META_KEY, CONTRACT_META_KEY, TAB_COLS } from './publish.js';
+import { TAB_NOTES } from './tabplan.js';
 import { STORE_PNL_FROM } from './parse.js';
 import type { NewOperationRow } from './bq.js';
 
-export interface PublishEnv { enabled: boolean; sheetId?: number; adoptSha?: string }
+export interface PublishEnv { enabled: boolean; sheetId?: number; adoptSha?: string; migrateContract?: string }
 
 export function publishEnv(env: NodeJS.ProcessEnv): PublishEnv {
   const enabled = (env.UNITKA_STORE_PNL_PUBLISH ?? '0').trim() === '1';
@@ -33,7 +34,9 @@ export function publishEnv(env: NodeJS.ProcessEnv): PublishEnv {
   const adopt = (env.UNITKA_STORE_PNL_ADOPT_SHA ?? '').trim();
   if (enabled && !/^\d+$/.test(sid)) throw new LoaderError('UNITKA_STORE_PNL_PUBLISH=1 требует UNITKA_STORE_PNL_SHEET_ID', 'STORE_PNL_CONFIG');
   if (adopt && !/^[0-9a-f]{64}$/.test(adopt)) throw new LoaderError('UNITKA_STORE_PNL_ADOPT_SHA: нужен sha256 (64 hex)', 'STORE_PNL_CONFIG');
-  return { enabled, sheetId: sid ? Number(sid) : undefined, adoptSha: adopt || undefined };
+  const mig = (env.UNITKA_STORE_PNL_MIGRATE_CONTRACT ?? '').trim();
+  if (mig && !/^[0-9a-f]{64}$/.test(mig)) throw new LoaderError('UNITKA_STORE_PNL_MIGRATE_CONTRACT: нужен sha256 (64 hex)', 'STORE_PNL_CONFIG');
+  return { enabled, sheetId: sid ? Number(sid) : undefined, adoptSha: adopt || undefined, migrateContract: mig || undefined };
 }
 
 /**
@@ -48,7 +51,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 
 export interface StorePnlDeps {
   makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'structureWrite'>
-    & Pick<SheetsRest, 'readSheetMetadata'>;
+    & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes'>;
   makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
   now: () => Date;
 }
@@ -118,33 +121,45 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
     const gate = publishGate(pnl);
     if (gate.length) throw new LoaderError(`публикация остановлена гейтом модели: ${gate.join('; ')}`, 'STORE_PNL_PUBLISH_GATE');
     const sheetId = pub.sheetId!;
-    const readTab = async (): Promise<{ title: string; rowCount: number; metas: Array<{ id: number; key: string; value: string }>; values: CellValue[][] }> => {
+    type Meta = { id: number; key: string; value: string };
+    const readTab = async (): Promise<{ title: string; rowCount: number; metas: Meta[]; contracts: Meta[]; values: CellValue[][] }> => {
       const tab = await sheets.readSheetMetadata(sheetId);
       if (!tab || tab.title !== plan.tab) {
         throw new LoaderError(`вкладка sheetId=${sheetId} ${tab ? `называется «${tab.title}»` : 'не найдена'}, ожидалась «${plan.tab}»`, 'STORE_PNL_TAB_MISSING');
       }
       const metas = tab.metadata.filter((m) => m.key === PUBLISH_META_KEY);
       if (metas.length > 1) throw new LoaderError(`${metas.length} отпечатков публикации у вкладки`, 'STORE_PNL_TAB_EDITED');
-      // Вся сетка вкладки в колонках A:Q (чтение за пределом сетки Sheets обрезает сам).
+      const contracts = tab.metadata.filter((m) => m.key === CONTRACT_META_KEY);
+      if (contracts.length > 1) throw new LoaderError(`${contracts.length} отпечатков контракта у вкладки`, 'STORE_PNL_TAB_EDITED');
+      // Вся сетка вкладки в колонках контракта (чтение за пределом сетки Sheets обрезает сам).
       const [values] = await sheets.readValues([`'${plan.tab}'!A1:${colA1(TAB_COLS)}${Math.max(tab.rowCount, 1)}`]);
-      return { title: tab.title, rowCount: tab.rowCount, metas, values: values ?? [] };
+      return { title: tab.title, rowCount: tab.rowCount, metas, contracts, values: values ?? [] };
     };
     const t = await readTab();
+    // Схема вкладки: смена контракта (колонки/заголовки/заметки) — только управляемой миграцией по OWNER ACK.
+    const c = decideContract({ publishedContract: t.contracts[0]?.value, allowMigrationTo: pub.migrateContract });
+    if (!c.ok) throw new LoaderError(c.message, 'STORE_PNL_CONTRACT_MIGRATION_REQUIRED');
     const d = decidePublish({ current: t.values, publishedSha: t.metas[0]?.value, adoptSha: pub.adoptSha, plan });
     if (d.action === 'REFUSE') throw new LoaderError(d.message, d.code);
     if (d.action === 'NOOP') {
       if (d.setMeta) await sheets.structureWrite(metaOnly(sheetId, d.sha, t.metas[0]?.id));
       logger.info('store_pnl_tab_published', { action: 'NOOP', sheetId, sha: d.sha, fingerprint: plan.fingerprint, metaUpdated: d.setMeta });
     } else {
-      await sheets.structureWrite(publishRequests(plan, sheetId, t.rowCount, d, t.metas[0]?.id));
+      await sheets.structureWrite(publishRequests(plan, sheetId, t.rowCount, d, t.metas[0]?.id, t.contracts[0]?.id));
       logger.info('store_pnl_tab_published', { action: 'WRITE', sheetId, sha: d.sha, previousSha: d.previousSha, adopted: d.adopted,
-        fingerprint: plan.fingerprint, rows: plan.rows.length + 1, clearedRows: d.clearRows });
+        fingerprint: plan.fingerprint, rows: plan.rows.length + 1, clearedRows: d.clearRows, contract: contractSha(), migrated: c.migrate });
     }
     // Перечитывание: на вкладке ровно план, и ровно один отпечаток, равный ему.
     const after = await readTab();
     const check = decidePublish({ current: after.values, publishedSha: after.metas[0]?.value, plan });
-    if (check.action !== 'NOOP' || check.setMeta) {
-      throw new LoaderError('перечитанная вкладка или её отпечаток не равны опубликованному плану', 'STORE_PNL_PUBLISH_READBACK');
+    if (check.action !== 'NOOP' || check.setMeta || after.contracts[0]?.value !== contractSha()) {
+      throw new LoaderError('перечитанная вкладка, её отпечаток или контракт не равны опубликованному плану', 'STORE_PNL_PUBLISH_READBACK');
+    }
+    // Заметки заголовка — системные: после записи ровно тексты контракта.
+    if (d.action === 'WRITE') {
+      const notes = await sheets.readNotes(plan.tab, TAB_NOTES.map((_, i) => ({ row: 1, col: i + 1 })));
+      const bad = TAB_NOTES.findIndex((n, i) => notes.get(`1|${i + 1}`) !== n);
+      if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}1 не равна контракту`, 'STORE_PNL_PUBLISH_READBACK');
     }
   } else {
     const gate = publishGate(pnl);

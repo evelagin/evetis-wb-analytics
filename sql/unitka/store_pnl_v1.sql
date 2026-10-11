@@ -22,47 +22,67 @@
 -- Утверждено только то, что модель действительно ЧИТАЕТ (V_WB_STORE_FINANCE_COVERAGE доказывает это по рублям).
 -- Операция, которую модель не читает, — PENDING_CLASSIFICATION: её появление в окне месяца блокирует закрытие.
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` AS
+-- valid_from / valid_to — период, на котором класс ДОКАЗАН (H0, OWNER ACK 11.10.2026); NULL — без ограничения.
+-- Строка операции вне доказанного периода — PENDING_CLASSIFICATION (класс не наследуется по имени).
 SELECT * FROM UNNEST([
-  STRUCT('Продажа' AS supplier_oper_name, 'DIRECT_SKU' AS treatment, 'REVENUE_COMMISSION' AS category, 'цена продавца × кол-во; удержание WB = база − for_pay (комиссия + эквайринг)' AS note),
-  ('Возврат', 'DIRECT_SKU', 'RETURNS', 'сторно продажи по srid'),
-  ('Коррекция продаж', 'PENDING_CLASSIFICATION', 'REVENUE_COMMISSION', 'историческая (до 2025-07); модель её не читает — появление = разбор'),
-  ('Корректировка эквайринга', 'PENDING_CLASSIFICATION', 'REVENUE_COMMISSION', 'историческая (до 2025-01); модель её не читает — появление = разбор'),
-  ('Логистика', 'DIRECT_SKU', 'LOGISTICS', 'прямые, обратные плечи и отказы по srid (до 31.08.2026)'),
-  ('Доставка', 'DIRECT_SKU', 'LOGISTICS', 'то же с 01.09.2026 (переименование WB)'),
-  ('Коррекция логистики', 'DIRECT_SKU', 'LOGISTICS', 'историческая (до 2026-04)'),
-  ('Хранение', 'DIRECT_SKU', 'STORAGE', 'факт по nm; Юнитка с 01.09 — тот же факт'),
-  ('Коррекция хранения', 'DIRECT_SKU', 'STORAGE', 'сторно хранения'),
-  ('Платная приемка', 'ACCOUNT_LEVEL', 'ACCEPTANCE', 'приёмка поставки'),
-  ('Пересчет платной приемки', 'ACCOUNT_LEVEL', 'ACCEPTANCE', 'историческая'),
-  ('Штраф', 'ACCOUNT_LEVEL', 'PENALTY', 'без nm и заказа (08.2026: «srid» 6144364 — не заказ)'),
-  ('Удержание', 'BY_DEDUCTION_CLASS', 'DEDUCTION', 'класс — V_WB_DEDUCTIONS_CLASSIFIED'),
-  ('Возмещение издержек по перевозке/по складским операциям с товаром', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: погашено вознаграждением WB, forPay = 0'),
-  ('Возмещение издержек по перемещению и операционной обработке товара', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: то же с 01.09.2026'),
-  ('Возмещение за выдачу и возврат товаров на ПВЗ', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: ppvzReward погашен вознаграждением WB'),
-  ('Компенсация скидки по программе лояльности', 'MEMO_ZERO', 'LOYALTY', 'денежных полей нет (raw_json)'),
-  ('Сумма баллов, удержанных в рамках акции "Баллы за отзывы"', 'MEMO_ZERO', 'REVIEW_POINTS', 'денежных полей нет (raw_json)'),
-  ('Добровольная компенсация при возврате', 'PENDING_CLASSIFICATION', 'COMPENSATION', 'историческая; поле денег не доказано — появление = разбор, не молчаливый доход'),
-  ('Компенсация ущерба', 'PENDING_CLASSIFICATION', 'COMPENSATION', 'историческая; поле денег не доказано — появление = разбор, не молчаливый доход'),
-  ('Стоимость участия в программе лояльности', 'PENDING_CLASSIFICATION', 'LOYALTY', '2025-08/09; не встречалась в месяцах Phase C'),
-  ('Сумма удержанная за начисленные баллы программы лояльности', 'PENDING_CLASSIFICATION', 'LOYALTY', '2025-08/09; не встречалась в месяцах Phase C')
+  STRUCT('Продажа' AS supplier_oper_name, 'DIRECT_SKU' AS treatment, 'REVENUE_COMMISSION' AS category, 'цена продавца × кол-во; удержание WB = база − for_pay (комиссия + эквайринг)' AS note, CAST(NULL AS DATE) AS valid_from, CAST(NULL AS DATE) AS valid_to),
+  ('Возврат', 'DIRECT_SKU', 'RETURNS', 'сторно продажи по srid', NULL, NULL),
+  ('Коррекция продаж', 'DIRECT_SKU', 'REVENUE_COMMISSION', 'H0: деньги в for_pay по знаку, база — цена×кол-во где цена > 0; 8 строк LEGACY', DATE '2024-09-01', DATE '2025-07-31'),
+  ('Корректировка эквайринга', 'DIRECT_SKU', 'REVENUE_COMMISSION', 'H0: for_pay, зеркало acquiring_fee не читается (двойной счёт); 64 строки LEGACY', DATE '2024-09-01', DATE '2025-01-31'),
+  ('Логистика', 'DIRECT_SKU', 'LOGISTICS', 'прямые, обратные плечи и отказы по srid (до 31.08.2026)', NULL, NULL),
+  ('Доставка', 'DIRECT_SKU', 'LOGISTICS', 'то же с 01.09.2026 (переименование WB)', NULL, NULL),
+  ('Коррекция логистики', 'DIRECT_SKU', 'LOGISTICS', 'историческая (до 2026-04)', NULL, NULL),
+  ('Хранение', 'DIRECT_SKU', 'STORAGE', 'итог магазина по дню (nm всегда пуст); Юнитка с 01.09 — факт по SKU', NULL, NULL),
+  ('Коррекция хранения', 'DIRECT_SKU', 'STORAGE', 'сторно хранения', NULL, NULL),
+  ('Платная приемка', 'ACCOUNT_LEVEL', 'ACCEPTANCE', 'приёмка поставки', NULL, NULL),
+  ('Пересчет платной приемки', 'ACCOUNT_LEVEL', 'ACCEPTANCE', 'историческая', NULL, NULL),
+  ('Штраф', 'ACCOUNT_LEVEL', 'PENALTY', 'без nm и заказа (08.2026: «srid» 6144364 — не заказ)', NULL, NULL),
+  ('Удержание', 'BY_DEDUCTION_CLASS', 'DEDUCTION', 'класс — V_WB_DEDUCTIONS_CLASSIFIED', NULL, NULL),
+  ('Возмещение издержек по перевозке/по складским операциям с товаром', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: возмещение погашено вознаграждением WB (LEGACY: ×1,20 до 2026, ×1,22 с 2026), forPay = 0', NULL, NULL),
+  ('Возмещение издержек по перемещению и операционной обработке товара', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: то же с 01.09.2026', NULL, NULL),
+  ('Возмещение за выдачу и возврат товаров на ПВЗ', 'MEMO_NON_PNL', 'REIMBURSEMENT', 'Р2: ppvzReward погашен вознаграждением WB; LEGACY — только при нулевом денежном эффекте строки', NULL, NULL),
+  ('Компенсация скидки по программе лояльности', 'MEMO_NON_PNL', 'LOYALTY', 'H0: cashbackDiscount вне выплаты (сверка выплаты 27.07–23.08 = 0,00 без него), for_pay = 0', DATE '2025-08-01', NULL),
+  ('Сумма баллов, удержанных в рамках акции "Баллы за отзывы"', 'MEMO_ZERO', 'REVIEW_POINTS', 'cashbackAmount ± по заказу, закрываются в ноль', NULL, NULL),
+  ('Добровольная компенсация при возврате', 'ACCOUNT_LEVEL_INCOME', 'COMPENSATION', 'H0: for_pay (+), srid defect:, нет продажи — доход кабинета', DATE '2024-11-01', DATE '2026-04-30'),
+  ('Компенсация ущерба', 'ACCOUNT_LEVEL_INCOME', 'COMPENSATION', 'H0: for_pay (+), srid lost:/replacement: — доход кабинета', DATE '2024-12-01', DATE '2025-02-28'),
+  ('Стоимость участия в программе лояльности', 'DIRECT_SKU', 'LOYALTY_FEE', 'H0: additional_payment — расход по заказу (срид с продажей)', DATE '2025-08-01', DATE '2025-09-30'),
+  ('Сумма удержанная за начисленные баллы программы лояльности', 'PENDING_CLASSIFICATION', 'LOYALTY', 'деньги в cashbackAmount, не загружены в LEGACY — ждём перезагрузки отчётов', NULL, NULL)
 ]);
 
 -- ─── 2. Финансы WB в когорте заказа: сутки МСК заказа × nm (только строки с srid) ──────────────────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COHORT_DAILY` AS
-WITH f AS (
-  SELECT supplier_oper_name op, finance_status,
+-- H0: доказанные исторические DIRECT_SKU-семейства читаются в когорту ТОЛЬКО в периоде своей карты:
+--   «Коррекция продаж» — for_pay по знаку, база — цена×кол-во где цена > 0, кол-во — только если у srid нет «Продажи»,
+--   «Корректировка эквайринга» — for_pay (зеркальный acquiring_fee не читается); «Стоимость участия…» — additional_payment.
+WITH m AS (SELECT * FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP`),
+raw AS (
+  SELECT supplier_oper_name op, finance_status, srid, _rr_date,
     DATE(SAFE.TIMESTAMP(order_dt), 'Europe/Moscow') order_date_msk,
     SAFE_CAST(wb_nm_id AS INT64) nm_id,
     SAFE_CAST(quantity AS NUMERIC) q, SAFE_CAST(retail_price_withdisc_rub AS NUMERIC) pwd,
-    SAFE_CAST(for_pay AS NUMERIC) fp, SAFE_CAST(logistics_amount AS NUMERIC) lg
+    SAFE_CAST(for_pay AS NUMERIC) fp, SAFE_CAST(logistics_amount AS NUMERIC) lg,
+    IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) addp,
+    COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
   WHERE srid IS NOT NULL AND srid != ''
-    AND supplier_oper_name IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики'))
+    AND supplier_oper_name IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
+                               'Коррекция продаж', 'Корректировка эквайринга', 'Стоимость участия в программе лояльности')),
+f AS (
+  SELECT raw.* FROM raw JOIN m ON m.supplier_oper_name = raw.op
+  WHERE m.treatment = 'DIRECT_SKU'
+    AND raw._rr_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31'))
 SELECT order_date_msk, nm_id,
-  SUM(CASE op WHEN 'Продажа' THEN q WHEN 'Возврат' THEN -q ELSE 0 END) sold_qty,
-  SUM(CASE op WHEN 'Продажа' THEN pwd * q WHEN 'Возврат' THEN -pwd * q ELSE 0 END) seller_base_rub,
-  SUM(CASE op WHEN 'Продажа' THEN fp WHEN 'Возврат' THEN -fp ELSE 0 END) for_pay_rub,
-  SUM(CASE op WHEN 'Продажа' THEN pwd * q - fp WHEN 'Возврат' THEN -(pwd * q - fp) ELSE 0 END) wb_take_rub,
+  SUM(CASE op WHEN 'Продажа' THEN q WHEN 'Возврат' THEN -q
+              WHEN 'Коррекция продаж' THEN IF(srid_sales = 0, IFNULL(q, 0), 0) ELSE 0 END) sold_qty,
+  SUM(CASE op WHEN 'Продажа' THEN pwd * q WHEN 'Возврат' THEN -pwd * q
+              WHEN 'Коррекция продаж' THEN IF(pwd > 0, pwd * IFNULL(q, 0), 0) ELSE 0 END) seller_base_rub,
+  SUM(CASE op WHEN 'Продажа' THEN fp WHEN 'Возврат' THEN -fp
+              WHEN 'Коррекция продаж' THEN fp WHEN 'Корректировка эквайринга' THEN fp
+              WHEN 'Стоимость участия в программе лояльности' THEN -addp ELSE 0 END) for_pay_rub,
+  SUM(CASE op WHEN 'Продажа' THEN pwd * q - fp WHEN 'Возврат' THEN -(pwd * q - fp)
+              WHEN 'Коррекция продаж' THEN IF(pwd > 0, pwd * IFNULL(q, 0), 0) - fp
+              WHEN 'Корректировка эквайринга' THEN -fp
+              WHEN 'Стоимость участия в программе лояльности' THEN addp ELSE 0 END) wb_take_rub,
   SUM(IF(op IN ('Логистика', 'Доставка', 'Коррекция логистики'), IFNULL(lg, 0), 0)) logistics_rub,
   COUNTIF(finance_status = 'PROVISIONAL') provisional_rows
 FROM f
@@ -92,7 +112,14 @@ other AS (
          WHEN supplier_oper_name IN ('Платная приемка', 'Пересчет платной приемки') THEN 'ACCEPTANCE' END deduction_class,
     IFNULL(SAFE_CAST(penalty AS NUMERIC), 0) + IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0) amount_rub, srid
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
-  WHERE supplier_oper_name IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки')),
+  WHERE supplier_oper_name IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки')
+  UNION ALL
+  -- H0: компенсации WB (for_pay, +) — доход кабинета, только в доказанном периоде карты; знак ledger: доход < 0
+  SELECT f.row_hash, f._rr_date, f.supplier_oper_name, 'MARKETPLACE_COMPENSATION', -IFNULL(SAFE_CAST(f.for_pay AS NUMERIC), 0), f.srid
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL` f
+  JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` mp ON mp.supplier_oper_name = f.supplier_oper_name
+  WHERE mp.treatment = 'ACCOUNT_LEVEL_INCOME'
+    AND f._rr_date BETWEEN IFNULL(mp.valid_from, DATE '1900-01-01') AND IFNULL(mp.valid_to, DATE '9999-12-31')),
 l AS (
 SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONTH) booking_month,
   CASE WHEN deduction_class = 'UTILIZATION' AND m_num IS NOT NULL AND m_year IS NOT NULL THEN DATE(m_year, m_num, 1)
@@ -106,10 +133,13 @@ SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONT
     WHEN 'UTILIZATION' THEN 'UTILIZATION'
     WHEN 'TRANSIT_DEDUCTION' THEN 'TRANSIT'
     WHEN 'FORCE_MAJEURE_PAYMENT' THEN 'COMPENSATION_INCOME'
-    WHEN 'REVIEW_POINTS_ADVANCE_REFUND' THEN 'REFUND_INCOME'
+    WHEN 'MARKETPLACE_COMPENSATION' THEN 'COMPENSATION_INCOME'
+    -- «Баллы за отзывы»: аванс и возврат его остатка — один расход кабинета со знаком (H0, OWNER ACK 11.10)
+    WHEN 'REVIEW_POINTS_ADVANCE_REFUND' THEN 'REVIEW_POINTS'
     WHEN 'UNCLASSIFIED_DEDUCTION' THEN 'UNKNOWN'
     ELSE deduction_class END category,
-  CASE WHEN deduction_class IN ('FORCE_MAJEURE_PAYMENT', 'REVIEW_POINTS_ADVANCE_REFUND') THEN 'ACCOUNT_LEVEL_INCOME'
+  CASE WHEN deduction_class IN ('FORCE_MAJEURE_PAYMENT', 'MARKETPLACE_COMPENSATION') THEN 'ACCOUNT_LEVEL_INCOME'
+       WHEN deduction_class = 'REVIEW_POINTS_ADVANCE_REFUND' THEN 'ACCOUNT_LEVEL'
        -- утилизация без «за <месяц> <год>»: месяц услуги не доказан → не закрывать месяц молча
        WHEN deduction_class = 'UTILIZATION' AND (m_num IS NULL OR m_year IS NULL) THEN 'UNKNOWN'
        WHEN deduction_class = 'UNCLASSIFIED_DEDUCTION' THEN 'UNKNOWN'
@@ -134,6 +164,7 @@ QUALIFY ROW_NUMBER() OVER (PARTITION BY l.finance_row_key, l.label, l.amount_rub
 
 -- ─── 4. Новые / неутверждённые операции (C4): операция вне карты или с классом PENDING / UNKNOWN ─────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_NEW_OPERATIONS` AS
+-- Класс строки — по карте С УЧЁТОМ доказанного периода: вне периода — PENDING_CLASSIFICATION.
 WITH f AS (
   SELECT supplier_oper_name, _rr_date,
     ABS(IFNULL(SAFE_CAST(retail_amount AS NUMERIC), 0)) + ABS(IFNULL(SAFE_CAST(for_pay AS NUMERIC), 0))
@@ -143,13 +174,19 @@ WITH f AS (
     + ABS(IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0)) + ABS(IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0))
     + ABS(IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0)) abs_money_rub,
     srid, SAFE_CAST(wb_nm_id AS INT64) nm_id
-  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`)
-SELECT f.supplier_oper_name, IFNULL(m.treatment, 'NEW_FINANCE_OPERATION') treatment,
-  MIN(f._rr_date) first_seen, MAX(f._rr_date) last_seen, COUNT(*) rows_n, ROUND(SUM(f.abs_money_rub), 2) abs_money_rub,
-  COUNTIF(f.srid IS NOT NULL AND f.srid != '') rows_with_srid, COUNTIF(f.nm_id > 0) rows_with_nm,
-  STRING_AGG(DISTINCT FORMAT_DATE('%Y-%m', DATE_TRUNC(f._rr_date, MONTH)) ORDER BY FORMAT_DATE('%Y-%m', DATE_TRUNC(f._rr_date, MONTH))) months
-FROM f LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m USING (supplier_oper_name)
-WHERE m.treatment IS NULL OR m.treatment = 'PENDING_CLASSIFICATION'
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`),
+t AS (
+  SELECT f.*,
+    CASE WHEN m.treatment IS NULL THEN 'NEW_FINANCE_OPERATION'
+         WHEN f._rr_date NOT BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') THEN 'PENDING_CLASSIFICATION'
+         ELSE m.treatment END treatment
+  FROM f LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m USING (supplier_oper_name))
+SELECT supplier_oper_name, treatment,
+  MIN(_rr_date) first_seen, MAX(_rr_date) last_seen, COUNT(*) rows_n, ROUND(SUM(abs_money_rub), 2) abs_money_rub,
+  COUNTIF(srid IS NOT NULL AND srid != '') rows_with_srid, COUNTIF(nm_id > 0) rows_with_nm,
+  STRING_AGG(DISTINCT FORMAT_DATE('%Y-%m', DATE_TRUNC(_rr_date, MONTH)) ORDER BY FORMAT_DATE('%Y-%m', DATE_TRUNC(_rr_date, MONTH))) months
+FROM t
+WHERE treatment IN ('NEW_FINANCE_OPERATION', 'PENDING_CLASSIFICATION')
 GROUP BY 1, 2;
 
 -- ─── 4б. Покрытие финотчёта (C2/C4): каждый рубль строки финотчёта прочитан моделью ───────────────────────
@@ -159,6 +196,13 @@ GROUP BY 1, 2;
 -- retail_amount, acquiring_fee и ppvzReward у продажи/возврата — информационные: тождество расчёта WB
 -- retailPriceWithDisc − forPay = СПП + vw + vwNds + эквайринг + ppvzReward, то есть они уже внутри «база − for_pay».
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COVERAGE` AS
+-- Р2-guard по схеме ключей raw_json (H0, OWNER ACK 11.10.2026):
+--   FINANCE_API_CAMEL (WEEKLY/DAILY) — |rebillLogisticCost + ppvzReward + vw + vwNds| ≤ 0,01 (как раньше, 0 различий
+--     на всех строках с 13.07.2026),
+--   LEGACY_SNAKE — rebill_logistic_cost + ppvz_reward = −vw × НДС (1,20 при дате < 2026-01-01, иначе 1,22),
+--   LEGACY ПВЗ — поля вознаграждения в импорте нет: MEMO только при НУЛЕВОМ денежном эффекте строки
+--     (for_pay, ppvz_for_pay и все сохранённые денежные поля = 0), иначе PENDING,
+--   иначе (нет ключей, смешанная схема) — PENDING (fail closed).
 WITH f AS (
   SELECT row_hash finance_row_key, _rr_date booking_date, supplier_oper_name op, finance_status,
     srid, SAFE.TIMESTAMP(order_dt) odt, SAFE_CAST(wb_nm_id AS INT64) nm_id,
@@ -169,37 +213,83 @@ WITH f AS (
     ABS(IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0)) rb, ABS(IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0)) comp,
     ABS(IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0)) oth, ABS(IFNULL(SAFE_CAST(acquiring_fee AS NUMERIC), 0)) acq,
     ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)) ppvz,
-    -- Р2: возмещение = rebillLogisticCost + ppvzReward, погашено vw + vwNds до копеек, к выплате 0
-    ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.rebillLogisticCost') AS NUMERIC), 0)
-      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)
-      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.vw') AS FLOAT64), 0)
-      + IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.vwNds') AS NUMERIC), 0)) memo_offset_abs
+    SAFE_CAST(JSON_VALUE(raw_json, '$.rebillLogisticCost') AS NUMERIC) c_rb,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC) c_pr,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.vw') AS FLOAT64) c_vw,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.vwNds') AS NUMERIC) c_nds,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.rebill_logistic_cost') AS NUMERIC) s_rb,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.ppvz_reward') AS NUMERIC) s_pr,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.ppvz_vw') AS FLOAT64) s_vw,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.ppvz_vw_nds') AS NUMERIC) s_nds,
+    SAFE_CAST(JSON_VALUE(raw_json, '$.ppvz_for_pay') AS NUMERIC) s_fp,
+    (JSON_VALUE(raw_json, '$.rebillLogisticCost') IS NOT NULL OR JSON_VALUE(raw_json, '$.ppvzReward') IS NOT NULL
+      OR JSON_VALUE(raw_json, '$.vw') IS NOT NULL OR JSON_VALUE(raw_json, '$.vwNds') IS NOT NULL) any_camel,
+    (JSON_VALUE(raw_json, '$.rebill_logistic_cost') IS NOT NULL OR JSON_VALUE(raw_json, '$.ppvz_vw') IS NOT NULL
+      OR JSON_VALUE(raw_json, '$.ppvz_for_pay') IS NOT NULL) any_snake
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`),
-c AS (
+g AS (
   SELECT f.*,
-    -- MEMO не наследуется: строка возмещения, не выполняющая тождество Р2, — PENDING_CLASSIFICATION до доказательства
-    CASE WHEN m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'PENDING_CLASSIFICATION'
-         ELSE IFNULL(m.treatment, 'NEW_FINANCE_OPERATION') END treatment,
-    CASE WHEN m.treatment IN ('PENDING_CLASSIFICATION') OR m.treatment IS NULL THEN 'NONE'
-         WHEN m.treatment = 'MEMO_NON_PNL' AND (f.memo_offset_abs > 0.01 OR f.fp != 0) THEN 'NONE'
-         WHEN f.op IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики') THEN 'COHORT'
-         WHEN f.op IN ('Хранение', 'Коррекция хранения') THEN 'STORAGE'
-         WHEN f.op = 'Удержание' THEN 'DEDUCTION_LEDGER'
-         WHEN f.op IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки') THEN 'ACCOUNT_LEDGER'
-         WHEN m.treatment = 'MEMO_NON_PNL' THEN 'MEMO'
-         WHEN m.treatment = 'MEMO_ZERO' THEN 'MEMO_ZERO'
-         ELSE 'NONE' END consumer
-  FROM f LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m ON m.supplier_oper_name = f.op)
-SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer, finance_status,
+    CASE WHEN NOT any_snake AND c_rb IS NOT NULL AND c_pr IS NOT NULL AND c_vw IS NOT NULL AND c_nds IS NOT NULL THEN 'FINANCE_API_CAMEL'
+         WHEN NOT any_camel AND s_rb IS NOT NULL AND s_vw IS NOT NULL AND s_fp IS NOT NULL AND booking_date IS NOT NULL THEN 'LEGACY_SNAKE'
+         ELSE 'UNKNOWN' END memo_schema
+  FROM f),
+h AS (
+  SELECT g.*,
+    CASE memo_schema
+      WHEN 'FINANCE_API_CAMEL' THEN ABS(IFNULL(c_rb, 0) + IFNULL(c_pr, 0) + IFNULL(c_vw, 0) + IFNULL(c_nds, 0))
+      WHEN 'LEGACY_SNAKE' THEN ABS(s_rb + IFNULL(s_pr, 0)
+        + IF(s_nds IS NOT NULL, s_vw + s_nds, s_vw * IF(booking_date < DATE '2026-01-01', 1.20, 1.22)))
+      ELSE NULL END memo_offset_abs,
+    -- нулевой денежный эффект: ни одно сохранённое денежное поле строки не несёт денег продавцу
+    (fp + retail + lg + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz = 0 AND IFNULL(s_fp, 0) = 0
+      AND IFNULL(s_rb, 0) = 0 AND IFNULL(s_pr, 0) = 0) zero_cash
+  FROM g),
+gd AS (
+  SELECT h.*,
+    CASE
+      WHEN op = 'Возмещение за выдачу и возврат товаров на ПВЗ' AND memo_schema = 'LEGACY_SNAKE' AND s_pr IS NULL
+        THEN IF(zero_cash, 'LEGACY_ZERO_CASH', NULL)
+      WHEN memo_schema = 'UNKNOWN' OR memo_offset_abs IS NULL OR memo_offset_abs > 0.01 OR fp != 0
+        OR (memo_schema = 'LEGACY_SNAKE' AND IFNULL(s_fp, 0) != 0) THEN NULL
+      ELSE IF(memo_schema = 'FINANCE_API_CAMEL', 'IDENTITY_CAMEL', 'IDENTITY_LEGACY_VAT') END memo_basis
+  FROM h),
+c AS (
+  SELECT gd.*, m.treatment map_treatment,
+    gd.booking_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') in_period
+  FROM gd LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m ON m.supplier_oper_name = gd.op),
+t AS (
+  SELECT c.*,
+    CASE WHEN map_treatment IS NULL THEN 'NEW_FINANCE_OPERATION'
+         WHEN NOT in_period THEN 'PENDING_CLASSIFICATION'
+         -- MEMO не наследуется: возмещение без доказанного основания — PENDING_CLASSIFICATION
+         WHEN map_treatment = 'MEMO_NON_PNL' AND op LIKE 'Возмещение%' AND memo_basis IS NULL THEN 'PENDING_CLASSIFICATION'
+         ELSE map_treatment END treatment
+  FROM c)
+SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer, finance_status, memo_schema, memo_basis,
   CASE consumer
-    WHEN 'COHORT' THEN IF(srid IS NULL OR srid = '' OR odt IS NULL OR IFNULL(nm_id, 0) <= 0, fp + lg, 0)
-                       + st + ded + pen + acc + addp + rb + comp + oth
+    WHEN 'COHORT' THEN IF(srid IS NULL OR srid = '' OR odt IS NULL OR IFNULL(nm_id, 0) <= 0, fp + lg + IF(op = 'Стоимость участия в программе лояльности', addp, 0), 0)
+                       + st + ded + pen + acc + IF(op = 'Стоимость участия в программе лояльности', 0, addp) + rb + comp + oth
+                       -- зеркало эквайринга у «Корректировки эквайринга» — не деньги модели
     WHEN 'STORAGE' THEN retail + fp + lg + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     WHEN 'DEDUCTION_LEDGER' THEN retail + fp + lg + st + pen + acc + rb + comp + oth + acq + ppvz
-    WHEN 'ACCOUNT_LEDGER' THEN retail + fp + lg + st + ded + addp + rb + comp + oth + acq + ppvz
+    WHEN 'ACCOUNT_LEDGER' THEN retail + lg + st + ded + addp + rb + comp + oth + acq + ppvz
+                       + IF(op IN ('Добровольная компенсация при возврате', 'Компенсация ущерба'), 0, fp)
     WHEN 'MEMO' THEN retail + fp + lg + st + ded + pen + acc + addp + comp + oth + acq
+    WHEN 'MEMO_ZERO' THEN retail + fp + lg + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     ELSE retail + fp + lg + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz END unconsumed_abs_rub
-FROM c;
+FROM (
+  SELECT t.*,
+    CASE WHEN treatment IN ('PENDING_CLASSIFICATION', 'NEW_FINANCE_OPERATION') THEN 'NONE'
+         WHEN op IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
+                     'Коррекция продаж', 'Корректировка эквайринга', 'Стоимость участия в программе лояльности') THEN 'COHORT'
+         WHEN op IN ('Хранение', 'Коррекция хранения') THEN 'STORAGE'
+         WHEN op = 'Удержание' THEN 'DEDUCTION_LEDGER'
+         WHEN op IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки',
+                     'Добровольная компенсация при возврате', 'Компенсация ущерба') THEN 'ACCOUNT_LEDGER'
+         WHEN treatment = 'MEMO_NON_PNL' THEN 'MEMO'
+         WHEN treatment = 'MEMO_ZERO' THEN 'MEMO_ZERO'
+         ELSE 'NONE' END consumer
+  FROM t);
 
 -- ─── 5. P&L магазина WB по месяцу (C1/C2): мост «факт площадки ↔ SKU ↔ уровень магазина» ───────────────
 -- Знак всех *_adjustment_rub: + увеличивает прибыль магазина относительно Σ вклада SKU.
@@ -237,6 +327,8 @@ sku AS (
     SUM(IFNULL(seller_base_rub, 0)) seller_base_rub, SUM(IFNULL(wb_take_rub, 0)) wb_take_rub,
     SUM(IFNULL(sold_qty, 0) * (tax_per_unit + cogs_per_unit)) sold_tax_cogs_rub,
     SUM(ads_out) ads_out_rub, SUM(model_gap) model_gap_rub, MAX(lcd) snapshot_lcd,
+    -- Налог 2 % ВНУТРИ вклада SKU (расшифровка, OWNER ACK 11.10): Σ выкупы × налог на единицу листа
+    SUM(realized * tax_per_unit) management_tax_rub,
     SUM(IFNULL(fin_logistics_rub, 0)) logistics_finance_rub,
     SUM(ABS(model_gap)) model_gap_abs_rub
   FROM sku_day GROUP BY 1),
@@ -359,7 +451,7 @@ SELECT
   -- Выручка: до созревания — ожидаемая (выкупы листа по цене продавца, поправленной на факт); после —
   -- база финотчёта WB по проданным единицам когорты (непроданные единицы сняты и из прибыли).
   IF(cohort_mature, seller_base_rub, revenue_model_rub + price_adjustment_rub) revenue_rub,
-  sku_contribution_rub,
+  sku_contribution_rub, management_tax_rub,
   minimum_payment_rub, utilization_rub, penalty_rub, transit_rub, acceptance_rub, other_marketplace_cost_rub,
   marketplace_costs_rub, marketplace_income_rub,
   ads_adjustment_rub, storage_adjustment_rub, commission_adjustment_rub, price_adjustment_rub, reconciliation_adjustments_rub,
