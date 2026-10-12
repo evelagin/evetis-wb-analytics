@@ -161,7 +161,11 @@ def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,securi
     cp=b.select(f"SELECT * FROM `{m['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='fbo_postings' AND plan_hash=@ack AND lease_generation=@gen ORDER BY updated_at LIMIT 30",{'ack':('STRING',doc['ack_hash']),'gen':('INT64',gen)})
     if len(cp)!=1 or cp[0]['status']!='RUNNING' or cp[0]['lease_owner']!=run:fail('original checkpoint differs')
     from tools.tenancy import full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR,full_fbo_zero_effect_recovery as ZE
-    accepted=FL.load(b,m,records)+FC.load(b,m,records)+PB.load(b,m,records)+PT.load(b,m,records)+FR.load(b,m,records)+CR.load(b,m,records)+ZE.load(b,m,records)
+    accepted=load(b,m,records)+FL.load(b,m,records)+FC.load(b,m,records)+PB.load(b,m,records)+PT.load(b,m,records)+FR.load(b,m,records)+CR.load(b,m,records)+ZE.load(b,m,records)
+    if cloud:
+        from tools.tenancy import full_pre_authority_gate_recovery as PAG
+        covered={z['stop_hash'] for z in accepted if 'stop_hash' in z}|{h for z in accepted if 'stop_hashes' in z for h in z['stop_hashes']}|{z['stop_hash'] for z in PAG.load(b,m,records)}
+        if {D.digest(z) for z in records if z['kind']=='STOPPED'}-covered!={D.digest(stop[0])}:fail('another global STOP blocks automatic local isolation')
     source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];r=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text());O.verify_artifact_source(r,BF.REPO)
     if r.get('fbo_source_isolation_version')!=1 or r['verification'].get('fbo_source_isolation_adapter')!='PASS':fail('local-isolation/diagnostic image unqualified')
     effects=dict(raw=sorted(raw,key=lambda z:z['table_name']),journal=j,jobs=js,state=state,checkpoints=cp,lease=lease,previous_certificates=sorted(z['hash'] for z in accepted),priority_hash=priority['hash'])
