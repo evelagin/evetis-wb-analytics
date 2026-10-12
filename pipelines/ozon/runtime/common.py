@@ -515,7 +515,7 @@ def _perf_diagnostic(status, headers):
                 pass
 
 
-def _request(req, attempt=0, raw_text=False):
+def _request(req, attempt=0, raw_text=False, *, allow_retries=True):
     credentialed = (hasattr(req, "_seller_profile") or urllib.parse.urlsplit(req.full_url).hostname == "api-seller.ozon.ru"
                     or any(k.lower() in ("api-key", "client-id") for k, _ in req.header_items()))
     if credentialed:
@@ -528,7 +528,8 @@ def _request(req, attempt=0, raw_text=False):
     try:
         opener = _seller_open if credentialed else urllib.request.urlopen
         with opener(req, timeout=180) as r:
-            body = r.read()
+            body = r.read() if allow_retries else r.read(10000001)
+            if not allow_retries and len(body)>10000000:raise ValueError('bounded diagnostic response size guard')
             if performance:
                 _perf_diagnostic(r.status, r.headers)
                 _perf_request_evidence(req,r.status)
@@ -544,19 +545,19 @@ def _request(req, attempt=0, raw_text=False):
         if performance:
             _perf_diagnostic(e.code, e.headers)
             _perf_request_evidence(req,e.code)
-        if not report_submit and (not performance or e.code != 429) and e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
+        if allow_retries and not report_submit and (not performance or e.code != 429) and e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
-            return _request(req, attempt + 1, raw_text)
+            return _request(req, attempt + 1, raw_text, allow_retries=allow_retries)
         return e.code, {"_error": safe_error_text(payload, 400)}
     except Exception as e:                                        # SSL, таймаут, обрыв
         if performance:
             _perf_diagnostic('NET_ERROR',None)
             _perf_request_evidence(req,'NET_ERROR')
-        if not report_submit and attempt < len(BACKOFF):
+        if allow_retries and not report_submit and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
-            return _request(req, attempt + 1, raw_text)
+            return _request(req, attempt + 1, raw_text, allow_retries=allow_retries)
         return "NET_ERROR", {"_error": safe_error_text(repr(e), 300)}
 
 
@@ -612,7 +613,7 @@ def _seller_open(req, timeout):
     return urllib.request.build_opener(_NoSellerRedirect()).open(req, timeout=timeout)
 
 
-def seller_call(path, body, *, method="POST", profile="runtime"):
+def seller_call(path, body, *, method="POST", profile="runtime", allow_retries=True):
     """Only credentialed Seller transport. No query/template/prefix authorization."""
     if not isinstance(path, str):
         raise ApiPathDenied("Seller path type denied")
@@ -621,7 +622,7 @@ def seller_call(path, body, *, method="POST", profile="runtime"):
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
                                  headers=_seller_headers(), method=method)
     req._seller_profile = profile
-    return _request(req)  # revalidates final URL/method/profile immediately before dispatch
+    return _request(req) if allow_retries else _request(req, allow_retries=False)  # same reviewed gateway, explicit no-retry diagnostics
 
 
 def seller_post(path, body):

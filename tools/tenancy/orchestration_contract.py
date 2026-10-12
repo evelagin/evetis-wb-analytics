@@ -18,6 +18,7 @@ SOURCE_FILES = (
     'full_pretransport_recovery.py','full_pretransport_image_check.py',
     'full_controller_closure_recovery.py','full_controller_closure_image_check.py',
     'full_fbo_zero_effect_recovery.py','full_fbo_zero_effect_image_check.py',
+    'fbo_diagnostic_owner.py','full_fbo_diagnostic_closure.py','fbo_diagnostic_image_check.py','full_pre_authority_gate_recovery.py',
 )
 
 
@@ -66,6 +67,10 @@ def block(c, settings, repo, release=None):
     if release.get('schema_version')==4:expected.add('cadence_policy')
     extended='controller_timeout_seconds' in release
     diagnostic_recovery='fbo_zero_effect_recovery_version' in release
+    single_diagnostic='fbo_source_isolation_version' in release
+    if single_diagnostic:
+        expected.add('fbo_source_isolation_version')
+        if type(release['fbo_source_isolation_version']) is not int or release['fbo_source_isolation_version']!=1:raise ValueError('unqualified diagnostic mode')
     if diagnostic_recovery:
         expected.add('fbo_zero_effect_recovery_version')
         if release.get('schema_version')!=4 or type(release['fbo_zero_effect_recovery_version']) is not int or release['fbo_zero_effect_recovery_version']!=1:
@@ -86,6 +91,7 @@ def block(c, settings, repo, release=None):
     if release['schema_version']==4:required.add('cadence_overlap_adapter')
     if extended:required.add('terminal_controller_adapter')
     if diagnostic_recovery:required.add('fbo_zero_effect_adapter')
+    if single_diagnostic:required.add('fbo_source_isolation_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

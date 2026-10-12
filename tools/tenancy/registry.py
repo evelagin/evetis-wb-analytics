@@ -259,7 +259,13 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
 
     if "historical_orchestration" in doc:
         from tools.tenancy import orchestration_contract as BC
-        contract["orchestration"] = BC.block(contract, doc["historical_orchestration"], repo)
+        # During an exact runtime/controller handoff, a retained controller
+        # descriptor is validated against its own immutable runtime pair.
+        # Keep the current runtime pointer in the outer tenant contract; the
+        # executing controller still requires its exact durable BF_SPEC.
+        from tools.tenancy.validation import parse_tenant_json
+        retained=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{doc['historical_orchestration']['release']}.json").read_text())
+        contract["orchestration"] = BC.block(BC.historical_contract(contract,retained), doc["historical_orchestration"], repo,retained)
         contract["apis"] = sorted(set(contract["apis"]) | {"iamcredentials.googleapis.com"})
     return contract
 

@@ -306,7 +306,10 @@ class Backend(C.Backend):
         return result
 
     def reconcile_failed(self, doc, receipt, operation):
-        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
+        from tools.tenancy import full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ
+        if doc['runtime_plan']['entity']=='fbo_postings' and getattr(self,'allow_automatic_local_quarantine',False):
+            local=LQ.automatic(self,doc,receipt)
+            if local:return local
         if ZE.protected_retry(self,doc,receipt):
             raise BF.B.EvidenceError('FBO_DIAGNOSTIC_RETRY_FAILED_NO_AUTOMATIC_REPEAT')
         p = doc['runtime_plan']; state = self.state(doc)
@@ -429,6 +432,15 @@ def reconstruct_plans(records, manifest, now):
     return chosen
 
 
+def isolated_indices(manifest,certificates):
+    # Unknown transport-window semantics can affect other FBO windows. Keep
+    # their accepted history; dispatch only independent sources until release.
+    indices={p['index'] for p in certificates}
+    if any(p['isolation_scope']=='FBO_SOURCE' for p in certificates):
+        indices|={i for i,p in enumerate(manifest['programs']) if p['entity']=='fbo_postings'}
+    return indices
+
+
 def wake(base, root):
     with gate('MANIFEST_ROOT'):
         records = base.store.history(root)
@@ -436,6 +448,10 @@ def wake(base, root):
         if manifest['hash'] != root:
             raise BF.B.EvidenceError('full root differs')
     backend = Backend(base,manifest)
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ
+    quarantines=LQ.load(backend,manifest,records) if any(r['kind']==LQ.KIND for r in records) else []
+    quarantined=isolated_indices(manifest,quarantines)
+    backend.allow_automatic_local_quarantine=True
     with gate('MANIFEST_ROOT'):verify_authority(backend,manifest)
     from tools.tenancy import controller_cadence as CC
     with gate('MANIFEST_ROOT'):
@@ -464,7 +480,8 @@ def wake(base, root):
         approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
         from tools.tenancy import full_controller_closure_recovery as CR
         approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
-        approved += zero_effect
+        from tools.tenancy import full_pre_authority_gate_recovery as PAG
+        approved += zero_effect + quarantines + PAG.load(backend,manifest,records)
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -487,7 +504,7 @@ def wake(base, root):
     if overlay:
         # Drain any immutable elected intent/receipt BEFORE queue reordering.
         # No inference from lease TTL, runtime snapshot or local progress.
-        drain=RP.pending_receipts(backend,{i:item for i,item in plans.items() if i not in done})
+        drain=RP.pending_receipts(backend,{i:item for i,item in plans.items() if i not in done and i not in quarantined})
         if len(drain)>1:raise BF.B.EvidenceError('multiple pending full receipt authorities')
         if drain:
             i,item=drain[0]
@@ -499,7 +516,7 @@ def wake(base, root):
     # Existing async scope always precedes any new report intent.
     reports=[i for i,p in plans.items() if i not in done and backend.state(p['plan'])['progress'].get('report')]
     if len(reports)>1:raise BF.B.EvidenceError('multiple full async scopes')
-    pending=reports+[i for i in RP.ordered(manifest,done,overlay) if i not in reports]
+    pending=[i for i in reports+[i for i in RP.ordered(manifest,done,overlay) if i not in reports] if i not in quarantined]
     day=str(backend.clock().astimezone(BF.B.MSK).date())
     certs=[r['payload'] for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
     catalog=next(i for i,p in enumerate(manifest['programs']) if p['entity']=='catalog')
@@ -591,6 +608,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
         try:
             result=backend.reconcile(payload)
             if result is None:return {'status':'MONITORING','source_dispatches':0,'index':index},backend
+            if result.get('local_quarantine'):return result,backend
             if reconciled:raise BF.B.EvidenceError('multiple terminal receipts in one full wake')
             with gate('RECONCILIATION_APPEND'):
                 backend.store.commit(shard,'RECONCILED',sequence,result,backend.clock())
@@ -686,6 +704,8 @@ def import_accepted_sku90(backend,manifest,index,item,records,history):
 def monitoring(backend, root, result):
     observed_start=backend.clock()
     records=backend.store.history(root);manifest=only_manifest(records);done=completed(records,manifest)
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ
+    quarantines=LQ.load(backend,manifest,records) if any(r['kind']==LQ.KIND for r in records) else []
     latest=max((p['completed_at'] for p in done.values()),default=None)
     now=backend.clock()
     if now<observed_start:raise BF.B.EvidenceError('full monitoring clock/order anomaly')
@@ -729,6 +749,8 @@ def monitoring(backend, root, result):
     return {'root_hash':root,'purpose':'FULL_HISTORY','t5_plan_hash':manifest['t5_plan_hash'],
         'observation_start':observed_start.isoformat(),'observation_end':watermark.isoformat(),
         'chunk_grain':'BOUNDED_SOURCE_LEAF_WITH_CANONICAL_T5_PARENT',
+        'mode':'DEGRADED_LOCAL_SOURCE_ISOLATION' if quarantines else 'NORMAL',
+        'quarantined_leaves':[dict(index=p['index'],status=p['status'],source_complete=False,scope=p['isolation_scope'],certificate=p['hash']) for p in quarantines],
         'total_chunks':len(manifest['programs']),'completed_chunks':len(done),
         'running_chunks':int(result['status'] in {'DISPATCHED','MONITORING'}),
         'waiting_chunks':int(result['status']=='WAITING'),

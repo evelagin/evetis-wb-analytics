@@ -368,7 +368,13 @@ def bounded_wake(root, backend):
     return result
 
 
-def main():
+def main(argv=None):
+    argv=argv or []
+    if argv:
+        if len(argv)!=2 or argv[0]!='--fbo-window-diagnostic':
+            raise BF.B.EvidenceError('unknown controller command')
+        from tools.tenancy.fbo_diagnostic_owner import main as diagnostic
+        return diagnostic(argv[1],os.environ)
     backend=None;root=None
     from tools.tenancy import controller_cadence as CC
     try:
@@ -413,4 +419,6 @@ def main():
         return 2
 
 
-if __name__=='__main__':raise SystemExit(main())
+if __name__=='__main__':
+    import sys
+    raise SystemExit(main(sys.argv[1:]))

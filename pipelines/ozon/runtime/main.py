@@ -160,7 +160,13 @@ def ingestion_execution_contract(want, env):
     return external or env.get("TENANT_BINDING_REQUIRED") == "1"
 
 
-def main():
+def main(argv=None):
+    argv=argv or []
+    if argv:
+        if len(argv)!=2 or argv[0]!='--fbo-window-diagnostic':
+            raise C.ConfigError('unknown runtime command')
+        import fbo_diagnostic
+        return fbo_diagnostic.run(argv[1],os.environ)
     run_id = os.environ.get("INGESTION_RUN_ID") or f"rt-{uuid.uuid4()}"
     want = [e for e in os.environ.get("ENTITIES", "").split(",") if e] or list(REGISTRY)
     since = os.environ.get("SINCE"); until = os.environ.get("UNTIL")
@@ -258,4 +264,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
