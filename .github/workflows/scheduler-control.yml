@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl]
+        options: [wb-stocks, wb-mart, wb-mart-finance-catchup, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -45,7 +45,7 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${LOADER}" in
-            wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka|ozon-cpo-orders|unitka-store-pnl)
+            wb-mart|wb-mart-finance-catchup|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka|ozon-cpo-orders|unitka-store-pnl)
               # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
               # Stage E4: платное хранение помечено prodOnly в реестре загрузчиков и пишет
               # production RAW; Terraform создаёт единственный Job wb-paid-storage-prod,
@@ -82,6 +82,12 @@ jobs:
           SCHEDULERS="$JOB"
           if [ "${LOADER}" = "unitka-engine" ]; then
             SCHEDULERS="${JOB}-morning ${JOB}-reserve"
+          fi
+          # Догоняющий слот витрины под WEEKLY-финансы: своё расписание у ТОГО ЖЕ Job'а wb-mart-prod
+          # (infra/terraform/scheduler.tf). pause/resume — только этот слот; run-now — сам Job.
+          if [ "${LOADER}" = "wb-mart-finance-catchup" ]; then
+            JOB="wb-mart-${TARGET_ENV}"
+            SCHEDULERS="${JOB}-finance-catchup"
           fi
           case "${ACTION}" in
             pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;

@@ -87,6 +87,41 @@ resource "google_cloud_scheduler_job" "wb_mart_prod" {
   depends_on = [google_project_service.enabled]
 }
 
+# WB finance source-aware mart refresh (2026-10-12): догоняющий слот витрины под WEEKLY-финансы.
+# ТОТ ЖЕ Job wb-mart-prod (тот же invoker sa-scheduler-prod, тот же lease), отдельное расписание:
+# 12:45 МСК = 09:45 UTC. WEEKLY-отчёт WB ложится по понедельникам в 09:26–09:27 UTC (11 из 13 недель
+# с 27.07.2026; дважды — 15:36 UTC), сборка витрины длится p50 206 с / p95 249 с / max 297 с
+# (LOADER_RUNS COMPLETE с 12.08) → COMPLETE ~09:50 UTC, раньше P&L магазина (unitka-store-pnl-prod,
+# 10:00 UTC). Час 12:xx МСК — «зелёный» для freshness gate (после восстановления sales в 11:22).
+# Слот осмыслен ТОЛЬКО с source-aware guard (PR fix/wb-mart-finance-watermark): при неизменной версии
+# финансов он выходит guard_skip без сборки; на старом образе — тоже guard_skip (COMPLETE за D-1 есть).
+# Пересечение с окнами wb_mart_prod (09:00 UTC) и ручным run-now отсекает lease (свежий STARTED).
+# Создаётся НА ПАУЗЕ; resume — scheduler-control.yml (loader=wb-mart-finance-catchup) после выкатки образа.
+resource "google_cloud_scheduler_job" "wb_mart_prod_finance_catchup" {
+  name      = "wb-mart-prod-finance-catchup"
+  region    = var.region
+  schedule  = "45 12 * * *"
+  time_zone = "Europe/Moscow"
+  paused    = true # включается отдельным шагом через scheduler-control.yml
+
+  retry_config {
+    retry_count = 1
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_mart_prod.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler_prod.email
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
+  depends_on = [google_project_service.enabled]
+}
+
 resource "google_cloud_scheduler_job" "wb_stocks_prod" {
   name      = "wb-stocks-prod"
   region    = var.region
