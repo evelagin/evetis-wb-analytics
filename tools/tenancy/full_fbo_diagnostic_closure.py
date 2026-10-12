@@ -16,7 +16,7 @@ CLASSES=frozenset({'OUTSIDE_REQUESTED_INTERVAL','MISSING_TIMEZONE','INVALID_TIME
 PREDICATES=frozenset({'exact_failed_runtime','exact_stop_intent_receipt','typed_local_timestamp_failure',
     'initial_source_state','zero_RAW_provenance','zero_OK_source_units','no_runtime_bigquery_writes',
     'no_async_external_effect','no_successor_intent_receipt','no_successor_runtime','no_RECON',
-    'all_jobs_inactive','all_schedulers_paused','exact_original_checkpoint_lease','no_later_source_lease',
+    'source_jobs_inactive_controller_fenced','exact_scheduler_policy','exact_original_checkpoint_lease','no_later_source_lease',
     'bindings_security_healthy','manifest_recent_unchanged','previous_certificates_accepted',
     'qualified_diagnostic_and_isolation','explicit_owner_scope','source_budget_zero'})
 FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','index','shard','plan_id','ack_hash',
@@ -35,6 +35,19 @@ def release_value(p):return {'owner':p['run_id']},D.encoded({'terminal':'ZERO_EF
 
 POLICY_FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','controller_source','controller_image','runtime_image','runtime_implementation_hash','owner_decision_sha256','qualification_hash','security_hash','source_budget','classes','isolation_scope','hash'})
 def policy_name(root,source):return 'BFLQP_'+root+'_'+source
+def qualified_release(b,m,source):
+    from tools.tenancy import orchestration_contract as O,cloud_controller as C
+    env=b.c['orchestration']['job']['env']
+    if source==env['CONTROLLER_SOURCE_SHA']:
+        settings=dict(release=source,root_hash=m['hash'],scheduler_state=env['HISTORICAL_SCHEDULER_STATE'])
+        marker=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(source,m['hash'],settings['scheduler_state']))
+        descriptor=parse(marker[1]) if marker else {}
+        if set(descriptor)!={'settings','release'} or descriptor['settings']!=settings:fail('current qualified descriptor absent/differs')
+        r=descriptor['release']
+        if r.get('source_sha')!=source:fail('current qualified source differs')
+        O.verify_artifact_source(r,BF.REPO)
+    else:r=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text())
+    return r
 def owner_policy(b,m,source=None):
     source=source or b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
     marker=b.tables.get_table(b.c['datasets']['ref'],policy_name(m['hash'],source))
@@ -45,7 +58,7 @@ def owner_policy(b,m,source=None):
         or p['controller_source']!=source or type(p['source_budget']) is not int or p['source_budget']!=0
         or p['classes']!=sorted(CLASSES) or p['isolation_scope']!='FBO_SOURCE'
         or marker!=({'kind':'local_quarantine_policy','root':m['hash'][:16]},D.encoded(p))):fail('qualified owner isolation policy differs')
-    r=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text())
+    r=qualified_release(b,m,source)
     if (r.get('fbo_source_isolation_version')!=1 or r['verification'].get('fbo_source_isolation_adapter')!='PASS'
         or (r['image'],r['runtime_image'],r['runtime_implementation_hash'])!=(p['controller_image'],p['runtime_image'],p['runtime_implementation_hash'])):fail('owner policy qualified pair differs')
     return p
@@ -166,7 +179,7 @@ def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,securi
         from tools.tenancy import full_pre_authority_gate_recovery as PAG
         covered={z['stop_hash'] for z in accepted if 'stop_hash' in z}|{h for z in accepted if 'stop_hashes' in z for h in z['stop_hashes']}|{z['stop_hash'] for z in PAG.load(b,m,records)}
         if {D.digest(z) for z in records if z['kind']=='STOPPED'}-covered!={D.digest(stop[0])}:fail('another global STOP blocks automatic local isolation')
-    source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];r=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text());O.verify_artifact_source(r,BF.REPO)
+    source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];r=qualified_release(b,m,source)
     if r.get('fbo_source_isolation_version')!=1 or r['verification'].get('fbo_source_isolation_adapter')!='PASS':fail('local-isolation/diagnostic image unqualified')
     effects=dict(raw=sorted(raw,key=lambda z:z['table_name']),journal=j,jobs=js,state=state,checkpoints=cp,lease=lease,previous_certificates=sorted(z['hash'] for z in accepted),priority_hash=priority['hash'])
     p=dict(version=1,type=TYPE,tenant=m['tenant'],project=m['project'],root=m['hash'],manifest_hash=D.digest(m),index=index,shard=plan['shard_root'],plan_id=rp['plan_id'],ack_hash=doc['ack_hash'],stop_hash=D.digest(stop[0]),controller_execution=stop[0]['payload']['controller_execution'],execution=execution,run_id=run,generation=gen,sequence=sequence,intent_hash=D.digest(i),receipt_hash=D.digest(next(z for z in sh if z['kind']=='DISPATCH_RECEIPT' and z['sequence']==sequence)),original_runtime_image=co['image'],controller_source=source,controller_image=b.c['orchestration']['job']['image'],runtime_image=b.c['marketplaces']['ozon']['runtime_image'],runtime_implementation_hash=BF.B.implementation_hash(),owner_decision_sha256=owner_decision_sha256,qualification_hash=qualification_hash,security_hash=security_hash,effect_hash=D.digest(effects),checkpoint_hash=D.digest(cp),lease_hash=D.digest(lease),protected_root_hashes=sorted(D.digest(z) for z in records),protected_shard_hashes=sorted(D.digest(z) for z in sh),predicates=dict.fromkeys(PREDICATES,True),verified_at=b.clock().isoformat(),source_budget=0,state_hash=D.digest(state),validation_class=diag['validation_class'],status='QUARANTINED_SOURCE_CONTRACT',isolation_scope='FBO_SOURCE')

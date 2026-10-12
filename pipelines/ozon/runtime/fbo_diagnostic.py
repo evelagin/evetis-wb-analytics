@@ -27,7 +27,7 @@ def validate(p, project, implementation, now):
     if type(p['leaf']) is not int or not 0<=p['leaf']<len(m['programs']):raise ValueError('frozen FBO leaf required')
     program=m['programs'][p['leaf']]
     if program['entity']!='fbo_postings' or program['kind']!='DATED':raise ValueError('frozen FBO dated source required')
-    a=B.utc_ms(date.fromisoformat(program['from']));b=B.utc_ms(date.fromisoformat(program['to'])+timedelta(days=1))
+    a=B.utc_ms(program['from']);b=B.utc_ms((date.fromisoformat(program['to'])+timedelta(days=1)).isoformat())
     if (type(p['version']) is not int or p['version']!=1 or p['purpose']!='FBO_BOUNDED_READ_NO_BUSINESS_EFFECT_V1'
         or (p['tenant'],p['project'],p['root'])!=(m['tenant'],m['project'],m['hash']) or p['project']!=project
         or type(p['failed_generation']) is not int or p['failed_generation']<1

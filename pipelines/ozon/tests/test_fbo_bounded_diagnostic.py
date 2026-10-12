@@ -51,6 +51,15 @@ def test_terminal_and_valid_sample_does_not_claim_transport_semantics():
 def test_unknown_authority_rejected_before_source():
     with pytest.raises(ValueError):Q.validate({},'mpa-t-client-001','a'*64,None)
 
+def test_real_frozen_policy_validates_exact_Moscow_to_UTC_bounds():
+    from tools.tenancy.fbo_diagnostic_image_check import diagnostic_protocol,diagnostic_policy
+    import backfill_core as B
+    m,r,c,factory,*_=diagnostic_protocol();b=factory(0);p=diagnostic_policy(m,c,b.clock())
+    assert (p['since'],p['to'],p['until_exclusive'])==('2026-08-18T21:00:00.000Z','2026-08-25T20:59:59.999Z','2026-08-25T21:00:00.000Z')
+    assert Q.validate(p,m['project'],B.implementation_hash(),b.clock())==p
+    p['since']='2026-08-18T00:00:00.000Z';p['hash']=Q.digest({k:v for k,v in p.items() if k!='hash'})
+    with pytest.raises(ValueError):Q.validate(p,m['project'],B.implementation_hash(),b.clock())
+
 def test_main_diagnostic_never_runs_ingestion(monkeypatch):
     import main
     monkeypatch.setattr(main.sys,'argv',['main.py','--fbo-window-diagnostic','a'*64]);calls=[]

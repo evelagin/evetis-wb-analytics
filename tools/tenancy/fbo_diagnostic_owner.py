@@ -1,9 +1,10 @@
-"""Frozen owner-authorized, once-only bounded diagnostic dispatch outside ingestion.
+"""Owner-authorized bounded diagnostic dispatch alongside degraded ingestion.
 
 Consumes an immutable permission BEFORE Run POST. No source checkpoint/receipt,
 source lease, RECON, completion or ordinary controller wake is generated here.
-The owner independently grants the returned exact runtime execution in ref;
-without that grant the runtime cannot call the source. Source STOPs remain fences.
+The normal controller CAS serializes this session with ingestion source work.
+Scheduler stays enabled. The owner independently grants the exact runtime in ref;
+without that grant the runtime cannot call the source. Global STOPs remain fences.
 """
 from tools.tenancy import tenant_backfill as BF,durable_plan as D,orchestration_contract as O
 from tools.tenancy.validation import parse_tenant_json as parse
@@ -25,7 +26,7 @@ def policy(b,h):
     if r.get('fbo_source_isolation_version')!=1 or r['verification'].get('fbo_source_isolation_adapter')!='PASS':fail('diagnostic qualification absent')
     return p
 
-def frozen(b,p):
+def isolated(b,p):
     from tools.tenancy import full_controller as H,full_fbo_diagnostic_closure as Z
     from tools.tenancy import recent_priority as RP
     m=H.only_manifest(b.store.history(p['root']));H.verify_authority(H.Backend(b,m),m)
@@ -36,16 +37,35 @@ def frozen(b,p):
     if (cert['root'],cert['index'],cert['shard'],cert['plan_id'],cert['run_id'],cert['generation'],cert['receipt_hash'])!=(p['root'],p['leaf'],p['shard'],p['plan_id'],p['failed_run'],p['failed_generation'],p['failed_receipt_hash']):fail('diagnostic failed scope differs from accepted closure')
     priority=RP.load(b,m)
     if len(priority['selection'])!=69 or len(priority['parents'])!=64:fail('frozen priority differs')
+    from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR,full_fbo_zero_effect_recovery as ZE,full_pre_authority_gate_recovery as PAG,controller_cadence as CC
+    records=b.store.history(p['root'])
+    failed=FC.load(b,m,records);rejected=PT.load(b,m,records);zero=ZE.load(b,m,records)
+    b.verified_cooldown_failures=failed;b.verified_pretransport_rejections=rejected;b.verified_fbo_zero_effect_failures=zero
+    accepted=FL.load(b,m,records)+failed+PB.load(b,m,records)+rejected+FR.load(b,m,records)+zero+certificates+PAG.load(b,m,records)
+    covered={x['stop_hash'] for x in accepted}|{h for x in CR.load(b,m,records) for h in x['stop_hashes']}
+    if any(r['kind']=='STOPPED' and D.digest(r) not in covered for r in records):fail('global STOP remains')
+    CC.ensure(b)
+    plans=H.reconstruct_plans(records,m,b.clock());done=H.completed(records,m);quarantined=H.isolated_indices(m,certificates)
+    candidates={i:v for i,v in plans.items() if i not in done and i not in quarantined}
+    candidates.update({'dependency_'+str(i):r['payload'] for i,r in enumerate(records) if r['kind']=='DEPENDENCY_PLAN'})
+    from tools.tenancy.cloud_tick import OverlapWait
+    if RP.pending_receipts(b,candidates):raise OverlapWait('WAIT_RECONCILIATION')
+    cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16];ds=b.c['datasets']['tenant_locks']
+    generations=[int(match[2]) for n,*_ in b.tables.list_tables(ds) if (match:=BF.CK.LEASE_RE.match(n)) and match[1]==cid]
+    if generations and b.tables.get_table(ds,f'LD_{cid}_{max(generations):04d}') is None:raise OverlapWait('WAIT_RECONCILIATION')
     base,_=BF.resources(b.c)
     ss=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
-    if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(x['state']!='PAUSED' for x in ss['jobs']):fail('dedicated investigation freeze required')
+    if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(x['state']!=('ENABLED' if x['name'].endswith('/tenant-backfill-tick') else 'PAUSED') for x in ss['jobs']):fail('degraded Scheduler state differs')
     dedicated=next(x for x in ss['jobs'] if x['name'].endswith('/tenant-backfill-tick'))
     if dedicated['schedule']!='*/3 * * * *' or dedicated['timeZone']!='Europe/Moscow':fail('preserved cadence required')
     current=b.request('GET',BF.RUN_API+'/'+b.current_execution)
     if current.get('retriedCount',0) or current.get('cancelledCount',0) or current.get('taskCount')!=1:fail('single no-retry controller required')
     for name in (*b.c['marketplaces']['ozon']['jobs'],'tenant-control',O.JOB):
         xs=BF.execution_inventory(b.request,base+'/jobs/'+name)['executions']
-        if any(not x.get('completionTime') and x['name']!=b.current_execution for x in xs):fail('conflicting active/queued execution')
+        if name==O.JOB:CC.inventory(b) # Known peer wakes WAIT before source gates.
+        elif any(not x.get('completionTime') for x in xs):
+            from tools.tenancy.cloud_tick import OverlapWait
+            raise OverlapWait('WAIT_ACTIVE_RUNTIME')
         j=b.request('GET',BF.RUN_API+'/'+base+'/jobs/'+name)
         if name==O.JOB:O.verify_job(j,b.c['orchestration'])
         elif name!='tenant-control':
@@ -56,7 +76,7 @@ def frozen(b,p):
     return m
 
 def dispatch(b,h):
-    p=policy(b,h);frozen(b,p)
+    p=policy(b,h);isolated(b,p)
     claim={'policy_hash':h,'run_id':p['run_id'],'generation':p['generation'],'controller_execution':b.current_execution,'source_request_limit':p['request_limit']}
     name='BFDC_'+h;value=({'kind':'fbo_diagnostic'},D.encoded(claim));ds=b.c['datasets']['tenant_locks']
     # A claim without an operation is UNCERTAIN, never permission to retry POST.
@@ -76,9 +96,40 @@ def dispatch(b,h):
     if not b.tables.create_marker(ds,'BFDO_'+h,*v) or b.tables.get_table(ds,'BFDO_'+h)!=v:fail('operation evidence conflict')
     return record
 
+def await_terminal(b,p,record,*,sleep=None):
+    import time
+    sleep=sleep or time.sleep
+    for _ in range(180):
+        x=b.request('GET',BF.RUN_API+'/'+record['execution'])
+        t=x.get('template',{});co=(t.get('containers') or [{}])[0];e={z['name']:z.get('value') for z in co.get('env',[])}
+        if (x.get('name')!=record['execution'] or x.get('taskCount')!=1 or x.get('retriedCount',0) or x.get('cancelledCount',0)
+            or co.get('image')!=p['runtime_image'] or co.get('args')!=['--fbo-window-diagnostic',p['hash']]
+            or e.get('INGESTION_RUN_ID')!=p['run_id'] or e.get('ENTITIES')!='fbo_postings'
+            or e.get('TENANT_BINDING_REQUIRED')!='1' or e.get('STRICT_PAGE_CAPS')!='1'
+            or t.get('serviceAccount')!='sa-ozon-runtime@'+p['project']+'.iam.gserviceaccount.com'):
+            fail('diagnostic child identity/effect boundary unknown; retain control fence')
+        if x.get('completionTime'):
+            if x.get('succeededCount',0)+x.get('failedCount',0)!=1:fail('diagnostic terminal state unknown; retain control fence')
+            return dict(execution=record['execution'],terminal_success=x.get('succeededCount',0)==1,completion=x['completionTime'])
+        sleep(5)
+    fail('diagnostic child still active; retain control fence')
+
 def main(h,env):
     from tools.tenancy.cloud_controller import bootstrap
+    from tools.tenancy import controller_cadence as CC
+    from tools.tenancy.cloud_tick import OverlapWait
     b,_=bootstrap(env)
-    result=dispatch(b,h)
     import json
-    print(json.dumps({'status':'DIAGNOSTIC_DISPATCHED','operation_evidence':result,'ingestion_dispatches':0,'checkpoints':0,'reconciliation':0},sort_keys=True))
+    p=policy(b,h)
+    try:
+        CC.acquire(b)
+        result=dispatch(b,h)
+    except OverlapWait as wait:
+        CC.close(b,{'status':'MONITORING','source_dispatches':0})
+        print(json.dumps({'status':wait.status,'source_requests':0,'permission_consumed':False}));return 0
+    # Never close this shared authority while its diagnostic child is active or
+    # uncertain. Natural ingestion wakes observe/WAIT throughout this bounded slot.
+    terminal=await_terminal(b,p,result)
+    CC.close(b,{'status':'MONITORING','source_dispatches':0})
+    print(json.dumps({'status':'DIAGNOSTIC_FINISHED','operation_evidence':result,'terminal':terminal,'ingestion_dispatches':0,'checkpoints':0,'reconciliation':0},sort_keys=True))
+    return 0
