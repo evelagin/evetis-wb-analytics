@@ -102,8 +102,9 @@ EVETIS — событие ERROR `OZON_FINANCE_CONTROL_MISMATCH` (`finance_contro
 остаток) и пометка прогона: строка `OZON_INGESTION_RUNS` остаётся `status = OK`, но `error_message` содержит код.
 Сущность **не падает**: Юнитка Ozon читает только OK-прогоны (`OZON_UNITKA_REQUIRED_SOURCES`), и отказ заморозил
 бы лист на срок окна 30 суток. Строгий режим арендатора — отказ до записи. Начисление без `total_amount` —
-WARNING `OZON_FINANCE_CONTROL_SKIPPED`. Лог-алерта на задания `ozon-runtime-*` пока нет (follow-up: политика по
-образцу `ozon_unitka_failed` — `severity>=ERROR`, `jsonPayload.code!=""`).
+WARNING `OZON_FINANCE_CONTROL_SKIPPED`. Алерт: `google_monitoring_alert_policy.ozon_runtime_finance_control`
+(`infra/terraform/ozon_ingestion.tf`; задания `ozon-runtime-*`, `severity>=ERROR`, `jsonPayload.code=~"^OZON_FINANCE_"`,
+канал Юнитки). В коде с D1, применяется отдельным `terraform apply` по ACK владельца.
 Отдельно `finance_econ_representation_gap`: блоки, где `seller_price × quantity ≠ sale_amount`
 (колонки RAW не выражают сумму реализации; в истории — одно такое начисление) — журнал без отказа,
 это отдельный известный дефект представления, D1 его не чинит.

@@ -267,3 +267,17 @@ def test_rollback_asserts_exact_count_before_delete(E, tmp_path):
     p = plan(E, tmp_path)
     sql = R.rollback_sql([list(R.key(r)) for r in p["rows"]], p["rows"][0]["ingestion_run_id"])
     assert sql.index("ASSERT") < sql.index("DELETE") and ") = 1 AS 'OZD1_ROLLBACK: по ключам" in sql
+
+
+def test_tail_after_through_is_reported_softly(E):
+    """Хвост после through не блокирует план: несошедшиеся сутки и карантин — только в журнал."""
+    bad = copy.deepcopy(DAYS["2026-01-10"])
+    bad[0]["container_fees"] = {"fees": [{"type_id": 12, "accrued": m(-7)}]}
+    bad[0]["total_amount"] = m(495)
+    quarantined = copy.deepcopy(DAYS["2026-01-12"])
+    quarantined[0]["posting"]["products"][0]["commission"]["seller_price"] = m(1000)
+    tail = {"2026-02-01": {"accruals": bad, "pages": []},
+            "2026-02-02": {"accruals": DAYS["2026-01-12"], "pages": []},
+            "2026-02-03": {"accruals": quarantined, "pages": []}}
+    assert R.tail_report(E, tail, TYPES) == {"days": 3, "synthetic_rows": 1, "unbalanced_days": 1,
+                                             "quarantined": 1, "no_total": 0}

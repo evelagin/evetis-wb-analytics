@@ -38,6 +38,8 @@
   ERROR `OZON_FINANCE_CONTROL_MISMATCH`, начисление с несогласованными знаками — карантин только его строк и ERROR
   `OZON_FINANCE_ACCRUAL_QUARANTINED`; прогон остаётся OK с кодом в `OZON_INGESTION_RUNS.error_message` (Юнитка не
   замерзает). Строгий режим арендатора — отказ, как раньше. Тестовый эмулятор compat отдаёт `total_amount`.
+- `infra/terraform/ozon_ingestion.tf`: лог-политика `ozon_runtime_finance_control` — ERROR с кодом `OZON_FINANCE_*`
+  в заданиях `ozon-runtime-*` → письмо в канал Юнитки (DRO-1 читает только статус прогона). Не применена.
 - `tools/ozon_d1_finance_repair.py`: PLAN (только чтение; область — сутки ≤ сегодня МСК − 31, вне окна загрузки) /
   APPLY (по отпечатку, только добавление, перечитывание содержимого) / ROLLBACK (ASSERT числа строк до удаления);
   поштучный план — только вне Git. Ремонт не применён.

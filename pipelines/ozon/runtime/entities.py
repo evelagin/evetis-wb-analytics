@@ -571,7 +571,7 @@ class FinanceSemanticsError(RuntimeError):
 
 # Коды событий журнала. Формат — как у остальных боевых алертов проекта (Cloud Logging разбирает
 # JSON stdout: severity → уровень записи, code → jsonPayload.code; ср. ozon_unitka_failed в
-# infra/terraform/ozon_unitka.tf). Лог-алерта на задания ozon-runtime-* пока НЕТ — follow-up.
+# infra/terraform/ozon_unitka.tf). Алерт: ozon_runtime_finance_control в infra/terraform/ozon_ingestion.tf.
 FIN_CODE_CONTROL_MISMATCH = "OZON_FINANCE_CONTROL_MISMATCH"
 FIN_CODE_ACCRUAL_QUARANTINED = "OZON_FINANCE_ACCRUAL_QUARANTINED"
 FIN_CODE_CONTROL_SKIPPED = "OZON_FINANCE_CONTROL_SKIPPED"

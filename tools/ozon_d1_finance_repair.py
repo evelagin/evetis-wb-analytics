@@ -244,6 +244,23 @@ def scope_pages(pages: dict, through: str, now: dt.datetime) -> dict:
     return {d: p for d, p in pages.items() if d <= through}
 
 
+def tail_report(E, tail: dict, types: dict) -> dict:
+    """Сутки после through — только для журнала: ни отпечаток, ни решение плана от них не зависят.
+
+    Здесь нет _req: несошедшийся контроль, карантин или поздняя публикация в свежих сутках —
+    нормальное состояние окна загрузки и не блокирует ремонт истории.
+    """
+    out = {"days": len(tail), "synthetic_rows": 0, "unbalanced_days": 0, "quarantined": 0, "no_total": 0}
+    for d, p in tail.items():
+        ctl = {}
+        rows = E._finance_rows(p["accruals"], types, d, "ozon-d1-repair", "1970-01-01 00:00:00+00:00", control=ctl)
+        out["synthetic_rows"] += sum(1 for r in rows if r["type_id"] < 0)
+        out["unbalanced_days"] += 1 if ctl.get("unbalanced") else 0
+        out["quarantined"] += ctl.get("quarantined", 0)
+        out["no_total"] += ctl.get("no_total", 0)
+    return out
+
+
 def readback_diff(got: list[dict], plan_rows: list[dict]) -> list:
     """Строки прогона ремонта против плана: ключи И содержимое (кроме extracted_at)."""
     norm = lambda c, v: (None if v is None else  # noqa: E731
@@ -530,15 +547,14 @@ def main(argv=None) -> int:
         pages = scope_pages(all_pages, through, now)
         types = {x["id"]: x["description"] for x in json.loads(types_path.read_text(encoding="utf-8"))["accrual_types"]}
         plan = build_plan(E, pages, types, src.raw_rows(min(pages), max(pages)))
-        tail = {d: p for d, p in all_pages.items() if d > through}
-        tail_synth = sum(1 for r in build_candidates(E, tail, types)["rows"] if r["type_id"] < 0) if tail else 0
+        tail = tail_report(E, {d: p for d, p in all_pages.items() if d > through}, types)
     except PlanRefused as e:
         print(f"STOP: {e}")
         return 2
     print(json.dumps(plan["core"], ensure_ascii=False, indent=2, sort_keys=True))
     print(f"FINGERPRINT {plan['fingerprint']}")
-    print(f"вне области (сутки > {through}, окно загрузки): синтетических строк в доказательствах {tail_synth} — "
-          "их загрузит исправленный разбор после деплоя или следующий план")
+    print(f"вне области (сутки > {through}, окно загрузки), только журнал: {json.dumps(tail, ensure_ascii=False)} — "
+          "синтетические строки там загрузит исправленный разбор после деплоя или следующий план")
     run_id = RUN_PREFIX + plan["fingerprint"][:16]
     keys = [list(key(r)) for r in plan["rows"]]
     if not a.apply:
@@ -547,7 +563,7 @@ def main(argv=None) -> int:
                                               "ingestion_run_id": run_id, "rows": plan["rows"],
                                               "monthly_sku_delta_itemized": plan["monthly_sku_delta_itemized"],
                                               "rollback_keys": keys, "through": through,
-                                              "after_through_synthetic_rows": tail_synth})
+                                              "after_through": tail})
         if plan["rows"]:
             (out / "apply_preview.sql").write_text(apply_sql(plan["rows"], run_id, set(E.FIN_ECON_TYPE_NAMES.values())))
             (out / "rollback_preview.sql").write_text(rollback_sql(keys, run_id))
