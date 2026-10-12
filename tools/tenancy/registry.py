@@ -265,7 +265,7 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
         # executing controller still requires its exact durable BF_SPEC.
         from tools.tenancy.validation import parse_tenant_json
         retained=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{doc['historical_orchestration']['release']}.json").read_text())
-        contract["orchestration"] = BC.block(BC.historical_contract(contract,retained), doc["historical_orchestration"], repo,retained)
+        contract["orchestration"] = BC.block(BC.registered_runtime_pair(contract,retained,repo), doc["historical_orchestration"], repo,retained)
         contract["apis"] = sorted(set(contract["apis"]) | {"iamcredentials.googleapis.com"})
     return contract
 

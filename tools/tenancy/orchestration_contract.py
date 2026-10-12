@@ -7,7 +7,7 @@ from tools.tenancy.validation import parse_tenant_json
 JOB = 'tenant-backfill-controller'
 SCHEDULER = 'tenant-backfill-tick'
 SOURCE_FILES = (
-    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py',
+    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py','registry.py',
     'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py','controller_stop_recovery.py','controller_stop_image_check.py','controller_dispatch_recovery.py','controller_dispatch_image_check.py',
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
     'full_leaf_recovery.py','full_leaf_image_check.py','full_first_receipt_recovery.py','full_first_receipt_image_check.py','controller_diagnostics.py',
@@ -25,6 +25,25 @@ SOURCE_FILES = (
 def implementation_hash(repo):
     from tools.tenancy import tenant_backfill as BF
     return BF.B.digest({n:hashlib.sha256((repo/'tools/tenancy'/n).read_bytes()).hexdigest() for n in SOURCE_FILES})
+
+
+def registered_runtime_pair(c,release,repo):
+    """Pure registry projection, no recursive full-plan construction or GO.
+
+    A retained controller's paired runtime must itself have exact immutable
+    registration and matching build qualification. The outer runtime pointer
+    and every tenant boundary remain unchanged.
+    """
+    if release['runtime_image']==c['marketplaces']['ozon']['runtime_image']:return c
+    from copy import deepcopy
+    retained=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{release['source_sha']}.json").read_text())
+    if retained!=release:raise ValueError('historical controller registration differs')
+    runtimes=[parse_tenant_json(p.read_text()) for p in (repo/'infra/tenant/releases/ozon').glob('*.json')]
+    runtimes=[r for r in runtimes if r.get('image')==release['runtime_image']]
+    if len(runtimes)!=1:raise ValueError('historical runtime registration missing/ambiguous')
+    facts=runtimes[0].get('verification',{}).get('built_artifact',{})
+    if facts.get('backfill_implementation_hash')!=release['runtime_implementation_hash'] or facts.get('backfill_window_v1')!='PASS':raise ValueError('historical runtime pair unqualified')
+    old=deepcopy(c);old['marketplaces']['ozon']['runtime_image']=release['runtime_image'];return old
 
 
 def historical_contract(c,release,manifest=None):
