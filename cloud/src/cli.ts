@@ -38,6 +38,8 @@ export interface CliDeps {
   runHandler: (spec: LoaderSpec, ctx: LoaderContext) => Promise<LoaderResult>;
   nowMs: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Зонд версии источника; по умолчанию spec.sourceWatermark.probe. Зовётся только при его наличии. */
+  probeWatermark?: (spec: LoaderSpec, config: Config) => Promise<string>;
 }
 
 const defaultDeps: CliDeps = {
@@ -46,6 +48,38 @@ const defaultDeps: CliDeps = {
   runHandler: (spec, ctx) => spec.handler(ctx),
   nowMs: () => Date.now(),
 };
+
+/**
+ * Версия источника ДО acquire (source-aware guard). undefined — у загрузчика её нет (прежний guard).
+ * Отказ зонда НЕ объявляет источник текущим: возвращаем null («версия неизвестна»), acquire тогда не
+ * считает ни один COMPLETE покрывающим, и сборка идёт. Отказ виден ERROR-записью с непустым `code`.
+ */
+async function probeSourceWatermark(
+  spec: LoaderSpec,
+  config: Config,
+  deps: CliDeps,
+  logger: Logger,
+): Promise<string | null | undefined> {
+  const sw = spec.sourceWatermark;
+  if (!sw) return undefined;
+  try {
+    const probe = deps.probeWatermark ?? ((s: LoaderSpec, c: Config) => s.sourceWatermark!.probe(c));
+    const w = await probe(spec, config);
+    if (typeof w !== 'string' || w === '') throw new Error(`пустая версия источника: '${String(w)}'`);
+    return w;
+  } catch (e) {
+    const c = classifyFailure(e);
+    logger.error('source_watermark_probe_failed', {
+      code: sw.probeFailureCode,
+      category: c.category,
+      cause: c.code,
+      // НЕ `message`: поле ctx затёрло бы имя события в записи логгера.
+      error: e instanceof Error ? e.message : String(e),
+      decision: 'version_unknown_build_not_skipped',
+    });
+    return null;
+  }
+}
 
 export async function runCli(
   argv: string[],
@@ -116,6 +150,11 @@ export async function runCli(
     return failed('make_store', classifyFailure(e), e instanceof Error ? e.message : String(e));
   }
 
+  // Версия позднего источника — ДО lease и ДО сборки, никогда после: в строку STARTED попадает версия,
+  // не новее той, что прочитает сборка. Пришли данные во время сборки → следующий слот увидит
+  // другую версию и пересоберёт (лишняя сборка, но не пропуск). Только у загрузчиков с sourceWatermark.
+  const sourceWatermark = await probeSourceWatermark(spec, config, deps, logger);
+
   // Захват lease. До lease ничего не исполнялось, поэтому транзиентный отказ повторяем один раз
   // для ЛЮБОГО загрузчика. Инцидент 2026-10-06 (zbfk7): BigQuery упал именно здесь.
   const acquire = async (runIdForAttempt: string) => {
@@ -127,6 +166,8 @@ export async function runCli(
       gitSha: config.gitSha,
       nowMs: deps.nowMs(),
       staleMs: DEFAULT_STALE_STARTED_MS,
+      // Ключ добавляется ТОЛЬКО при наличии версии: у прочих загрузчиков params и SQL прежние.
+      ...(sourceWatermark !== undefined ? { sourceWatermark } : {}),
     };
     try {
       return await store.acquire(params);
@@ -145,11 +186,19 @@ export async function runCli(
   } catch (e) {
     return failed('acquire', classifyFailure(e), e instanceof Error ? e.message : String(e));
   }
+  // Поля версии добавляются в журнал только загрузчикам с sourceWatermark (прочие логи прежние).
+  const wmLog = (prev?: string | null) => (sourceWatermark === undefined ? {} : {
+    sourceWatermark,
+    ...(prev !== undefined ? {
+      previousWatermark: prev,
+      watermarkAdvanced: sourceWatermark === null || prev !== sourceWatermark,
+    } : {}),
+  });
   if (!lock.acquired) {
-    logger.info('guard_skip', { reason: lock.reason });
+    logger.info('guard_skip', { reason: lock.reason, ...wmLog() });
     return EXIT_OK; // OK_NO_NEW / ALREADY_RUNNING — не запускаем loader, штатный выход
   }
-  logger.info('guard_acquired', { runId: lock.runId, recovered: lock.recovered });
+  logger.info('guard_acquired', { runId: lock.runId, recovered: lock.recovered, ...wmLog(lock.previousWatermark) });
 
   // Повтор после lease — только транзиентный отказ и только идемпотентный писатель (retryTransient).
   // Повтор получает СВОЙ run_id (executionId-r2): строка ERROR первой попытки остаётся в журнале,

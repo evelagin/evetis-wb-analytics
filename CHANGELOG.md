@@ -1,5 +1,27 @@
 # CHANGELOG.md
 
+## 2026-10-12 — WB finance source-aware mart refresh: guard витрины учитывает версию финансов (НЕ развёрнуто)
+
+Аудит: `evetis-manifests/wb-mart-finance-lag-2026-10-12/REPORT.txt` (вне Git). Витрина собиралась в 04:00 UTC, финансы WB
+приходят позже (DAILY ~04:28, WEEKLY пн ~09:26 UTC), а COMPLETE за D-1 блокировал все слоты суток → FACT_FINANCE отставал
+на ~24 ч (DAILY) и ~19 ч (WEEKLY).
+
+- **Структура колонок: `wb_raw.LOADER_RUNS` + `source_watermark STRING` (NULLABLE, аддитивно, in-place)** —
+  `infra/terraform/bigquery.tf`. Версия источника, на которой собран прогон `mart`; пишется в строку STARTED в той же
+  транзакции, что и захват lease. Прежние строки и прочие загрузчики — NULL. `ozon_raw.LOADER_RUNS` не меняется.
+  Порядок выкатки: колонка (terraform apply) ДО образа.
+- Версия = `fin:v2:<строк>:<sha256>` — отпечаток СОДЕРЖИМОГО `wb_raw.V_WB_FINANCE_SEMANTIC` (вход FACT_FINANCE): SHA256 каждой
+  строки целиком (TO_JSON_STRING), отсортированный список по report_id, затем по отчётам. Без XOR; ловит сумму, поле,
+  дату, категорию, SKU, удаление+добавление при равном числе строк, дубли, обмен значениями, поздние корректировки
+  (`cloud/src/loaders/mart/watermark.ts`). Живой замер: 208 423 строки, 0,36 ГБ, ~3 с.
+- Guard (`cloud/src/bq/runManifest.ts`, `cloud/src/cli.ts`, `LoaderSpec.sourceWatermark` только у `mart`): слот пропускается,
+  только если ПОСЛЕДНЯЯ строка периода — COMPLETE той же версии; иначе пересборка того же D-1 с новым run_id. Свежий STARTED
+  блокирует как раньше. Отказ зонда = «версия неизвестна»: сборка не пропускается, пишется NULL, ERROR
+  `MART_SOURCE_WATERMARK_PROBE_FAILED`. Legacy COMPLETE с NULL не блокирует (одна догоняющая сборка после выкатки).
+  Для всех прочих загрузчиков SQL acquire байт-в-байт прежний (тест).
+- Экономика витрины, FIN CONTRACT V2, SQL P&L магазина и классификация удержаний не меняются: меняется только КОГДА
+  пересобирается витрина (полный REPLACE, как и раньше).
+
 ## 2026-10-11 — WB FIRE / LOST INVENTORY: списание утраченного товара и компенсация WB в P&L магазина (НЕ развёрнуто)
 
 Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.

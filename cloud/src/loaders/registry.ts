@@ -3,10 +3,12 @@
  */
 import { dailyPeriodMoscow } from '../period.js';
 import type { LoaderHandler } from './types.js';
+import type { Config } from '../config.js';
 import { noopLoader } from './noop.js';
 import { stocksLoader } from './stocks/index.js';
 import { martLoader } from './mart/index.js';
 import { d1Moscow } from './mart/targetDate.js';
+import { martSourceWatermark, MART_SOURCE_WATERMARK_PROBE_FAILED } from './mart/watermark.js';
 import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
 import { promoLoader } from './promo/index.js';
@@ -36,12 +38,30 @@ export interface LoaderSpec {
    * поэтому повтор после частичной записи дописывает недостающее и не дублирует уже записанное.
    */
   retryTransient?: boolean;
+  /**
+   * Source-aware guard (2026-10-12, только mart). Есть → COMPLETE за период блокирует слот, только
+   * если собран на той же версии позднего источника; иначе слот пересобирает тот же период.
+   * Нет (все прочие загрузчики) → guard и SQL acquire прежние байт-в-байт.
+   *   probe — версия источника, считается ДО acquire; отказ = «версия неизвестна»: сборка
+   *           не пропускается, в строку пишется NULL, в лог — ERROR с кодом probeFailureCode.
+   */
+  sourceWatermark?: {
+    probe: (config: Config) => Promise<string>;
+    probeFailureCode: string;
+  };
 }
 
 export const LOADERS: Record<string, LoaderSpec> = {
   noop: { handler: noopLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
   stocks: { handler: stocksLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
-  mart: { handler: martLoader, logicalPeriod: (now) => d1Moscow(now), prodOnly: true },
+  // Финансы WB приходят после утренней сборки (DAILY ~04:28, WEEKLY пн ~09:26 UTC): версия
+  // V_WB_FINANCE_SEMANTIC открывает пересборку того же D-1 в следующем слоте (mart/watermark.ts).
+  mart: {
+    handler: martLoader,
+    logicalPeriod: (now) => d1Moscow(now),
+    prodOnly: true,
+    sourceWatermark: { probe: martSourceWatermark, probeFailureCode: MART_SOURCE_WATERMARK_PROBE_FAILED },
+  },
   prices: { handler: pricesLoader, logicalPeriod: (now) => observationBucket(now) },
   // PR-PROMO-1: наблюдатель акций WB. Период — слот расписания (4 раза в сутки),
   // а не сутки: суточный период схлопнул бы четыре наблюдения в одно.

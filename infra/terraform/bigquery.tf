@@ -26,6 +26,12 @@ resource "google_bigquery_table" "loader_runs" {
     { name = "error_message", type = "STRING" },
     { name = "rows_fetched", type = "INT64" },
     { name = "rows_loaded", type = "INT64" },
+    # 2026-10-12, source-aware guard витрины: версия финансов (fin:v2:<строк>:<sha256>), на которой
+    # собран прогон mart. Пишется в строку STARTED в той же транзакции, что и захват lease; finalize
+    # её не трогает. NULL — прежние строки, прочие загрузчики и «версия неизвестна» (зонд упал).
+    # Аддитивная NULLABLE-колонка → in-place update таблицы (не replace). Колонка — ДО образа:
+    # новый образ пишет её в INSERT acquire витрины. В ozon_raw.LOADER_RUNS её нет и не нужно.
+    { name = "source_watermark", type = "STRING" },
   ])
 }
 

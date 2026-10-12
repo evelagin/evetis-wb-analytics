@@ -42,10 +42,24 @@ export interface AcquireParams extends ManifestKey {
   gitSha: string;
   nowMs: number;
   staleMs: number;
+  /**
+   * Версия позднего источника (source-aware guard; сейчас только mart, см. LoaderSpec.sourceWatermark).
+   *   undefined → режим guard как раньше: SQL acquire байт-в-байт прежний, колонка source_watermark
+   *               не упоминается (ozon_raw.LOADER_RUNS её не имеет);
+   *   string    → COMPLETE блокирует, только если ПОСЛЕДНЯЯ строка периода — COMPLETE этой же версии;
+   *   null      → версия неизвестна (зонд упал): COMPLETE не блокирует, в строку пишется NULL.
+   */
+  sourceWatermark?: string | null;
 }
 
 export type AcquireResult =
-  | { acquired: true; runId: string; recovered: boolean }
+  | {
+      acquired: true;
+      runId: string;
+      recovered: boolean;
+      /** Только в режиме watermark: версия последнего COMPLETE периода (null — не было или legacy NULL). */
+      previousWatermark?: string | null;
+    }
   | { acquired: false; reason: 'ALREADY_RUNNING' | 'COMPLETE' };
 
 export interface FinalizePatch {
@@ -95,6 +109,7 @@ export class BqManifestStore implements ManifestStore {
    * (в отличие от finalize).
    */
   async acquire(p: AcquireParams): Promise<AcquireResult> {
+    if (p.sourceWatermark !== undefined) return this.acquireWithWatermark(p, p.sourceWatermark);
     const staleIso = new Date(p.nowMs - p.staleMs).toISOString();
     const t = FQN(this.bq.projectId, this.dataset, this.table);
     const sql = `
@@ -177,6 +192,134 @@ END`;
       return { acquired: true, runId: String(r.cur_run_id), recovered: true };
     }
     return { acquired: false, reason: curStatus === 'COMPLETE' ? 'COMPLETE' : 'ALREADY_RUNNING' };
+  }
+
+  /**
+   * acquire с учётом версии источника (только загрузчики с LoaderSpec.sourceWatermark).
+   * Отличия от acquire() — ТОЛЬКО в условии блокировки и в INSERT:
+   *   active = свежие STARTED (lease как раньше)
+   *          + 1, если ПОСЛЕДНЯЯ строка периода (по started_at) — COMPLETE с source_watermark = @W.
+   * Почему «последняя строка», а не «любой COMPLETE с W»: опубликован результат ПОСЛЕДНЕЙ сборки.
+   * При A→B→A (два COMPLETE, источник вернулся) «любой» дал бы ложный NOOP по первому COMPLETE(A),
+   * хотя витрина собрана на B. Последняя строка ERROR/устаревший STARTED тоже не блокирует: та
+   * сборка могла успеть опубликовать FACT, поэтому пересобираем (лишняя сборка безопасна, пропуск — нет).
+   * @W = NULL (версия неизвестна) → «= NULL» ложно → COMPLETE не блокирует никогда.
+   * Legacy COMPLETE с NULL в колонке тоже не блокирует → после выкатки одна догоняющая сборка.
+   * W пишется в строку STARTED в той же транзакции и переживает finalize (UPDATE её не трогает).
+   */
+  private async acquireWithWatermark(p: AcquireParams, sourceWatermark: string | null): Promise<AcquireResult> {
+    const staleIso = new Date(p.nowMs - p.staleMs).toISOString();
+    const t = FQN(this.bq.projectId, this.dataset, this.table);
+    const sql = `
+BEGIN
+  DECLARE fresh_started INT64 DEFAULT 0;
+  DECLARE latest_complete_match INT64 DEFAULT 0;
+  DECLARE active INT64 DEFAULT 0;
+  DECLARE cur_status STRING DEFAULT NULL;
+  DECLARE cur_run_id STRING DEFAULT NULL;
+  DECLARE cur_execution_id STRING DEFAULT NULL;
+  DECLARE prev_watermark STRING DEFAULT NULL;
+  BEGIN TRANSACTION;
+  SET fresh_started = (
+    SELECT COUNT(*) FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+      AND status='STARTED' AND started_at > TIMESTAMP(@staleIso)
+  );
+  SET latest_complete_match = (
+    SELECT IF(status='COMPLETE' AND source_watermark = @sourceWatermark, 1, 0) FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC, run_id DESC LIMIT 1
+  );
+  SET cur_status = (
+    SELECT status FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC, run_id DESC LIMIT 1
+  );
+  SET cur_run_id = (
+    SELECT run_id FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC, run_id DESC LIMIT 1
+  );
+  SET cur_execution_id = (
+    SELECT execution_id FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+    ORDER BY started_at DESC, run_id DESC LIMIT 1
+  );
+  SET prev_watermark = (
+    SELECT source_watermark FROM ${t}
+    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod
+      AND status='COMPLETE'
+    ORDER BY started_at DESC, run_id DESC LIMIT 1
+  );
+  SET active = fresh_started + IFNULL(latest_complete_match, 0);
+  IF active = 0 THEN
+    INSERT INTO ${t}
+      (environment, loader_name, logical_period, run_id, execution_id, image_digest,
+       git_sha, status, attempt_count, started_at, source_watermark)
+    VALUES
+      (@environment, @loaderName, @logicalPeriod, @runId, @executionId, @imageDigest,
+       @gitSha, 'STARTED', 1, CURRENT_TIMESTAMP(), @sourceWatermark);
+  END IF;
+  COMMIT TRANSACTION;
+  SELECT active AS active, fresh_started AS fresh_started, cur_status AS cur_status,
+         cur_run_id AS cur_run_id, cur_execution_id AS cur_execution_id, prev_watermark AS prev_watermark;
+END`;
+    let rows: Array<{
+      active?: unknown; fresh_started?: unknown; cur_status?: unknown; cur_run_id?: unknown;
+      cur_execution_id?: unknown; prev_watermark?: unknown;
+    }>;
+    try {
+      rows = await this.bq.query(
+        sql,
+        {
+          environment: p.environment,
+          loaderName: p.loaderName,
+          logicalPeriod: p.logicalPeriod,
+          runId: p.runId,
+          executionId: p.executionId,
+          imageDigest: p.imageDigest,
+          gitSha: p.gitSha,
+          staleIso,
+          sourceWatermark,
+        },
+        {
+          // ЯВНЫЕ типы: @sourceWatermark бывает null (версия неизвестна), а без типа BigQuery
+          // null не принимает (тот же урок, что в finalize).
+          environment: 'STRING',
+          loaderName: 'STRING',
+          logicalPeriod: 'STRING',
+          runId: 'STRING',
+          executionId: 'STRING',
+          imageDigest: 'STRING',
+          gitSha: 'STRING',
+          staleIso: 'STRING',
+          sourceWatermark: 'STRING',
+        },
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/Transaction is aborted due to concurrent update|Could not serialize access/i.test(msg)) {
+        return { acquired: false, reason: 'ALREADY_RUNNING' };
+      }
+      throw e;
+    }
+    const r = rows[0] ?? {};
+    const active = Number(r.active ?? 0);
+    const freshStarted = Number(r.fresh_started ?? 0);
+    const curStatus = r.cur_status == null ? null : String(r.cur_status);
+    const previousWatermark = r.prev_watermark == null ? null : String(r.prev_watermark);
+    if (active === 0) {
+      return { acquired: true, runId: p.runId, recovered: curStatus !== null, previousWatermark };
+    }
+    // Свой lease после потерянного ответа / после отказа без finalize — те же правила, что в acquire().
+    if (curStatus === 'STARTED' && r.cur_run_id != null && String(r.cur_run_id) === p.runId) {
+      return { acquired: true, runId: p.runId, recovered: true, previousWatermark };
+    }
+    if (curStatus === 'STARTED' && p.executionId !== '' && r.cur_execution_id != null
+        && String(r.cur_execution_id) === p.executionId && r.cur_run_id != null) {
+      return { acquired: true, runId: String(r.cur_run_id), recovered: true, previousWatermark };
+    }
+    return { acquired: false, reason: freshStarted > 0 ? 'ALREADY_RUNNING' : 'COMPLETE' };
   }
 
   async finalize(key: ManifestKey, runId: string, patch: FinalizePatch): Promise<void> {
