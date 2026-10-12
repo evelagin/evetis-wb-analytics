@@ -19,6 +19,7 @@ SOURCE_FILES = (
     'full_controller_closure_recovery.py','full_controller_closure_image_check.py',
     'full_fbo_zero_effect_recovery.py','full_fbo_zero_effect_image_check.py',
     'fbo_diagnostic_owner.py','full_fbo_diagnostic_closure.py','fbo_diagnostic_image_check.py','full_pre_authority_gate_recovery.py',
+    'current_contract.py','current_policy.py','current_controller.py','current_image_check.py',
 )
 
 
@@ -87,6 +88,10 @@ def block(c, settings, repo, release=None):
     extended='controller_timeout_seconds' in release
     diagnostic_recovery='fbo_zero_effect_recovery_version' in release
     single_diagnostic='fbo_source_isolation_version' in release
+    current_data='current_data_version' in release
+    if current_data:
+        expected.add('current_data_version')
+        if release.get('schema_version')!=4 or type(release['current_data_version']) is not int or release['current_data_version']!=1:raise ValueError('unqualified operational adapter')
     if single_diagnostic:
         expected.add('fbo_source_isolation_version')
         if type(release['fbo_source_isolation_version']) is not int or release['fbo_source_isolation_version']!=1:raise ValueError('unqualified diagnostic mode')
@@ -111,6 +116,7 @@ def block(c, settings, repo, release=None):
     if extended:required.add('terminal_controller_adapter')
     if diagnostic_recovery:required.add('fbo_zero_effect_adapter')
     if single_diagnostic:required.add('fbo_source_isolation_adapter')
+    if current_data:required.add('current_data_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
@@ -126,6 +132,7 @@ def block(c, settings, repo, release=None):
          'BQ_REF_DATASET':c['datasets']['ref'],'BQ_LOCATION':'EU','TENANT_BINDING_REQUIRED':'1','STRICT_PAGE_CAPS':'1',
          'BACKFILL_ROOT_HASH':settings['root_hash'],'CONTROLLER_IMAGE':release['image'],
          'CONTROLLER_SOURCE_SHA':release['source_sha'],'HISTORICAL_SCHEDULER_STATE':settings['scheduler_state']}
+    if current_data:env['CURRENT_DATA_MODE']='CURRENT_DATA_V1'
     cadence=None
     if release['schema_version']==4:
         from tools.tenancy import controller_cadence as CC,durable_plan as D

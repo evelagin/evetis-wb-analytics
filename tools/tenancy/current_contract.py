@@ -13,12 +13,12 @@ TYPE='CURRENT_DATA_V1'
 ENTITIES=frozenset({'catalog','fbo_postings','stocks','prices','finance_accrual',
                     'ads_campaigns','ads_expense_daily','ads_sku_daily'})
 SNAPSHOTS=frozenset({'catalog','stocks','prices','ads_campaigns'})
-SLA_SECONDS={e:(6*3600 if e=='fbo_postings' else 24*3600) for e in ENTITIES}
+SLA_SECONDS={e:24*3600 for e in ENTITIES}
 FACT_FIELDS=frozenset({'entity','current_scope','observed_at','source_complete',
     'persisted_reconciled','natural_keys_verified','duplicate_natural_keys',
     'coverage_gap_days','source_unit_gaps','source_unit_duplicates','mismatches',
     'finance_finality','certificate_hash','source_run_id'})
-CYCLE_FIELDS=frozenset({'version','purpose','current_scope','sequence','started_at',
+CYCLE_FIELDS=frozenset({'version','purpose','current_scope','sequence','moscow_day','started_at',
     'finished_at','natural','scheduler_job','scheduler_proof_hash',
     'controller_execution','source_concurrency','source_execution_overlap',
     'source_dispatches','receipt_reconciliation_verified','facts'})
@@ -63,6 +63,9 @@ def check_fact(f, scope, now):
 def check_cycle(c, scope, now):
     if not isinstance(c,dict) or set(c)!=CYCLE_FIELDS or c['version']!=1 or type(c['version']) is not int or c['purpose']!=TYPE or c['current_scope']!=scope:fail('closed current cycle required')
     if type(c['sequence']) is not int or c['sequence']<1:fail('cycle generation required')
+    try:day=date.fromisoformat(c['moscow_day'])
+    except (ValueError,TypeError):fail('actual Moscow cycle day required')
+    if at(c['started_at']).astimezone(MSK).date()!=day:fail('cycle day/provenance differs')
     if not at(c['started_at'])<=at(c['finished_at'])<=now:fail('cycle chronology differs')
     if c['natural'] is not True or c['scheduler_job']!='tenant-backfill-tick':fail('manual/build/theoretical wake is not a natural cycle')
     digest(c['scheduler_proof_hash'])
@@ -73,7 +76,9 @@ def check_cycle(c, scope, now):
     if len({f.get('source_run_id') for f in c['facts']})!=len(ENTITIES) or len({f.get('certificate_hash') for f in c['facts']})!=len(ENTITIES):fail('one entity per qualified source execution; copied domain evidence denied')
     # At cycle completion all daily certificates must have been fresh. The
     # final readiness check repeats freshness against the observer's NOW.
-    for f in c['facts']:check_fact(f,scope,at(c['finished_at']))
+    for f in c['facts']:
+        check_fact(f,scope,at(c['finished_at']))
+        if at(f['observed_at'])<at(c['started_at']):fail('cached prior data is not a new current cycle')
     return c
 
 def readiness(cycles,scope,now,*,analytics_visible,historical_independent,systemic_risk,fbo_contract_hash):
@@ -99,6 +104,11 @@ def readiness(cycles,scope,now,*,analytics_visible,historical_independent,system
     last=max(by);chosen=[by.get(n) for n in range(last-2,last+1)]
     if any(c is None for c in chosen):return dict(status='PENDING_CONSECUTIVE_CYCLES',operational_READY=False)
     if len({c['controller_execution'] for c in chosen})!=3 or len({c['scheduler_proof_hash'] for c in chosen})!=3:fail('reused natural wake provenance')
+    all_facts=[f for c in chosen for f in c['facts']]
+    if (len({f['source_run_id'] for f in all_facts})!=len(all_facts)
+        or len({f['certificate_hash'] for f in all_facts})!=len(all_facts)):
+        fail('prior source work cannot be counted as another natural cycle')
     if any(at(a['finished_at'])>at(b['started_at']) for a,b in zip(chosen,chosen[1:])):fail('current cycle overlap')
+    if any(date.fromisoformat(b['moscow_day'])-date.fromisoformat(a['moscow_day'])!=timedelta(days=1) for a,b in zip(chosen,chosen[1:])):fail('three consecutive daily cycles are required')
     for f in chosen[-1]['facts']:check_fact(f,scope,now)
     return dict(status='CURRENT_READY',operational_READY=True,natural_cycles=3,finance_finality='PROVISIONAL',historical_completeness='INDEPENDENT_NOT_INFERRED')

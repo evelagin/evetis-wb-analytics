@@ -14,13 +14,17 @@ def fact(entity,when=NOW):
         finance_finality='PROVISIONAL' if entity=='finance_accrual' else 'NOT_APPLICABLE',
         certificate_hash=str(i)*64,source_run_id='bf-02277a37-829d-45a4-90f4-f3ff8f9cb2f'+str(i))
 def cycle(n):
-    end=NOW-timedelta(minutes=(3-n)*10)
-    return dict(version=1,purpose=C.TYPE,current_scope=SCOPE,sequence=n,
+    end=NOW-timedelta(days=3-n)
+    facts=[fact(e,end) for e in sorted(C.ENTITIES)]
+    for i,f in enumerate(facts,1):
+        f['source_run_id']=f'bf-00000000-0000-0000-0000-{n*100+i:012d}'
+        f['certificate_hash']=f'{n*100+i:064x}'
+    return dict(version=1,purpose=C.TYPE,current_scope=SCOPE,sequence=n,moscow_day=end.astimezone(C.MSK).date().isoformat(),
         started_at=(end-timedelta(minutes=1)).isoformat(),finished_at=end.isoformat(),
         natural=True,scheduler_job='tenant-backfill-tick',scheduler_proof_hash=str(n)*64,
         controller_execution='projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-'+str(n),
         source_concurrency=1,source_execution_overlap=0,source_dispatches=1,
-        receipt_reconciliation_verified=True,facts=[fact(e,end) for e in sorted(C.ENTITIES)])
+        receipt_reconciliation_verified=True,facts=facts)
 def ready(cycles,**overrides):
     args=dict(analytics_visible=True,historical_independent=True,systemic_risk=False,fbo_contract_hash='a'*64)
     args.update(overrides);return C.readiness(cycles,SCOPE,NOW,**args)
@@ -49,7 +53,7 @@ def test_finance_finality_is_not_granted_by_fresh_ingestion():
     x=cycle(3);next(f for f in x['facts'] if f['entity']=='finance_accrual')['finance_finality']='FINAL'
     with pytest.raises(ValueError):ready([cycle(1),cycle(2),x])
 
-@pytest.mark.parametrize('entity,age',[('catalog',24*3600+1),('stocks',24*3600+1),('prices',24*3600+1),('fbo_postings',6*3600+1),('ads_sku_daily',24*3600+1),('finance_accrual',24*3600+1)])
+@pytest.mark.parametrize('entity,age',[('catalog',24*3600+1),('stocks',24*3600+1),('prices',24*3600+1),('fbo_postings',24*3600+1),('ads_sku_daily',24*3600+1),('finance_accrual',24*3600+1)])
 def test_freshness_sla_is_observed_not_inferred(entity,age):
     x=cycle(3);next(f for f in x['facts'] if f['entity']==entity)['observed_at']=(NOW-timedelta(seconds=age)).isoformat()
     with pytest.raises(ValueError):ready([cycle(1),cycle(2),x])
@@ -60,6 +64,15 @@ def test_same_natural_execution_cannot_be_counted_twice():
 
 def test_one_source_run_cannot_be_relabelled_as_multiple_operational_domains():
     x=cycle(3);x['facts'][1]['source_run_id']=x['facts'][0]['source_run_id']
+    with pytest.raises(ValueError):ready([cycle(1),cycle(2),x])
+
+def test_previous_source_result_is_not_a_second_natural_cycle():
+    xs=[cycle(n) for n in range(1,4)]
+    xs[2]['facts'][0]['source_run_id']=xs[1]['facts'][0]['source_run_id']
+    with pytest.raises(ValueError):ready(xs)
+
+def test_cached_current_fact_does_not_count_as_new_source_work():
+    x=cycle(3);x['facts'][0]['observed_at']=cycle(2)['finished_at']
     with pytest.raises(ValueError):ready([cycle(1),cycle(2),x])
 
 def test_gap_free_fbo_contract_is_required_even_with_three_counters():
