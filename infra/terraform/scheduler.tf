@@ -34,7 +34,8 @@ resource "google_cloud_scheduler_job" "wb_stocks_shadow" {
 # собирает имя как "<loader>-<environment>", и Cloud Run Job зовётся так же (как у stocks).
 #
 # Окна — это НЕ несколько построений витрины, а несколько ПОПЫТОК одной:
-#   COMPLETE за D-1 уже есть → acquire() возвращает COMPLETE → guard_skip/exit(0), wb_mart не трогаем;
+#   COMPLETE за D-1 уже есть → acquire() возвращает COMPLETE → guard_skip/exit(0), wb_mart не трогаем
+#     (с source-aware guard — только если COMPLETE собран на текущей версии финансов WB, иначе пересборка);
 #   прошлая попытка ERROR    → ERROR не блокирует → новый execution с новым run_id (ретрай);
 #   прошлая ещё идёт         → свежий STARTED → ALREADY_RUNNING → exit(0).
 #
@@ -68,6 +69,46 @@ resource "google_cloud_scheduler_job" "wb_mart_prod" {
   schedule  = "0 7,9,12,16 * * *"
   time_zone = "Europe/Moscow"
   paused    = true # включается на rollout (PR-Mart3b-4) через scheduler-control.yml
+
+  retry_config {
+    retry_count = 1
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_mart_prod.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler_prod.email
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
+  depends_on = [google_project_service.enabled]
+}
+
+# WB finance source-aware mart refresh (2026-10-12): догоняющий слот витрины под WEEKLY-финансы.
+# ТОТ ЖЕ Job wb-mart-prod (тот же invoker sa-scheduler-prod, тот же lease), отдельное расписание:
+# 12:45 МСК = 09:45 UTC. WEEKLY-отчёт WB ложится по понедельникам в 09:26–09:27 UTC (11 из 13 недель
+# с 27.07.2026; дважды — 15:36 UTC), сборка витрины длится p50 206 с / p95 249 с / max 297 с
+# (LOADER_RUNS COMPLETE с 12.08), худший старт исполнения — 113 с → в худшем случае COMPLETE ~09:52 UTC,
+# запас ~8 мин до P&L магазина (unitka-store-pnl-prod, 10:00 UTC). Час 12:xx МСК — «зелёный» для
+# freshness gate (после восстановления sales в 11:22).
+# Слот осмыслен ТОЛЬКО с source-aware guard (PR fix/wb-mart-finance-watermark): при неизменной версии
+# финансов он выходит guard_skip без сборки. Без него (старый образ) — guard_skip, если COMPLETE за D-1
+# уже есть, иначе обычная полная сборка (лишнее окно-ретрай) — безвредно в обоих случаях.
+# Пересечение с окнами wb_mart_prod (09:00 UTC) и ручным run-now отсекает lease (свежий STARTED).
+# Создаётся НА ПАУЗЕ, применять адресно: plan/apply -target=google_cloud_scheduler_job.wb_mart_prod_finance_catchup.
+# resume — scheduler-control.yml (loader=wb-mart-finance-catchup) после выкатки образа.
+# Стоп-кран: scheduler-control → wb-mart → pause ставит на паузу ОБА расписания витрины (это и основное
+# wb_mart_prod выше); resume wb-mart включает только основное.
+resource "google_cloud_scheduler_job" "wb_mart_prod_finance_catchup" {
+  name      = "wb-mart-prod-finance-catchup"
+  region    = var.region
+  schedule  = "45 12 * * *"
+  time_zone = "Europe/Moscow"
+  paused    = true # включается отдельным шагом через scheduler-control.yml
 
   retry_config {
     retry_count = 1

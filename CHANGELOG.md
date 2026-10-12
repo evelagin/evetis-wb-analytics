@@ -1,5 +1,17 @@
 # CHANGELOG.md
 
+## 2026-10-12 — WB mart: догоняющий слот Scheduler 12:45 МСК под WEEKLY-финансы (НЕ применено, создаётся на паузе)
+
+- `infra/terraform/scheduler.tf`: `google_cloud_scheduler_job.wb_mart_prod_finance_catchup` — `wb-mart-prod-finance-catchup`,
+  `45 12 * * *` Europe/Moscow (09:45 UTC), тот же Job `wb-mart-prod` и SA `sa-scheduler-prod`, `paused = true`,
+  `ignore_changes = [paused]`. Применять адресно: `-target=google_cloud_scheduler_job.wb_mart_prod_finance_catchup`.
+  Осмыслен вместе с source-aware guard (#341); без него безвреден (guard_skip при COMPLETE, иначе обычная сборка).
+- `scheduler-control.yml`: опция `wb-mart-finance-catchup` (pause/resume только слота, run-now — Job `wb-mart-prod`).
+  **Изменено поведение `wb-mart` → `pause`: на паузу встают ОБА расписания витрины** (основное и слот), идемпотентно:
+  state из describe, уже `PAUSED` → пропуск с notice (PauseJob требует ENABLED), `NOT_FOUND` допустим только для слота,
+  иная ошибка — отказ шага после попытки по второму расписанию; `resume`
+  `wb-mart` — только основное. Рунбуки: `docs/ops/STAGE_B_BOOTSTRAP_RUNBOOK.md` (B1), `docs/MART_PR3B4_ROLLOUT_2026-08-11.md`.
+
 ## 2026-10-11 — WB FIRE / LOST INVENTORY: списание утраченного товара и компенсация WB в P&L магазина (НЕ развёрнуто)
 
 Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.

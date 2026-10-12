@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl]
+        options: [wb-stocks, wb-mart, wb-mart-finance-catchup, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl]
       action:
         description: "pause | resume | run-now"
         required: true
@@ -45,7 +45,7 @@ jobs:
           # Terraform создаёт единственный Job wb-prices-prod, теневого контура у наблюдателя
           # цен нет (лишний носитель доступа к ценовому секрету не нужен).
           case "${LOADER}" in
-            wb-mart|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka|ozon-cpo-orders|unitka-store-pnl)
+            wb-mart|wb-mart-finance-catchup|wb-prices|wb-tariffs|wb-funnel|wb-paid-storage|ozon-unitka|ozon-cpo-orders|unitka-store-pnl)
               # UNITKA 2.0 R3: воронка тоже существует только в prod (wb-funnel-prod).
               # Stage E4: платное хранение помечено prodOnly в реестре загрузчиков и пишет
               # production RAW; Terraform создаёт единственный Job wb-paid-storage-prod,
@@ -82,6 +82,44 @@ jobs:
           SCHEDULERS="$JOB"
           if [ "${LOADER}" = "unitka-engine" ]; then
             SCHEDULERS="${JOB}-morning ${JOB}-reserve"
+          fi
+          # Догоняющий слот витрины под WEEKLY-финансы: своё расписание у ТОГО ЖЕ Job'а wb-mart-prod
+          # (infra/terraform/scheduler.tf). pause/resume — только этот слот; run-now — сам Job.
+          if [ "${LOADER}" = "wb-mart-finance-catchup" ]; then
+            JOB="wb-mart-${TARGET_ENV}"
+            SCHEDULERS="${JOB}-finance-catchup"
+          fi
+          # Стоп-кран витрины: pause wb-mart ставит на паузу ОБА её расписания (основное и догоняющий
+          # слот), иначе слот 12:45 МСК продолжил бы запускать Job. resume wb-mart — ТОЛЬКО основное:
+          # догоняющий слот включается отдельно (loader=wb-mart-finance-catchup).
+          # Pause идемпотентен (Cloud Scheduler PauseJob: «A job must be in ENABLED to be paused» —
+          # повторная пауза дала бы FAILED_PRECONDITION и ложный «стоп» в рунбуке B1). По каждому
+          # расписанию, основное ПЕРВЫМ: state из describe → PAUSED: пропуск с notice; иное: pause.
+          # NOT_FOUND допустим только для слота (до terraform apply); любая иная ошибка describe/pause —
+          # громкий отказ шага, но ПОСЛЕ попытки по второму расписанию: стоп-кран останавливает всё, что
+          # может, и не может «тихо» не сработать.
+          if [ "${LOADER}" = "wb-mart" ] && [ "${ACTION}" = "pause" ]; then
+            FAILED=0
+            for S in "${JOB}" "${JOB}-finance-catchup"; do
+              if ! STATE=$(gcloud scheduler jobs describe "$S" --location ${{ vars.GCP_REGION }} --format='value(state)' 2>&1); then
+                if [ "$S" != "${JOB}" ] && echo "${STATE}" | grep -q "NOT_FOUND"; then
+                  echo "::notice title=catch-up slot absent::$S не существует — пропуск"
+                  continue
+                fi
+                echo "::error title=describe failed::$S: ${STATE}"
+                FAILED=1
+                continue
+              fi
+              if [ "${STATE}" = "PAUSED" ]; then
+                echo "::notice title=already paused::$S уже PAUSED — пропуск"
+                continue
+              fi
+              if ! gcloud scheduler jobs pause "$S" --location ${{ vars.GCP_REGION }}; then
+                echo "::error title=pause failed::$S"
+                FAILED=1
+              fi
+            done
+            exit "${FAILED}"
           fi
           case "${ACTION}" in
             pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;
