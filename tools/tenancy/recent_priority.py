@@ -68,7 +68,11 @@ def validate(p,manifest,release):
     if release.get('schema_version') not in {3,4} or release.get('verification',{}).get('recent_priority_adapter')!='PASS':fail('priority release unqualified')
     F.stamp(p['activated_at'])
     refs=p['historical_recovery_policies']
-    if not isinstance(refs,list) or not 1<=len(refs)<=8 or len({r.get('source') for r in refs})!=len(refs):fail('historical authority chain ambiguous')
+    # Release handoffs retain every exact authority reference. The storage
+    # byte ceiling bounds the chain; an arbitrary eight-release counter must
+    # not require dropping immutable history on the ninth qualified release.
+    if not isinstance(refs,list) or not 1<=len(refs)<=256 or len({r.get('source') for r in refs})!=len(refs):fail('historical authority chain ambiguous')
+    if len(D.encoded(p).encode())>16384:fail('historical authority policy exceeds immutable metadata byte ceiling')
     for r in refs:
         if set(r)!={'source','policy_hash'} or not re.fullmatch('[0-9a-f]{40}',r['source']) or r['source']==p['controller_source']:fail('historical release scope differs')
         D.check_hash(r['policy_hash'])
