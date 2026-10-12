@@ -38,3 +38,20 @@ def test_no_exemption_for_foreign_or_ambiguous_source(fault):
     p=Z.sealed({k:v for k,v in p.items() if k!='hash'})
     with pytest.raises(BF.B.EvidenceError):Z.validate(p,b,m,root,final=False)
     assert not effects
+
+
+def test_cloud_automatic_quarantine_does_not_turn_unrelated_failure_into_exemption(monkeypatch):
+ from types import SimpleNamespace
+ m,p,b,root,sh,objects,rows,effects=fixture();b.manifest=m
+ monkeypatch.setattr(Z,'owner_policy',lambda *a:{'qualified':'owner'})
+ doc=sh[0]['payload']['plan'];receipt=sh[1]['payload']['receipt']
+ b.journal=m['project']+'.ozon_raw.OZON_INGESTION_RUNS'
+ b.select=lambda *a:[{'evidence_json':'{"failure":true,"source_category":"HTTP_ERROR"}'}]
+ assert Z.automatic(b,doc,receipt) is None and not effects
+
+
+def test_closed_policy_does_not_authorize_diagnostics_source_budget(monkeypatch):
+ m,p,b,root,sh,objects,rows,effects=fixture()
+ p['source_budget']=12;p=Z.sealed({k:v for k,v in p.items() if k!='hash'})
+ with pytest.raises(BF.B.EvidenceError):Z.header(p,m)
+ assert not effects
