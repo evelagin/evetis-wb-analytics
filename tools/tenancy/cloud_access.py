@@ -172,6 +172,31 @@ class CloudAccess:
                             and re.fullmatch(r'BFC[WX]_'+re.escape(root)+r'_[0-9]{10}',marker) is not None
                             and set(body)=={'tableReference','schema','labels','description'}
                             and body['schema']=={'fields':[{'name':'marker','type':'STRING'}]})
+                    if not permitted and re.fullmatch(r'BFD[CO]_[0-9a-f]{64}',marker):
+                        from tools.tenancy.fbo_diagnostic_owner import policy
+                        from types import SimpleNamespace
+                        observer=SimpleNamespace(c=c,tables=self.tables,clock=lambda:__import__('datetime').datetime.now(__import__('datetime').timezone.utc))
+                        p=policy(observer,marker[5:])
+                        payload=parse_tenant_json(body.get('description','{}'))
+                        permitted=(ref=={'projectId':c['project_id'],'datasetId':match[1],'tableId':marker}
+                            and set(body)=={'tableReference','schema','labels','description'}
+                            and body['schema']=={'fields':[{'name':'marker','type':'STRING'}]}
+                            and body['labels']=={'kind':'fbo_diagnostic'}
+                            and payload.get('policy_hash')==p['hash'] and payload.get('run_id')==p['run_id']
+                            and payload.get('generation')==p['generation'] and payload.get('source_request_limit')==p['request_limit']
+                            and set(payload)==({'policy_hash','run_id','generation','controller_execution','source_request_limit'} if marker.startswith('BFDC_') else {'policy_hash','run_id','generation','operation','execution','source_request_limit'}))
+                    if not permitted and re.fullmatch(r'BFLQ_[0-9a-f]{64}',marker):
+                        from tools.tenancy import full_fbo_diagnostic_closure as LQ
+                        from pipelines.ozon.runtime import full_resume as FR
+                        from types import SimpleNamespace
+                        observer=SimpleNamespace(c=c,tables=self.tables)
+                        p=parse_tenant_json(body.get('description','{}'));LQ.header(p,FR.manifest())
+                        policy=LQ.owner_policy(observer,FR.manifest())
+                        permitted=(policy is not None and marker==LQ.cert(p)
+                            and ref=={'projectId':c['project_id'],'datasetId':match[1],'tableId':marker}
+                            and set(body)=={'tableReference','schema','labels','description'}
+                            and body['schema']=={'fields':[{'name':'marker','type':'STRING'}]} and body['labels']==LQ.value(p)[0]
+                            and all(p[k]==policy[k] for k in ('controller_source','controller_image','runtime_image','runtime_implementation_hash','owner_decision_sha256','qualification_hash','security_hash','isolation_scope')))
         elif authority == "reader" and method == "GET" and body is None:
             jobs = set(c["marketplaces"]["ozon"]["jobs"]) | {"tenant-control", "tenant-backfill-controller"}
             if parsed.netloc == "run.googleapis.com":

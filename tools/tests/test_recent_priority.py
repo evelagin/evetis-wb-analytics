@@ -17,6 +17,22 @@ def policy(m):
         historical_recovery_policies=[dict(source='c'*40,policy_hash='d'*64)],activated_at=NOW.isoformat()),release
 
 
+def test_ninth_exact_release_reference_is_retained_without_business_scope_change():
+    m=fixture()[0];p,r=policy(m);before=deepcopy(p)
+    p['historical_recovery_policies']=[dict(source=f'{i:040x}',policy_hash=f'{i:064x}') for i in range(1,10)]
+    p['hash']=D.digest({k:v for k,v in p.items() if k!='hash'})
+    assert P.validate(p,m,r)==p
+    assert {k:v for k,v in p.items() if k not in {'hash','historical_recovery_policies'}}=={k:v for k,v in before.items() if k not in {'hash','historical_recovery_policies'}}
+
+
+def test_history_marker_byte_ceiling_never_silently_drops_references():
+    m=fixture()[0];p,r=policy(m)
+    p['historical_recovery_policies']=[dict(source=f'{i:040x}',policy_hash=f'{i:064x}') for i in range(1,130)]
+    p['hash']=D.digest({k:v for k,v in p.items() if k!='hash'})
+    with pytest.raises(BF.B.EvidenceError,match='byte ceiling'):P.validate(p,m,r)
+    assert len(p['historical_recovery_policies'])==129
+
+
 def catalog(p):
     i,it=item(p);doc=it['plan'];proof=completion(p,i,doc)
     p.b.store.commit(p.m['hash'],'CHUNK_PLAN',i,it,p.b.clock())

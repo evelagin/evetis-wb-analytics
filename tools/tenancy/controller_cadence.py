@@ -18,7 +18,7 @@ CLAIM_FIELDS = frozenset({'version','tenant','project','root','policy_hash','sou
 CLOSE_FIELDS = frozenset({'version','claim_hash','status','source_dispatches','closed_at','hash'})
 STATUSES = frozenset({'DISPATCHED','MONITORING','WAITING','CHUNK_COMPLETE',
     'FULL_HISTORY_COMPLETE','SOURCE_FREE_RECOVERED','QUIESCENT_PAUSED',
-    'STOPPED','WAITING_READ_RETRY','SNAPSHOT_DAY_ROLLOVER','RECONCILED_BOUNDARY'})
+    'LOCAL_SOURCE_QUARANTINED','STOPPED','WAITING_READ_RETRY','SNAPSHOT_DAY_ROLLOVER','RECONCILED_BOUNDARY'})
 WAITS = frozenset({'WAIT_ACTIVE_CONTROLLER','WAIT_ACTIVE_RUNTIME',
                    'WAIT_RECONCILIATION','SKIP_AUTHORITY_HELD'})
 
@@ -71,12 +71,30 @@ def execution(backend, x, *, active=False):
         fail('unknown controller execution identity')
     if at(x.get('createTime'))>backend.clock() or x.get('retriedCount',0)!=0:
         fail('unknown execution time/retry')
-    O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x.get('template',{})}},block)
+    verify_execution_template(backend,x,block)
     if active and (x.get('completionTime') or x.get('failedCount',0) or x.get('cancelledCount',0)):
         fail('unknown active controller state')
     if x.get('completionTime') and at(x['completionTime'])<at(x['createTime']):
         fail('unknown terminal controller state')
     return x
+
+
+def verify_execution_template(backend,x,block,*,policy_time=None,runtime_hash=None,runtime_image=None):
+    """Only the exact owner diagnostic command may share the normal wake CAS."""
+    from copy import deepcopy
+    from tools.tenancy import orchestration_contract as O
+    t=deepcopy(x.get('template',{}));containers=t.get('containers') or []
+    args=containers[0].get('args') if len(containers)==1 else None
+    if args:
+        if len(args)!=2 or args[0]!='--fbo-window-diagnostic' or not re.fullmatch('[0-9a-f]{64}',args[1]):fail('unqualified controller command')
+        marker=backend.tables.get_table(backend.c['datasets']['ref'],'BFDA_'+args[1]);p=parse(marker[1]) if marker else {}
+        from pipelines.ozon.runtime import fbo_diagnostic as Q
+        Q.validate(p,backend.c['project_id'],runtime_hash or BF.B.implementation_hash(),policy_time or backend.clock())
+        env=block['job']['env']
+        if (marker!=({'kind':'fbo_diagnostic','root':p['root'][:16]},D.encoded(p)) or p['hash']!=args[1]
+            or (p['root'],p['controller_source'],p['controller_image'],p['runtime_image'])!=(env['BACKFILL_ROOT_HASH'],env['CONTROLLER_SOURCE_SHA'],block['job']['image'],runtime_image or backend.c['marketplaces']['ozon']['runtime_image'])):fail('diagnostic command authority differs')
+        containers[0].pop('args')
+    O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':t}},block)
 
 
 def inventory(backend):
@@ -146,7 +164,7 @@ def historical_closed_claim(backend,claim):
             or release.get('cadence_policy')!=backend.c['orchestration']['cadence']):
         fail('historical controller descriptor differs')
     block=O.block(O.historical_contract(backend.c,release),settings,BF.REPO,release)
-    O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},block)
+    verify_execution_template(backend,x,block,policy_time=at(claim['created_at']),runtime_hash=release['runtime_implementation_hash'],runtime_image=release['runtime_image'])
     return claim
 
 

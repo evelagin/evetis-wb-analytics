@@ -7,7 +7,7 @@ from tools.tenancy.validation import parse_tenant_json
 JOB = 'tenant-backfill-controller'
 SCHEDULER = 'tenant-backfill-tick'
 SOURCE_FILES = (
-    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py',
+    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py','registry.py','orchestration_plan.py',
     'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py','controller_stop_recovery.py','controller_stop_image_check.py','controller_dispatch_recovery.py','controller_dispatch_image_check.py',
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
     'full_leaf_recovery.py','full_leaf_image_check.py','full_first_receipt_recovery.py','full_first_receipt_image_check.py','controller_diagnostics.py',
@@ -18,12 +18,32 @@ SOURCE_FILES = (
     'full_pretransport_recovery.py','full_pretransport_image_check.py',
     'full_controller_closure_recovery.py','full_controller_closure_image_check.py',
     'full_fbo_zero_effect_recovery.py','full_fbo_zero_effect_image_check.py',
+    'fbo_diagnostic_owner.py','full_fbo_diagnostic_closure.py','fbo_diagnostic_image_check.py','full_pre_authority_gate_recovery.py',
 )
 
 
 def implementation_hash(repo):
     from tools.tenancy import tenant_backfill as BF
     return BF.B.digest({n:hashlib.sha256((repo/'tools/tenancy'/n).read_bytes()).hexdigest() for n in SOURCE_FILES})
+
+
+def registered_runtime_pair(c,release,repo):
+    """Pure registry projection, no recursive full-plan construction or GO.
+
+    A retained controller's paired runtime must itself have exact immutable
+    registration and matching build qualification. The outer runtime pointer
+    and every tenant boundary remain unchanged.
+    """
+    if release['runtime_image']==c['marketplaces']['ozon']['runtime_image']:return c
+    from copy import deepcopy
+    retained=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{release['source_sha']}.json").read_text())
+    if retained!=release:raise ValueError('historical controller registration differs')
+    runtimes=[parse_tenant_json(p.read_text()) for p in (repo/'infra/tenant/releases/ozon').glob('*.json')]
+    runtimes=[r for r in runtimes if r.get('image')==release['runtime_image']]
+    if len(runtimes)!=1:raise ValueError('historical runtime registration missing/ambiguous')
+    facts=runtimes[0].get('verification',{}).get('built_artifact',{})
+    if facts.get('backfill_implementation_hash')!=release['runtime_implementation_hash'] or facts.get('backfill_window_v1')!='PASS':raise ValueError('historical runtime pair unqualified')
+    old=deepcopy(c);old['marketplaces']['ozon']['runtime_image']=release['runtime_image'];return old
 
 
 def historical_contract(c,release,manifest=None):
@@ -66,6 +86,10 @@ def block(c, settings, repo, release=None):
     if release.get('schema_version')==4:expected.add('cadence_policy')
     extended='controller_timeout_seconds' in release
     diagnostic_recovery='fbo_zero_effect_recovery_version' in release
+    single_diagnostic='fbo_source_isolation_version' in release
+    if single_diagnostic:
+        expected.add('fbo_source_isolation_version')
+        if type(release['fbo_source_isolation_version']) is not int or release['fbo_source_isolation_version']!=1:raise ValueError('unqualified diagnostic mode')
     if diagnostic_recovery:
         expected.add('fbo_zero_effect_recovery_version')
         if release.get('schema_version')!=4 or type(release['fbo_zero_effect_recovery_version']) is not int or release['fbo_zero_effect_recovery_version']!=1:
@@ -86,6 +110,7 @@ def block(c, settings, repo, release=None):
     if release['schema_version']==4:required.add('cadence_overlap_adapter')
     if extended:required.add('terminal_controller_adapter')
     if diagnostic_recovery:required.add('fbo_zero_effect_adapter')
+    if single_diagnostic:required.add('fbo_source_isolation_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
@@ -123,8 +148,9 @@ def paused_contract(c, repo):
     out=deepcopy(c);old=out.get('orchestration')
     if not old:raise ValueError('registered controller required for paused staging')
     env=old['job']['env']
-    out['orchestration']=block(out,{'release':env['CONTROLLER_SOURCE_SHA'],
-        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo)
+    r=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{env['CONTROLLER_SOURCE_SHA']}.json").read_text())
+    out['orchestration']=block(registered_runtime_pair(out,r,repo),{'release':env['CONTROLLER_SOURCE_SHA'],
+        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo,r)
     return out
 
 

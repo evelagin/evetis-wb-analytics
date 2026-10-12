@@ -68,7 +68,11 @@ def validate(p,manifest,release):
     if release.get('schema_version') not in {3,4} or release.get('verification',{}).get('recent_priority_adapter')!='PASS':fail('priority release unqualified')
     F.stamp(p['activated_at'])
     refs=p['historical_recovery_policies']
-    if not isinstance(refs,list) or not 1<=len(refs)<=8 or len({r.get('source') for r in refs})!=len(refs):fail('historical authority chain ambiguous')
+    # Release handoffs retain every exact authority reference. The storage
+    # byte ceiling bounds the chain; an arbitrary eight-release counter must
+    # not require dropping immutable history on the ninth qualified release.
+    if not isinstance(refs,list) or not 1<=len(refs)<=256 or len({r.get('source') for r in refs})!=len(refs):fail('historical authority chain ambiguous')
+    if len(D.encoded(p).encode())>16384:fail('historical authority policy exceeds immutable metadata byte ceiling')
     for r in refs:
         if set(r)!={'source','policy_hash'} or not re.fullmatch('[0-9a-f]{40}',r['source']) or r['source']==p['controller_source']:fail('historical release scope differs')
         D.check_hash(r['policy_hash'])
@@ -345,8 +349,15 @@ def monitoring(backend,manifest,records,done,p,now):
     failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
     backend.verified_cooldown_failures=failed
     approved=approved+failed
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG
+    local=LQ.load(backend,manifest,records)
+    approved+=local+PAG.load(backend,manifest,records)
+    from tools.tenancy import full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR,full_fbo_zero_effect_recovery as ZE
+    for module in (PB,PT,FR,ZE):
+        if any(r['kind']==module.KIND for r in records):approved+=module.load(backend,manifest,records)
+    if any(r['kind']==CR.KIND for r in records):approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
     stops={D.digest(r) for r in records if r['kind']=='STOPPED'}-{x['stop_hash'] for x in approved}
-    plans={n:r['payload'] for n,r in enumerate(records) if r['kind'] in {'CHUNK_PLAN','DEPENDENCY_PLAN'}}
+    plans={n:r['payload'] for n,r in enumerate(records) if r['kind'] in {'CHUNK_PLAN','DEPENDENCY_PLAN'} and not (local and r['payload']['plan']['runtime_plan']['entity']=='fbo_postings')}
     waiting=len(pending_receipts(backend,plans))
     out=progress(manifest,records,done,p,now=now,waiting_receipts=waiting,unresolved_stops=len(stops))
     if out['post_activation_completed_leaves']>=5:

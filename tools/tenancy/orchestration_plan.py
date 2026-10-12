@@ -16,7 +16,9 @@ def verified(c):
     block=c.get('orchestration')
     if not block:return None
     env=block['job']['env']
-    expected=O.block(c,{'release':env['CONTROLLER_SOURCE_SHA'],'root_hash':env['BACKFILL_ROOT_HASH'],
+    from tools.tenancy.validation import parse_tenant_json
+    retained=parse_tenant_json((BF.REPO/'infra/tenant/releases/backfill'/f"{env['CONTROLLER_SOURCE_SHA']}.json").read_text())
+    expected=O.block(O.registered_runtime_pair(c,retained,BF.REPO),{'release':env['CONTROLLER_SOURCE_SHA'],'root_hash':env['BACKFILL_ROOT_HASH'],
                        'scheduler_state':block['scheduler']['state']},BF.REPO)
     if block!=expected:raise ValueError('orchestration contract differs from qualified canonical release')
     return block
