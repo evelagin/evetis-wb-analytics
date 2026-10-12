@@ -411,7 +411,7 @@ precheck → B1 PAUSE → B2 … B9 → ЧЕКПОИНТ 1 → C … J → ЧЕ�
 
 | # | Действие | Гейт / стоп |
 |---|---|---|
-| **B1** | `scheduler-control.yml` → `prod` / `wb-mart` / `pause`; убедиться, что `wb-mart-prod` **и** `wb-mart-prod-finance-catchup` (догоняющий слот, с 2026-10-12) в состоянии `PAUSED` — pause `wb-mart` ставит на паузу оба; resume `wb-mart` включает только основное, слот — отдельно (`wb-mart-finance-catchup`) | не встало на паузу → стоп |
+| **B1** | `scheduler-control.yml` → `prod` / `wb-mart` / `pause`; убедиться, что `wb-mart-prod` **и** `wb-mart-prod-finance-catchup` (догоняющий слот, с 2026-10-12) в состоянии `PAUSED` — pause `wb-mart` ставит на паузу оба и идемпотентен (уже `PAUSED` → notice «уже PAUSED», не ошибка; слот до apply → notice «не существует»); resume `wb-mart` включает только основное, слот — отдельно (`wb-mart-finance-catchup`) | шаг упал или расписание не `PAUSED` → стоп |
 | **B2** | оба lock `FALSE`, последний mart Completed | lock занят → стоп |
 | **B2a** | **контрольная пересборка на прежней семантике**: `CALL sp_bootstrap_facts('')`, затем `CALL sp_build_mart_sku_daily(DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL 1 DAY), NULL, '')` — ровно то, что делает `wb-mart-prod` | ASSERT упал → стоп, откат не нужен |
 | **B2b** | **B0**: `FP_fingerprint.sql` целиком + `FP-4` водяные знаки + `P1` + `I5` | — |

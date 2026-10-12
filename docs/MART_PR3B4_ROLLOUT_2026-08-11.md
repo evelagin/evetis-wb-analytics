@@ -76,7 +76,8 @@ Rollout считается принятым, если за 3–5 подряд с
 
 Если пошло не так: `Actions → scheduler-control` → `action = pause`, `loader = wb-mart`,
 `environment = prod`. С 2026-10-12 это ставит на паузу ОБА расписания витрины: `wb-mart-prod` и догоняющий
-слот `wb-mart-prod-finance-catchup` (12:45 МСК). `resume` с `loader = wb-mart` включает только основное
+слот `wb-mart-prod-finance-catchup` (12:45 МСК); уже стоящее на паузе расписание пропускается с notice
+(повторный pause идемпотентен). `resume` с `loader = wb-mart` включает только основное
 расписание; слот включается отдельно (`loader = wb-mart-finance-catchup`). Расписание останется в Terraform (`ignore_changes = [paused]` гарантирует,
 что следующий `terraform apply` состояние паузы не тронет), витрину можно строить `run-now`,
 как раньше. Данные при этом не страдают: `sp_build_mart_sku_daily` полностью пересобирает

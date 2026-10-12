@@ -91,17 +91,35 @@ jobs:
           fi
           # Стоп-кран витрины: pause wb-mart ставит на паузу ОБА её расписания (основное и догоняющий
           # слот), иначе слот 12:45 МСК продолжил бы запускать Job. resume wb-mart — ТОЛЬКО основное:
-          # догоняющий слот включается отдельно (loader=wb-mart-finance-catchup). Пропускается ТОЛЬКО
-          # доказанно несуществующий слот (NOT_FOUND, до terraform apply); при любой иной ошибке describe
-          # pause всё равно пытается и падает громко — стоп-кран не может «тихо» не сработать.
+          # догоняющий слот включается отдельно (loader=wb-mart-finance-catchup).
+          # Pause идемпотентен (Cloud Scheduler PauseJob: «A job must be in ENABLED to be paused» —
+          # повторная пауза дала бы FAILED_PRECONDITION и ложный «стоп» в рунбуке B1). По каждому
+          # расписанию, основное ПЕРВЫМ: state из describe → PAUSED: пропуск с notice; иное: pause.
+          # NOT_FOUND допустим только для слота (до terraform apply); любая иная ошибка describe/pause —
+          # громкий отказ шага, но ПОСЛЕ попытки по второму расписанию: стоп-кран останавливает всё, что
+          # может, и не может «тихо» не сработать.
           if [ "${LOADER}" = "wb-mart" ] && [ "${ACTION}" = "pause" ]; then
-            SCHEDULERS="${JOB} ${JOB}-finance-catchup"
-            if ! DESCRIBE_OUT=$(gcloud scheduler jobs describe "${JOB}-finance-catchup" --location ${{ vars.GCP_REGION }} 2>&1); then
-              if echo "${DESCRIBE_OUT}" | grep -q "NOT_FOUND"; then
-                SCHEDULERS="${JOB}"
-                echo "::notice title=catch-up slot absent::${JOB}-finance-catchup не существует — на паузу ставится только ${JOB}"
+            FAILED=0
+            for S in "${JOB}" "${JOB}-finance-catchup"; do
+              if ! STATE=$(gcloud scheduler jobs describe "$S" --location ${{ vars.GCP_REGION }} --format='value(state)' 2>&1); then
+                if [ "$S" != "${JOB}" ] && echo "${STATE}" | grep -q "NOT_FOUND"; then
+                  echo "::notice title=catch-up slot absent::$S не существует — пропуск"
+                  continue
+                fi
+                echo "::error title=describe failed::$S: ${STATE}"
+                FAILED=1
+                continue
               fi
-            fi
+              if [ "${STATE}" = "PAUSED" ]; then
+                echo "::notice title=already paused::$S уже PAUSED — пропуск"
+                continue
+              fi
+              if ! gcloud scheduler jobs pause "$S" --location ${{ vars.GCP_REGION }}; then
+                echo "::error title=pause failed::$S"
+                FAILED=1
+              fi
+            done
+            exit "${FAILED}"
           fi
           case "${ACTION}" in
             pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;
