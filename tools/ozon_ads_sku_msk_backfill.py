@@ -20,6 +20,11 @@
   rollback  Запись, зеркально: ASSERT «RAW = образ ПОСЛЕ» → вернуть образ ДО (UPDATE) и удалить строки,
             которых до записи не было. Без --confirm ROLLBACK-<12 знаков> — только печать SQL.
 
+Окно суточного прогона: план и запись отказывают, если в них есть сутки ≥ сегодня МСК − 7 (их после развёртывания
+D2 перезапишет сам суточный прогон, LOOKBACK 7); --to ≤ сегодня − 8. Отпечаток покрывает строки и сводки days/totals.
+Задание BigQuery: метка purpose=ozon-d2-backfill; ожидание до DONE (≤ 6 ч, иначе отказ с jobId), затем errorResult и
+число строк MERGE/DELETE дочерних заданий против плана.
+
 Идемпотентность: план после применения пуст (simulate_apply + plan, тест), ключ плана уникален; повтор apply
 упирается в ASSERT образа ДО и ничего не меняет.
 
@@ -36,7 +41,9 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -50,6 +57,29 @@ TEXT = ("attribution_status", "source_endpoint", "source_payload_hash")
 COMPARED = MONEY + PCT + COUNTS + ("attribution_status",)
 WRITTEN = MONEY + PCT + COUNTS + TEXT + ("extracted_at", "ingestion_run_id")
 SOURCE_ENDPOINT = "POST /api/client/statistics (async report)"
+JOB_LABEL = "ozon-d2-backfill"
+BQ_HOST = "https://www.googleapis.com/bigquery/v2"
+# Суточный прогон ads_sku_daily (LOOKBACK 7) после развёртывания D2 сам перезапишет сутки T−7…T полными сутками МСК.
+# Догрузка трогает только более старые сутки: иначе гонка с прогоном и лишняя запись.
+DAILY_RUN_LOOKBACK_DAYS = 7
+JOB_MAX_WAIT_S = 6 * 3600
+MSK = timezone(timedelta(hours=3))
+
+
+def today_msk() -> date:
+    return datetime.now(MSK).date()
+
+
+def latest_allowed_day(today: date) -> date:
+    return today - timedelta(days=DAILY_RUN_LOOKBACK_DAYS + 1)
+
+
+def _guard_daily_window(last_day: str, today: date):
+    limit = latest_allowed_day(today)
+    if date.fromisoformat(last_day) > limit:
+        raise PlanError(f"сутки {last_day} внутри окна суточного прогона (сегодня МСК {today}, окно "
+                        f"{today - timedelta(days=DAILY_RUN_LOOKBACK_DAYS)}…{today}): их долечит суточный прогон "
+                        f"с исправлением D2; догрузка — только по {limit} включительно (--to ≤ {limit})")
 
 
 class PlanError(RuntimeError):
@@ -105,13 +135,17 @@ def _jsonable(v):
 
 
 def fingerprint(manifest: dict) -> str:
-    body = {k: manifest[k] for k in ("version", "table", "scope", "rows")}
+    body = {k: v for k, v in manifest.items() if k != "fingerprint"}   # строки, сводки days/totals, scope
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False,
                                      default=_jsonable).encode()).hexdigest()
 
 
-def build_plan(source_rows, raw_rows, sku_map, d0: str, d1: str, *, extracted_at: str) -> dict:
-    """Чистая функция: источник × RAW → манифест. Никакого ввода-вывода."""
+def build_plan(source_rows, raw_rows, sku_map, d0: str, d1: str, *, extracted_at: str, today: date) -> dict:
+    """Чистая функция: источник × RAW → манифест. Никакого ввода-вывода.
+
+    `today` — сутки МСК построения плана: d1 не позже today − 8 (окно суточного прогона не трогается).
+    """
+    _guard_daily_window(d1, today)
     src = {k: v for k, v in _index(source_rows, "источник").items() if d0 <= k[0] <= d1}
     raw = {k: v for k, v in _index(raw_rows, "RAW").items() if d0 <= k[0] <= d1}
     mapped = defaultdict(set)
@@ -227,8 +261,7 @@ def _rows_cte(manifest, image):
 
 def _mismatch_sql(project, cte_name):
     t = f"`{project}.{TABLE}`"
-    diff = " OR ".join(f"t.{c} IS DISTINCT FROM r.{c}" for c in ("attributed_spend_rub", "ingestion_run_id",
-                                                                   "extracted_at"))
+    diff = " OR ".join(f"t.{c} IS DISTINCT FROM r.{c}" for c in WRITTEN)   # вся записываемая строка
     return (f"(SELECT COUNT(*) FROM {cte_name} r LEFT JOIN {t} t USING (date, campaign_id, sku) "
             f"WHERE (r.present AND (t.sku IS NULL OR {diff})) OR (NOT r.present AND t.sku IS NOT NULL))")
 
@@ -264,6 +297,53 @@ def apply_sql(manifest, project, *, rollback=False) -> str:
     ])
 
 
+def _dml_count(job) -> int:
+    return int(((job.get("statistics") or {}).get("query") or {}).get("numDmlAffectedRows") or 0)
+
+
+def run_script(project, sql, token, *, expect_merge: int, expect_delete: int, call=None, sleep=time.sleep,
+               clock=time.monotonic, max_wait_s=JOB_MAX_WAIT_S) -> dict:
+    """Исполнить скрипт и дождаться DONE; успех — только DONE без ошибки и с ожидаемым числом строк DML.
+
+    Не DONE за max_wait_s — отказ с jobId (задание может ещё идти: смотреть его, не перезапускать).
+    """
+    if call is None:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from promo_canonical_deploy import call
+    body = {"configuration": {"query": {"query": sql, "useLegacySql": False}, "labels": {"purpose": JOB_LABEL}},
+            "jobReference": {"projectId": project, "location": "EU"}}
+    code, job = call("POST", f"{BQ_HOST}/projects/{project}/jobs", token, body)
+    if code != 200 or not (job.get("jobReference") or {}).get("jobId"):
+        raise SystemExit(f"jobs.insert HTTP {code}: {((job or {}).get('error') or {}).get('message', '')[:300]}")
+    jid = job["jobReference"]["jobId"]
+    start = clock()
+    while (job.get("status") or {}).get("state") != "DONE":
+        if clock() - start > max_wait_s:
+            raise SystemExit(f"задание {jid} не завершилось за {max_wait_s} с (state="
+                             f"{(job.get('status') or {}).get('state')}); результат неизвестен — проверить задание, "
+                             f"не перезапускать")
+        sleep(5)
+        code, got = call("GET", f"{BQ_HOST}/projects/{project}/jobs/{jid}?location=EU", token)
+        if code == 200:
+            job = got
+    err = (job.get("status") or {}).get("errorResult")
+    if err:
+        raise SystemExit(f"задание {jid} завершилось ошибкой (транзакция откатана): {err.get('message', '')[:300]}")
+    code, kids = call("GET", f"{BQ_HOST}/projects/{project}/jobs?parentJobId={jid}&maxResults=100", token)
+    if code != 200:
+        raise SystemExit(f"задание {jid}: дочерние задания не прочитаны (HTTP {code}) — проверить вручную")
+    children = (kids or {}).get("jobs") or []
+    bad = [c for c in children if (c.get("status") or {}).get("errorResult")]
+    by_type = defaultdict(int)
+    for c in children:
+        st = ((c.get("statistics") or {}).get("query") or {}).get("statementType")
+        by_type[st] += _dml_count(c)
+    if bad or by_type.get("MERGE", 0) != expect_merge or by_type.get("DELETE", 0) != expect_delete:
+        raise SystemExit(f"задание {jid}: DML не совпал с планом (MERGE {by_type.get('MERGE', 0)}/{expect_merge}, "
+                         f"DELETE {by_type.get('DELETE', 0)}/{expect_delete}, ошибок {len(bad)})")
+    return job
+
+
 def _load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -286,6 +366,7 @@ def main(argv=None) -> int:
     a.add_argument("--to", dest="d1", required=True)
     a.add_argument("--extracted-at", required=True, help="момент получения источника, UTC ISO")
     a.add_argument("--out", required=True)
+    a.add_argument("--today", help="сутки МСК построения (по умолчанию — сейчас); только для воспроизведения")
     for name in ("check", "apply", "rollback"):
         b = sub.add_parser(name)
         b.add_argument("--manifest", required=True)
@@ -296,8 +377,12 @@ def main(argv=None) -> int:
             b.add_argument("--token-command")
     args = p.parse_args(argv)
     if args.cmd == "plan":
-        m = build_plan(_load(args.source), _load(args.raw), _load(args.sku_map), args.d0, args.d1,
-                       extracted_at=args.extracted_at)
+        today = date.fromisoformat(args.today) if args.today else today_msk()
+        try:
+            m = build_plan(_load(args.source), _load(args.raw), _load(args.sku_map), args.d0, args.d1,
+                           extracted_at=args.extracted_at, today=today)
+        except PlanError as e:
+            raise SystemExit(f"план не построен: {e}")
         Path(args.out).write_text(json.dumps(m, ensure_ascii=False, indent=1, default=_jsonable), encoding="utf-8")
         print(json.dumps({"fingerprint": m["fingerprint"], **m["totals"]}, default=_jsonable, ensure_ascii=False))
         return 0
@@ -306,6 +391,11 @@ def main(argv=None) -> int:
         print(check_sql(m, args.project))
         return 0
     fp = _verified(m, args.fingerprint)
+    if args.cmd == "apply" and m["rows"]:
+        try:
+            _guard_daily_window(max(x["date"] for x in m["rows"]), today_msk())
+        except PlanError as e:
+            raise SystemExit(f"запись не выполнена: {e}; перестроить план")
     sql = apply_sql(m, args.project, rollback=args.cmd == "rollback")
     need = f"{'ROLLBACK' if args.cmd == 'rollback' else 'APPLY'}-{fp[:12]}"
     if args.confirm != need:
@@ -315,9 +405,10 @@ def main(argv=None) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import os
     from lib.bq_readonly import resolve_token
-    from spp_daily_view_deploy import run_job
     token = resolve_token("BQ_DEPLOY_ACCESS_TOKEN", args.token_command, os.environ)
-    run_job(args.project, sql, token, dry=False)
+    post = "before" if args.cmd == "rollback" else "after"
+    present = sum(1 for x in m["rows"] if x[post] is not None)
+    run_script(args.project, sql, token, expect_merge=present, expect_delete=len(m["rows"]) - present)
     print(f"записано: {len(m['rows'])} строк, отпечаток {fp}")
     return 0
 

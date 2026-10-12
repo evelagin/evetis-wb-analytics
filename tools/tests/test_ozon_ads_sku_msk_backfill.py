@@ -4,6 +4,7 @@
 """
 import json
 import sys
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import ozon_ads_sku_msk_backfill as t  # noqa: E402
 
 TS = "2026-10-11T20:00:00Z"
+TODAY = date(2026, 10, 12)          # окно суточного прогона 05.10…12.10; догрузка — по 04.10
 MAP = [{"marketplace": "OZON", "marketplace_sku": "900001", "internal_sku": "SYN-A"},
        {"marketplace": "OZON", "marketplace_sku": "900002", "internal_sku": "SYN-B"},
        {"marketplace": "WB", "marketplace_sku": "900003", "internal_sku": "SYN-C"}]
@@ -41,8 +43,8 @@ def world():
     return src, raw
 
 
-def plan(src, raw, d0="2026-09-01", d1="2026-09-30"):
-    return t.build_plan(src, raw, MAP, d0, d1, extracted_at=TS)
+def plan(src, raw, d0="2026-09-01", d1="2026-09-30", today=TODAY):
+    return t.build_plan(src, raw, MAP, d0, d1, extracted_at=TS, today=today)
 
 
 def roundtrip(m):
@@ -95,6 +97,13 @@ def test_plan_is_deterministic_and_fingerprint_survives_json():
     assert t.fingerprint(loaded) == a["fingerprint"]
     loaded["rows"][0]["after"]["attributed_spend_rub"] = "999.00"
     assert t.fingerprint(loaded) != a["fingerprint"]
+    for part, key in (("totals", "delta_rub"), ("days", 0)):        # сводки, по которым даётся ACK
+        other = roundtrip(a)
+        if part == "days":
+            other["days"][key]["delta_rub"] = "0.00"
+        else:
+            other[part][key] = "0.00"
+        assert t.fingerprint(other) != a["fingerprint"], part
 
 
 def test_plan_refuses_deletion_and_duplicate_keys():
@@ -161,3 +170,93 @@ def test_unsafe_literal_is_refused():
     src[5]["sku"] = "900003'; DROP"           # вставляемая строка: план строится, SQL — нет
     with pytest.raises(t.PlanError, match="недопустимый символ"):
         t.apply_sql(roundtrip(plan(src, raw)), "p")
+
+
+# ───────────────────────────────────────── окно суточного прогона (P3-3)
+def test_plan_refuses_days_inside_daily_run_window():
+    src, raw = world()
+    assert t.latest_allowed_day(TODAY) == date(2026, 10, 4)
+    plan(src, raw, d1="2026-10-04")                                   # граница допустима
+    with pytest.raises(t.PlanError, match="долечит суточный прогон"):
+        plan(src, raw, d1="2026-10-05")
+
+
+def test_cli_plan_explains_daily_window(tmp_path):
+    src, raw = world()
+    for name, data in (("s", src), ("r", raw), ("m", MAP)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(SystemExit, match="суточный прогон"):
+        t.main(["plan", "--source", str(tmp_path / "s.json"), "--raw", str(tmp_path / "r.json"),
+                "--sku-map", str(tmp_path / "m.json"), "--from", "2026-09-01", "--to", "2026-10-11",
+                "--extracted-at", TS, "--out", str(tmp_path / "o.json"), "--today", "2026-10-12"])
+
+
+def test_apply_refuses_stale_plan_that_reached_daily_window(tmp_path, monkeypatch):
+    src, raw = world()
+    m = plan(src, raw)
+    f = tmp_path / "m.json"
+    f.write_text(json.dumps(m, default=t._jsonable), encoding="utf-8")
+    monkeypatch.setattr(t, "today_msk", lambda: date(2026, 9, 8))     # 03.09 теперь внутри окна
+    with pytest.raises(SystemExit, match="перестроить план"):
+        t.main(["apply", "--manifest", str(f), "--fingerprint", m["fingerprint"],
+                "--confirm", f"APPLY-{m['fingerprint'][:12]}"])
+
+
+# ───────────────────────────────────────── образ ДО — вся строка (P3-2)
+def test_guard_compares_every_written_column():
+    src, raw = world()
+    sql = t.check_sql(roundtrip(plan(src, raw)), "p")
+    for col in t.WRITTEN:
+        assert f"t.{col} IS DISTINCT FROM r.{col}" in sql, col
+
+
+# ───────────────────────────────────────── ожидание задания (P2-1, P3-5)
+class FakeJobs:
+    def __init__(self, states, *, error=None, merge=3, delete=0, child_error=False):
+        self.states, self.error, self.merge, self.delete, self.child_error = list(states), error, merge, delete, \
+            child_error
+        self.posted = None
+
+    def __call__(self, method, url, token, body=None):
+        if method == "POST":
+            self.posted = body
+            return 200, {"jobReference": {"jobId": "job_d2"}, "status": {"state": "PENDING"}}
+        if "parentJobId=" in url:
+            kids = [{"statistics": {"query": {"statementType": "MERGE", "numDmlAffectedRows": str(self.merge)}},
+                     "status": {"state": "DONE", **({"errorResult": {"message": "x"}} if self.child_error else {})}},
+                    {"statistics": {"query": {"statementType": "DELETE", "numDmlAffectedRows": str(self.delete)}},
+                     "status": {"state": "DONE"}},
+                    {"statistics": {"query": {"statementType": "ASSERT"}}, "status": {"state": "DONE"}}]
+            return 200, {"jobs": kids}
+        state = self.states.pop(0) if self.states else "RUNNING"
+        st = {"state": state, **({"errorResult": {"message": self.error}} if state == "DONE" and self.error else {})}
+        return 200, {"jobReference": {"jobId": "job_d2"}, "status": st}
+
+
+def _run(fake, **kw):
+    clock = iter(range(0, 10 ** 6, 5))
+    return t.run_script("p", "SELECT 1", "tok", call=fake, sleep=lambda _s: None, clock=lambda: next(clock), **kw)
+
+
+def test_job_success_only_after_done_with_expected_dml():
+    fake = FakeJobs(["RUNNING", "RUNNING", "DONE"], merge=3, delete=1)
+    job = _run(fake, expect_merge=3, expect_delete=1)
+    assert job["status"]["state"] == "DONE"
+    assert fake.posted["configuration"]["labels"] == {"purpose": "ozon-d2-backfill"}
+
+
+def test_job_not_done_in_time_fails_with_job_id():
+    with pytest.raises(SystemExit) as e:
+        _run(FakeJobs([]), expect_merge=3, expect_delete=0, max_wait_s=60)
+    assert "job_d2" in str(e.value.code) and "не завершилось" in str(e.value.code)
+    assert e.value.code not in (0, None)
+
+
+@pytest.mark.parametrize("kw,msg", [
+    ({"error": "ASSERT failed: RAW не совпал"}, "завершилось ошибкой"),
+    ({"merge": 2}, "DML не совпал"),
+    ({"child_error": True}, "DML не совпал"),
+])
+def test_job_errors_and_dml_mismatch_fail(kw, msg):
+    with pytest.raises(SystemExit, match=msg):
+        _run(FakeJobs(["DONE"], **kw), expect_merge=3, expect_delete=0)
