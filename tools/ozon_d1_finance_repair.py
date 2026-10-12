@@ -15,7 +15,10 @@ final, evidence_file, sha256), снятые read-only клиентом. Стро
 pipelines/ozon/runtime/entities._finance_rows (тот же код, что и в суточной загрузке).
 
 Режимы:
-  PLAN (по умолчанию, BigQuery только чтение через lib.bq_readonly):
+  PLAN (по умолчанию, BigQuery только чтение через lib.bq_readonly). Область доказательства — сутки
+    ≤ --through (по умолчанию сегодня МСК − 31): старше окна суточной загрузки (30 суток), там RAW больше
+    не меняется, и поздние публикации Ozon не роняют план. Свежие сутки не чинятся: их перезагрузит
+    исправленный разбор после деплоя (или следующий план). Отпечаток считается только по области.
     · страницы: sha256 совпадает с индексом, у каждого дня последняя страница терминальна, дни подряд;
     · контроль денег каждого дня: Σ total_amount = Σ разобранного (иначе отказ);
     · живой RAW за окно читается помесячно; обратная проверка: каждый ключ RAW есть в источнике;
@@ -74,6 +77,8 @@ NUMERIC = {"amount_rub", "seller_base_price_rub", "buyer_paid_price_rub", "ozon_
 RUN_PREFIX = "ozd1-repair-"
 FP_RE = re.compile(r"^[0-9a-f]{64}$")
 INGESTION_WINDOW_UTC = ((3, 15), (4, 30))     # суточная загрузка ozon-runtime-daily — 03:30 UTC
+LOADING_WINDOW_DAYS = 30                      # REGISTRY["finance_accrual"]: окно ретроспективы суток
+MSK = dt.timezone(dt.timedelta(hours=3))
 CENT = Decimal("0.01")
 
 
@@ -189,6 +194,7 @@ def build_candidates(E, pages: dict, types: dict) -> dict:
         rows.extend(E._finance_rows(p["accruals"], types, d, "ozon-d1-repair", extracted_at, control=ctl))
         _req(not ctl.get("unbalanced"), f"{d}: контроль денег суток не сошёлся — разбор неполон, ремонт запрещён")
         _req(not ctl.get("no_total"), f"{d}: начисление без total_amount — сверить нечем")
+        _req(not ctl.get("quarantined"), f"{d}: начисление в карантине (направление блока не доказано) — ремонт запрещён")
         ctl_days[d] = ctl
         src_day[d] = ctl.get("source", Decimal(0))
         for a in p["accruals"]:
@@ -221,7 +227,33 @@ class LiveSource:
 
     def run_rows(self, run_id: str) -> list[dict]:
         _req(bool(re.fullmatch(RUN_PREFIX + r"[0-9a-f]{16}", run_id)), "недопустимый ingestion_run_id ремонта")
-        return self.bq.query(f"SELECT * FROM {T_RAW} WHERE ingestion_run_id = '{run_id}'", max_results=20000)
+        cols = ", ".join(f"CAST({c} AS STRING) {c}" for c in COLUMNS if c != "extracted_at")
+        return self.bq.query(f"SELECT {cols} FROM {T_RAW} WHERE ingestion_run_id = '{run_id}'", max_results=20000)
+
+
+def default_through(now: dt.datetime) -> str:
+    return str(now.astimezone(MSK).date() - dt.timedelta(days=LOADING_WINDOW_DAYS + 1))
+
+
+def scope_pages(pages: dict, through: str, now: dt.datetime) -> dict:
+    """Сутки ≤ through. through внутри окна загрузки запрещён: там RAW ещё меняется."""
+    _req(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", through)), "--through: дата YYYY-MM-DD")
+    _req(through <= default_through(now), f"--through {through} внутри окна загрузки "
+         f"{LOADING_WINDOW_DAYS} сут.: RAW там ещё меняется, план не воспроизводим")
+    _req(min(pages) <= through <= max(pages), "--through вне сохранённых доказательств")
+    return {d: p for d, p in pages.items() if d <= through}
+
+
+def readback_diff(got: list[dict], plan_rows: list[dict]) -> list:
+    """Строки прогона ремонта против плана: ключи И содержимое (кроме extracted_at)."""
+    norm = lambda c, v: (None if v is None else  # noqa: E731
+                         dec(v) if c in NUMERIC else int(v) if c in ("accrual_id", "type_id", "quantity")
+                         else str(v))
+    want = {key(r): {c: norm(c, r[c]) for c in COLUMNS if c != "extracted_at"} for r in plan_rows}
+    have = {key(r): {c: norm(c, r.get(c)) for c in COLUMNS if c != "extracted_at"} for r in got}
+    diff = sorted(set(want) ^ set(have))
+    diff += [k for k in set(want) & set(have) for c in want[k] if want[k][c] != have[k][c]]
+    return diff
 
 
 def econ_money(row, qty) -> Decimal:
@@ -384,9 +416,12 @@ def rollback_sql(keys: list, run_id: str) -> str:
     lits = ", ".join(f"STRUCT({int(a)} AS a, {int(t)} AS t, '{s}' AS s)" for a, t, s in keys
                      if re.fullmatch(r"[0-9]+", str(s)))
     _req(len(keys) and lits.count("STRUCT") == len(keys), "ключи отката вне шаблона")
+    match = (f"ingestion_run_id = '{run_id}' AND type_id < 0 "
+             f"AND STRUCT(accrual_id AS a, type_id AS t, sku AS s) IN UNNEST([{lits}])")
     return (f"BEGIN TRANSACTION;\n"
-            f"DELETE FROM {T_RAW} WHERE ingestion_run_id = '{run_id}' AND type_id < 0 "
-            f"AND STRUCT(accrual_id AS a, type_id AS t, sku AS s) IN UNNEST([{lits}]);\n"
+            f"ASSERT (SELECT COUNT(*) FROM {T_RAW} WHERE {match}) = {len(keys)} "
+            f"AS 'OZD1_ROLLBACK: по ключам плана не ровно {len(keys)} строк — откат не выполняется';\n"
+            f"DELETE FROM {T_RAW} WHERE {match};\n"
             f"ASSERT (SELECT COUNT(*) FROM {T_RAW} WHERE ingestion_run_id = '{run_id}') = 0 AS 'OZD1_ROLLBACK';\n"
             f"COMMIT TRANSACTION;")
 
@@ -464,6 +499,7 @@ def main(argv=None) -> int:
     p.add_argument("--apply", action="store_true")
     p.add_argument("--rollback", action="store_true")
     p.add_argument("--plan-fingerprint")
+    p.add_argument("--through", help="последние сутки области доказательства (по умолчанию сегодня МСК − 31)")
     p.add_argument("--manifest-dir", help="каталог вне Git для манифеста APPLY (пустой) / ROLLBACK")
     a = p.parse_args(argv)
     if a.project != PROJECT:
@@ -488,14 +524,21 @@ def main(argv=None) -> int:
     E = load_builder()
     print(f"git HEAD {head} · режим {'APPLY' if a.apply else 'PLAN'}")
     try:
-        pages = load_pages(index)
+        now = dt.datetime.now(dt.timezone.utc)
+        through = a.through or default_through(now)
+        all_pages = load_pages(index)
+        pages = scope_pages(all_pages, through, now)
         types = {x["id"]: x["description"] for x in json.loads(types_path.read_text(encoding="utf-8"))["accrual_types"]}
         plan = build_plan(E, pages, types, src.raw_rows(min(pages), max(pages)))
+        tail = {d: p for d, p in all_pages.items() if d > through}
+        tail_synth = sum(1 for r in build_candidates(E, tail, types)["rows"] if r["type_id"] < 0) if tail else 0
     except PlanRefused as e:
         print(f"STOP: {e}")
         return 2
     print(json.dumps(plan["core"], ensure_ascii=False, indent=2, sort_keys=True))
     print(f"FINGERPRINT {plan['fingerprint']}")
+    print(f"вне области (сутки > {through}, окно загрузки): синтетических строк в доказательствах {tail_synth} — "
+          "их загрузит исправленный разбор после деплоя или следующий план")
     run_id = RUN_PREFIX + plan["fingerprint"][:16]
     keys = [list(key(r)) for r in plan["rows"]]
     if not a.apply:
@@ -503,7 +546,8 @@ def main(argv=None) -> int:
         write_json(out / "repair_plan.json", {**plan["core"], "fingerprint": plan["fingerprint"], "git_head": head,
                                               "ingestion_run_id": run_id, "rows": plan["rows"],
                                               "monthly_sku_delta_itemized": plan["monthly_sku_delta_itemized"],
-                                              "rollback_keys": keys})
+                                              "rollback_keys": keys, "through": through,
+                                              "after_through_synthetic_rows": tail_synth})
         if plan["rows"]:
             (out / "apply_preview.sql").write_text(apply_sql(plan["rows"], run_id, set(E.FIN_ECON_TYPE_NAMES.values())))
             (out / "rollback_preview.sql").write_text(rollback_sql(keys, run_id))
@@ -520,8 +564,10 @@ def main(argv=None) -> int:
                                     "written_at": dt.datetime.now(dt.timezone.utc).isoformat()})
     job = run_script(apply_sql(plan["rows"], run_id, set(E.FIN_ECON_TYPE_NAMES.values())), token, plan["fingerprint"][:16])
     got = src.run_rows(run_id)
-    ok = sorted(map(key, got)) == sorted(map(tuple, keys))
-    write_json(mdir / "readback.json", {"job_id": job["jobReference"]["jobId"], "rows": len(got), "ok": ok})
+    diff = readback_diff(got, plan["rows"])
+    ok = not diff and len(got) == len(plan["rows"])
+    write_json(mdir / "readback.json", {"job_id": job["jobReference"]["jobId"], "rows": len(got), "ok": ok,
+                                        "mismatched_keys": [list(map(str, k)) for k in diff]})
     print(f"readback {'MATCH' if ok else 'MISMATCH'} · строк {len(got)} → {mdir}")
     return 0 if ok else 3
 

@@ -546,7 +546,8 @@ def fbo_postings(run_id, ts, frm, to):
 # тип строки синтетический и ОТРИЦАТЕЛЬНЫЙ: с идентификаторами Ozon (1…) он не пересекается.
 # Направление берётся из знаков экономического блока, согласованных между собой: Ozon
 # зеркалит реализацию целиком (цена, сумма реализации и комиссия меняют знак вместе).
-# Несогласованные знаки — не угадываются: отказ сущности (FinanceSemanticsError).
+# Несогласованные знаки — не угадываются (FinanceSemanticsError): в строгом режиме арендатора —
+# отказ сущности; в обычном режиме EVETIS — карантин ровно этого начисления (см. ниже).
 #
 # amount_rub такой строки = 0: в контракте RAW выручка и комиссия живут в колонках
 # экономического блока, а amount_rub — сумма услуги. Так тождество начисления не меняется:
@@ -568,8 +569,12 @@ class FinanceSemanticsError(RuntimeError):
     """Экономический блок без услуг с несогласованными знаками: направление не доказано."""
 
 
-class FinanceControlError(RuntimeError):
-    """Сутки, где деньги источника (total_amount) не равны разобранным строкам."""
+# Коды событий журнала. Формат — как у остальных боевых алертов проекта (Cloud Logging разбирает
+# JSON stdout: severity → уровень записи, code → jsonPayload.code; ср. ozon_unitka_failed в
+# infra/terraform/ozon_unitka.tf). Лог-алерта на задания ozon-runtime-* пока НЕТ — follow-up.
+FIN_CODE_CONTROL_MISMATCH = "OZON_FINANCE_CONTROL_MISMATCH"
+FIN_CODE_ACCRUAL_QUARANTINED = "OZON_FINANCE_ACCRUAL_QUARANTINED"
+FIN_CODE_CONTROL_SKIPPED = "OZON_FINANCE_CONTROL_SKIPPED"
 
 
 def _dec(v):
@@ -607,78 +612,31 @@ def _finance_rows(chunk, types, ds, run_id, ts, control=None):
     repr_gap / repr_gap_rub — блоки, где RAW не может выразить деньги начисления:
     seller_price × quantity + commission ≠ sale_amount + commission (известный случай —
     цена реализации выше цены продавца). Это не потеря строки, а предел колонок RAW.
+    quarantined / quarantined_rub — начисления в карантине (обычный режим, см. ниже).
+
+    Карантин (только STRICT_PAGE_CAPS=0, EVETIS): начисление, направление экономического
+    блока которого не доказано (FinanceSemanticsError), не пишется ЦЕЛИКОМ — ни одной его
+    строки, — остальное окно пишется. Событие уровня ERROR с кодом, accrual_id и суммой.
+    Начисление остаётся в источнике и попадёт в RAW после исправления разбора (окно 30 суток
+    или инструмент ремонта, который на карантине отказывает). В строгом режиме — отказ, как раньше.
     """
     rows = []
     for a in chunk:
-        base = dict(event_date=ds, accrual_id=a["accrual_id"],
-                    accrued_category=a["accrued_category"],
-                    unit_number=str(a.get("unit_number")),
-                    currency=(a.get("total_amount") or {}).get("currency", "RUB"),
-                    **_meta("POST /v1/finance/accrual/by-day", run_id, ts))
-        parsed = Decimal(0)
-
-        def emit(tid, amt, sku=None, posting=None, econ=None, name=None, qty=None, phash=None):
-            nonlocal parsed
-            parsed += _dec(amt)
-            e = econ or {}
-            rows.append(dict(base, type_id=tid,
-                operation_name=name or types.get(tid, "UNKNOWN"),
-                unit_number_meaning=("campaign_id" if tid in (41, 54) else
-                                     ("posting_number" if a["accrued_category"] == "POSTING"
-                                      else "order_or_item_ref")),
-                posting_number=posting, sku=sku, amount_rub=_num(amt),
-                seller_base_price_rub=e.get("sp"), buyer_paid_price_rub=e.get("bp"),
-                ozon_bonus_rub=e.get("bn"), ozon_coinvestment_rub=e.get("co"),
-                commission_rub=e.get("cm"), commission_ratio=e.get("cr"),
-                quantity=qty,
-                source_payload_hash=phash or h(a["accrual_id"], tid, sku, amt)))
-
-        nf = a.get("non_item_fee")
-        if nf:
-            emit(nf["type_id"], nf["accrued"]["amount"])
-        for fee in ((a.get("item_fees") or {}).get("fees") or []):
-            for x in (fee.get("fees") or []):
-                emit(x["type_id"], x["accrued"]["amount"], sku=str(fee.get("sku")))
-        p = a.get("posting") or {}
-        pn = p.get("posting_number") or (a.get("unit_number")
-                                         if a["accrued_category"] == "POSTING" else None)
-        for pr in (p.get("products") or []):
-            sku = str(pr.get("sku"))
-            c = pr.get("commission") or {}
-            econ = None
-            if c:
-                g = lambda k: _num((c.get(k) or {}).get("amount"))
-                m = re.search(r"([\d.]+)", str(c.get("commission_ratio") or ""))
-                econ = {"sp": g("seller_price"), "bp": g("sale_price"),
-                        "bn": g("bonus"), "co": g("coinvestment"),
-                        "cm": g("commission"),
-                        "cr": float(m.group(1)) if m else None}
-            first = True
-            for _k, blk in pr.items():
-                if isinstance(blk, dict) and blk.get("services"):
-                    for s in blk["services"]:
-                        # экономический блок продукта несётся ровно один раз
-                        emit(s["type_id"], s["accrued"]["amount"], sku=sku,
-                             posting=pn, econ=econ if first else None)
-                        first = False
-            econ_money = _money(c, "sale_amount") + _money(c, "commission") if c else Decimal(0)
-            q = pr.get("quantity")
-            if control is not None and c and isinstance(q, int) and not isinstance(q, bool):
-                gap = _money(c, "sale_amount") - _money(c, "seller_price") * q
-                if gap:
-                    control["repr_gap"] = control.get("repr_gap", 0) + 1
-                    control["repr_gap_rub"] = control.get("repr_gap_rub", Decimal(0)) + gap
-            if c and not first:
-                parsed += econ_money                       # блок записан прицепом к услуге
-            elif c:
-                # services нет или пуст: блок пишется своей строкой (D1)
-                tid = _econ_direction(c)
-                if tid is not None:
-                    emit(tid, 0, sku=sku, posting=pn, econ=econ, name=FIN_ECON_TYPE_NAMES[tid],
-                         qty=q if isinstance(q, int) and not isinstance(q, bool) else None,
-                         phash=h(a["accrual_id"], tid, sku, 0, _money(c, "sale_amount"),
-                                 _money(c, "commission")))
-                    parsed += econ_money
+        acc_rows = []
+        try:
+            parsed = _accrual_rows(a, types, ds, run_id, ts, acc_rows, control)
+        except FinanceSemanticsError as e:
+            if C.STRICT_PAGE_CAPS:
+                raise
+            total = (a.get("total_amount") or {}).get("amount")
+            log(event="finance_accrual_quarantined", severity="ERROR", code=FIN_CODE_ACCRUAL_QUARANTINED,
+                entity="finance_accrual", day=ds, accrual_id=a.get("accrual_id"),
+                total_amount_rub=str(_dec(total)), reason=str(e))
+            if control is not None:
+                control["quarantined"] = control.get("quarantined", 0) + 1
+                control["quarantined_rub"] = control.get("quarantined_rub", Decimal(0)) + _dec(total)
+            continue
+        rows.extend(acc_rows)
         if control is not None:
             ta = a.get("total_amount")
             if not isinstance(ta, dict) or ta.get("amount") in (None, ""):
@@ -692,6 +650,80 @@ def _finance_rows(chunk, types, ds, run_id, ts, control=None):
     return rows
 
 
+def _accrual_rows(a, types, ds, run_id, ts, rows, control):
+    """Строки одного начисления (дописываются в rows); возвращает разобранные деньги."""
+    base = dict(event_date=ds, accrual_id=a["accrual_id"],
+                accrued_category=a["accrued_category"],
+                unit_number=str(a.get("unit_number")),
+                currency=(a.get("total_amount") or {}).get("currency", "RUB"),
+                **_meta("POST /v1/finance/accrual/by-day", run_id, ts))
+    parsed = Decimal(0)
+
+    def emit(tid, amt, sku=None, posting=None, econ=None, name=None, qty=None, phash=None):
+        nonlocal parsed
+        parsed += _dec(amt)
+        e = econ or {}
+        rows.append(dict(base, type_id=tid,
+            operation_name=name or types.get(tid, "UNKNOWN"),
+            unit_number_meaning=("campaign_id" if tid in (41, 54) else
+                                 ("posting_number" if a["accrued_category"] == "POSTING"
+                                  else "order_or_item_ref")),
+            posting_number=posting, sku=sku, amount_rub=_num(amt),
+            seller_base_price_rub=e.get("sp"), buyer_paid_price_rub=e.get("bp"),
+            ozon_bonus_rub=e.get("bn"), ozon_coinvestment_rub=e.get("co"),
+            commission_rub=e.get("cm"), commission_ratio=e.get("cr"),
+            quantity=qty,
+            source_payload_hash=phash or h(a["accrual_id"], tid, sku, amt)))
+
+    nf = a.get("non_item_fee")
+    if nf:
+        emit(nf["type_id"], nf["accrued"]["amount"])
+    for fee in ((a.get("item_fees") or {}).get("fees") or []):
+        for x in (fee.get("fees") or []):
+            emit(x["type_id"], x["accrued"]["amount"], sku=str(fee.get("sku")))
+    p = a.get("posting") or {}
+    pn = p.get("posting_number") or (a.get("unit_number")
+                                     if a["accrued_category"] == "POSTING" else None)
+    for pr in (p.get("products") or []):
+        sku = str(pr.get("sku"))
+        c = pr.get("commission") or {}
+        econ = None
+        if c:
+            g = lambda k: _num((c.get(k) or {}).get("amount"))
+            m = re.search(r"([\d.]+)", str(c.get("commission_ratio") or ""))
+            econ = {"sp": g("seller_price"), "bp": g("sale_price"),
+                    "bn": g("bonus"), "co": g("coinvestment"),
+                    "cm": g("commission"),
+                    "cr": float(m.group(1)) if m else None}
+        first = True
+        for _k, blk in pr.items():
+            if isinstance(blk, dict) and blk.get("services"):
+                for s in blk["services"]:
+                    # экономический блок продукта несётся ровно один раз
+                    emit(s["type_id"], s["accrued"]["amount"], sku=sku,
+                         posting=pn, econ=econ if first else None)
+                    first = False
+        econ_money = _money(c, "sale_amount") + _money(c, "commission") if c else Decimal(0)
+        q = pr.get("quantity")
+        if control is not None and c and isinstance(q, int) and not isinstance(q, bool):
+            gap = _money(c, "sale_amount") - _money(c, "seller_price") * q
+            if gap:
+                control["repr_gap"] = control.get("repr_gap", 0) + 1
+                control["repr_gap_rub"] = control.get("repr_gap_rub", Decimal(0)) + gap
+        if c and not first:
+            parsed += econ_money                       # блок записан прицепом к услуге
+        elif c:
+            # services нет или пуст: блок пишется своей строкой (D1)
+            tid = _econ_direction(c)
+            if tid is not None:
+                emit(tid, 0, sku=sku, posting=pn, econ=econ, name=FIN_ECON_TYPE_NAMES[tid],
+                     qty=q if isinstance(q, int) and not isinstance(q, bool) else None,
+                     phash=h(a["accrual_id"], tid, sku, 0, _money(c, "sale_amount"),
+                             _money(c, "commission")))
+                parsed += econ_money
+    return parsed
+
+
 def finance_accrual(run_id, ts, frm, to):
     types = {}
     code, t = seller_post("/v1/finance/accrual/types", {})
@@ -700,7 +732,7 @@ def finance_accrual(run_id, ts, frm, to):
     else:
         _strict_cap("finance_accrual", "справочник типов начислений не получен — все типы "
                     "стали бы UNKNOWN", "повторить прогон", http=code)
-    rows, mismatched = [], []
+    rows, mismatched, quarantined = [], [], 0
     d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
     cur = d0
     while cur <= d1:
@@ -726,23 +758,25 @@ def finance_accrual(run_id, ts, frm, to):
                             day=ds, pages=page, rows_so_far=len(rows))
                 break
             time.sleep(1)
-        # D1: контроль денег суток — Σ total_amount источника = Σ разобранных денег.
         if ctl.get("repr_gap"):
             # Не отказ: строки на месте, но колонки RAW (цена продавца × кол-во) не выражают
             # сумму реализации. Отдельный известный дефект, D1 его не чинит.
             log(event="finance_econ_representation_gap", entity="finance_accrual", day=ds,
                 blocks=ctl["repr_gap"], gap_rub=str(ctl["repr_gap_rub"].quantize(Decimal("0.01"))))
+        if ctl.get("no_total"):
+            log(event="finance_control_skipped", severity="WARNING", code=FIN_CODE_CONTROL_SKIPPED,
+                entity="finance_accrual", day=ds, accruals_without_total=ctl["no_total"])
+        quarantined += ctl.get("quarantined", 0)
+        # D1: контроль денег суток — Σ total_amount источника = Σ разобранных денег.
         if ctl.get("unbalanced"):
             mismatched.append(ds)
-            log(event="finance_control_mismatch", entity="finance_accrual", day=ds,
-                  accruals_unbalanced=ctl["unbalanced"],
-                  residual_rub=str((ctl["source"] - ctl["parsed"]).quantize(Decimal("0.01"))))
+            log(event="finance_control_mismatch", severity="ERROR", code=FIN_CODE_CONTROL_MISMATCH,
+                entity="finance_accrual", day=ds, accruals_unbalanced=ctl["unbalanced"],
+                residual_rub=str((ctl["source"] - ctl["parsed"]).quantize(Decimal("0.01"))))
         cur += timedelta(days=1)
         time.sleep(1)
     if mismatched:
-        # Строгий режим: отказ ДО записи. Обычный режим EVETIS: разобранные строки верны,
-        # их запись идемпотентна, поэтому они пишутся, но сущность завершается ОТКАЗОМ —
-        # статус прогона не может остаться OK при потерянных деньгах.
+        # Строгий режим арендатора: отказ ДО записи (данные были бы неполными при статусе OK).
         _strict_cap("finance_accrual", "деньги начислений не сходятся с разобранными строками",
                     "найти блок ответа, который разбор не читает, и расширить _finance_rows",
                     days=len(mismatched), first=mismatched[0])
@@ -751,10 +785,17 @@ def finance_accrual(run_id, ts, frm, to):
     # строки здесь могут быть двумя реальными начислениями на одну сумму.
     res = merge_rows("RAW_OZON_FINANCE_ACCRUAL", rows,
                      ["accrual_id", "type_id", "sku"], run_id, on_duplicate_key="reject")
+    # Обычный режим EVETIS: сущность НЕ падает. Отказ заморозил бы Юнитку Ozon (она читает
+    # только OK-прогоны, OZON_UNITKA_REQUIRED_SOURCES) почти на 30 суток, пока проблемное
+    # начисление в окне. Вместо этого — ERROR-события выше и пометка в журнале прогонов:
+    # строка OZON_INGESTION_RUNS со статусом OK получает error_message с кодом (main.py).
+    notes = []
     if mismatched:
-        raise FinanceControlError(
-            f"finance_accrual: контроль денег не сошёлся за {len(mismatched)} сут. "
-            f"(первые: {', '.join(mismatched[:5])}); строки записаны, сущность — отказ")
+        notes.append(f"{FIN_CODE_CONTROL_MISMATCH}: {len(mismatched)} сут. (первые: {', '.join(mismatched[:5])})")
+    if quarantined:
+        notes.append(f"{FIN_CODE_ACCRUAL_QUARANTINED}: {quarantined} начисл.")
+    if notes:
+        res = dict(res, warning="; ".join(notes))
     return res
 
 

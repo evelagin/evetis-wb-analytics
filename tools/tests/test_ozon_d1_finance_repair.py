@@ -221,3 +221,49 @@ def test_ingestion_window_guard():
     assert not R.outside_ingestion_window(dt.datetime(2026, 10, 12, 3, 30, tzinfo=utc))
     assert R.outside_ingestion_window(dt.datetime(2026, 10, 12, 4, 30, tzinfo=utc))
     assert R.outside_ingestion_window(dt.datetime(2026, 10, 12, 3, 14, tzinfo=utc))
+
+
+def test_scope_is_limited_to_days_older_than_loading_window(E, tmp_path):
+    pages = R.load_pages(write_pages(tmp_path))
+    now = dt.datetime(2026, 2, 13, 12, 0, tzinfo=dt.timezone.utc)          # МСК 13.02 − 31 = 13.01
+    assert R.default_through(now) == "2026-01-13"
+    assert sorted(R.scope_pages(pages, "2026-01-11", now)) == ["2026-01-10", "2026-01-11"]
+    with pytest.raises(R.PlanRefused, match="внутри окна загрузки"):
+        R.scope_pages(pages, "2026-01-12", dt.datetime(2026, 2, 10, tzinfo=dt.timezone.utc))
+    with pytest.raises(R.PlanRefused, match="вне сохранённых"):
+        R.scope_pages(pages, "2025-12-31", now)
+
+
+def test_late_publication_after_scope_does_not_break_plan(E, tmp_path):
+    """Поздняя публикация в свежих сутках (RAW там ещё меняется) вне области не роняет план и не
+    меняет отпечаток."""
+    scoped = {k: v for k, v in DAYS.items() if k <= "2026-01-12"}
+    base = plan(E, tmp_path, days=scoped)
+    late = tmp_path / "late"
+    late.mkdir()
+    pages = R.load_pages(write_pages(late, DAYS | {"2026-01-13": [sale(103, "222-1-1", 9002, "2026-01-13")]}))
+    now = dt.datetime(2026, 2, 13, 12, 0, tzinfo=dt.timezone.utc)
+    p = R.build_plan(E, R.scope_pages(pages, "2026-01-12", now), TYPES, live_from(E, scoped, drop_types=(-1,)))
+    assert p["fingerprint"] == base["fingerprint"] and p["core"]["add"]["rows"] == 1
+
+
+def test_quarantined_accrual_refuses_plan(E, tmp_path):
+    days = copy.deepcopy(DAYS)
+    days["2026-01-12"][0]["posting"]["products"][0]["commission"]["seller_price"] = m(1000)   # знаки врозь
+    with pytest.raises(R.PlanRefused, match="карантин"):
+        plan(E, tmp_path, days=days)
+
+
+def test_readback_compares_content_not_only_keys(E, tmp_path):
+    p = plan(E, tmp_path)
+    got = [{c: (None if v is None else str(v)) for c, v in r.items()} for r in p["rows"]]
+    assert R.readback_diff(got, p["rows"]) == []
+    got[0]["seller_base_price_rub"] = "-999"
+    assert R.readback_diff(got, p["rows"]) == [R.key(p["rows"][0])]
+    assert R.readback_diff([], p["rows"]) == [R.key(p["rows"][0])]
+
+
+def test_rollback_asserts_exact_count_before_delete(E, tmp_path):
+    p = plan(E, tmp_path)
+    sql = R.rollback_sql([list(R.key(r)) for r in p["rows"]], p["rows"][0]["ingestion_run_id"])
+    assert sql.index("ASSERT") < sql.index("DELETE") and ") = 1 AS 'OZD1_ROLLBACK: по ключам" in sql

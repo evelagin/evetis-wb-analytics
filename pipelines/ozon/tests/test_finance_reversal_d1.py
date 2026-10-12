@@ -183,13 +183,40 @@ def test_sale_without_services_is_kept_as_sale_not_reversal(entities):
     {"sale_amount": money("-1000"), "seller_price": money("-1000"),
      "commission": money("-410")},                                      # сторно с удержанием
 ])
-def test_inconsistent_economics_fails_closed_without_amounts(entities, bad):
+def test_inconsistent_economics_strict_mode_fails_closed_without_amounts(entities, bad, monkeypatch):
+    """Строгий режим арендатора: прежний отказ, в тексте только знаки."""
+    monkeypatch.setattr(C, "STRICT_PAGE_CAPS", True)
     c = commission(-1)
     c.update(bad)
     acc = accrual(7000011, "-590", [{"sku": 555005, "quantity": 1, "delivery": None, "commission": c}])
     with pytest.raises(entities.FinanceSemanticsError) as e:
         rows_of(entities, [acc])
     assert "1000" not in str(e.value) and "7000011" not in str(e.value) and "555005" not in str(e.value)
+
+
+def _inconsistent():
+    c = commission(-1)
+    c.update({"sale_amount": money("-1000"), "seller_price": money("1000")})
+    return accrual(7000011, "-590", [{"sku": 555005, "quantity": 1, "commission": c, "delivery": None}],
+                   unit="SYN-0011-1")
+
+
+def test_inconsistent_economics_quarantines_only_that_accrual(entities, captured_merges, monkeypatch):
+    """Обычный режим EVETIS: карантин ровно этого начисления (ни одной его строки), остальное окно
+    пишется, сущность не падает; ERROR-событие с кодом, accrual_id и суммой; пометка прогона."""
+    logged = []
+    monkeypatch.setattr(C, "STRICT_PAGE_CAPS", False)
+    monkeypatch.setattr(entities, "log", lambda **kw: logged.append(kw))
+    monkeypatch.setattr(entities, "seller_post", by_day({DAY: ALL + [_inconsistent()]}))
+    res = entities.finance_accrual("rt-d1", TS, DAY, DAY)
+    ((_, rows, _, _),) = captured_merges
+    assert {r["accrual_id"] for r in rows} == {a["accrual_id"] for a in ALL}      # окно записано
+    assert not [r for r in rows if r["accrual_id"] == 7000011]                   # карантин целиком
+    (q,) = [e for e in logged if e["event"] == "finance_accrual_quarantined"]
+    assert q["severity"] == "ERROR" and q["code"] == entities.FIN_CODE_ACCRUAL_QUARANTINED
+    assert q["accrual_id"] == 7000011 and q["total_amount_rub"] == "-590" and q["day"] == DAY
+    assert not [e for e in logged if e["event"] == "finance_control_mismatch"]   # не смешивается
+    assert res["warning"] == f"{entities.FIN_CODE_ACCRUAL_QUARANTINED}: 1 начисл."
 
 
 def test_zero_economics_without_services_emits_nothing(entities):
@@ -261,20 +288,42 @@ def _unparsed_container_fee():
     return a
 
 
-def test_day_control_mismatch_is_loud_and_fails_entity_after_write(entities, captured_merges,
-                                                                   monkeypatch):
-    """Обычный режим EVETIS: строки, которые разобраны верно, пишутся (MERGE идемпотентен),
-    но сущность завершается отказом — статус прогона не может остаться OK."""
+def test_day_control_mismatch_is_loud_but_does_not_fail_entity(entities, captured_merges, monkeypatch):
+    """Обычный режим EVETIS: строки пишутся, сущность НЕ падает (иначе Юнитка Ozon, читающая только
+    OK-прогоны, замёрзла бы на срок окна 30 суток). Громко: ERROR-событие со стабильным кодом и
+    пометка в журнале прогонов (warning → error_message при статусе OK, см. main.py)."""
     logged = []
     monkeypatch.setattr(C, "STRICT_PAGE_CAPS", False)
     monkeypatch.setattr(entities, "log", lambda **kw: logged.append(kw))
     monkeypatch.setattr(entities, "seller_post", by_day({DAY: ALL + [_unparsed_container_fee()]}))
-    with pytest.raises(entities.FinanceControlError) as e:
-        entities.finance_accrual("rt-d1", TS, DAY, DAY)
-    assert len(captured_merges) == 1                      # записано до отказа
-    assert DAY in str(e.value) and "7000020" not in str(e.value)
-    assert logged == [{"event": "finance_control_mismatch", "entity": "finance_accrual",
+    res = entities.finance_accrual("rt-d1", TS, DAY, DAY)
+    assert len(captured_merges) == 1
+    assert logged == [{"event": "finance_control_mismatch", "severity": "ERROR",
+                       "code": "OZON_FINANCE_CONTROL_MISMATCH", "entity": "finance_accrual",
                        "day": DAY, "accruals_unbalanced": 1, "residual_rub": "-7.00"}]
+    assert res["warning"] == f"OZON_FINANCE_CONTROL_MISMATCH: 1 сут. (первые: {DAY})"
+    assert "7000020" not in res["warning"]
+
+
+def test_main_records_warning_as_ok_run_with_error_message(monkeypatch):
+    """Пометка прогона: статус OK (барьер свежести Юнитки не срабатывает), error_message — код."""
+    import common as C2
+    import main as M
+    import entities as E
+    recorded = []
+    monkeypatch.setattr(C2, "record_run", lambda *a, **k: recorded.append((a, k)))
+    monkeypatch.setattr(C2, "log", lambda **kw: None)
+    monkeypatch.setattr(M, "ingestion_execution_contract", lambda *a: False)
+    monkeypatch.setitem(E.REGISTRY, "finance_accrual",
+                        (lambda *a: {"received": 1, "inserted": 0, "updated": 1,
+                                     "warning": "OZON_FINANCE_CONTROL_MISMATCH: 1 сут."}, 30, "daily"))
+    monkeypatch.setattr(M, "REGISTRY", E.REGISTRY)
+    monkeypatch.setenv("ENTITIES", "finance_accrual")
+    with pytest.raises(SystemExit) as ex:
+        M.main()
+    assert ex.value.code == 0
+    ((args, kw),) = recorded
+    assert args[6] == "OK" and kw["error"] == "OZON_FINANCE_CONTROL_MISMATCH: 1 сут."
 
 
 def test_day_control_mismatch_strict_mode_refuses_before_write(entities, captured_merges,
@@ -296,13 +345,25 @@ def test_old_parser_would_have_failed_the_control(entities):
 
 
 def test_accruals_without_total_amount_are_counted_not_failed(entities):
-    """Ответ без total_amount сверить нечем: счётчик, а не отказ (так устроены сценарии
-    различающего прогона compat/, где total_amount нет)."""
+    """Ответ без total_amount сверить нечем: счётчик, а не отказ."""
     ctl = {}
     acc = {"accrual_id": "A1", "accrued_category": "OTHER", "unit_number": 1,
            "non_item_fee": {"type_id": 1, "accrued": {"amount": "1.5"}}}
     rows_of(entities, [acc], control=ctl)
     assert ctl == {"no_total": 1}
+
+
+def test_skipped_control_is_logged(entities, captured_merges, monkeypatch):
+    logged = []
+    monkeypatch.setattr(entities, "log", lambda **kw: logged.append(kw))
+    acc = {"accrual_id": "A1", "accrued_category": "OTHER", "unit_number": 1,
+           "non_item_fee": {"type_id": 1, "accrued": {"amount": "1.5"}}}
+    monkeypatch.setattr(entities, "seller_post", by_day({DAY: [acc]}))
+    res = entities.finance_accrual("rt-d1", TS, DAY, DAY)
+    assert logged == [{"event": "finance_control_skipped", "severity": "WARNING",
+                       "code": "OZON_FINANCE_CONTROL_SKIPPED", "entity": "finance_accrual",
+                       "day": DAY, "accruals_without_total": 1}]
+    assert "warning" not in res
 
 
 def test_backfill_call_signature_unchanged(entities):
