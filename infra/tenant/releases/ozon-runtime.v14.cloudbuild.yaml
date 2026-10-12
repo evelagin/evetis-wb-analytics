@@ -179,14 +179,14 @@ steps:
       - |
         docker run --rm --network=none -e GCP_PROJECT_ID=offline-qualification-project -e BQ_REF_DATASET=ref -v /workspace/pipelines/ozon/tests:/verify:ro --entrypoint=python ${_IMAGE}:${_SOURCE_SHA} /verify/_fbo_window_image_driver.py
 
+  - id: bounded-fbo-diagnostic
+    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
+    args: ["run", "--rm", "--network=none", "-e", "GCP_PROJECT_ID=offline-qualification-project", "-e", "BQ_REF_DATASET=ref", "-v", "/workspace/pipelines/ozon/tests:/verify:ro", "--entrypoint=python", "${_IMAGE}:${_SOURCE_SHA}", "/verify/_fbo_bounded_diagnostic_image_driver.py"]
+
 substitutions:
   _IMAGE: europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime
   _BUILDER: sa-runtime-builder@mpa-platform.iam.gserviceaccount.com
   _SOURCE_SHA: ""
-
-  - id: bounded-fbo-diagnostic
-    name: gcr.io/cloud-builders/docker@sha256:bbb3d633c5c2813b2ce5245852979e1d637768f4acfc504d8ece288f91e9b60f
-    args: ["run", "--rm", "--network=none", "-e", "GCP_PROJECT_ID=offline-qualification-project", "-e", "BQ_REF_DATASET=ref", "-v", "/workspace/pipelines/ozon/tests:/verify:ro", "--entrypoint=python", "${_IMAGE}:${_SOURCE_SHA}", "/verify/_fbo_bounded_diagnostic_image_driver.py"]
 
 images:
   - ${_IMAGE}:${_SOURCE_SHA}
