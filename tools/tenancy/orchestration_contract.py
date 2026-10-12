@@ -148,8 +148,9 @@ def paused_contract(c, repo):
     out=deepcopy(c);old=out.get('orchestration')
     if not old:raise ValueError('registered controller required for paused staging')
     env=old['job']['env']
-    out['orchestration']=block(out,{'release':env['CONTROLLER_SOURCE_SHA'],
-        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo)
+    r=parse_tenant_json((repo/'infra/tenant/releases/backfill'/f"{env['CONTROLLER_SOURCE_SHA']}.json").read_text())
+    out['orchestration']=block(registered_runtime_pair(out,r,repo),{'release':env['CONTROLLER_SOURCE_SHA'],
+        'root_hash':env['BACKFILL_ROOT_HASH'],'scheduler_state':'PAUSED'},repo,r)
     return out
 
 
