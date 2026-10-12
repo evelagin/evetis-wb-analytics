@@ -58,7 +58,24 @@ def check():
     no_mode=SimpleNamespace(c={'orchestration':{'job':{'env':{'CONTROLLER_SOURCE_SHA':'a'*40}}}})
     assert C.wake(no_mode,[],{},set(),set()) is None
     assert K.readiness([],p['hash'],now,analytics_visible=False,historical_independent=True,systemic_risk=False,fbo_contract_hash=None)['operational_READY'] is False
-    return dict(current_closed_authority='PASS',current_elected_plan_authorization='PASS',current_independent_source_namespaces='PASS',current_local_history_isolation='PASS',current_unknown_fbo_denied='PASS',current_lost_dispatch_no_repeat='PASS',current_provisional_not_financial_finality='PASS',current_no_theoretical_ready='PASS',current_disabled_preserves_history='PASS')
+    from tools.tenancy import fbo_diagnostic_owner as DIAG,cloud_tick as T
+    queue_backend=SimpleNamespace(c=c,tables=SimpleNamespace(get_table=lambda ds,n:({'kind':'fbo_diagnostic_queue'},D.encoded({'policy_hash':'b'*64})) if n=='BFDQUEUE_'+p['controller_source'] else None),wake_activity={},clock=lambda:now)
+    saved=(DIAG.policy,DIAG.dispatch,DIAG.await_terminal)
+    try:
+        DIAG.policy=lambda *a,**k:{'hash':'b'*64,'expires_at':'2026-10-12T01:00:00+00:00'}
+        DIAG.dispatch=lambda *a:{'execution':'synthetic-diagnostic-child'}
+        def unknown(*a):
+            assert queue_backend.wake_activity['diagnostic_active'] is True
+            raise OSError('synthetic unknown child')
+        DIAG.await_terminal=unknown
+        try:DIAG.queued(queue_backend)
+        except OSError:pass
+        else:raise AssertionError('unknown diagnostic child treated as terminal')
+        assert queue_backend.wake_activity['diagnostic_active'] is True
+    finally:DIAG.policy,DIAG.dispatch,DIAG.await_terminal=saved
+    candidates=C.historical_candidates([{'kind':'DEPENDENCY_PLAN','payload':{'shard_root':'a'*64}}],{},set(),set())
+    assert ('dependency',0) in candidates
+    return dict(current_closed_authority='PASS',current_elected_plan_authorization='PASS',current_independent_source_namespaces='PASS',current_local_history_isolation='PASS',current_unknown_fbo_denied='PASS',current_lost_dispatch_no_repeat='PASS',current_provisional_not_financial_finality='PASS',current_no_theoretical_ready='PASS',current_disabled_preserves_history='PASS',current_dependency_receipt_drain='PASS',current_queued_diagnostic_unknown_retains_fence='PASS')
 
 if __name__=='__main__':
     import json

@@ -208,7 +208,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     from tools.tenancy import recent_priority as RP
     # An immutable elected historical authority takes precedence over P0/P1
     # reordering. Neither midnight nor a new operational policy resets it.
-    if RP.pending_receipts(base,{i:v for i,v in historical_plans.items() if i not in done and i not in quarantined}):return None
+    if RP.pending_receipts(base,historical_candidates(historical_records,historical_plans,done,quarantined)):return None
     day=base.clock().astimezone(K.MSK).date();known=cycles(base,p)
     # Drain every committed current receipt before making a new day's plan.
     pending=[];reports=[];sku_plans=[]
@@ -248,6 +248,10 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         validate_certificate(base,p,day,cert,item)
         if entity in certs and certs[entity]!=cert:fail('conflicting current certificate')
         certs[entity]=cert
+    if 'catalog' in certs:
+        from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
+        result=DIAGNOSTIC.queued(base)
+        if result is not None:return result
     for entity in P.eligible(p,{e:True for e in certs}):
         if entity in partial:continue
         item=items.get(entity)
@@ -260,3 +264,9 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
     return None
+
+def historical_candidates(records,plans,done,quarantined):
+    """Catalog dependencies carry the same immutable dispatch authority as leaves."""
+    selected={i:v for i,v in plans.items() if i not in done and i not in quarantined}
+    selected.update({('dependency',n):r['payload'] for n,r in enumerate(records) if r['kind']=='DEPENDENCY_PLAN'})
+    return selected

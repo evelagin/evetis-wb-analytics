@@ -74,3 +74,9 @@ def test_installed_current_adapter_qualification_properties():
  assert v['current_elected_plan_authorization']=='PASS'
  assert v['current_lost_dispatch_no_repeat']=='PASS'
  assert v['current_unknown_fbo_denied']=='PASS'
+
+def test_current_priority_cannot_hide_an_unreconciled_catalog_dependency():
+ dependency={'plan':{'ack_hash':'a'*64},'shard_root':'b'*64}
+ records=[{'kind':'DEPENDENCY_PLAN','payload':dependency}]
+ candidates=C.historical_candidates(records,{1:{'shard_root':'c'*64},2:{'shard_root':'d'*64}},done={1},quarantined={2})
+ assert candidates=={('dependency',0):dependency}

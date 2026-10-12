@@ -12,11 +12,21 @@ from pipelines.ozon.runtime import fbo_diagnostic as Q
 
 def fail(s):raise BF.B.EvidenceError('bounded FBO diagnostic: '+s)
 
-def policy(b,h):
+def policy(b,h,*,retained=False):
     D.check_hash(h)
     marker=b.tables.get_table(b.c['datasets']['ref'],'BFDA_'+h)
     if not marker:fail('owner policy absent')
-    p=parse(marker[1]);Q.validate(p,b.c['project_id'],BF.B.implementation_hash(),b.clock())
+    p=parse(marker[1]);when=b.clock()
+    if retained:
+        from datetime import datetime,timezone
+        expiry=datetime.fromisoformat(p['expires_at'].replace('Z','+00:00'))
+        if expiry.utcoffset() is not None and expiry<=when:
+            # Expired, unconsumed permission is a routine no-source condition.
+            # Validate against actual immutable publication time, never a
+            # fabricated clock or renewed permission inferred from elapsed time.
+            table=b.request('GET',BF.TT.BQ+'/projects/'+b.c['project_id']+'/datasets/'+b.c['datasets']['ref']+'/tables/BFDA_'+h)
+            when=datetime.fromtimestamp(int(table['creationTime'])/1000,timezone.utc)
+    Q.validate(p,b.c['project_id'],BF.B.implementation_hash(),when)
     if marker!=({'kind':'fbo_diagnostic','root':p['root'][:16]},D.encoded(p)) or p['hash']!=h:fail('owner policy differs')
     env=b.c['orchestration']['job']['env']
     if (env['CONTROLLER_SOURCE_SHA'],b.c['orchestration']['job']['image'],b.c['marketplaces']['ozon']['runtime_image'])!=(p['controller_source'],p['controller_image'],p['runtime_image']):fail('qualified pair differs')
@@ -113,6 +123,46 @@ def await_terminal(b,p,record,*,sleep=None):
             return dict(execution=record['execution'],terminal_success=x.get('succeededCount',0)==1,completion=x['completionTime'])
         sleep(5)
     fail('diagnostic child still active; retain control fence')
+
+def queued(b):
+    """One exact owner queue token; normal wakes share their existing CAS.
+
+    The direct owner publishes this only after fresh qualification and an
+    unconsumed diagnostic permission. No token means no change to ingestion.
+    Consumed/unknown submissions are never repeated.
+    """
+    source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
+    marker=b.tables.get_table(b.c['datasets']['ref'],'BFDQUEUE_'+source)
+    if marker is None:return None
+    value=parse(marker[1])
+    if set(value)!={'policy_hash'}:fail('closed diagnostic queue token required')
+    h=D.check_hash(value['policy_hash'])
+    if marker[0]!={'kind':'fbo_diagnostic_queue'} or marker[1]!=D.encoded(value):fail('diagnostic queue token differs')
+    consumed=b.tables.get_table(b.c['datasets']['tenant_locks'],'BFDC_'+h)
+    if consumed is not None:
+        # A terminal, canonically closed prior controller is checked by CAS.
+        # Any missing operation after consumption is uncertain, never replayed.
+        operation=b.tables.get_table(b.c['datasets']['tenant_locks'],'BFDO_'+h)
+        if operation is None:fail('consumed diagnostic lacks operation; never repeat')
+        claim=parse(consumed[1]);op=parse(operation[1])
+        if (set(claim)!={'policy_hash','run_id','generation','controller_execution','source_request_limit'}
+            or set(op)!={'policy_hash','run_id','generation','operation','execution','source_request_limit'}
+            or consumed[0]!={'kind':'fbo_diagnostic'} or operation[0]!={'kind':'fbo_diagnostic'}
+            or claim['policy_hash']!=h or any(claim[k]!=op[k] for k in ('policy_hash','run_id','generation','source_request_limit'))):fail('consumed diagnostic evidence differs; never repeat')
+        return None
+    p=policy(b,h,retained=True)
+    from datetime import datetime
+    if datetime.fromisoformat(p['expires_at'].replace('Z','+00:00'))<=b.clock():return None
+    from tools.tenancy.cloud_tick import OverlapWait
+    b.wake_activity['diagnostic_active']=True
+    try:record=dispatch(b,h)
+    except OverlapWait:
+        b.wake_activity['diagnostic_active']=False
+        return {'status':'WAITING','source_dispatches':0,'basis':'DIAGNOSTIC_SOURCE_SLOT_WAIT'}
+    terminal=await_terminal(b,p,record)
+    b.wake_activity['diagnostic_active']=False
+    return {'status':'MONITORING','source_dispatches':0,'diagnostic_finished':True,
+            'diagnostic_policy_hash':h,'diagnostic_terminal':terminal}
 
 def main(h,env):
     from tools.tenancy.cloud_controller import bootstrap

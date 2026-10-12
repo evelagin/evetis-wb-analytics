@@ -395,7 +395,10 @@ def main(argv=None):
         # exception in a special waiting handler or an assumed authority release.
         closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else result
         closure=dict(closure,source_dispatches=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0)))
-        with gate('MANIFEST_ROOT'):CC.close(backend,closure)
+        # A diagnostic child owns the shared source slot until independently
+        # terminal. A read/submission error must retain this control fence.
+        if not getattr(backend,'wake_activity',{}).get('diagnostic_active'):
+            with gate('MANIFEST_ROOT'):CC.close(backend,closure)
         print(json.dumps(result,sort_keys=True))
         return rc if rc is not None else (0 if result['status']!='STOPPED' else 2)
     except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:
@@ -413,7 +416,9 @@ def main(argv=None):
                 backend.store.commit(root,'STOPPED',0,payload,backend.clock())
             except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):
                 pass # Failure to publish STOP cannot authorize another dispatch.
-            try:CC.close(backend,{'status':'STOPPED','source_dispatches':getattr(backend,'wake_activity',{}).get('dispatch_attempts',0)})
+            try:
+                if not getattr(backend,'wake_activity',{}).get('diagnostic_active'):
+                    CC.close(backend,{'status':'STOPPED','source_dispatches':getattr(backend,'wake_activity',{}).get('dispatch_attempts',0)})
             except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):pass
         print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE',**({'diagnostic':diagnostic} if diagnostic else {})}))
         return 2

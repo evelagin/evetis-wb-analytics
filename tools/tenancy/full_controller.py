@@ -511,11 +511,13 @@ def wake(base, root):
     if overlay:
         # Drain any immutable elected intent/receipt BEFORE queue reordering.
         # No inference from lease TTL, runtime snapshot or local progress.
-        drain=RP.pending_receipts(backend,{i:item for i,item in plans.items() if i not in done and i not in quarantined})
+        drain=RP.pending_receipts(backend,CURRENT.historical_candidates(records,plans,done,quarantined))
         if len(drain)>1:raise BF.B.EvidenceError('multiple pending full receipt authorities')
         if drain:
             i,item=drain[0]
-            result,backend=leaf_wake(backend,manifest,i,item,records,defer_next=True)
+            dependency=isinstance(i,tuple) and i[0]=='dependency'
+            if dependency:i=next(n for n,p in enumerate(manifest['programs']) if p['entity']=='catalog')
+            result,backend=leaf_wake(backend,manifest,i,item,records,dependency=dependency,defer_next=True)
             if result['status']!='RECONCILED_BOUNDARY':return result,backend
             records=backend.store.history(root);done=completed(records,manifest)
             plans=reconstruct_plans(records,manifest,backend.clock())
