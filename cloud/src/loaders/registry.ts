@@ -8,7 +8,9 @@ import { noopLoader } from './noop.js';
 import { stocksLoader } from './stocks/index.js';
 import { martLoader } from './mart/index.js';
 import { d1Moscow } from './mart/targetDate.js';
-import { martSourceWatermark, MART_SOURCE_WATERMARK_PROBE_FAILED } from './mart/watermark.js';
+import {
+  martSourceWatermark, MART_SOURCE_WATERMARK_PROBE_FAILED, MART_SOURCE_CHANGED_DURING_BUILD,
+} from './mart/watermark.js';
 import { pricesLoader } from './prices/index.js';
 import { observationBucket } from './prices/bucket.js';
 import { promoLoader } from './promo/index.js';
@@ -48,6 +50,8 @@ export interface LoaderSpec {
   sourceWatermark?: {
     probe: (config: Config) => Promise<string>;
     probeFailureCode: string;
+    /** WARNING: версия после сборки ≠ версии до неё → COMPLETE пишется без версии (NULL). */
+    changedDuringBuildCode: string;
   };
 }
 
@@ -60,7 +64,11 @@ export const LOADERS: Record<string, LoaderSpec> = {
     handler: martLoader,
     logicalPeriod: (now) => d1Moscow(now),
     prodOnly: true,
-    sourceWatermark: { probe: martSourceWatermark, probeFailureCode: MART_SOURCE_WATERMARK_PROBE_FAILED },
+    sourceWatermark: {
+      probe: martSourceWatermark,
+      probeFailureCode: MART_SOURCE_WATERMARK_PROBE_FAILED,
+      changedDuringBuildCode: MART_SOURCE_CHANGED_DURING_BUILD,
+    },
   },
   prices: { handler: pricesLoader, logicalPeriod: (now) => observationBucket(now) },
   // PR-PROMO-1: наблюдатель акций WB. Период — слот расписания (4 раза в сутки),

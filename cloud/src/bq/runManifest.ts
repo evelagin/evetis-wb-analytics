@@ -59,8 +59,23 @@ export type AcquireResult =
       recovered: boolean;
       /** Только в режиме watermark: версия последнего COMPLETE периода (null — не было или legacy NULL). */
       previousWatermark?: string | null;
+      /**
+       * Только в режиме watermark и только когда последняя строка периода — COMPLETE: почему он не покрыл слот.
+       * Это НЕ восстановление зависшего прогона (recovered=false): SOURCE_CHANGED — версия другая;
+       * PREVIOUS_VERSION_UNKNOWN — у COMPLETE нет версии (legacy/не подтверждена); SOURCE_VERSION_UNKNOWN — зонд упал.
+       */
+      rebuildReason?: RebuildReason;
     }
   | { acquired: false; reason: 'ALREADY_RUNNING' | 'COMPLETE' };
+
+export type RebuildReason = 'SOURCE_CHANGED' | 'PREVIOUS_VERSION_UNKNOWN' | 'SOURCE_VERSION_UNKNOWN';
+
+/** Почему COMPLETE последней строки не покрыл слот (режим watermark). Чистая функция — тестируется отдельно. */
+export function rebuildReasonOf(current: string | null, latestCompleteWatermark: string | null): RebuildReason {
+  if (current === null) return 'SOURCE_VERSION_UNKNOWN';
+  if (latestCompleteWatermark === null) return 'PREVIOUS_VERSION_UNKNOWN';
+  return 'SOURCE_CHANGED';
+}
 
 export interface FinalizePatch {
   status: ManifestStatus;
@@ -68,6 +83,12 @@ export interface FinalizePatch {
   errorMessage?: string | null;
   rowsFetched?: number | null;
   rowsLoaded?: number | null;
+  /**
+   * Только загрузчики с sourceWatermark (mart). Ключ есть → тот же UPDATE атомарно пишет source_watermark
+   * (null = «версия, на которой собрано, не подтверждена» → следующий слот пересоберёт). Ключа нет →
+   * SQL finalize байт-в-байт прежний, колонка не упоминается (ozon_raw.LOADER_RUNS её не имеет).
+   */
+  sourceWatermark?: string | null;
 }
 
 export interface ManifestStore {
@@ -309,6 +330,14 @@ END`;
     const curStatus = r.cur_status == null ? null : String(r.cur_status);
     const previousWatermark = r.prev_watermark == null ? null : String(r.prev_watermark);
     if (active === 0) {
+      // recovered — только продолжение после зависшего STARTED / упавшего ERROR. Пересборка поверх COMPLETE
+      // по новой версии источника — это rebuildReason, а не восстановление.
+      if (curStatus === 'COMPLETE') {
+        return {
+          acquired: true, runId: p.runId, recovered: false, previousWatermark,
+          rebuildReason: rebuildReasonOf(sourceWatermark, previousWatermark),
+        };
+      }
       return { acquired: true, runId: p.runId, recovered: curStatus !== null, previousWatermark };
     }
     // Свой lease после потерянного ответа / после отказа без finalize — те же правила, что в acquire().
@@ -323,6 +352,7 @@ END`;
   }
 
   async finalize(key: ManifestKey, runId: string, patch: FinalizePatch): Promise<void> {
+    if (patch.sourceWatermark !== undefined) return this.finalizeWithWatermark(key, runId, patch, patch.sourceWatermark);
     await this.bq.query(
       `UPDATE ${FQN(this.bq.projectId, this.dataset, this.table)}
        SET status=@status, completed_at=CURRENT_TIMESTAMP(),
@@ -349,6 +379,49 @@ END`;
         errorMessage: 'STRING',
         rowsFetched: 'INT64',
         rowsLoaded: 'INT64',
+        environment: 'STRING',
+        loaderName: 'STRING',
+        logicalPeriod: 'STRING',
+        runId: 'STRING',
+      },
+    );
+  }
+
+  /**
+   * finalize для загрузчиков с sourceWatermark: статус и подтверждённая версия — ОДНИМ UPDATE (атомарно).
+   * Пишется версия, которую сборка гарантированно видела (W0 = W1 после сборки), либо NULL, если её
+   * подтвердить нельзя (источник сменился во время сборки или зонд упал) — тогда следующий слот пересоберёт.
+   */
+  private async finalizeWithWatermark(
+    key: ManifestKey, runId: string, patch: FinalizePatch, sourceWatermark: string | null,
+  ): Promise<void> {
+    await this.bq.query(
+      `UPDATE ${FQN(this.bq.projectId, this.dataset, this.table)}
+       SET status=@status, completed_at=CURRENT_TIMESTAMP(),
+           error_code=@errorCode, error_message=@errorMessage,
+           rows_fetched=@rowsFetched, rows_loaded=@rowsLoaded,
+           source_watermark=@sourceWatermark
+       WHERE environment=@environment AND loader_name=@loaderName
+         AND logical_period=@logicalPeriod AND run_id=@runId`,
+      {
+        status: patch.status,
+        errorCode: patch.errorCode ?? null,
+        errorMessage: patch.errorMessage ?? null,
+        rowsFetched: patch.rowsFetched ?? null,
+        rowsLoaded: patch.rowsLoaded ?? null,
+        sourceWatermark,
+        environment: key.environment,
+        loaderName: key.loaderName,
+        logicalPeriod: key.logicalPeriod,
+        runId,
+      },
+      {
+        status: 'STRING',
+        errorCode: 'STRING',
+        errorMessage: 'STRING',
+        rowsFetched: 'INT64',
+        rowsLoaded: 'INT64',
+        sourceWatermark: 'STRING',
         environment: 'STRING',
         loaderName: 'STRING',
         logicalPeriod: 'STRING',

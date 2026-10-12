@@ -18,7 +18,10 @@
   только если ПОСЛЕДНЯЯ строка периода — COMPLETE той же версии; иначе пересборка того же D-1 с новым run_id. Свежий STARTED
   блокирует как раньше. Отказ зонда = «версия неизвестна»: сборка не пропускается, пишется NULL, ERROR
   `MART_SOURCE_WATERMARK_PROBE_FAILED`. Legacy COMPLETE с NULL не блокирует (одна догоняющая сборка после выкатки).
-  Для всех прочих загрузчиков SQL acquire байт-в-байт прежний (тест).
+  После успешной сборки версия перепроверяется: W1 ≠ W0 или зонд упал → COMPLETE пишется с `source_watermark = NULL`
+  (WARNING `MART_SOURCE_CHANGED_DURING_BUILD` / ERROR зонда), следующий слот пересобирает; статус и версия — один UPDATE.
+  Пересборка поверх COMPLETE журналируется как `rebuildReason` (SOURCE_CHANGED / PREVIOUS_VERSION_UNKNOWN /
+  SOURCE_VERSION_UNKNOWN), а не как `recovered`. Для всех прочих загрузчиков SQL acquire и finalize байт-в-байт прежние (тест).
 - Экономика витрины, FIN CONTRACT V2, SQL P&L магазина и классификация удержаний не меняются: меняется только КОГДА
   пересобирается витрина (полный REPLACE, как и раньше).
 

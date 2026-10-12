@@ -32,6 +32,9 @@ export const FINANCE_WATERMARK_VERSION = 'fin:v2';
 /** Код ERROR-события, когда версию источника узнать не удалось (сборка всё равно идёт). */
 export const MART_SOURCE_WATERMARK_PROBE_FAILED = 'MART_SOURCE_WATERMARK_PROBE_FAILED';
 
+/** Код WARNING-события: версия после сборки ≠ версии до неё → COMPLETE без версии, следующий слот пересоберёт. */
+export const MART_SOURCE_CHANGED_DURING_BUILD = 'MART_SOURCE_CHANGED_DURING_BUILD';
+
 /** Серверный таймаут зонда: зависший зонд не должен съесть таймаут Job'а (1800 с). */
 export const FINANCE_WATERMARK_TIMEOUT_MS = 120_000;
 

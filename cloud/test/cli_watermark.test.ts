@@ -38,11 +38,16 @@ class MemWatermarkStore implements ManifestStore {
     }
     const prevComplete = [...mine].filter((r) => r.status === 'COMPLETE').sort((a, b) => b.startedAt - a.startedAt)[0];
     if (active === 0) {
+      const rebuild = p.sourceWatermark !== undefined && latest?.status === 'COMPLETE'
+        ? { rebuildReason: p.sourceWatermark === null ? 'SOURCE_VERSION_UNKNOWN' as const
+            : latest.sourceWatermark === null ? 'PREVIOUS_VERSION_UNKNOWN' as const : 'SOURCE_CHANGED' as const }
+        : {};
       this.rows.push({
         environment: p.environment, loaderName: p.loaderName, logicalPeriod: p.logicalPeriod, runId: p.runId,
         executionId: p.executionId, status: 'STARTED', startedAt: p.nowMs, sourceWatermark: p.sourceWatermark ?? null,
       });
-      return { acquired: true, runId: p.runId, recovered: latest !== null, ...(p.sourceWatermark !== undefined ? { previousWatermark: prevComplete?.sourceWatermark ?? null } : {}) };
+      const recovered = p.sourceWatermark === undefined ? latest !== null : latest !== null && latest.status !== 'COMPLETE';
+      return { acquired: true, runId: p.runId, recovered, ...(p.sourceWatermark !== undefined ? { previousWatermark: prevComplete?.sourceWatermark ?? null } : {}), ...rebuild };
     }
     if (latest?.status === 'STARTED' && latest.runId === p.runId) return { acquired: true, runId: p.runId, recovered: true };
     if (p.sourceWatermark === undefined) return { acquired: false, reason: latest?.status === 'COMPLETE' ? 'COMPLETE' : 'ALREADY_RUNNING' };
@@ -50,8 +55,13 @@ class MemWatermarkStore implements ManifestStore {
   }
   async finalize(key: ManifestKey, runId: string, patch: FinalizePatch): Promise<void> {
     const r = this.rows.find((x) => x.runId === runId && x.logicalPeriod === key.logicalPeriod);
-    if (r) r.status = patch.status as Row['status']; // source_watermark finalize не трогает
+    if (!r) return;
+    this.finalizes.push(patch);
+    r.status = patch.status as Row['status'];
+    // как SQL: колонка пишется в том же UPDATE только при наличии ключа
+    if (patch.sourceWatermark !== undefined) r.sourceWatermark = patch.sourceWatermark;
   }
+  finalizes: FinalizePatch[] = [];
 }
 
 const env = (o: Record<string, string> = {}): NodeJS.ProcessEnv =>
@@ -61,7 +71,10 @@ const W0 = 'fin:v2:100:' + '0'.repeat(64);
 const W1 = 'fin:v2:101:' + '1'.repeat(64);
 const PERIOD = LOADERS.mart.logicalPeriod();
 
-function harness(store: MemWatermarkStore, probe: () => Promise<string>, nowMs = Date.parse('2026-10-13T06:00:00Z')) {
+/** probe: одна функция на оба зонда (до lease и после сборки) или массив ответов по очереди. */
+function harness(store: MemWatermarkStore, probeArg: (() => Promise<string>) | Array<() => Promise<string>>, nowMs = Date.parse('2026-10-13T06:00:00Z')) {
+  let call = 0;
+  const probe = () => (Array.isArray(probeArg) ? probeArg[Math.min(call++, probeArg.length - 1)]!() : probeArg());
   const order: string[] = [];
   const handled: LoaderContext[] = [];
   const deps: CliDeps = {
@@ -202,14 +215,109 @@ describe('матрица решений guard витрины', () => {
   });
 });
 
-describe('проводка cli', () => {
-  it('mart: версия считается ДО acquire и ровно один раз; передаётся в acquire', async () => {
+describe('подтверждение версии после сборки (P3-1: устаревшая сборка не объявляется актуальной)', () => {
+  const lines = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+
+  it('W1 = W0 → COMPLETE с W0, finalize пишет версию в том же UPDATE', async () => {
     const s = new MemWatermarkStore();
     const h = harness(s, async () => W0);
     await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1' }), h.deps);
+    expect(s.finalizes).toEqual([{ status: 'COMPLETE', rowsFetched: 1, rowsLoaded: 1, sourceWatermark: W0 }]);
+    expect(s.rows[0]).toMatchObject({ status: 'COMPLETE', sourceWatermark: W0 });
+  });
+
+  it('W1 ≠ W0 (финансы пришли во время сборки) → COMPLETE с NULL, WARNING с кодом; следующий слот пересобирает', async () => {
+    const s = new MemWatermarkStore();
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const h = harness(s, [async () => W0, async () => W1]);
+    expect(await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1', LOG_LEVEL: 'info' }), h.deps)).toBe(EXIT_OK);
+    expect(s.rows[0]).toMatchObject({ status: 'COMPLETE', sourceWatermark: null });
+    expect(lines(err).find((l) => l.message === 'source_changed_during_build')).toMatchObject({
+      severity: 'WARN', code: 'MART_SOURCE_CHANGED_DURING_BUILD', sourceWatermark: W0, sourceWatermarkAfterBuild: W1,
+    });
+    const h2 = harness(s, async () => W1, NOW + HOUR);
+    await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e2' }), h2.deps);
+    expect(h2.handled).toHaveLength(1);
+    expect(s.rows[1]).toMatchObject({ status: 'COMPLETE', sourceWatermark: W1 });
+  });
+
+  it('повторный зонд упал → COMPLETE с NULL, ERROR с кодом и stage=post_build', async () => {
+    const s = new MemWatermarkStore();
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const h = harness(s, [async () => W0, async () => { throw new Error('quota'); }]);
+    expect(await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1' }), h.deps)).toBe(EXIT_OK);
+    expect(s.rows[0]).toMatchObject({ status: 'COMPLETE', sourceWatermark: null });
+    expect(lines(err).find((l) => l.message === 'source_watermark_probe_failed')).toMatchObject({
+      severity: 'ERROR', code: MART_SOURCE_WATERMARK_PROBE_FAILED, stage: 'post_build',
+    });
+  });
+
+  it('версия до сборки неизвестна → повторного зонда нет, COMPLETE с NULL', async () => {
+    const s = new MemWatermarkStore();
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const h = harness(s, async () => { throw new Error('boom'); });
+    await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1' }), h.deps);
     expect(h.order.filter((x) => x === 'probe')).toHaveLength(1);
-    expect(h.order.indexOf('probe')).toBeLessThan(h.order.indexOf('acquire'));
-    expect(h.order.indexOf('acquire')).toBeLessThan(h.order.indexOf('handler'));
+    expect(s.rows[0]).toMatchObject({ status: 'COMPLETE', sourceWatermark: null });
+  });
+
+  it('сборка упала → повторного зонда нет; finalize(ERROR) без ключа версии (W0 строки STARTED сохраняется)', async () => {
+    const s = new MemWatermarkStore();
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const h = harness(s, async () => W0);
+    await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1' }), {
+      ...h.deps, runHandler: async () => { h.order.push('handler'); throw new Error('FRESHNESS_GATE'); },
+    });
+    expect(h.order.filter((x) => x === 'probe')).toHaveLength(1);
+    expect(s.finalizes).toHaveLength(1);
+    expect(s.finalizes[0]!.status).toBe('ERROR');
+    expect(Object.prototype.hasOwnProperty.call(s.finalizes[0], 'sourceWatermark')).toBe(false);
+    expect(s.rows[0]).toMatchObject({ status: 'ERROR', sourceWatermark: W0 });
+  });
+
+  it('прочие загрузчики: finalize без ключа версии (SQL finalize прежний)', async () => {
+    const s = new MemWatermarkStore();
+    const h = harness(s, async () => W0);
+    await runCli(argv('stocks'), env({ CLOUD_RUN_EXECUTION: 'e1' }), h.deps);
+    expect(s.finalizes).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(s.finalizes[0], 'sourceWatermark')).toBe(false);
+  });
+});
+
+describe('P3-6: пересборка по новой версии ≠ восстановление зависшего прогона', () => {
+  const acquiredLog = async (seedFn: (s: MemWatermarkStore) => void, w: string) => {
+    const s = new MemWatermarkStore();
+    seedFn(s);
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1', LOG_LEVEL: 'info' }), harness(s, async () => w).deps);
+    const l = out.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>).find((x) => x.message === 'guard_acquired');
+    out.mockRestore();
+    return l!;
+  };
+  it('COMPLETE(W0) + W1 → recovered=false, rebuildReason=SOURCE_CHANGED', async () => {
+    expect(await acquiredLog((s) => seed(s, 'COMPLETE', W0, NOW - HOUR), W1)).toMatchObject({ recovered: false, rebuildReason: 'SOURCE_CHANGED' });
+  });
+  it('legacy COMPLETE(NULL) + W0 → recovered=false, rebuildReason=PREVIOUS_VERSION_UNKNOWN', async () => {
+    expect(await acquiredLog((s) => seed(s, 'COMPLETE', null, NOW - HOUR), W0)).toMatchObject({ recovered: false, rebuildReason: 'PREVIOUS_VERSION_UNKNOWN' });
+  });
+  it('устаревший STARTED → recovered=true, rebuildReason нет', async () => {
+    const l = await acquiredLog((s) => seed(s, 'STARTED', W0, NOW - 2 * HOUR), W0);
+    expect(l).toMatchObject({ recovered: true });
+    expect(l.rebuildReason).toBeUndefined();
+  });
+  it('первый прогон периода → recovered=false, rebuildReason нет', async () => {
+    const l = await acquiredLog(() => {}, W0);
+    expect(l).toMatchObject({ recovered: false });
+    expect(l.rebuildReason).toBeUndefined();
+  });
+});
+
+describe('проводка cli', () => {
+  it('mart: зонд ДО acquire (W0) и повторно ПОСЛЕ сборки, до finalize; W0 передаётся в acquire', async () => {
+    const s = new MemWatermarkStore();
+    const h = harness(s, async () => W0);
+    await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e1' }), h.deps);
+    expect(h.order).toEqual(['makeStore', 'probe', 'acquire', 'handler', 'probe']);
     expect(s.acquires[0]!.sourceWatermark).toBe(W0);
   });
 

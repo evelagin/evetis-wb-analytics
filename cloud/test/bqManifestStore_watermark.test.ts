@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BqManifestStore, type AcquireParams } from '../src/bq/runManifest.js';
+import { BqManifestStore, rebuildReasonOf, type AcquireParams } from '../src/bq/runManifest.js';
 import type { BqClient } from '../src/bq/client.js';
 
 /**
@@ -12,6 +12,9 @@ import type { BqClient } from '../src/bq/client.js';
 
 // Дословная копия SQL acquire из origin/main 409f3a3 (cloud/src/bq/runManifest.ts), таблица подставлена.
 const LEGACY_SQL_409F3A3: string = "\nBEGIN\n  DECLARE active INT64 DEFAULT 0;\n  DECLARE cur_status STRING DEFAULT NULL;\n  DECLARE cur_run_id STRING DEFAULT NULL;\n  DECLARE cur_execution_id STRING DEFAULT NULL;\n  BEGIN TRANSACTION;\n  SET active = (\n    SELECT COUNT(*) FROM `proj.ozon_raw.LOADER_RUNS`\n    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod\n      AND (status='COMPLETE' OR (status='STARTED' AND started_at > TIMESTAMP(@staleIso)))\n  );\n  SET cur_status = (\n    SELECT status FROM `proj.ozon_raw.LOADER_RUNS`\n    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod\n    ORDER BY started_at DESC LIMIT 1\n  );\n  SET cur_run_id = (\n    SELECT run_id FROM `proj.ozon_raw.LOADER_RUNS`\n    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod\n    ORDER BY started_at DESC LIMIT 1\n  );\n  SET cur_execution_id = (\n    SELECT execution_id FROM `proj.ozon_raw.LOADER_RUNS`\n    WHERE environment=@environment AND loader_name=@loaderName AND logical_period=@logicalPeriod\n    ORDER BY started_at DESC LIMIT 1\n  );\n  IF active = 0 THEN\n    INSERT INTO `proj.ozon_raw.LOADER_RUNS`\n      (environment, loader_name, logical_period, run_id, execution_id, image_digest,\n       git_sha, status, attempt_count, started_at)\n    VALUES\n      (@environment, @loaderName, @logicalPeriod, @runId, @executionId, @imageDigest,\n       @gitSha, 'STARTED', 1, CURRENT_TIMESTAMP());\n  END IF;\n  COMMIT TRANSACTION;\n  SELECT active AS active, cur_status AS cur_status, cur_run_id AS cur_run_id, cur_execution_id AS cur_execution_id;\nEND";
+
+// Дословная копия SQL finalize из origin/main 409f3a3.
+const LEGACY_FINALIZE_SQL_409F3A3: string = "UPDATE `proj.ozon_raw.LOADER_RUNS`\n       SET status=@status, completed_at=CURRENT_TIMESTAMP(),\n           error_code=@errorCode, error_message=@errorMessage,\n           rows_fetched=@rowsFetched, rows_loaded=@rowsLoaded\n       WHERE environment=@environment AND loader_name=@loaderName\n         AND logical_period=@logicalPeriod AND run_id=@runId";
 
 interface Call { sql: string; params?: Record<string, unknown>; types?: Record<string, string>; argc: number }
 
@@ -104,9 +107,28 @@ describe('acquire с sourceWatermark — SQL', () => {
     for (const k of Object.keys(c.params!)) expect(c.types, `нет типа для @${k}`).toHaveProperty(k);
   });
 
-  it('active=0 → acquired; previousWatermark из последнего COMPLETE', async () => {
+  it('active=0 поверх COMPLETE другой версии → пересборка: recovered=false, rebuildReason=SOURCE_CHANGED', async () => {
     const { r } = await run(W, () => [{ active: 0, fresh_started: 0, cur_status: 'COMPLETE', prev_watermark: 'fin:v2:1:' + 'b'.repeat(64) }]);
-    expect(r).toEqual({ acquired: true, runId: base.runId, recovered: true, previousWatermark: 'fin:v2:1:' + 'b'.repeat(64) });
+    expect(r).toEqual({ acquired: true, runId: base.runId, recovered: false, previousWatermark: 'fin:v2:1:' + 'b'.repeat(64), rebuildReason: 'SOURCE_CHANGED' });
+  });
+  it('active=0 поверх legacy COMPLETE(NULL) → rebuildReason=PREVIOUS_VERSION_UNKNOWN; зонд упал → SOURCE_VERSION_UNKNOWN', async () => {
+    const a = await run(W, () => [{ active: 0, fresh_started: 0, cur_status: 'COMPLETE', prev_watermark: null }]);
+    expect(a.r).toMatchObject({ acquired: true, recovered: false, rebuildReason: 'PREVIOUS_VERSION_UNKNOWN' });
+    const b = await run(null, () => [{ active: 0, fresh_started: 0, cur_status: 'COMPLETE', prev_watermark: W }]);
+    expect(b.r).toMatchObject({ acquired: true, recovered: false, rebuildReason: 'SOURCE_VERSION_UNKNOWN' });
+  });
+  it('active=0 после ERROR / устаревшего STARTED → recovered=true, rebuildReason нет; первый прогон → recovered=false', async () => {
+    for (const st of ['ERROR', 'STARTED']) {
+      const { r } = await run(W, () => [{ active: 0, fresh_started: 0, cur_status: st, prev_watermark: null }]);
+      expect(r).toEqual({ acquired: true, runId: base.runId, recovered: true, previousWatermark: null });
+    }
+    const first = await run(W, () => [{ active: 0, fresh_started: 0, cur_status: null, prev_watermark: null }]);
+    expect(first.r).toEqual({ acquired: true, runId: base.runId, recovered: false, previousWatermark: null });
+  });
+  it('rebuildReasonOf', () => {
+    expect(rebuildReasonOf('a', 'b')).toBe('SOURCE_CHANGED');
+    expect(rebuildReasonOf('a', null)).toBe('PREVIOUS_VERSION_UNKNOWN');
+    expect(rebuildReasonOf(null, 'b')).toBe('SOURCE_VERSION_UNKNOWN');
   });
   it('active>0 из-за COMPLETE той же версии → COMPLETE (guard_skip)', async () => {
     const { r } = await run(W, () => [{ active: 1, fresh_started: 0, cur_status: 'COMPLETE', cur_run_id: 'old', prev_watermark: W }]);
@@ -127,6 +149,31 @@ describe('acquire с sourceWatermark — SQL', () => {
     const spy2 = { projectId: 'proj', query: async () => { throw new Error('ECONNRESET'); } };
     const s2 = new BqManifestStore(spy2 as unknown as BqClient, 'wb_raw', 'LOADER_RUNS');
     await expect(s2.acquire({ ...base, sourceWatermark: W })).rejects.toThrow('ECONNRESET');
+  });
+  it('finalize БЕЗ ключа версии: SQL, параметры и типы байт-в-байт как в 409f3a3 (wb_raw и ozon_raw)', async () => {
+    for (const dataset of ['wb_raw', 'ozon_raw']) {
+      const spy = new SpyBq();
+      const store = new BqManifestStore(spy as unknown as BqClient, dataset, 'LOADER_RUNS');
+      await store.finalize({ environment: 'prod', loaderName: 'x', logicalPeriod: 'p' }, 'r', { status: 'COMPLETE', rowsFetched: 1, rowsLoaded: 1 });
+      const c = spy.calls[0]!;
+      expect(c.sql).toBe(LEGACY_FINALIZE_SQL_409F3A3.split('`proj.ozon_raw.LOADER_RUNS`').join('`proj.' + dataset + '.LOADER_RUNS`'));
+      expect(c.params).toEqual({ status: 'COMPLETE', errorCode: null, errorMessage: null, rowsFetched: 1, rowsLoaded: 1, environment: 'prod', loaderName: 'x', logicalPeriod: 'p', runId: 'r' });
+      expect(c.types).toEqual({ status: 'STRING', errorCode: 'STRING', errorMessage: 'STRING', rowsFetched: 'INT64', rowsLoaded: 'INT64', environment: 'STRING', loaderName: 'STRING', logicalPeriod: 'STRING', runId: 'STRING' });
+    }
+  });
+  it('finalize С ключом версии: статус и source_watermark в ОДНОМ UPDATE; null типизирован', async () => {
+    for (const w of [W, null]) {
+      const spy = new SpyBq();
+      const store = new BqManifestStore(spy as unknown as BqClient, 'wb_raw', 'LOADER_RUNS');
+      await store.finalize({ environment: 'prod', loaderName: 'mart', logicalPeriod: '2026-10-12' }, base.runId, { status: 'COMPLETE', rowsFetched: 1, rowsLoaded: 1, sourceWatermark: w });
+      expect(spy.calls).toHaveLength(1);
+      const sql = spy.calls[0]!.sql.replace(/\s+/g, ' ');
+      expect(sql).toContain('rows_fetched=@rowsFetched, rows_loaded=@rowsLoaded, source_watermark=@sourceWatermark WHERE');
+      expect(sql).toContain('AND run_id=@runId');
+      expect(spy.calls[0]!.params!.sourceWatermark).toBe(w);
+      expect(spy.calls[0]!.types!.sourceWatermark).toBe('STRING');
+      for (const k of Object.keys(spy.calls[0]!.params!)) expect(spy.calls[0]!.types).toHaveProperty(k);
+    }
   });
   it('finalize не трогает source_watermark (версия STARTED переживает COMPLETE)', async () => {
     const spy = new SpyBq();

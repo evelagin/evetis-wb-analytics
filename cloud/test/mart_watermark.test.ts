@@ -157,6 +157,7 @@ describe('реестр: source-aware guard только у mart', () => {
   it('mart имеет sourceWatermark с непустым кодом отказа', () => {
     expect(LOADERS.mart.sourceWatermark).toBeDefined();
     expect(LOADERS.mart.sourceWatermark!.probeFailureCode).toBe('MART_SOURCE_WATERMARK_PROBE_FAILED');
+    expect(LOADERS.mart.sourceWatermark!.changedDuringBuildCode).toBe('MART_SOURCE_CHANGED_DURING_BUILD');
   });
   it('у всех прочих загрузчиков (включая Ozon) его нет', () => {
     for (const [name, spec] of Object.entries(LOADERS)) {
