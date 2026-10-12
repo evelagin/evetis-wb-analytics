@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  financeWatermark, financeWatermarkSql, FINANCE_WATERMARK_VERSION, FINANCE_WATERMARK_TIMEOUT_MS,
+  financeWatermark, financeWatermarkSql, financeWatermarkSqlFrom, FINANCE_WATERMARK_VERSION, FINANCE_WATERMARK_TIMEOUT_MS,
 } from '../src/loaders/mart/watermark.js';
 import { LOADERS } from '../src/loaders/registry.js';
 import type { QueryRunner } from '../src/loaders/mart/bq.js';
@@ -77,6 +80,18 @@ describe('fin:v2 — SQL', () => {
     expect(financeWatermarkSql('proj')).toBe(sql);
     expect(FINANCE_WATERMARK_VERSION).toBe('fin:v2');
     expect(sql).toContain("CONCAT('fin:v2:'");
+  });
+});
+
+describe('fin:v2 — read-only проверка в BigQuery (tools/mart_watermark_bq_check.py)', () => {
+  const py = readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'tools', 'mart_watermark_bq_check.py'), 'utf8');
+  it('шаблон скрипта — дословная копия financeWatermarkSqlFrom: BigQuery проверяет ровно прод-SQL', () => {
+    const m = py.match(/WATERMARK_SQL_TEMPLATE = r"""([\s\S]*?)"""/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe(financeWatermarkSqlFrom('{source}'));
+  });
+  it('прод-SQL = тот же шаблон над wb_raw.V_WB_FINANCE_SEMANTIC', () => {
+    expect(financeWatermarkSql('proj')).toBe(financeWatermarkSqlFrom('`proj.wb_raw.V_WB_FINANCE_SEMANTIC`'));
   });
 });
 

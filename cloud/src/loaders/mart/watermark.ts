@@ -42,11 +42,20 @@ const WATERMARK_RE = /^fin:v2:\d+:[0-9a-f]{64}$/;
 
 /** SQL отпечатка. Только SELECT; объект источника — тот же, что читает sp_bootstrap_facts. */
 export function financeWatermarkSql(projectId: string): string {
+  return financeWatermarkSqlFrom(`\`${projectId}.wb_raw.V_WB_FINANCE_SEMANTIC\``);
+}
+
+/**
+ * Тот же SQL над произвольным источником строк (имя таблицы/CTE или `(подзапрос)`). Нужен для read-only
+ * прогона алгоритма в BigQuery на синтетике (tools/mart_watermark_bq_check.py); шаблон скрипта сверяется
+ * с этой функцией тестом, чтобы проверка и прод не разошлись.
+ */
+export function financeWatermarkSqlFrom(source: string): string {
   return `
 WITH row_digests AS (
   SELECT TO_JSON_STRING(s.report_id) AS part_key,
          TO_HEX(SHA256(TO_JSON_STRING(s))) AS row_digest
-  FROM \`${projectId}.wb_raw.V_WB_FINANCE_SEMANTIC\` s
+  FROM ${source} s
 ),
 parts AS (
   SELECT part_key,

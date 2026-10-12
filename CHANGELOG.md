@@ -22,6 +22,8 @@
   (WARNING `MART_SOURCE_CHANGED_DURING_BUILD` / ERROR зонда), следующий слот пересобирает; статус и версия — один UPDATE.
   Пересборка поверх COMPLETE журналируется как `rebuildReason` (SOURCE_CHANGED / PREVIOUS_VERSION_UNKNOWN /
   SOURCE_VERSION_UNKNOWN), а не как `recovered`. Для всех прочих загрузчиков SQL acquire и finalize байт-в-байт прежние (тест).
+- Read-only проверка алгоритма в BigQuery на синтетике: `tools/mart_watermark_bq_check.py` (ручной запуск, шаблон
+  сверяется с прод-SQL тестом).
 - Экономика витрины, FIN CONTRACT V2, SQL P&L магазина и классификация удержаний не меняются: меняется только КОГДА
   пересобирается витрина (полный REPLACE, как и раньше).
 
