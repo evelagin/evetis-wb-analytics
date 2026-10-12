@@ -262,6 +262,7 @@ resource "google_monitoring_alert_policy" "ozon_runtime_finance_control" {
         resource.type="cloud_run_job"
         resource.labels.job_name=~"^ozon-runtime-"
         severity>=ERROR
+        jsonPayload.code!=""
         jsonPayload.code=~"^OZON_FINANCE_"
       EOT
       label_extractors = {
