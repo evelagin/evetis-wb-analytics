@@ -7,7 +7,7 @@ from tools.tenancy.validation import parse_tenant_json
 JOB = 'tenant-backfill-controller'
 SCHEDULER = 'tenant-backfill-tick'
 SOURCE_FILES = (
-    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py','registry.py',
+    'cloud_access.py','cloud_tick.py','cloud_controller.py','durable_plan.py','registry.py','orchestration_plan.py',
     'orchestration_contract.py','orchestration_identity.py','tenant_backfill.py','tenant_tables.py','pre_source_recovery.py','controller_stop_recovery.py','controller_stop_image_check.py','controller_dispatch_recovery.py','controller_dispatch_image_check.py',
     'full_history.py', 'full_controller.py', 'full_image_check.py', 'full_bootstrap_recovery.py',
     'full_leaf_recovery.py','full_leaf_image_check.py','full_first_receipt_recovery.py','full_first_receipt_image_check.py','controller_diagnostics.py',
