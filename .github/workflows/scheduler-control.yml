@@ -89,6 +89,20 @@ jobs:
             JOB="wb-mart-${TARGET_ENV}"
             SCHEDULERS="${JOB}-finance-catchup"
           fi
+          # Стоп-кран витрины: pause wb-mart ставит на паузу ОБА её расписания (основное и догоняющий
+          # слот), иначе слот 12:45 МСК продолжил бы запускать Job. resume wb-mart — ТОЛЬКО основное:
+          # догоняющий слот включается отдельно (loader=wb-mart-finance-catchup). Пропускается ТОЛЬКО
+          # доказанно несуществующий слот (NOT_FOUND, до terraform apply); при любой иной ошибке describe
+          # pause всё равно пытается и падает громко — стоп-кран не может «тихо» не сработать.
+          if [ "${LOADER}" = "wb-mart" ] && [ "${ACTION}" = "pause" ]; then
+            SCHEDULERS="${JOB} ${JOB}-finance-catchup"
+            if ! DESCRIBE_OUT=$(gcloud scheduler jobs describe "${JOB}-finance-catchup" --location ${{ vars.GCP_REGION }} 2>&1); then
+              if echo "${DESCRIBE_OUT}" | grep -q "NOT_FOUND"; then
+                SCHEDULERS="${JOB}"
+                echo "::notice title=catch-up slot absent::${JOB}-finance-catchup не существует — на паузу ставится только ${JOB}"
+              fi
+            fi
+          fi
           case "${ACTION}" in
             pause)   for S in $SCHEDULERS; do gcloud scheduler jobs pause  "$S" --location ${{ vars.GCP_REGION }}; done ;;
             resume)  for S in $SCHEDULERS; do gcloud scheduler jobs resume "$S" --location ${{ vars.GCP_REGION }}; done ;;

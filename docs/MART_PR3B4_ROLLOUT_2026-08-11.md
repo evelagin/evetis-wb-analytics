@@ -69,11 +69,15 @@ Rollout считается принятым, если за 3–5 подряд с
 3. `distinct_builds = 1` и `days_behind = 0` в Q3 на каждое утро;
 4. ни одного `lease_only_no_mart = TRUE`;
 5. в `MART_RUNS` **ровно одна** строка COMPLETE на каждый `target_date` — дубликатов построения нет.
+   (Критерий 2026-08. С source-aware guard, 2026-10-12, несколько COMPLETE за один `target_date` — норма:
+   каждый собран на новой версии финансов WB, с новым run_id; дублем считается COMPLETE без смены версии.)
 
 ## Откат
 
 Если пошло не так: `Actions → scheduler-control` → `action = pause`, `loader = wb-mart`,
-`environment = prod`. Расписание останется в Terraform (`ignore_changes = [paused]` гарантирует,
+`environment = prod`. С 2026-10-12 это ставит на паузу ОБА расписания витрины: `wb-mart-prod` и догоняющий
+слот `wb-mart-prod-finance-catchup` (12:45 МСК). `resume` с `loader = wb-mart` включает только основное
+расписание; слот включается отдельно (`loader = wb-mart-finance-catchup`). Расписание останется в Terraform (`ignore_changes = [paused]` гарантирует,
 что следующий `terraform apply` состояние паузы не тронет), витрину можно строить `run-now`,
 как раньше. Данные при этом не страдают: `sp_build_mart_sku_daily` полностью пересобирает
 `MART_SKU_DAILY` от global_start, поэтому пропущенный день = устаревшая витрина, а НЕ дыра в
