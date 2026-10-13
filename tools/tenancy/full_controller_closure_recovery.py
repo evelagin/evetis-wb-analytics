@@ -119,6 +119,21 @@ def load(b,m,records):
  return found
 
 
+def accepted_incidents(b,m,records):
+ """Revalidate every supported exact incident; quarantine is never COMPLETE."""
+ from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller as H
+ from tools.tenancy import full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG
+ accepted=FL.load(b,m,records)+PB.load(b,m,records)+FR.load(b,m,records)
+ failed=FC.load(b,m,records);rejected=PT.load(b,m,records)
+ zero_effect=ZE.load(b,m,records);quarantines=LQ.load(b,m,records)
+ b.verified_cooldown_failures=failed;b.verified_pretransport_rejections=rejected
+ b.verified_fbo_zero_effect_failures=zero_effect
+ accepted+=failed+rejected+zero_effect+quarantines+PAG.load(b,m,records)
+ previous=load(b,m,records)
+ known={x['stop_hash'] for x in accepted}|{h for x in previous for h in x['stop_hashes']}
+ return known,H.isolated_indices(m,quarantines)
+
+
 def live_freeze(b,p,m,records):
  """Mandatory live checks repeated at publication, not inferred from expiry."""
  from tools.tenancy import orchestration_contract as O, recent_priority as RP, full_controller as H
@@ -161,13 +176,9 @@ def live_freeze(b,p,m,records):
  for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
   match=re.fullmatch(r'BFQ_([0-9a-f]{64})_([0-9]{10})_DISPATCH_INTENT',n)
   if match and match[1] in shards and (created is None or created>=CC.at(p['claim']['created_at']) or expiry):fail('new/unknown source election')
- accepted=FL.load(b,m,records)+PB.load(b,m,records)+FR.load(b,m,records)
- failed=FC.load(b,m,records);rejected=PT.load(b,m,records)
- b.verified_cooldown_failures=failed;b.verified_pretransport_rejections=rejected
- accepted+=failed+rejected
- previous=load(b,m,records);known={x['stop_hash'] for x in accepted}|{h for x in previous for h in x['stop_hashes']}
+ known,isolated=accepted_incidents(b,m,records)
  if {D.digest(r) for r in records if r['kind']=='STOPPED'}-known!=set(p['stop_hashes']):fail('another unresolved incident')
- if RP.pending_receipts(b,plans):fail('unfinished source authority')
+ if RP.pending_receipts(b,{i:item for i,item in plans.items() if i not in isolated}):fail('unfinished source authority')
  ro=FL.observer(b,m,p['last_source']['index']);H.verify_authority(ro,m);ro.preflight({'hash':m['hash'],'plans':[plans[p['last_source']['index']]['plan']]})
  doc=plans[p['last_source']['index']]['plan'];state=ro.state(doc)
  sh=b.store.history(p['last_source']['shard'],max_records=F.MAX_LEAF_RECORDS)

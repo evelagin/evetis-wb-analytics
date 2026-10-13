@@ -349,13 +349,18 @@ class Backend:
         return result
 
 
-def bounded_wake(root, backend):
+def bounded_wake(root, backend, *, decision_complete=None):
     """At most one reconcile and one new dispatch; no source/wait busy loop."""
+    decision_complete=decision_complete or getattr(backend,'decision_complete',None)
     if root != BF.QF.ROOT:
         records=backend.store.history(root)
         if any(r['kind']=='FULL_MANIFEST' for r in records):
             from tools.tenancy import full_controller as FH
             result,full_backend=FH.wake(backend,root)
+            # The source decision and its durable bookkeeping are complete.
+            # Read-only reporting can outlive the platform deadline; retain the
+            # canonical control closure before starting that observation.
+            if decision_complete is not None:decision_complete(result)
             with gate('MONITORING_WATERMARK'):result['progress']=FH.monitoring(full_backend,root,result)
             return result
     started=backend.clock()
@@ -365,7 +370,16 @@ def bounded_wake(root, backend):
         # lease. A fresh Tick reconstructs durable state and repeats all gates.
         result=T.Tick(root,backend.store,backend,backend.clock).run()
         result['prior_action']='RECONCILED'
+    if decision_complete is not None:decision_complete(result)
     return result
+
+
+def close_decision(backend,result):
+    from tools.tenancy import controller_cadence as CC
+    if getattr(backend,'wake_activity',{}).get('diagnostic_active'):return
+    closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else dict(result)
+    closure['source_dispatches']=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0))
+    with gate('MANIFEST_ROOT'):CC.close(backend,closure)
 
 
 def main(argv=None):
@@ -381,6 +395,7 @@ def main(argv=None):
         rc=None
         try:
             with gate('MANIFEST_ROOT'):backend,root=bootstrap(os.environ)
+            backend.decision_complete=lambda result:close_decision(backend,result)
             result=bounded_wake(root,backend)
             if 'progress' not in result:
                 with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
@@ -393,12 +408,9 @@ def main(argv=None):
             result={'status':'WAITING_READ_RETRY','reason':'TRANSIENT_READ_TRANSPORT'};rc=1
         # Closure failure is a real error handled below, never an uncaught
         # exception in a special waiting handler or an assumed authority release.
-        closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else result
-        closure=dict(closure,source_dispatches=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0)))
         # A diagnostic child owns the shared source slot until independently
         # terminal. A read/submission error must retain this control fence.
-        if not getattr(backend,'wake_activity',{}).get('diagnostic_active'):
-            with gate('MANIFEST_ROOT'):CC.close(backend,closure)
+        close_decision(backend,result)
         print(json.dumps(result,sort_keys=True))
         return rc if rc is not None else (0 if result['status']!='STOPPED' else 2)
     except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:

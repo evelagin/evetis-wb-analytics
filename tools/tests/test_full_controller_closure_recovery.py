@@ -8,6 +8,24 @@ from tools.tenancy.full_controller_closure_image_check import fixture,check,NOW
 
 def test_packaged_recovery():assert check()['terminal_controller_recovery']=='PASS'
 
+
+def test_every_exact_recovery_loader_is_required_before_local_isolation(monkeypatch):
+ from types import SimpleNamespace
+ from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG
+ modules=[FL,FC,PB,PT,FR,ZE,LQ,PAG,R];calls=[]
+ for i,module in enumerate(modules):
+  value={'stop_hashes':['9'*64]} if module is R else {'stop_hash':str(i+1)*64}
+  if module is LQ:value.update(index=1,isolation_scope='FBO_SOURCE')
+  def loader(*args,module=module,value=value):
+   calls.append(module);return [value]
+  monkeypatch.setattr(module,'load',loader)
+ b=SimpleNamespace();m={'programs':[{'entity':'finance_accrual'},{'entity':'fbo_postings'},{'entity':'fbo_postings'}]}
+ known,isolated=R.accepted_incidents(b,m,[])
+ assert set(calls)==set(modules) and len(known)==9 and isolated=={1,2}
+ assert b.verified_fbo_zero_effect_failures==[{'stop_hash':'6'*64}]
+ monkeypatch.setattr(LQ,'load',lambda *a:(_ for _ in ()).throw(BF.B.EvidenceError('unknown quarantine')))
+ with pytest.raises(BF.B.EvidenceError,match='unknown quarantine'):R.accepted_incidents(b,m,[])
+
 @pytest.mark.parametrize('field',sorted(R.PREDICATES))
 @pytest.mark.parametrize('value',[False,None,1])
 def test_every_unknown_or_false_predicate_blocks_before_any_write(field,value):

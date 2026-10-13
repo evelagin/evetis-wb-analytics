@@ -20,6 +20,7 @@ SOURCE_FILES = (
     'full_fbo_zero_effect_recovery.py','full_fbo_zero_effect_image_check.py',
     'fbo_diagnostic_owner.py','full_fbo_diagnostic_closure.py','fbo_diagnostic_image_check.py','full_pre_authority_gate_recovery.py',
     'current_contract.py','current_policy.py','current_controller.py','current_image_check.py',
+    'controller_decision_closure_image_check.py',
 )
 
 
