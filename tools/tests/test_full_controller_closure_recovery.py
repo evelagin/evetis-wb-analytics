@@ -8,6 +8,60 @@ from tools.tenancy.full_controller_closure_image_check import fixture,check,NOW
 
 def test_packaged_recovery():assert check()['terminal_controller_recovery']=='PASS'
 
+
+def test_large_root_proof_is_complete_but_owner_reference_is_bounded():
+ m,p,*_=fixture();old=R.value(p)
+ p.update(version=2,type=R.RECONCILED_TYPE,predicates=dict.fromkeys(R.RECONCILED_PREDICATES,True),protected_root_hashes=[f'{n:064x}' for n in range(1000)])
+ p=R.sealed({k:v for k,v in p.items() if k!='hash'});R.header(p,m)
+ import json
+ ref=json.loads(R.value(p)[1]);assert len(R.value(p)[1].encode())<16384
+ assert ref['certificate_hash']==p['hash'] and len(D.encoded(p).encode())>16384
+ assert len(p['protected_root_hashes'])==1000 and old[1]!=R.value(p)[1]
+
+@pytest.mark.parametrize('fault',['missing','counts','duplicate','malformed','source','future'])
+def test_retained_catalog_source_lineage_is_checked_without_new_source(monkeypatch,fault):
+ from types import SimpleNamespace
+ b=SimpleNamespace(c={'project_id':'mpa-t-client-001'},clock=lambda:NOW)
+ day=NOW.astimezone(BF.B.MSK).date().isoformat();doc={'ack_hash':'a'*64,'runtime_plan':{'entity':'catalog','observation_date':day}}
+ cert={'day':day,'plan_hash':doc['ack_hash'],'coverage':{'source_sequence':1,'readback':[{'table':'RAW_OZON_CATALOG','rows':2}]}}
+ records=[{'kind':'SNAPSHOT_CERT','payload':cert},{'kind':'DEPENDENCY_PLAN','payload':{'plan':doc}}]
+ state={'complete':True,'sequence':1,'rows':2};row={'n':2,'k':2,'invalid_products':0,'invalid_sku':0,'sku_rows':2,'sku_keys':2}
+ b.state=lambda d:state;b.select=lambda *a:[row]
+ if fault=='missing':records.pop(0)
+ if fault=='counts':row['n']=3
+ if fault=='duplicate':row['k']=1
+ if fault=='malformed':row['invalid_sku']=1
+ if fault=='source':state['complete']=False
+ if fault=='future':day=(NOW+timedelta(days=1)).astimezone(BF.B.MSK).date().isoformat();cert['day']=day;doc['runtime_plan']['observation_date']=day
+ with pytest.raises(BF.B.EvidenceError):R.accepted_catalog_lineage(b,{},records,day)
+
+def test_retained_catalog_is_not_relabelled_as_current_freshness():
+ from types import SimpleNamespace
+ b=SimpleNamespace(c={'project_id':'mpa-t-client-001'},clock=lambda:NOW+timedelta(days=1))
+ day=NOW.astimezone(BF.B.MSK).date().isoformat();doc={'ack_hash':'a'*64,'runtime_plan':{'entity':'catalog','observation_date':day}}
+ records=[{'kind':'SNAPSHOT_CERT','payload':{'day':day,'plan_hash':'a'*64,'coverage':{'source_sequence':1,'readback':[{'table':'RAW_OZON_CATALOG','rows':2}]}}},{'kind':'DEPENDENCY_PLAN','payload':{'plan':doc}}]
+ b.state=lambda d:{'complete':True,'sequence':1,'rows':2};b.select=lambda *a:[{'n':2,'k':2,'invalid_products':0,'invalid_sku':0,'sku_rows':2,'sku_keys':2}]
+ assert R.accepted_catalog_lineage(b,{},records,day)==day
+ assert day!=b.clock().astimezone(BF.B.MSK).date().isoformat()
+
+
+def test_every_exact_recovery_loader_is_required_before_local_isolation(monkeypatch):
+ from types import SimpleNamespace
+ from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG
+ modules=[FL,FC,PB,PT,FR,ZE,LQ,PAG,R];calls=[]
+ for i,module in enumerate(modules):
+  value={'stop_hashes':['9'*64]} if module is R else {'stop_hash':str(i+1)*64}
+  if module is LQ:value.update(index=1,isolation_scope='FBO_SOURCE')
+  def loader(*args,module=module,value=value):
+   calls.append(module);return [value]
+  monkeypatch.setattr(module,'load',loader)
+ b=SimpleNamespace();m={'programs':[{'entity':'finance_accrual'},{'entity':'fbo_postings'},{'entity':'fbo_postings'}]}
+ known,isolated=R.accepted_incidents(b,m,[])
+ assert set(calls)==set(modules) and len(known)==9 and isolated=={1,2}
+ assert b.verified_fbo_zero_effect_failures==[{'stop_hash':'6'*64}]
+ monkeypatch.setattr(LQ,'load',lambda *a:(_ for _ in ()).throw(BF.B.EvidenceError('unknown quarantine')))
+ with pytest.raises(BF.B.EvidenceError,match='unknown quarantine'):R.accepted_incidents(b,m,[])
+
 @pytest.mark.parametrize('field',sorted(R.PREDICATES))
 @pytest.mark.parametrize('value',[False,None,1])
 def test_every_unknown_or_false_predicate_blocks_before_any_write(field,value):

@@ -130,6 +130,7 @@ def select_body(c, body):
 class CloudAccess:
     def __init__(self, contract, tokens, send=wire):
         self.c, self.tokens, self.send = contract, tokens, send
+        self.immutable_metadata_cache = {}
 
     def request(self, method, url, body=None):
         return self._request("reader", method, url, body)
@@ -210,7 +211,21 @@ class CloudAccess:
                 permitted = parsed.path == sched + "/jobs"
         if not permitted:
             raise TT.TableError("cloud operation outside reader/append boundary")
-        return self.send(method, url, body, {"Authorization": "Bearer " + self.tokens.token(authority), "Content-Type": "application/json"})
+        # A single bounded wake may validate the same retained content-addressed
+        # records through several independent recovery loaders. Reuse only
+        # successful immutable commit/control metadata; never cache absence,
+        # listings, source leases, binding/hold signs, queries or Run state.
+        # The cache dies with the wake and adds no publication/source authority.
+        match=re.fullmatch(re.escape(base)+r'/datasets/'+re.escape(c['datasets']['tenant_locks'])+r'/tables/(BFR_[0-9a-f]{64}|BFQ_[0-9a-f]{64}_[0-9]{10}_(?:DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)|BFC[WX]_[0-9a-f]{64}_[0-9]{10}|BF_SPEC_[0-9a-f]{40}_[0-9a-f]{64}_(?:PAUSED|ENABLED))',parsed.path)
+        cacheable=authority=='reader' and method=='GET' and body is None and not parsed.query and match is not None
+        from copy import deepcopy
+        if cacheable and url in self.immutable_metadata_cache:return deepcopy(self.immutable_metadata_cache[url])
+        result=self.send(method, url, body, {"Authorization": "Bearer " + self.tokens.token(authority), "Content-Type": "application/json"})
+        if (cacheable and isinstance(result,dict) and not result.get('expirationTime')
+            and result.get('tableReference')=={'projectId':c['project_id'],'datasetId':c['datasets']['tenant_locks'],'tableId':match[1]}
+            and isinstance(result.get('description'),str) and len(self.immutable_metadata_cache)<2048):
+            self.immutable_metadata_cache[url]=deepcopy(result)
+        return result
 
     def append_checkpoint(self, row):
         data = json.dumps(row, sort_keys=True, separators=(",", ":"))

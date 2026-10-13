@@ -53,3 +53,12 @@ def test_packaged_entrypoint_does_not_exempt_other_gate_failures(monkeypatch, ca
 def test_packaged_qualification_exercises_paused_entrypoint():
     from tools.tenancy.full_image_check import paused_entrypoint_check
     assert paused_entrypoint_check() == 'PASS'
+
+@pytest.mark.parametrize('error',[C.A.TransientReadError('transient'),BF.B.EvidenceError('unknown diagnostic child')])
+def test_diagnostic_child_uncertainty_never_releases_shared_control_fence(monkeypatch,capsys,error):
+    from tools.tenancy import controller_cadence as CC
+    b=SimpleNamespace(current_execution='offline-controller',clock=lambda:'offline',store=SimpleNamespace(commit=lambda *a:None),wake_activity={'diagnostic_active':True})
+    def wake(*a):raise error
+    monkeypatch.setattr(CC,'close',lambda *a:pytest.fail('active diagnostic source fence released'))
+    namespace=entrypoint(monkeypatch,b,wake)
+    assert namespace['main']() in (1,2)

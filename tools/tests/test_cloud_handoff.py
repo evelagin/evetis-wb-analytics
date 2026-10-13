@@ -26,6 +26,10 @@ def handoff():
         release['verification'].pop('terminal_controller_adapter',None)
         release.pop('fbo_zero_effect_recovery_version',None)
         release['verification'].pop('fbo_zero_effect_adapter',None)
+        # A legacy v3 handoff has no operational current-data adapter. Keep
+        # the synthetic legacy profile separate from the registered v4 flags.
+        release.pop('current_data_version',None)
+        release['verification'].pop('current_data_adapter',None)
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
     # Synthetic current replacement, paired with the elected runtime. The

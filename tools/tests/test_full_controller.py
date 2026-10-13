@@ -15,8 +15,10 @@ def pilot(monkeypatch):
     m=manifest();records=Records();states={};dispatches=[]
     # Release fitness is independently tested/qualified. These tests exercise
     # the dispatch/state protocol, never claim this synthetic image is deployed.
-    monkeypatch.setattr(BF,'validate_plan',lambda *a:BF.target('client_001'))
-    base=SimpleNamespace(c=BF.target('client_001'),store=records.store,clock=lambda:NOW,
+    contract=BF.target('client_001')
+    contract['orchestration']['job']['env'].pop('CURRENT_DATA_MODE',None)
+    monkeypatch.setattr(BF,'validate_plan',lambda *a:contract)
+    base=SimpleNamespace(c=contract,store=records.store,clock=lambda:NOW,
                          binding_status={'seller':'BOUND','performance':'BOUND'})
     monkeypatch.setattr(H,'verify_authority',lambda b,m:b.c)
     # This synthetic legacy protocol has no priority authority. Priority tests

@@ -283,6 +283,10 @@ class Backend(C.Backend):
         if doc['runtime_plan']['entity'] != 'ads_sku_daily' and q['status'] == 'WAITING':
             return {'status':'ELIGIBLE','allowance':0,'performance_quota':q,
                     'basis':'NO_NEW_PERFORMANCE_REPORT_IN_THIS_SOURCE_SCOPE'}
+        if q['status']!='STOPPED':
+            from tools.tenancy import current_controller as CURRENT
+            current_fence=CURRENT.performance_fence(self,doc)
+            if current_fence is not None:return current_fence
         return q
 
     def reconcile(self, payload):
@@ -495,6 +499,9 @@ def wake(base, root):
             return {'status':'STOPPED','source_dispatches':0}, backend
     done = completed(records,manifest)
     repair_t5_completions(backend, manifest, records, done)
+    from tools.tenancy import current_controller as CURRENT
+    current_result=CURRENT.wake(backend,records,reconstruct_plans(records,manifest,backend.clock()),done,quarantined)
+    if current_result is not None:return current_result,backend
     if len(done)==len(manifest['programs']):
         backend.store.commit(root,'FULL_COMPLETE',0,{'source_complete':True,'persisted_reconciled':True,
             'completed_chunks':len(done),'total_chunks':len(manifest['programs']),'ready':'UNPROVEN_FINAL_DQ_REQUIRED'},backend.clock())
@@ -504,14 +511,18 @@ def wake(base, root):
     if overlay:
         # Drain any immutable elected intent/receipt BEFORE queue reordering.
         # No inference from lease TTL, runtime snapshot or local progress.
-        drain=RP.pending_receipts(backend,{i:item for i,item in plans.items() if i not in done and i not in quarantined})
+        drain=RP.pending_receipts(backend,CURRENT.historical_candidates(records,plans,done,quarantined))
         if len(drain)>1:raise BF.B.EvidenceError('multiple pending full receipt authorities')
         if drain:
             i,item=drain[0]
-            result,backend=leaf_wake(backend,manifest,i,item,records,defer_next=True)
+            dependency=isinstance(i,tuple) and i[0]=='dependency'
+            if dependency:i=next(n for n,p in enumerate(manifest['programs']) if p['entity']=='catalog')
+            result,backend=leaf_wake(backend,manifest,i,item,records,dependency=dependency,defer_next=True)
             if result['status']!='RECONCILED_BOUNDARY':return result,backend
             records=backend.store.history(root);done=completed(records,manifest)
             plans=reconstruct_plans(records,manifest,backend.clock())
+            current_result=CURRENT.wake(backend,records,plans,done,quarantined)
+            if current_result is not None:return current_result,backend
     pending=[i for i in range(len(manifest['programs'])) if i not in done]
     # Existing async scope always precedes any new report intent.
     reports=[i for i,p in plans.items() if i not in done and backend.state(p['plan'])['progress'].get('report')]
@@ -530,7 +541,7 @@ def wake(base, root):
         source=backend.state(docs[0])
         if source['complete'] is not True or cert.get('coverage',{}).get('source_sequence') != source['sequence']:
             raise BF.B.EvidenceError('dated Catalog certificate lacks complete source state')
-    if not certs:
+    if not certs and CURRENT.catalog_current(backend,day) is None:
         # The initial Catalog program is handled by the normal path. Later days
         # require a fresh dependency even though its initial snapshot is complete.
         if catalog in done:
@@ -623,7 +634,8 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
         if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'}:
             day=str(backend.clock().astimezone(BF.B.MSK).date())
             fresh=backend.store.history(root)
-            if not any(r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day for r in fresh):
+            from tools.tenancy import current_controller as CURRENT
+            if not any(r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day for r in fresh) and CURRENT.catalog_current(backend,day) is None:
                 return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAIT_CURRENT_CATALOG'},backend
         proof=BF.verify_coverage(doc,doc['ack_hash'],backend=backend)
         payload={'index':index,'shard_root':shard,'ack_hash':doc['ack_hash'],'state_hash':D.digest(state),
