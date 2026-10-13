@@ -45,4 +45,4 @@ def test_current_fbo_requires_proven_contract_instead_of_legacy_bypass():
 
 def test_provisional_finance_current_window_is_deterministic():
     doc=P.document(policy(),date(2026,10,12),'finance_accrual',make_plan=fake_plan)
-    assert (doc['runtime_plan']['from'],doc['runtime_plan']['to'])==('2026-09-12','2026-10-11')
+    assert (doc['runtime_plan']['from'],doc['runtime_plan']['to'])==('2026-10-11','2026-10-11')

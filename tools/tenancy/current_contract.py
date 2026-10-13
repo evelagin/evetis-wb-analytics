@@ -41,11 +41,12 @@ def source_window(entity, day):
 
     Snapshots describe actual execution day. Dated requests use finished days;
     the open current day cannot be silently labelled a complete business day.
-    Finance30 preserves its existing explicitly provisional refresh contract.
+    Finance and Performance serve the latest completed day first. Historical
+    reconciliation and longer refresh windows retain their separate authority.
     """
     if entity not in ENTITIES or type(day) is not date:fail('known entity/Moscow day required')
     if entity in SNAPSHOTS:return dict(observation_date=day.isoformat(),from_date=(day-timedelta(days=1)).isoformat(),to_date=(day-timedelta(days=1)).isoformat())
-    count={'fbo_postings':7,'finance_accrual':30,'ads_expense_daily':3,'ads_sku_daily':3}[entity]
+    count={'fbo_postings':7,'finance_accrual':1,'ads_expense_daily':1,'ads_sku_daily':1}[entity]
     return dict(from_date=(day-timedelta(days=count)).isoformat(),to_date=(day-timedelta(days=1)).isoformat())
 
 def check_fact(f, scope, now):

@@ -20,6 +20,9 @@ def check():
     docs={e:P.document(p,day,e) for e in P.ORDER if e!='fbo_postings'}
     assert all(P.validate_document(p,day,d) for d in docs.values())
     assert len({d['runtime_plan']['plan_id'] for d in docs.values()})==7
+    yesterday='2026-10-11'
+    for entity in ('finance_accrual','ads_expense_daily','ads_sku_daily'):
+        assert docs[entity]['runtime_plan']['from']==docs[entity]['runtime_plan']['to']==yesterday
     assert P.cycle_root(p,day)!=p['historical_root']
     try:P.document(p,day,'fbo_postings')
     except ValueError:pass

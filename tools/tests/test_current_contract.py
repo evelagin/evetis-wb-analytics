@@ -88,8 +88,15 @@ def test_known_systemic_risk_blocks_both_paths():
 def test_snapshot_day_is_actual_and_dated_windows_do_not_include_unfinished_day():
     day=date(2026,10,12)
     assert C.source_window('catalog',day)==dict(observation_date='2026-10-12',from_date='2026-10-11',to_date='2026-10-11')
-    assert C.source_window('finance_accrual',day)==dict(from_date='2026-09-12',to_date='2026-10-11')
+    assert C.source_window('finance_accrual',day)==dict(from_date='2026-10-11',to_date='2026-10-11')
     assert C.source_window('fbo_postings',day)==dict(from_date='2026-10-05',to_date='2026-10-11')
+
+@pytest.mark.parametrize('entity',['finance_accrual','ads_expense_daily','ads_sku_daily'])
+@pytest.mark.parametrize('day,expected',[(date(2026,10,13),'2026-10-12'),
+                                      (date(2027,1,1),'2026-12-31'),
+                                      (date(2028,3,1),'2028-02-29')])
+def test_current_dated_sources_start_with_latest_completed_business_day(entity,day,expected):
+    assert C.source_window(entity,day)==dict(from_date=expected,to_date=expected)
 
 @pytest.mark.parametrize('v',['2026-10-12T15:00:00','2026-10-12T18:00:00+03:00','invalid'])
 def test_observer_evidence_requires_normalized_aware_utc(v):
