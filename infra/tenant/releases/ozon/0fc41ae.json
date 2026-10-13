@@ -291,7 +291,7 @@
     }
   },
   "deployment": {
-    "tenants": "INERT candidate registration in PR #339 branch only; default image pointer and paired controller change take effect only after merge to main and an owner-run tenant-infra plan/apply; no tenant deployment change.",
+    "tenants": "INERT candidate registration in PR #339 branch only; the default image pointer takes effect only after merge to main and an owner-run tenant-infra plan/apply; no tenant deployment change. No paired controller is registered here: tenants/client_001 historical_orchestration still pins release 74760fc (runtime 5f1b78f9), so merge needs a paired controller registration or an explicit hold on tenant-infra apply for client_001.",
     "evetis": "NOT_DEPLOYED; historical reference only: sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS untouched.",
     "rollback": "Pause dedicated controller safely; retain accepted manifests, all reservations/checkpoints and receipts. No blind old-image restore after new state or ambiguous intent."
   }
