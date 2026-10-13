@@ -13,12 +13,14 @@ from tools.tenancy.validation import parse_tenant_json as parse
 
 KIND='FULL_CONTROLLER_CLOSURE_RECOVERED'
 TYPE='TERMINAL_TIMEOUT_CONTROLLER_PRE_SOURCE_CLOSURE_V1'
+RECONCILED_TYPE='TERMINAL_TIMEOUT_CONTROLLER_RECONCILED_SOURCE_CLOSURE_V2'
 PREDICATES=frozenset({'owner_scope','qualified_replacement','registered_terminal_timeout',
  'exact_latest_claim','no_successor_claim','missing_control_closure','frozen_manifest',
  'no_new_source_intent','no_new_source_journal','no_new_runtime','no_pending_source_authority',
  'last_source_reconciled','source_counts_keys_pass','current_catalog_pass','all_jobs_inactive',
  'schedulers_paused','bindings_pass','security_preserved','prior_recoveries_preserved',
  'original_evidence_preserved','exact_guard_reproduced','source_budget_zero'})
+RECONCILED_PREDICATES=(PREDICATES-{'current_catalog_pass'})|{'accepted_catalog_lineage_pass'}
 FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','claim',
  'stop_hashes','protected_root_hashes','new_source','new_image','new_implementation_hash',
  'runtime_image','owner_ack_sha256','guard_probe_hash','security_proof_hash','source_proof_hash',
@@ -28,14 +30,22 @@ def fail(reason):raise BF.B.EvidenceError('controller closure recovery: '+reason
 def sealed(p):return dict(p,hash=D.digest(p))
 def authority_name(p):return 'BFCC_AUTH_'+p['root']+'_'+p['claim']['hash']
 def certificate_name(p):return 'BFCC_'+p['hash']
-def value(p):return {'kind':'controller_recovery','root':p['root'][:16]},D.encoded(p)
+def value(p):
+ description=D.encoded(p)
+ if p.get('version')==2:
+  # The full closed proof remains in its content-addressed durable root record.
+  # Owner metadata binds that exact proof, without truncation or a second copy
+  # of the growing root inventory in a 16-KiB table description.
+  description=D.encoded(dict(version=2,type='CONTROLLER_CLOSURE_CERTIFICATE_REF',root=p['root'],claim_hash=p['claim']['hash'],certificate_hash=p['hash'],source_budget=0))
+ return {'kind':'controller_recovery','root':p['root'][:16]},description
 
 def header(p,m):
- if not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or p['version']!=1 or p['type']!=TYPE:fail('closed certificate required')
+ if not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or (p['version'],p['type']) not in {(1,TYPE),(2,RECONCILED_TYPE)}:fail('closed certificate required')
  if p['hash']!=D.digest({k:v for k,v in p.items() if k!='hash'}):fail('certificate digest differs')
  if (p['tenant'],p['project'],p['root'],p['manifest_hash'])!=(m['tenant'],m['project'],m['hash'],D.digest(m)):fail('foreign frozen root')
  if type(p['source_budget']) is not int or p['source_budget']!=0:fail('source budget must be zero')
- if not isinstance(p['predicates'],dict) or set(p['predicates'])!=PREDICATES or any(v is not True for v in p['predicates'].values()):fail('unknown mandatory predicate')
+ required=PREDICATES if p['version']==1 else RECONCILED_PREDICATES
+ if not isinstance(p['predicates'],dict) or set(p['predicates'])!=required or any(v is not True for v in p['predicates'].values()):fail('unknown mandatory predicate')
  if type(p['claim'].get('version')) is not int or p['claim'].get('version')!=1:fail('claim version differs')
  if set(p['claim'])!=CC.CLAIM_FIELDS or p['claim']['root']!=p['root'] or (p['claim']['tenant'],p['claim']['project'])!=(p['tenant'],p['project']):fail('claim scope differs')
  if p['claim']['hash']!=D.digest({k:v for k,v in p['claim'].items() if k!='hash'}):fail('claim digest differs')
@@ -134,6 +144,25 @@ def accepted_incidents(b,m,records):
  return known,H.isolated_indices(m,quarantines)
 
 
+def accepted_catalog_lineage(b,m,records,day):
+ """Retained source/DQ evidence only; this never certifies current freshness."""
+ from tools.tenancy import full_controller as H
+ certs=[r['payload'] for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
+ if len(certs)!=1:fail('accepted Catalog lineage unavailable/ambiguous')
+ cert=certs[0]
+ if CC.at(day+'T00:00:00+03:00')>b.clock():fail('Catalog lineage in future')
+ items=[r['payload']['plan'] for r in records if r['kind'] in {'CHUNK_PLAN','DEPENDENCY_PLAN'} and r['payload']['plan']['ack_hash']==cert.get('plan_hash')]
+ if not items or any(d!=items[0] for d in items):fail('accepted Catalog scope ambiguous')
+ doc=items[0];state=b.state(doc)
+ if doc['runtime_plan'].get('observation_date')!=day or doc['runtime_plan']['entity']!='catalog' or state['complete'] is not True or cert['coverage']['source_sequence']!=state['sequence']:fail('accepted Catalog source linkage differs')
+ rows=b.select(f"SELECT COUNT(*) AS n,COUNT(DISTINCT TO_JSON_STRING(STRUCT(snapshot_date,product_id))) AS k,COUNTIF(SAFE_CAST(product_id AS INT64) IS NULL OR SAFE_CAST(product_id AS INT64)<=0) AS invalid_products,COUNTIF(sku IS NOT NULL AND (SAFE_CAST(sku AS INT64) IS NULL OR SAFE_CAST(sku AS INT64)<=0)) AS invalid_sku,COUNTIF(sku IS NOT NULL) AS sku_rows,COUNT(DISTINCT sku) AS sku_keys FROM `{b.c['project_id']}.ozon_raw.RAW_OZON_CATALOG` WHERE snapshot_date=@day",{'day':('DATE',day)})
+ checks=[x for x in cert['coverage']['readback'] if x.get('table')=='RAW_OZON_CATALOG']
+ if len(rows)!=1 or len(checks)!=1:fail('accepted Catalog count proof ambiguous')
+ r=rows[0]
+ if r['n']!=r['k'] or r['n']!=state['rows'] or r['n']!=checks[0]['rows'] or r['invalid_products'] or r['invalid_sku'] or r['sku_rows']!=r['sku_keys']:fail('accepted Catalog natural-key evidence changed')
+ return day
+
+
 def live_freeze(b,p,m,records):
  """Mandatory live checks repeated at publication, not inferred from expiry."""
  from tools.tenancy import orchestration_contract as O, recent_priority as RP, full_controller as H
@@ -197,13 +226,30 @@ def live_freeze(b,p,m,records):
   v=b.tables.get_table(ds,n)
   if not v or v[0].get('owner')!=receipt['run_id'] or parse(v[1]).get('ack_hash')!=doc['ack_hash']:fail('last source lease/LD differs')
  if not state['complete'] or D.digest(state)!=H.completed(records,m)[p['last_source']['index']]['state_hash']:fail('last source checkpoint differs')
- coverage=BF.verify_coverage(doc,doc['ack_hash'],backend=ro)
+ coverage=(BF.verify_coverage if p['version']==1 else BF.verify_persistence)(doc,doc['ack_hash'],backend=ro)
  if coverage['source_sequence']!=state['sequence'] or any(x.get('rows')!=x.get('keys') for x in coverage['readback']):fail('source persistence/key mismatch')
- day=str(b.clock().astimezone(BF.B.MSK).date())
- certs=[r for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
- if len(certs)!=1:fail('current Catalog certificate unavailable')
- for x in coverage['readback']:
-  if x.get('sku_linkage',{}).get('unresolved_sku_rows',1)!=0:fail('certified last source linkage unknown')
+ if p['version']==1:
+  day=str(b.clock().astimezone(BF.B.MSK).date())
+  certs=[r for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
+  if len(certs)!=1:fail('current Catalog certificate unavailable')
+  for x in coverage['readback']:
+   if x.get('sku_linkage',{}).get('unresolved_sku_rows',1)!=0:fail('certified last source linkage unknown')
+ else:
+  completion=H.completed(records,m)[p['last_source']['index']]
+  day=CC.at(completion['completed_at']).astimezone(BF.B.MSK).date().isoformat()
+  day=accepted_catalog_lineage(b,m,records,day)
+  # Require the accepted COMPLETE leaf's original strict linkage to the same
+  # retained Catalog day. No fresh-day substitution or new completion is made.
+  accepted=completion['coverage']['readback']
+  for x in accepted:
+   link=x.get('sku_linkage',{})
+   if link.get('unresolved_sku_rows',1)!=0:fail('accepted leaf/Catalog linkage differs')
+  entity=doc['runtime_plan']['entity']
+  mapping={'finance_accrual':('RAW_OZON_FINANCE_ACCRUAL','event_date'),'fbo_postings':('RAW_OZON_POSTINGS_FBO',"DATE(order_date,'Europe/Moscow')"),'ads_sku_daily':('RAW_OZON_ADS_SKU_DAILY','date')}
+  if entity not in mapping:fail('unsupported retained source linkage')
+  table,col=mapping[entity];rp=doc['runtime_plan']
+  rows=b.select(f"SELECT COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{b.c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date=@snapshot AND c.sku=r.sku)) AS unresolved FROM `{b.c['project_id']}.ozon_raw.{table}` r WHERE {col} BETWEEN @frm AND @to",{'snapshot':('DATE',day),'frm':('DATE',rp['from']),'to':('DATE',rp['to'])})
+  if rows!=[{'unresolved':0}]:fail('retained source/Catalog linkage changed')
  return True
 
 
