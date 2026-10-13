@@ -220,11 +220,13 @@ def test_sku90_regression_cannot_be_imported_as_complete(accepted,change):
 def test_installed_full_protocol_restores_authority_methods(monkeypatch):
     from tools.tenancy import full_image_check as I
     records=Records();b=SimpleNamespace(c=BF.target('client_001'),store=records.store,clock=lambda:NOW)
+    b.c['orchestration']['job']['env']['CURRENT_DATA_MODE']='CURRENT_DATA_V1'
     old=(H.verify_authority,H.Backend.preflight,H.Backend.start,H.Backend.reconcile)
     monkeypatch.setattr(BF,'validate_plan',lambda *a:b.c)
     out=I.check(records.store,b,NOW,'1'*40)
     assert out['full_history_adapter']=='PASS' and out['full_history_live_go']=='UNPROVEN'
     assert old==(H.verify_authority,H.Backend.preflight,H.Backend.start,H.Backend.reconcile)
+    assert b.c['orchestration']['job']['env']['CURRENT_DATA_MODE']=='CURRENT_DATA_V1'
 
 
 def test_monitoring_uses_exact_published_scope_without_async_identifier(monkeypatch):

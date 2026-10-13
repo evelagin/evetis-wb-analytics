@@ -67,6 +67,11 @@ def paused_entrypoint_check():
 
 
 def check(store, base, now, source):
+    # This fixture proves the historical protocol in isolation. Registered
+    # optional current mode is covered by current_image_check with its own
+    # closed authority; it must not leak into a synthetic legacy backend.
+    base=copy.copy(base);base.c=copy.deepcopy(base.c)
+    base.c['orchestration']['job']['env'].pop('CURRENT_DATA_MODE',None)
     day=now.astimezone(BF.B.MSK).date();cutover=day-timedelta(days=1)
     starts={e:cutover for e in BF.B.DATED}
     chunks=[BF.CK.Chunk(e,cutover,cutover) for e in sorted(BF.B.DATED)]

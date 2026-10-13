@@ -20,7 +20,9 @@ def protocol_check(m,p):
     def select(c,q,params):
         return [{'evidence_json':v} for v in {r['evidence_json'] for r in rows
                 if r['plan_hash']==params['root'][1] and ('record' not in params or r['backfill_id']==params['record'][1])}]
-    c=BF.target('client_001');store=D.DurableRecords(c,Metadata(),select,lambda r:rows.append(deepcopy(r)))
+    c=BF.target('client_001')
+    c['orchestration']['job']['env'].pop('CURRENT_DATA_MODE',None)
+    store=D.DurableRecords(c,Metadata(),select,lambda r:rows.append(deepcopy(r)))
     base=SimpleNamespace(c=c,store=store,clock=lambda:NOW,binding_status={'seller':'BOUND','performance':'BOUND'})
     store.commit(m['hash'],'FULL_MANIFEST',0,m,NOW)
     catalog=next(i for i,x in enumerate(m['programs']) if x['entity']=='catalog')
