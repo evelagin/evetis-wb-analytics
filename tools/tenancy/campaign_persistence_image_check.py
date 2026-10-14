@@ -71,7 +71,7 @@ def check():
             lambda s, d: d['source_diagnostic'].pop('at'),
             lambda s, d: d.update(report={'phase': 'INTENT'})):
         invalid_state = deepcopy(state)
-        invalid_detail = json.loads(units[0]['backfill_detail_json'])
+        invalid_detail = T.parse_tenant_json(units[0]['backfill_detail_json'])
         mutate(invalid_state, invalid_detail)
         invalid_units = [dict(backfill_sequence=1, backfill_detail_json=json.dumps(invalid_detail))]
         try:
@@ -81,7 +81,7 @@ def check():
         else:
             raise AssertionError('unknown or contradictory rejected read was accepted')
     assert state['complete'] is False and state['progress']['done'] is False
-    headers = json.loads(units[0]['backfill_detail_json'])
+    headers = T.parse_tenant_json(units[0]['backfill_detail_json'])
     headers['source_diagnostic'].update({'x-ratelimit-limit': 15,
         'x-ratelimit-remaining': 0, 'x-ratelimit-reset': 1791959526})
     assert observe(doc, state, [dict(backfill_sequence=1,
