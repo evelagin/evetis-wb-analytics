@@ -291,7 +291,7 @@
     }
   },
   "deployment": {
-    "tenants": "INERT qualified candidate registration only; QUALIFIED and REGISTERED, NOT_DEPLOYED. No default image pointer change: infra/tenant/runtime_release.json stays on ozon-runtime sha256:5f1b78f9; client_001 and client_002 not switched (contracts unchanged); tenants/client_001 historical_orchestration keeps release 74760fc and its runtime/controller pair; no controller release registered. Any tenant activation (pointer move, paired controller, tenant-infra plan/apply) requires a separate owner ACK.",
+    "tenants": "INERT qualified candidate registration only; QUALIFIED and REGISTERED, NOT_DEPLOYED. No default image pointer change: infra/tenant/runtime_release.json stays on ozon-runtime sha256:5f1b78f9; client_001 and client_002 not switched (contracts unchanged); D1 does not change tenants/client_001 historical_orchestration or any controller release, and registers no controller release. Controller releases qualified for runtime hash 0babe49f (e.g. #343's) are refused fail-closed, before any write, by owner tools run from a checkout containing D1. Any tenant activation (pointer move, paired controller, tenant-infra plan/apply) requires a separate owner ACK.",
     "evetis": "NOT_DEPLOYED; EVETIS production not switched and remains on sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b. EVETIS deployment is outside the tenant registry and requires a separate owner ACK.",
     "rollback": "Pause dedicated controller safely; retain accepted manifests, all reservations/checkpoints and receipts. No blind old-image restore after new state or ambiguous intent."
   }
