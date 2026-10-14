@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-10-14 — OZON D3: управленческий P&L магазина Ozon — 7 новых вью ozon_mart (НЕ развёрнуто)
+
+OWNER ACK 2026-10-14 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHASE_D3.md`.
+
+- **Новые объекты (структура колонок — новые вью, существующие не меняются):** `sql/current/ozon_mart/`
+  `V_OZON_FINANCE_OPERATION_MAP` (33 типа + −1/−2), `V_OZON_STORE_ACCOUNT_LEDGER`, `V_OZON_FINANCE_NEW_OPERATIONS`,
+  `V_OZON_STORE_ADS_RECON_MONTHLY`, `V_OZON_STORE_FINANCE_COVERAGE`, `V_OZON_STORE_MONTH_STATE`, `V_OZON_STORE_PNL_MONTHLY`
+  (колонки A–AI, схемы — `MANIFEST.json`, `pending_deploy`, dry-run до развёртывания).
+- Management Net Store Profit = B − C − D − … − T + U + X − 0,02 × B; вклад SKU (атрибуция) и поправка рекламы
+  (атрибуция − биллинг) раздельно; тождество Y = AA + AB + AC + X. Расходы кабинета по SKU не распределяются.
+- L1–L4 и `FCT_OZON_*` не меняются (Q15: тело FCT_OZON_PNL_MONTHLY в production = канон); L4 — справочная колонка с мостом.
+- Состояния месяца по данным (водяной знак `finance_accrual`, без CURRENT_DATE): PENDING_CLASSIFICATION →
+  PARTIAL_SOURCE_MISSING → UNPROVEN → PARTIAL_AWAITING_ACCRUALS → FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE → FINANCIAL_COMPLETE.
+  Незагруженные сторно D1 видны детектором (14 из 14), M2 — реестром известных дефектов.
+- QA `sql/ozon/qa_ozon_store_pnl_v1.sql` (Q01–Q23), инструмент `tools/ozon_store_pnl_deploy.py` (DROP не исполняет),
+  тесты `tools/tests/test_ozon_store_pnl.py`. Развёртывание — отдельный OWNER ACK.
+
 ## 2026-10-12 — WB finance source-aware mart refresh: guard витрины учитывает версию финансов (НЕ развёрнуто)
 
 Аудит: `evetis-manifests/wb-mart-finance-lag-2026-10-12/REPORT.txt` (вне Git). Витрина собиралась в 04:00 UTC, финансы WB

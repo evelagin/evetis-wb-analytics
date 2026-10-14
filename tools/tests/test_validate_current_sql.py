@@ -73,12 +73,17 @@ ORDER_DATE_MSK_PENDING = set()  # развёрнуто 2026-10-06 из main 6428
 CPO = {"V_OZON_ADS_CPO_ORDERS", "V_OZON_ADS_CPO_RESIDUAL_DAILY", "V_OZON_ADS_CPO_PROMOTED_DAILY",
        "FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}
 CPO_PENDING = set(CPO)
+# D3 «Ozon Магазин P&L» (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): 7 новых вью Git-first.
+STORE_PNL_D3 = {"V_OZON_FINANCE_OPERATION_MAP", "V_OZON_STORE_ACCOUNT_LEDGER", "V_OZON_FINANCE_NEW_OPERATIONS",
+                "V_OZON_STORE_FINANCE_COVERAGE", "V_OZON_STORE_ADS_RECON_MONTHLY", "V_OZON_STORE_MONTH_STATE",
+                "V_OZON_STORE_PNL_MONTHLY"}
+STORE_PNL_D3_PENDING = set(STORE_PNL_D3)
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
                          "V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
                          "V_OZON_SKU_PNL_DAILY_OPERATIONAL"} | PROMO2["ozon_mart"] | PROMO3["ozon_mart"]
-                        | AIE["ozon_mart"] | ORDER_DATE_MSK | CPO,
+                        | AIE["ozon_mart"] | ORDER_DATE_MSK | CPO | STORE_PNL_D3,
            "evetis_mart": {"FACT_SKU_DAILY"} | PROMO2["evetis_mart"] | PROMO3["evetis_mart"] | PROMO4["evetis_mart"]
                            | PLAN1["evetis_mart"] | AIE["evetis_mart"]}
 # Gate 5M deployed every object Gate 5K/5L rewrote and read them back, so nothing is pending.
@@ -94,7 +99,7 @@ GATE8_OBJECTS = {"V_OZON_COMMISSION_POLICY", "V_OZON_LOGISTICS_ESTIMATOR",
 # Local Ozon Unitka completeness fix: production capture is preserved; no deploy authorized.
 GATE5K_PENDING = {"ozon_mart": set() | PROMO2_PENDING["ozon_mart"] | PROMO3_PENDING["ozon_mart"]
                   | PROMO4_PENDING["ozon_mart"] | PLAN1_PENDING["ozon_mart"] | AIE_PENDING["ozon_mart"]
-                  | ORDER_DATE_MSK_PENDING | CPO_PENDING,
+                  | ORDER_DATE_MSK_PENDING | CPO_PENDING | STORE_PNL_D3_PENDING,
                   "evetis_mart": set() | PROMO2_PENDING["evetis_mart"] | PROMO3_PENDING["evetis_mart"]
                   | PROMO4_PENDING["evetis_mart"] | PLAN1_PENDING["evetis_mart"] | AIE_PENDING["evetis_mart"]}
 

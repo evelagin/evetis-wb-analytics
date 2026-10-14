@@ -12,6 +12,7 @@
     "V_OZON_CIS_BUYOUT",
     "V_OZON_COMMISSION_POLICY",
     "V_OZON_COMMISSION_RECOVERY",
+    "V_OZON_FINANCE_OPERATION_MAP",
     "V_OZON_LOGISTICS_ESTIMATOR",
     "V_OZON_MART_FRESHNESS",
     "V_OZON_PROMO_ECONOMICS_BASIS_HISTORY",
@@ -25,17 +26,23 @@
     "V_OZON_ADS_CPO_RESIDUAL_DAILY",
     "V_OZON_PROMO_HISTORY",
     "V_OZON_PROMO_SKU_EVIDENCE_HISTORY",
+    "V_OZON_STORE_ACCOUNT_LEDGER",
     "V_OZON_TARIFF_SOURCE_HEALTH",
+    "V_OZON_FINANCE_NEW_OPERATIONS",
     "V_OZON_LIFETIME_PNL",
     "V_OZON_PROMO_SKU_STATE_HISTORY",
     "V_OZON_SKU_FORWARD_ECONOMICS_CURRENT",
     "V_OZON_SKU_PNL_DAILY_OPERATIONAL",
     "V_OZON_SKU_UNIT_ECONOMICS_CURRENT",
+    "V_OZON_STORE_ADS_RECON_MONTHLY",
     "V_AIE_OZON_PAIR_EVIDENCE",
     "V_OZON_AGENT_DECISION_INPUT",
     "V_OZON_PROMO_ECONOMICS_SCENARIO_HISTORY",
     "V_OZON_SKU_FBO_FBS_COMPARISON_CURRENT",
-    "V_AIE_OZON_ECON_GUARD"
+    "V_OZON_STORE_FINANCE_COVERAGE",
+    "V_OZON_STORE_MONTH_STATE",
+    "V_AIE_OZON_ECON_GUARD",
+    "V_OZON_STORE_PNL_MONTHLY"
   ],
   "objects": [
     {
@@ -11541,6 +11548,1189 @@
       "canonical_schema_sha256": "a6e7a133ec18f2203404fa825ffc249046ed5b9a18285c0827a330187906550f",
       "canonical_column_count": 13,
       "canonical_schema_verification": "unverified"
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_FINANCE_OPERATION_MAP",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_FINANCE_OPERATION_MAP.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [],
+      "external_dependencies": [],
+      "dependency_level": 0,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "4186b2f635ef23ada79fbdf4c3da6971e539d761fa178d99cc77884b24adb1cf",
+      "canonical_description_sha256": "45bf73d2d051d0b06bc310e311fafb37a6727bb21648fbee4ca7e5ddd065bfe5",
+      "canonical_schema_sha256": "0e55004ca92a31a53ea11f5eee4010e7464e8e2a599f5b7563b0f06d3413c0ad",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 9,
+      "canonical_schema": [
+        {
+          "column_name": "type_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "operation_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "pnl_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "pnl_column",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "date_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "expected_sign",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "valid_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "valid_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "evidence_ref",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_STORE_ACCOUNT_LEDGER",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_STORE_ACCOUNT_LEDGER.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_CIS_BUYOUT",
+        "V_OZON_FINANCE_OPERATION_MAP"
+      ],
+      "external_dependencies": [
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
+      ],
+      "dependency_level": 1,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "f88e4fb79fbfce043ede9ef9807f731d2702e98e9a0374eddf8010d3620f4c9c",
+      "canonical_description_sha256": "cc2a1901c813ce25c62fae6fffccabec2f247fbc8f2a73ec8d75388f3eed1190",
+      "canonical_schema_sha256": "dfec93eef9a042a3d7fb926b90f514ccf235b656fc0f03065dc992e7b0fd1f36",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 34,
+      "canonical_schema": [
+        {
+          "column_name": "ledger_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "parent_key",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "source",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "accrual_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "type_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "operation_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "accrued_category",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "booking_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "booking_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "pnl_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "pnl_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "pnl_column",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "date_basis",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "link_method",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "posting_link_required",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "posting_linked",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "posting_number",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "order_date_msk",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "internal_sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "unit_number",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "quantity",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "is_econ_block",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "econ_direction",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "seller_base_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "commission_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "amount_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "money_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "memo_buyer_paid_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "memo_ozon_bonus_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "memo_ozon_coinvestment_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "service_period_from",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "service_period_to",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "ingestion_run_id",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_FINANCE_NEW_OPERATIONS",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_FINANCE_NEW_OPERATIONS.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_FINANCE_OPERATION_MAP",
+        "V_OZON_STORE_ACCOUNT_LEDGER"
+      ],
+      "external_dependencies": [
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL"
+      ],
+      "dependency_level": 2,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "3fadea78c436c0e9c9f47a5c2e8a9d7bd14200079cdf7b98e921542c1fd1d706",
+      "canonical_description_sha256": "ea4b872d61cbafc3423770d920427806dc1f1f4313e40321b02658c17de5c483",
+      "canonical_schema_sha256": "a3682923459b2a6e7ffc7a727c291b48fadbfcb06b4d070a277e3d089162b1bd",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 15,
+      "canonical_schema": [
+        {
+          "column_name": "event_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "booking_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "pnl_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "accrual_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "type_id",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "operation_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "expected_operation_name",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "pnl_class",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "expected_sign",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "issue",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "sku",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "posting_number",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "unit_number",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "amount_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "seller_base_price_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_STORE_FINANCE_COVERAGE",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_STORE_FINANCE_COVERAGE.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_FINANCE_NEW_OPERATIONS",
+        "V_OZON_STORE_ACCOUNT_LEDGER"
+      ],
+      "external_dependencies": [
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
+      ],
+      "dependency_level": 3,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "375d1fda8a3c9d1a0f15e15eae7821167616fb1b31bdceec275c0a5a4cb25aa1",
+      "canonical_description_sha256": "5abecadc95c70cb969d209d66b989a1aba241096a3720250fe4fe7717cf4c8a0",
+      "canonical_schema_sha256": "e0aba13e4f699cda183b9efe721ea4302b691b3479b33c23b47b3621c50e7b49",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 12,
+      "canonical_schema": [
+        {
+          "column_name": "booking_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "raw_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "ledger_root_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "raw_money_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "ledger_money_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "conservation_residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "unconsumed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "unlinked_posting_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "pending_issue_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "memo_ozon_bonus_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "memo_ozon_coinvestment_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "memo_buyer_paid_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_STORE_ADS_RECON_MONTHLY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_STORE_ADS_RECON_MONTHLY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_ADS_CPO_ORDERS",
+        "V_OZON_STORE_ACCOUNT_LEDGER"
+      ],
+      "external_dependencies": [
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "ozon_raw.RAW_OZON_ADS_EXPENSE_DAILY",
+        "ozon_raw.RAW_OZON_ADS_SKU_DAILY"
+      ],
+      "dependency_level": 2,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "3cb746778adcf3147105495be7e1c168ffb0d1c2d9ebeb742eecd37a16b9826a",
+      "canonical_description_sha256": "ffc8696008e94d622beb469e0926da864da7a65dd055f87f98ed2af90e96f67d",
+      "canonical_schema_sha256": "482a31fb928e96072c2e897ef4189fe087518ea94e2eea8dfcf2ad57cf229407",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 13,
+      "canonical_schema": [
+        {
+          "column_name": "pnl_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "cpc_billing_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "cpo_billing_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "store_ads_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "perf_cpc_expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "perf_cpo_expense_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "billing_vs_performance_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "cpc_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "cpo_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "cpc_residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "cpo_residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "ads_adjustment_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "ads_attribution_days_missing",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_STORE_MONTH_STATE",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_STORE_MONTH_STATE.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "V_OZON_CIS_BUYOUT",
+        "V_OZON_FINANCE_NEW_OPERATIONS",
+        "V_OZON_MART_FRESHNESS",
+        "V_OZON_STORE_ACCOUNT_LEDGER"
+      ],
+      "external_dependencies": [
+        "evetis_ref.REF_SKU_CHANNEL_MAP",
+        "evetis_ref.V_PRODUCT_COGS_EFFECTIVE",
+        "ozon_raw.OZON_INGESTION_RUNS",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
+      ],
+      "dependency_level": 3,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "f6b0c3b586b6fbf53ae00e3530c831d70f83539e47d61f0bf53d570c090ff6b7",
+      "canonical_description_sha256": "6df304a27eda97f49ee1c0a5669573e1121b9dde0dd9f27d66c6f3335c4bfcfb",
+      "canonical_schema_sha256": "29ce514e3447ce7ffdf07b0162256e9106831c75ddeb83256cf364bc3c0e7e3e",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 22,
+      "canonical_schema": [
+        {
+          "column_name": "pnl_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "finance_watermark_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "close_after_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "is_closed",
+          "data_type": "BOOL",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "pending_issue_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "unconsumed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "unlinked_posting_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "unmapped_sku_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "cogs_gap_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "reversal_suspected_postings",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "reversal_weak_signal_postings",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "d1_repair_rows",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "provisional_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "cis_without_document_postings",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "provisional_revenue_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "provisional_open_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "provisional_cogs_missing",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "known_source_defects",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "source_freshness_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "financial_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "month_closure_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        }
+      ]
+    },
+    {
+      "dataset": "ozon_mart",
+      "object_name": "V_OZON_STORE_PNL_MONTHLY",
+      "object_type": "VIEW",
+      "canonical_path": "sql/current/ozon_mart/V_OZON_STORE_PNL_MONTHLY.sql",
+      "sync_state": "pending_deploy",
+      "dependencies": [
+        "FCT_OZON_PNL_MONTHLY",
+        "V_OZON_STORE_ACCOUNT_LEDGER",
+        "V_OZON_STORE_ADS_RECON_MONTHLY",
+        "V_OZON_STORE_MONTH_STATE"
+      ],
+      "external_dependencies": [
+        "evetis_ref.V_PRODUCT_COGS_EFFECTIVE"
+      ],
+      "dependency_level": 4,
+      "capture_main_sha": null,
+      "captured_at": null,
+      "provenance": {
+        "source": "D3 Ozon Store P&L (OWNER ACK 2026-10-14, docs/finance/OZON_STORE_PNL_PHASE_D3.md): Git-first, не развёрнут; схема — dry-run тела до развёртывания",
+        "historical_migration": null,
+        "preflight_parity": null,
+        "superseded_historical_definitions": []
+      },
+      "live_body_sha256_at_capture": null,
+      "live_schema_sha256_at_capture": null,
+      "live_description_sha256_at_capture": null,
+      "live_schema_at_capture": null,
+      "canonical_body_sha256": "e4a6f649ea556254e020fc2b6cac36e34bc4cd39ef652f0fc1f2e944199f0de0",
+      "canonical_description_sha256": "95fd52bdd100ae89251ae82b3e36f2f6a1523bb4883beb2c7d73b0dc4bb7e8a3",
+      "canonical_schema_sha256": "3797a656fe7e70355ba5b237f311c510014cf63c216e254a6bc0edbc4b5650ab",
+      "canonical_schema_verification": "unverified",
+      "canonical_column_count": 51,
+      "canonical_schema": [
+        {
+          "column_name": "pnl_month",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 1
+        },
+        {
+          "column_name": "seller_base_revenue_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 2
+        },
+        {
+          "column_name": "product_cogs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 3
+        },
+        {
+          "column_name": "commission_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 4
+        },
+        {
+          "column_name": "logistics_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 5
+        },
+        {
+          "column_name": "last_mile_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 6
+        },
+        {
+          "column_name": "return_logistics_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 7
+        },
+        {
+          "column_name": "acquiring_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 8
+        },
+        {
+          "column_name": "sku_storage_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 9
+        },
+        {
+          "column_name": "sku_promotion_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 10
+        },
+        {
+          "column_name": "other_direct_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 11
+        },
+        {
+          "column_name": "cpc_billing_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 12
+        },
+        {
+          "column_name": "cpo_billing_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 13
+        },
+        {
+          "column_name": "store_ads_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 14
+        },
+        {
+          "column_name": "crossdock_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 15
+        },
+        {
+          "column_name": "processing_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 16
+        },
+        {
+          "column_name": "fbo_placement_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 17
+        },
+        {
+          "column_name": "insurance_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 18
+        },
+        {
+          "column_name": "other_store_costs_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 19
+        },
+        {
+          "column_name": "premium_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 20
+        },
+        {
+          "column_name": "marketplace_compensation_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 21
+        },
+        {
+          "column_name": "provisional_open_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 22
+        },
+        {
+          "column_name": "store_contribution_pre_tax_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "management_tax_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 24
+        },
+        {
+          "column_name": "management_net_store_profit_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 25
+        },
+        {
+          "column_name": "management_net_store_margin",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 26
+        },
+        {
+          "column_name": "sku_contribution_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 27
+        },
+        {
+          "column_name": "ads_adjustment_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 28
+        },
+        {
+          "column_name": "unattributed_advertising_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 29
+        },
+        {
+          "column_name": "account_level_expenses_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 30
+        },
+        {
+          "column_name": "unattributed_account_net_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 31
+        },
+        {
+          "column_name": "l4_fct_reference_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 32
+        },
+        {
+          "column_name": "l4_bridge_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 33
+        },
+        {
+          "column_name": "delta_basis_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 34
+        },
+        {
+          "column_name": "delta_premium_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 35
+        },
+        {
+          "column_name": "l4_bridge_other_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 36
+        },
+        {
+          "column_name": "returned_units_cogs_not_reversed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 37
+        },
+        {
+          "column_name": "financial_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 38
+        },
+        {
+          "column_name": "ads_attribution_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 39
+        },
+        {
+          "column_name": "source_freshness_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 40
+        },
+        {
+          "column_name": "month_closure_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 41
+        },
+        {
+          "column_name": "known_source_defects",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 42
+        },
+        {
+          "column_name": "finance_watermark_date",
+          "data_type": "DATE",
+          "is_nullable": "YES",
+          "ordinal_position": 43
+        },
+        {
+          "column_name": "provisional_revenue_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 44
+        },
+        {
+          "column_name": "provisional_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 45
+        },
+        {
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
+          "is_nullable": "YES",
+          "ordinal_position": 46
+        },
+        {
+          "column_name": "cpc_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 47
+        },
+        {
+          "column_name": "cpo_attributed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 48
+        },
+        {
+          "column_name": "cpc_residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 49
+        },
+        {
+          "column_name": "cpo_residual_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 50
+        },
+        {
+          "column_name": "unconsumed_rub",
+          "data_type": "NUMERIC",
+          "is_nullable": "YES",
+          "ordinal_position": 51
+        }
+      ]
     }
   ]
 }
