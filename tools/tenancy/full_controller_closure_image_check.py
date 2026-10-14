@@ -52,7 +52,19 @@ def check():
  assert objects[CC.names(m['hash'],p['claim']['generation'])[0]]==before[CC.names(m['hash'],p['claim']['generation'])[0]]
  assert b.c['orchestration']['job']['timeout']=='1800s'
  assert b.c['orchestration']['scheduler']['schedule']=='*/3 * * * *'
- return dict(terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS')
+ retained=deepcopy(p);retained.update(version=2,type=R.RECONCILED_TYPE,predicates=dict.fromkeys(R.RECONCILED_PREDICATES,True))
+ retained['protected_root_hashes']=[f'{n:064x}' for n in range(1000)]
+ retained=R.sealed({k:v for k,v in retained.items() if k!='hash'});R.header(retained,m)
+ description=R.value(retained)[1];ref=__import__('json').loads(description)
+ assert len(description.encode())<16384 and ref['certificate_hash']==retained['hash']
+ assert len(D.encoded(retained).encode())>16384 and ref['source_budget']==0
+ assert R.value(p)[1]==D.encoded(p)
+ for field in R.RECONCILED_PREDICATES:
+  bad=deepcopy(retained);bad['predicates'][field]=None;bad=R.sealed({k:v for k,v in bad.items() if k!='hash'})
+  try:R.header(bad,m)
+  except BF.B.EvidenceError:pass
+  else:raise AssertionError('unknown retained recovery predicate accepted')
+ return dict(terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS',bounded_control_certificate_reference='PASS',legacy_certificate_bytes_preserved='PASS',retained_control_predicates_closed='PASS')
 
 
 if __name__=='__main__':

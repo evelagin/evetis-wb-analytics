@@ -249,9 +249,13 @@ def runtime(backend,doc,x,job_name):
     from tools.tenancy import full_history as F
     from tools.tenancy.cloud_tick import OverlapWait
     manifest=getattr(backend,'manifest',None);index=getattr(backend,'index',None)
-    if not manifest or type(index) is not int:fail('active runtime lacks full scope')
-    F.validate_leaf(manifest,index,doc,backend.clock().astimezone(BF.B.MSK).date())
-    shard=F.shard_root(manifest,index,doc)
+    from tools.tenancy.current_controller import Backend as CurrentBackend
+    if isinstance(backend,CurrentBackend):
+        shard=backend.active_source_shard(doc)
+    else:
+        if not manifest or type(index) is not int:fail('active runtime lacks full scope')
+        F.validate_leaf(manifest,index,doc,backend.clock().astimezone(BF.B.MSK).date())
+        shard=F.shard_root(manifest,index,doc)
     records=backend.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
     container=(x.get('template',{}).get('containers') or [{}])[0]
     env={e['name']:e.get('value') for e in container.get('env',[])}
@@ -272,7 +276,7 @@ def runtime(backend,doc,x,job_name):
     if p['window_days']!=1:expected['BACKFILL_WINDOW_DAYS']=str(p['window_days'])
     expected.update(BF.continuation_overrides(doc))
     from pipelines.ozon.runtime import full_resume as FR
-    if FR.recognized(manifest):
+    if not isinstance(backend,CurrentBackend) and FR.recognized(manifest):
         expected['BACKFILL_FULL_AUTHORITY']=D.encoded(dict(root=manifest['hash'],index=index,shard=shard,receipt_sequence=intent['sequence'],plan_id=p['plan_id']))
         expected['BACKFILL_FULL_ROOT_HASH']=manifest['hash']
     body={'overrides':{'containerOverrides':[{'env':[{'name':k,'value':v} for k,v in expected.items()]}]}}

@@ -69,6 +69,29 @@ def test_exact_append_uses_only_writer_boundary(access):
     assert tokens.calls==['append'] and len(calls)==1
     assert calls[0][1].endswith('/BACKFILL_CHECKPOINTS/insertAll')
 
+def test_immutable_commit_cache_preserves_bytes_and_does_not_share_mutable_results(c):
+    calls=[];n='BFR_'+'a'*64
+    value={'tableReference':{'projectId':c['project_id'],'datasetId':'tenant_locks','tableId':n},'description':'{"record_hash":"exact"}'}
+    a=C.CloudAccess(c,Tokens(),lambda *args:calls.append(args) or value)
+    url=C.TT.BQ+'/projects/'+c['project_id']+'/datasets/tenant_locks/tables/'+n
+    got=a.request('GET',url);got['description']='changed local copy'
+    assert a.request('GET',url)['description']=='{"record_hash":"exact"}'
+    assert len(calls)==1
+
+@pytest.mark.parametrize('ds,name',[('tenant_locks','L_50c5d90dbf43ac9c_0193'),('ref','OPH_0001'),('ref','OPB_seller_0001'),('ozon_raw','RAW_OZON_CATALOG')])
+def test_source_lease_binding_hold_and_business_state_are_never_cached(c,ds,name):
+    calls=[];v={'tableReference':{'projectId':c['project_id'],'datasetId':ds,'tableId':name},'description':'mutable'}
+    a=C.CloudAccess(c,Tokens(),lambda *args:calls.append(args) or v)
+    url=C.TT.BQ+'/projects/'+c['project_id']+'/datasets/'+ds+'/tables/'+name
+    a.request('GET',url);a.request('GET',url)
+    assert len(calls)==2
+
+def test_missing_or_expiring_authority_is_never_cached(c):
+    for value in ({},{'tableReference':{'projectId':c['project_id'],'datasetId':'tenant_locks','tableId':'BFR_'+'a'*64},'description':'exact','expirationTime':'123'}):
+        calls=[];a=C.CloudAccess(c,Tokens(),lambda *args:calls.append(args) or value)
+        url=C.TT.BQ+'/projects/'+c['project_id']+'/datasets/tenant_locks/tables/BFR_'+('a'*64)
+        a.request('GET',url);a.request('GET',url);assert len(calls)==2
+
 @pytest.mark.parametrize('ds,table',[('ozon_raw','RAW_OZON_CATALOG'),('ref','SELLER_BINDING'),('tenant_ops','CAPABILITY_PROFILE')])
 def test_writer_cannot_write_raw_binding_or_capability(access,ds,table):
     client,calls,tokens=access
