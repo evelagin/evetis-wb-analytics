@@ -80,6 +80,29 @@ def terminal_timeout(b,claim):
  return x
 
 
+def dependent_terminal(b,p,record,x,holder):
+ """An overlapping wake may fail after the holder becomes terminal.
+
+ Creation is admission time, not the gate decision time. Only the reconciled
+ v2 owner contract can additionally prove that decision from the exact retained
+ STOP row. Missing/ambiguous chronology still blocks; v1 is unchanged.
+ """
+ if (x is None or x.get('failedCount')!=1 or x.get('retriedCount',0)
+     or x.get('cancelledCount',0)):fail('dependent controller result differs')
+ terminal=CC.at(holder['completionTime'])
+ if CC.at(x['createTime'])>=terminal:return True
+ if p['version']!=2:fail('dependent controller result differs')
+ if not x.get('startTime') or not x.get('completionTime'):fail('dependent STOP chronology unknown')
+ created,start,end=(CC.at(x[k]) for k in ('createTime','startTime','completionTime'))
+ if not created<=start<=end<=b.clock():fail('dependent STOP chronology differs')
+ h=D.digest(record)
+ rows=b.select(f"SELECT DISTINCT evidence_json,FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ',updated_at,'UTC') AS recorded_at FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='orchestration' AND plan_hash=@root AND backfill_id=@id LIMIT 2",{'root':('STRING',p['root']),'id':('STRING',h[:16])})
+ if len(rows)!=1 or parse(rows[0]['evidence_json'])!=record:fail('exact dependent STOP event unavailable/ambiguous')
+ event=CC.at(rows[0]['recorded_at'])
+ if not max(terminal,start)<=event<=end:fail('dependent STOP predates terminal holder/outside execution')
+ return True
+
+
 def validate(p,b,m,records,*,final=True):
  from tools.tenancy import full_controller as H, orchestration_contract as O, cloud_controller as C
  header(p,m)
@@ -187,13 +210,13 @@ def live_freeze(b,p,m,records):
   if any(not x.get('completionTime') for x in xs):fail('active execution')
   if name==O.JOB:
    by={x['name']:x for x in xs}
-   stop_names=[r['payload']['controller_execution'] for r in records if r['kind']=='STOPPED' and D.digest(r) in p['stop_hashes']]
+   dependent_stops=[r for r in records if r['kind']=='STOPPED' and D.digest(r) in p['stop_hashes']]
    old_release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['claim']['source']}.json").read_text())
    original=by.get(p['claim']['execution'])
    if original is None:fail('controller holder not visible')
-   for n in stop_names:
-    x=by.get(n)
-    if x is None or x.get('failedCount')!=1 or x.get('retriedCount',0) or x.get('cancelledCount',0) or CC.at(x['createTime'])<CC.at(original['completionTime']):fail('dependent controller result differs')
+   for record in dependent_stops:
+    x=by.get(record['payload']['controller_execution'])
+    dependent_terminal(b,p,record,x,original)
     old=O.block(b.c,dict(release=p['claim']['source'],root_hash=p['root'],scheduler_state='ENABLED'),BF.REPO,old_release)
     O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},old)
   if name!=O.JOB and any(CC.at(x['createTime'])>=CC.at(p['claim']['created_at']) for x in xs):fail('new child/external effect')
