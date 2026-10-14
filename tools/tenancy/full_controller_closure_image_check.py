@@ -1,5 +1,6 @@
 """Packaged, network-disabled terminal control certificate fault checks."""
 from copy import deepcopy
+from datetime import timedelta
 from types import SimpleNamespace
 from tools.tenancy import full_controller_closure_recovery as R,controller_cadence as CC
 from tools.tenancy import durable_plan as D,full_history as F,tenant_backfill as BF,orchestration_contract as O
@@ -64,7 +65,22 @@ def check():
   try:R.header(bad,m)
   except BF.B.EvidenceError:pass
   else:raise AssertionError('unknown retained recovery predicate accepted')
- return dict(terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS',bounded_control_certificate_reference='PASS',legacy_certificate_bytes_preserved='PASS',retained_control_predicates_closed='PASS')
+ stop=next(r for r in root if r['kind']=='STOPPED');original=deepcopy(objects)
+ holder={'completionTime':(NOW-timedelta(seconds=60)).isoformat()}
+ overlap={'createTime':(NOW-timedelta(seconds=120)).isoformat(),'startTime':(NOW-timedelta(seconds=110)).isoformat(),'completionTime':NOW.isoformat(),'failedCount':1}
+ row={'evidence_json':D.encoded(stop),'recorded_at':(NOW-timedelta(seconds=3)).isoformat()}
+ b.select=lambda *a:[row]
+ assert R.dependent_terminal(b,retained,stop,overlap,holder)
+ for rows in ([],[row,row],[dict(row,recorded_at=(NOW-timedelta(seconds=70)).isoformat())],[dict(row,recorded_at=(NOW+timedelta(seconds=1)).isoformat())],[dict(row,evidence_json='{}')]):
+  b.select=lambda *a,rows=rows:rows
+  try:R.dependent_terminal(b,retained,stop,overlap,holder)
+  except BF.B.EvidenceError:pass
+  else:raise AssertionError('unknown/noncausal STOP event accepted')
+ try:R.dependent_terminal(b,p,stop,overlap,holder)
+ except BF.B.EvidenceError:pass
+ else:raise AssertionError('legacy recovery changed')
+ assert objects==original
+ return dict(terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS',bounded_control_certificate_reference='PASS',legacy_certificate_bytes_preserved='PASS',retained_control_predicates_closed='PASS',overlapping_stop_event_provenance='PASS',unknown_stop_event_blocks='PASS')
 
 
 if __name__=='__main__':
