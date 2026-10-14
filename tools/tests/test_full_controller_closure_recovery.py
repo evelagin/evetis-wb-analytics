@@ -9,6 +9,35 @@ from tools.tenancy.full_controller_closure_image_check import fixture,check,NOW
 def test_packaged_recovery():assert check()['terminal_controller_recovery']=='PASS'
 
 
+@pytest.mark.parametrize('fault',['valid_overlap','legacy','before_holder','after_execution','missing_event','ambiguous_event','foreign_event','unzonable_event','missing_start','retried','cancelled','success'])
+def test_overlapping_wake_needs_exact_post_terminal_stop_event(fault):
+ m,p,b,root,objects,_,_=fixture();before=deepcopy(objects)
+ p.update(version=2,type=R.RECONCILED_TYPE)
+ record=next(r for r in root if r['kind']=='STOPPED')
+ holder={'completionTime':(NOW-timedelta(seconds=60)).isoformat()}
+ x={'createTime':(NOW-timedelta(seconds=120)).isoformat(),'startTime':(NOW-timedelta(seconds=110)).isoformat(),'completionTime':NOW.isoformat(),'failedCount':1}
+ row={'evidence_json':D.encoded(record),'recorded_at':(NOW-timedelta(seconds=3)).isoformat()};rows=[row];queries=[]
+ def select(sql,params):queries.append((sql,params));return rows
+ b.select=select
+ if fault=='legacy':p['version']=1
+ if fault=='before_holder':row['recorded_at']=(NOW-timedelta(seconds=70)).isoformat()
+ if fault=='after_execution':row['recorded_at']=(NOW+timedelta(seconds=1)).isoformat()
+ if fault=='missing_event':rows=[]
+ if fault=='ambiguous_event':rows=[row,dict(row,recorded_at=NOW.isoformat())]
+ if fault=='foreign_event':row['evidence_json']=D.encoded(dict(record,sequence=999))
+ if fault=='unzonable_event':row['recorded_at']='2026-10-13T00:00:00'
+ if fault=='missing_start':x.pop('startTime')
+ if fault in {'retried','cancelled'}:x[fault+'Count']=1
+ if fault=='success':x.update(failedCount=0,succeededCount=1)
+ if fault=='valid_overlap':
+  assert R.dependent_terminal(b,p,record,x,holder)
+  assert len(queries)==1 and 'LIMIT 2' in queries[0][0]
+  assert queries[0][1]=={'root':('STRING',m['hash']),'id':('STRING',D.digest(record)[:16])}
+ else:
+  with pytest.raises(BF.B.EvidenceError):R.dependent_terminal(b,p,record,x,holder)
+ assert objects==before
+
+
 def test_large_root_proof_is_complete_but_owner_reference_is_bounded():
  m,p,*_=fixture();old=R.value(p)
  p.update(version=2,type=R.RECONCILED_TYPE,predicates=dict.fromkeys(R.RECONCILED_PREDICATES,True),protected_root_hashes=[f'{n:064x}' for n in range(1000)])
