@@ -81,6 +81,11 @@ def check():
         else:
             raise AssertionError('unknown or contradictory rejected read was accepted')
     assert state['complete'] is False and state['progress']['done'] is False
+    headers = json.loads(units[0]['backfill_detail_json'])
+    headers['source_diagnostic'].update({'x-ratelimit-limit': 15,
+        'x-ratelimit-remaining': 0, 'x-ratelimit-reset': 1791959526})
+    assert observe(doc, state, [dict(backfill_sequence=1,
+                                   backfill_detail_json=json.dumps(headers))])['source_sequence'] == 1
     return dict(campaign_get_429_source_accounting='PASS',
                 campaign_partial_completion_denied='PASS',
                 campaign_unknown_accounting_denied='PASS',

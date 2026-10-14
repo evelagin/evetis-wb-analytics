@@ -91,6 +91,12 @@ def test_reordered_multi_rejection_prefix_and_lost_ack_telemetry_are_safe():
     state.update(sequence=2, requests=4, pages=2)
     state['progress']['rate_limit'] = deepcopy(second['cooldown'])
     assert C.observe(doc, state, list(reversed(units)))['source_sequence'] == 2
+    second['source_diagnostic']['at'] = '2026-10-14T06:32:06Z'
+    second['cooldown']['eligible_at'] = '2026-10-14T07:32:06Z'
+    units[1]['backfill_detail_json'] = json.dumps(second)
+    state['progress']['rate_limit'] = deepcopy(second['cooldown'])
+    with pytest.raises(T.B.EvidenceError, match='partial campaign source effects unproven'):
+        C.observe(doc, state, units)
 
 
 def test_completed_campaign_source_accounting_is_unchanged():
@@ -147,6 +153,23 @@ def test_unknown_or_unbounded_throttle_evidence_blocks(target, key, value):
 def test_unknown_logical_request_count_blocks(value):
     doc, state, units = C.fixture(); detail = json.loads(units[0]['backfill_detail_json'])
     detail['logical_requests'] = value
+    units[0]['backfill_detail_json'] = json.dumps(detail)
+    with pytest.raises(T.B.EvidenceError, match='partial campaign source effects unproven'):
+        C.observe(doc, state, units)
+
+
+def test_unchanged_runtime_numeric_rate_limit_headers_are_supported():
+    doc, state, units = C.fixture(); detail = json.loads(units[0]['backfill_detail_json'])
+    detail['source_diagnostic'].update({'x-ratelimit-limit': 15,
+        'x-ratelimit-remaining': 0, 'x-ratelimit-reset': 1791959526})
+    units[0]['backfill_detail_json'] = json.dumps(detail)
+    assert C.observe(doc, state, units)['source_sequence'] == 1
+
+
+@pytest.mark.parametrize('value', ['15', -1, True, 10**12])
+def test_malformed_rate_limit_headers_stay_blocked(value):
+    doc, state, units = C.fixture(); detail = json.loads(units[0]['backfill_detail_json'])
+    detail['source_diagnostic']['x-ratelimit-limit'] = value
     units[0]['backfill_detail_json'] = json.dumps(detail)
     with pytest.raises(T.B.EvidenceError, match='partial campaign source effects unproven'):
         C.observe(doc, state, units)

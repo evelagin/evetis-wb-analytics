@@ -596,7 +596,7 @@ def rejected_campaign_prefix(details, state):
             or set(state["progress"]) != {"done", "rate_limit"}
             or state["progress"]["done"] is not False):
         return False
-    requests = 0; previous_at = None; safe_cap = 15
+    requests = 0; previous_eligible = None; safe_cap = 15
     try:
         for count, seq in enumerate(sorted(details), 1):
             d = details[seq]; diagnostic = d["source_diagnostic"]; cooldown = d["cooldown"]
@@ -606,7 +606,11 @@ def rejected_campaign_prefix(details, state):
                     or d["quota_evidence"] != {}
                     or d["quota_basis"] != "HTTP429_KNOWN_REJECTION_RESERVATION_RETAINED"
                     or type(d["logical_requests"]) is not int or d["logical_requests"] < 1
-                    or set(diagnostic) - {"at", "method", "endpoint", "http_status", "retry-after"}
+                    or set(diagnostic) - {"at", "method", "endpoint", "http_status", "retry-after",
+                                          "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset"}
+                    or any(type(diagnostic[k]) is not int or not 0 <= diagnostic[k] < 10**12
+                           for k in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset")
+                           if k in diagnostic)
                     or type(diagnostic["http_status"]) is not int
                     or (diagnostic["method"], diagnostic["endpoint"], diagnostic["http_status"])
                         != ("GET", "/api/client/campaign", 429)
@@ -623,9 +627,9 @@ def rejected_campaign_prefix(details, state):
             eligible = datetime.fromisoformat(cooldown["eligible_at"].replace("Z", "+00:00"))
             if (at.utcoffset() is None or eligible.utcoffset() is None
                     or not seconds <= (eligible - at).total_seconds() <= seconds + 60
-                    or (previous_at is not None and at < previous_at)):
+                    or (previous_eligible is not None and at < previous_eligible)):
                 return False
-            requests += d["logical_requests"]; previous_at = at; safe_cap = cooldown["safe_cap"]
+            requests += d["logical_requests"]; previous_eligible = eligible; safe_cap = cooldown["safe_cap"]
     except (KeyError, TypeError, ValueError, AttributeError):
         return False
     return (state["progress"]["rate_limit"] == cooldown
