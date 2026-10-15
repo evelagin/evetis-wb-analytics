@@ -100,9 +100,11 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
     return { rowCount: tab.rowCount, columnCount: tab.columnCount, metas, contracts, values: values ?? [] };
   };
   // Заметки строки заголовка — системные; читать можно только внутри сетки (за её пределами Sheets API отказывает).
-  const headerNotesOff = async (gridCols: number): Promise<number> => {
-    const inGrid = Math.min(TAB_NOTES.length, gridCols);
+  const headerNotesOff = async (gridCols: number, gridRows: number): Promise<number> => {
     const row = HEADER_ROW + 1;
+    // Строки заголовка ещё нет в сетке (новая маленькая вкладка) — заметок нет, нужна запись.
+    if (gridRows < row) return 0;
+    const inGrid = Math.min(TAB_NOTES.length, gridCols);
     const notes = inGrid > 0 ? await sheets.readNotes(plan.tab, TAB_NOTES.slice(0, inGrid).map((_, i) => ({ row, col: i + 1 }))) : new Map<string, string>();
     return TAB_NOTES.findIndex((n, i) => i >= inGrid || notes.get(`${row}|${i + 1}`) !== n);
   };
@@ -114,7 +116,7 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   const c = decideContract({ publishedContract: t.contracts[0]?.value, allowMigrationTo: pub.migrateContract,
     firstPublication: d.action === 'WRITE' && d.first });
   if (!c.ok) throw new LoaderError(c.message, 'OZON_STORE_PNL_CONTRACT_MIGRATION_REQUIRED');
-  const notesOff = await headerNotesOff(t.columnCount);
+  const notesOff = await headerNotesOff(t.columnCount, t.rowCount);
   // NOOP по значениям не должен оставить миграцию без отпечатка контракта или заметки не по контракту.
   if (d.action === 'NOOP' && (c.migrate || notesOff >= 0 || t.contracts[0]?.value !== contractSha())) {
     d = { action: 'WRITE', sha: d.sha, previousSha: d.sha, clearRows: 0, adopted: false, first: false };
@@ -140,8 +142,8 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   if (check.action !== 'NOOP' || check.setMeta || after.contracts[0]?.value !== contractSha()) {
     throw new LoaderError('перечитанная вкладка, её отпечаток или контракт не равны опубликованному плану', 'OZON_STORE_PNL_PUBLISH_READBACK');
   }
-  const bad = await headerNotesOff(after.columnCount);
-  if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}1 не равна контракту`, 'OZON_STORE_PNL_PUBLISH_READBACK');
+  const bad = await headerNotesOff(after.columnCount, after.rowCount);
+  if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}${HEADER_ROW + 1} не равна контракту`, 'OZON_STORE_PNL_PUBLISH_READBACK');
   const othersAfter = otherTabsFingerprint(await sheets.readSheetsList(), sheetId);
   if (othersAfter !== othersBefore) throw new LoaderError('отпечаток остальных вкладок книги изменился во время публикации', 'OZON_STORE_PNL_OTHER_TABS_CHANGED');
   logger.info('ozon_store_pnl_readback', { sheetId, sha: check.sha, otherTabs: othersAfter });

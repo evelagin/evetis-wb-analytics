@@ -112,18 +112,21 @@ const rgb = (h: string): { red: number; green: number; blue: number } =>
   ({ red: parseInt(h.slice(0, 2), 16) / 255, green: parseInt(h.slice(2, 4), 16) / 255, blue: parseInt(h.slice(4, 6), 16) / 255 });
 
 /**
- * Условное форматирование «Состояния месяца»: первое сработавшее правило. Ожидание — жёлтый; известные дефекты и
- * неполные данные — красный; недоказанное — оранжевый; сверено — зелёный. Подстроки — из подписей tabplan.ts.
+ * Условное форматирование «Состояния месяца» (и сводки в «Итого»): первое сработавшее правило. Красное — первым, чтобы
+ * сводка года с дефектом не выглядела жёлтой или зелёной: известные дефекты и неполные данные — красный; недоказанное —
+ * оранжевый; ожидание — жёлтый; сверено — зелёный. Подстроки — из подписей tabplan.ts (TEXT_CONTAINS без учёта регистра).
  */
 export const STATE_RULES: ReadonlyArray<{ contains: string; bg: string }> = [
-  { contains: 'ждём', bg: 'FFF2CC' },
   { contains: 'D1', bg: 'F4CCCC' },
   { contains: 'M2', bg: 'F4CCCC' },
   { contains: 'Неполные', bg: 'F4CCCC' },
   { contains: 'неразобранные', bg: 'F4CCCC' },
   { contains: 'Не доказан', bg: 'FCE5CD' },
-  { contains: 'сверены', bg: 'D9EAD3' },
+  { contains: 'ждём', bg: 'FFF2CC' },
+  { contains: 'сверен', bg: 'D9EAD3' },
 ];
+/** updateSheetProperties: ровно эти поля gridProperties — размеры сетки, название, индекс и видимость не меняются. */
+export const SHEET_PROPERTY_FIELDS = 'gridProperties(frozenRowCount,frozenColumnCount,rowGroupControlAfter,columnGroupControlAfter)';
 const RED = 'C5221F', GREEN = '137333', RED_BG = 'FCE8E6', GREEN_BG = 'E6F4EA';
 const MONEY = { type: 'NUMBER', pattern: '#,##0;-#,##0;0' };
 const MONEY_KPI = { type: 'NUMBER', pattern: '#,##0" ₽";-#,##0" ₽";0" ₽"' };
@@ -185,7 +188,7 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
 
   // 3. Закрепление, ширины, высоты.
   requests.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: FROZEN_ROWS, frozenColumnCount: 1,
-    rowGroupControlAfter: true, columnGroupControlAfter: false } }, fields: 'gridProperties(frozenRowCount,frozenColumnCount,rowGroupControlAfter,columnGroupControlAfter)' } });
+    rowGroupControlAfter: true, columnGroupControlAfter: false } }, fields: SHEET_PROPERTY_FIELDS } });
   TAB_COLUMNS.forEach((c, i) => requests.push({ updateDimensionProperties: { range: dim('COLUMNS', i, i + 1), properties: { pixelSize: c.width }, fields: 'pixelSize' } }));
   const heights: Array<[number, number]> = [[TITLE_ROW, 34], [SUBTITLE_ROW, 20], [KPI_HEAD_ROW, 34], [KPI_ROWS[0], 30], [KPI_ROWS[1], 30], [BAND_ROW, 22], [HEADER_ROW, 64]];
   for (const [r, px] of heights) requests.push({ updateDimensionProperties: { range: dim('ROWS', r, r + 1), properties: { pixelSize: px }, fields: 'pixelSize' } });
@@ -255,7 +258,12 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
   // index: 0 у каждого — значит последнее добавленное окажется первым: добавляем в обратном порядке приоритета.
   requests.push(...cf.reverse());
 
-  // 7. Группы: подробные колонки свёрнуты; месяцы каждого года — группа строк над строкой «Итого».
+  // 7. Группы: подробные колонки свёрнуты; месяцы каждого года — группа строк над строкой «Итого». Удалённая свёрнутая
+  // группа могла оставить строки или колонки скрытыми — сначала показываем всё, затем сворачиваем только подробности.
+  requests.push(
+    { updateDimensionProperties: { range: dim('ROWS', 0, rows), properties: { hiddenByUser: false }, fields: 'hiddenByUser' } },
+    { updateDimensionProperties: { range: dim('COLUMNS', 0, TAB_COLS), properties: { hiddenByUser: false }, fields: 'hiddenByUser' } },
+  );
   for (const [a, b] of DETAIL_GROUPS) {
     requests.push({ addDimensionGroup: { range: dim('COLUMNS', a, b) } },
       { updateDimensionGroup: { dimensionGroup: { range: dim('COLUMNS', a, b), depth: 1, collapsed: true }, fields: 'collapsed' } });
@@ -288,7 +296,7 @@ export function assertOwnTab(sheetId: number, requests: readonly Record<string, 
     let ok: boolean | undefined;
     if (kind === 'updateSheetProperties') {
       const fields = String(b.fields ?? '');
-      ok = rangeSheet(b.properties) === sheetId && /^gridProperties\([a-zA-Z,]+\)$/.test(fields)
+      ok = rangeSheet(b.properties) === sheetId && fields === SHEET_PROPERTY_FIELDS
         && Object.keys((b.properties ?? {}) as object).every((k) => k === 'sheetId' || k === 'gridProperties');
     } else if (kind === 'updateDimensionProperties' || kind === 'mergeCells' || kind === 'unmergeCells' || kind === 'addDimensionGroup' || kind === 'deleteDimensionGroup') {
       ok = rangeSheet(b.range) === sheetId;

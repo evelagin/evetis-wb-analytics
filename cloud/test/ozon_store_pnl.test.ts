@@ -228,9 +228,18 @@ describe('D4 — решение и запросы', () => {
     expect(() => assertOwnTab(7, [{ updateSheetProperties: { properties: { sheetId: 7, index: 0, gridProperties: {} }, fields: 'gridProperties(frozenRowCount)' } }])).toThrow(/вне вкладки/);
     expect(() => assertOwnTab(7, [{ updateSheetProperties: { properties: { sheetId: 8, gridProperties: {} }, fields: 'gridProperties(frozenRowCount)' } }])).toThrow(/вне вкладки/);
     expect(() => assertOwnTab(7, [{ mergeCells: { range: { sheetId: 8 } } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(7, [{ updateSheetProperties: { properties: { sheetId: 7, gridProperties: { rowCount: 5 } }, fields: 'gridProperties(rowCount)' } }])).toThrow(/вне вкладки/);
     expect(() => assertOwnTab(7, [{ addConditionalFormatRule: { rule: { ranges: [{ sheetId: 7 }, { sheetId: 8 }] } } }])).toThrow(/вне вкладки/);
     expect(() => assertOwnTab(7, [{ deleteConditionalFormatRule: { sheetId: 8, index: 0 } }])).toThrow(/вне вкладки/);
     expect(() => assertOwnTab(7, [{ updateDimensionGroup: { dimensionGroup: { range: { sheetId: 8 } } } }])).toThrow(/вне вкладки/);
+  });
+  it('правила состояния: красные раньше жёлтого и зелёного — сводка года с дефектом не маскируется', async () => {
+    const { STATE_RULES } = await import('../src/loaders/unitka/ozonstorepnl/publish.js');
+    const first = (text: string): string | undefined => STATE_RULES.find((r) => text.toLowerCase().includes(r.contains.toLowerCase()))?.bg;
+    expect(first('корректировка D1 — 5 · сверено — 2 · ждём начислений — 2')).toBe('F4CCCC');
+    expect(first('Ждём начислений Ozon — предварительно')).toBe('FFF2CC');
+    expect(first('Деньги Ozon сверены, себестоимость предварительная')).toBe('D9EAD3');
+    expect(first('Сверены, ждём поздних начислений')).toBe('FFF2CC');
   });
   it('повторная запись снимает прежнюю раскладку: УФ, объединения и группы удаляются до новой', () => {
     const d = decidePublish({ current: [], plan }) as Extract<ReturnType<typeof decidePublish>, { action: 'WRITE' }>;
