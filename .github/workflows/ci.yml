@@ -105,7 +105,7 @@ jobs:
       - name: tenancy tests
         run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py tools/tests/test_tenancy_sql_deployer.py
       - name: bounded pilot coordinator and failed-attempt recovery (offline)
-        run: python -m pytest -q tools/tests/test_tenant_backfill.py
+        run: python -m pytest -q tools/tests/test_tenant_backfill.py tools/tests/test_campaign_persistence.py tools/tests/test_current_recon_owner.py
       - name: cloud continuation safety (offline, no credentials)
         run: python -m pytest -q tools/tests/test_cloud_access.py tools/tests/test_cloud_tick.py tools/tests/test_cloud_controller.py tools/tests/test_durable_plan.py tools/tests/test_orchestration_identity.py tools/tests/test_orchestration_plan.py tools/tests/test_owner_pre_source_recovery.py tools/tests/test_controller_stop_recovery.py tools/tests/test_controller_dispatch_recovery.py tools/tests/test_controller_monitoring_watermark.py tools/tests/test_runtime_capability_iam.py tools/tests/test_cloud_handoff.py tools/tests/test_full_safety.py tools/tests/test_full_controller.py tools/tests/test_full_history.py tools/tests/test_full_publish.py tools/tests/test_full_leaf_recovery.py tools/tests/test_full_first_receipt_recovery.py tools/tests/test_controller_diagnostics.py tools/tests/test_full_controller_closure_recovery.py tools/tests/test_full_fbo_zero_effect_recovery.py
       - name: closed cadence and overlapping wake fences (offline)
@@ -116,6 +116,8 @@ jobs:
         run: docker build --build-arg CONTROLLER_SOURCE_SHA="$GITHUB_SHA" -f tools/tenancy/controller.Dockerfile -t tenant-backfill-controller:ci .
       - name: packaged controller checks (network disabled, no credentials)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.controller_image_check
+      - name: packaged current owner procedure (network disabled, no credentials)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_recon_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 
