@@ -6,6 +6,7 @@ from unittest.mock import patch
 from tools.tenancy import current_controller as C, full_controller as H
 from tools.tenancy import cloud_controller as CLOUD, tenant_backfill as BF, durable_plan as D
 from tools.tenancy.current_image_check import Store
+from tools.tenancy.validation import parse_tenant_json
 
 PERFORMANCE = ('ads_campaigns', 'ads_expense_daily', 'ads_sku_daily')
 SELLER = ('catalog', 'stocks', 'prices', 'finance_accrual')
@@ -13,7 +14,6 @@ SELLER = ('catalog', 'stocks', 'prices', 'finance_accrual')
 
 def rollover_fixture(target, *, expired=False):
     """Real manifest/reconstruction with an older throttled campaign snapshot."""
-    import json
     from tools.tenancy import full_history as F
     from tools.tenancy.full_leaf_image_check import fixture
     m = fixture()[0]
@@ -36,7 +36,7 @@ def rollover_fixture(target, *, expired=False):
     inventories = []
     def select(sql, params):
         if 'COUNT(*) AS n' in sql: return [{'n': 0}]
-        ids = json.loads(params['plans'][1]);inventories.append(ids)
+        ids = parse_tenant_json(params['plans'][1]);inventories.append(ids)
         return [dict(plan_id=old['runtime_plan']['plan_id'], backfill_sequence=1,
             evidence_json=D.encoded(dict(plan=old['runtime_plan'], state=state)))] if old['runtime_plan']['plan_id'] in ids else []
     b = H.Backend(SimpleNamespace(c=BF.target('client_001'), store=store,
