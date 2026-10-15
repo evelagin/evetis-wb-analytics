@@ -17,7 +17,7 @@ CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_FINANCE_
 OPTIONS (description = "Таксономия начислений Ozon как данные (D3), зерно = type_id. 33 типа Seller API /v1/finance/accrual + синтетические -1 (сторно реализации, D1) и -2 (реализация без услуг, PENDING до первого доказанного случая). pnl_class: DIRECT_SKU / ADS_MARKETING / ACCOUNT_LEVEL / PENDING_CLASSIFICATION. pnl_column - колонка V_OZON_STORE_PNL_MONTHLY для amount_rub; экономический блок (seller_base, commission) всегда в B/D. date_basis задаёт месяц P&L. Тип вне карты, смена названия или знак против expected_sign - V_OZON_FINANCE_NEW_OPERATIONS и блок публикации.")
 AS
 SELECT * FROM UNNEST([
-  STRUCT(32 AS type_id, 'Логистика' AS operation_name, 'DIRECT_SKU' AS pnl_class, 'E' AS pnl_column, 'ORDER_MONTH' AS date_basis, 'ANY' AS expected_sign, CAST(NULL AS DATE) AS valid_from, CAST(NULL AS DATE) AS valid_to, 'D0 2026-10-11: экономический блок продажи + логистика; перерасчёт +1 509,50 (2026-05)' AS evidence_ref),
+  STRUCT(32 AS type_id, 'Логистика' AS operation_name, 'DIRECT_SKU' AS pnl_class, 'E' AS pnl_column, 'ORDER_MONTH' AS date_basis, 'ANY' AS expected_sign, CAST(NULL AS DATE) AS valid_from, CAST(NULL AS DATE) AS valid_to, 'D0 2026-10-11: экономический блок продажи + логистика; положительные строки - перерасчёт' AS evidence_ref),
   (29, 'Доставка до места выдачи', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: последняя миля; несёт экономический блок'),
   (28, 'Последняя миля', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: 2025-04..05; несёт экономический блок'),
   (98, 'Доставка до места выдачи силами Ozon', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: последняя миля Ozon'),
@@ -34,10 +34,10 @@ SELECT * FROM UNNEST([
   (48, 'Бонусы продавца', 'DIRECT_SKU', 'J', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: продвижение SKU'),
   (39, 'Упаковка товара партнёрами', 'DIRECT_SKU', 'K', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: прочие прямые'),
   (38, 'Обеспечение материалами для упаковки товара', 'DIRECT_SKU', 'K', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: прочие прямые'),
-  (10, 'Компенсация', 'DIRECT_SKU', 'K', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: расход -250 по отправлению (2026-04), не доход'),
+  (10, 'Компенсация', 'DIRECT_SKU', 'K', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: расход по отправлению, не доход'),
   (15, 'Утилизация', 'DIRECT_SKU', 'K', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'D0: строка только со sku'),
   (71, 'Вывоз товара со склада силами Ozon', 'DIRECT_SKU', 'K', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'D0: строка только со sku'),
-  (41, 'Оплата за клик', 'ADS_MARKETING', 'L', 'SERVICE_DAY', 'ANY', NULL, NULL, 'D0: CPC-биллинг = Performance 0,00; возврат +167,74 (2026-09-08)'),
+  (41, 'Оплата за клик', 'ADS_MARKETING', 'L', 'SERVICE_DAY', 'ANY', NULL, NULL, 'D0: CPC-биллинг = Performance до копейки; положительные строки - возврат'),
   (75, 'Трафареты', 'ADS_MARKETING', 'L', 'SERVICE_DAY', 'NEG', NULL, NULL, 'D0: CPC 2025-05..08'),
   (33, 'Рекламные услуги', 'ADS_MARKETING', 'L', 'SERVICE_DAY', 'NEG', NULL, NULL, 'D0: 2025-08'),
   (54, 'Продвижение товара', 'ADS_MARKETING', 'L_OR_M', 'CHARGE_DATE', 'NEG', NULL, NULL, 'Phase B: CPO-кампании (payment_type CPO) -> M; CPC-кампании 2025-05..08 -> L'),
@@ -46,7 +46,7 @@ SELECT * FROM UNNEST([
   (12, 'Кросс-докинг', 'ACCOUNT_LEVEL', 'O', 'BOOKING_MONTH', 'NEG_OR_ZERO', NULL, NULL, 'D0: кабинет; 8 нулевых строк'),
   (77, 'Обработка товара', 'ACCOUNT_LEVEL', 'P', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'D0: кабинет'),
   (46, 'Размещение товаров на складах Ozon', 'ACCOUNT_LEVEL', 'Q', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'D0: кабинет'),
-  (76, 'Страхование товара от массовых повреждений', 'ACCOUNT_LEVEL', 'R', 'BOOKING_MONTH', 'ANY', NULL, NULL, 'D0: кабинет; корректировка +459,47 (2026-10-05)'),
+  (76, 'Страхование товара от массовых повреждений', 'ACCOUNT_LEVEL', 'R', 'BOOKING_MONTH', 'ANY', NULL, NULL, 'D0: кабинет; положительные строки - корректировка'),
   (57, 'Корректировка стоимости услуг', 'ACCOUNT_LEVEL', 'S', 'BOOKING_MONTH', 'ANY', NULL, NULL, 'D0: 2025-10, нетто 0'),
   (52, 'Подписка Premium', 'ACCOUNT_LEVEL', 'T', 'SERVICE_PERIOD', 'NEG', NULL, NULL, 'D0: период подписки в unit_number dd.mm.yy-dd.mm.yy'),
   (25, 'Товарная компенсация', 'ACCOUNT_LEVEL', 'U', 'BOOKING_MONTH', 'POS', NULL, NULL, 'D0: доход кабинета'),

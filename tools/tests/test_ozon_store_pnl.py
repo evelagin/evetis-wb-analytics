@@ -189,7 +189,7 @@ def test_state_order_and_watermark():
 
 def test_known_defects_registry_holds_codes_not_amounts():
     b = bare("V_OZON_STORE_MONTH_STATE")
-    reg = b[b.index("known_defects AS ("):b.index("kd AS (")]
+    reg = b[b.index("known_defects AS ("):b.index("runs AS (")]
     assert re.findall(r"DATE '(\d{4}-\d{2}-01)'", reg)
     assert not re.search(r"\d+[.,]\d{2}", reg)             # ни одной суммы — только месяц и код
 
@@ -217,6 +217,13 @@ def test_qa_l1_l4_hash_constant_equals_manifest():
 
 
 # ── Инструмент развёртывания ───────────────────────────────────────────────────────────────────────────
+def test_no_view_body_line_ends_with_semicolon_before_the_statement_end():
+    # deploy statement() режет оператор на первой «;» в конце строки — комментарий с «;» обрезал бы тело
+    for n in D3:
+        lines = body(n).rstrip().rstrip(";").splitlines()
+        assert not [x for x in lines if x.rstrip().endswith(";")], n
+
+
 def test_deploy_plan_is_closed_list_in_dependency_order_with_canonical_bodies():
     views = deploy.plan()
     names = [n for n, _, _ in views]
@@ -232,3 +239,56 @@ def test_deploy_plan_is_closed_list_in_dependency_order_with_canonical_bodies():
 def test_deploy_refuses_wrong_project():
     with pytest.raises(SystemExit):
         deploy.main(["--project", "other-project-123"])
+
+
+# ── Исправления ревью PR #346 ──────────────────────────────────────────────────────────────────────────
+def test_watermark_ignores_finance_control_runs_and_backfill_horizon():
+    b = bare("V_OZON_STORE_MONTH_STATE")
+    assert "REGEXP_CONTAINS(IFNULL(error_message, ''), r'OZON_FINANCE_') finance_control_event" in b
+    assert "MAX(LEAST(source_to, DATE_SUB(DATE(completed_at, 'Europe/Moscow'), INTERVAL 1 DAY))) finance_watermark_date" in b
+    assert "FROM runs WHERE NOT finance_control_event" in b
+    # окно загрузки с кодом контроля переводит свои месяцы в PARTIAL_SOURCE_MISSING
+    assert "finance_control_runs > 0" in b[b.index("'PENDING_CLASSIFICATION'"):b.index("'PARTIAL_SOURCE_MISSING'")]
+
+
+def test_state_fails_closed_without_watermark():
+    b = bare("V_OZON_STORE_MONTH_STATE")
+    assert "IFNULL(wm.finance_watermark_date >= DATE_ADD(LAST_DAY(months.m), INTERVAL 36 DAY), FALSE) is_closed" in b
+    assert "WHEN finance_watermark_date IS NULL OR pnl_month >= DATE_TRUNC(finance_watermark_date, MONTH) THEN 'OPEN'" in b
+
+
+def test_provisional_commission_from_payout_and_unknown_input_is_not_zero():
+    b = bare("V_OZON_STORE_MONTH_STATE")
+    assert "commission_amount_rub" not in b                      # колонка отправлений пуста во всех строках
+    assert "CASE WHEN p.payout_rub = 0 THEN 0 ELSE p.price_rub * p.q - p.payout_rub END commission" in b
+    assert "SUM(revenue - commission - logistics - cogs - revenue * 0.02) provisional_open_rub" in b
+    assert ("COUNTIF(revenue IS NULL OR commission IS NULL OR logistics IS NULL OR cogs IS NULL) provisional_inputs_missing"
+            in b)
+    assert "provisional_inputs_missing > 0" in b[b.index("'PENDING_CLASSIFICATION'"):b.index("'PARTIAL_SOURCE_MISSING'")]
+
+
+def test_d1_known_defect_months_clear_only_when_repair_rows_are_loaded():
+    b = bare("V_OZON_STORE_MONTH_STATE")
+    reg = b[b.index("known_defects AS ("):b.index("runs AS (")]
+    d1 = re.findall(r"DATE '(\d{4}-\d{2})-01'(?: AS m)?, 'D1_REVERSAL_NOT_LOADED'(?: AS defect_code)?, TRUE", reg)
+    assert len(d1) == 9
+    assert "WHERE NOT (k.clears_when_d1_repair_loaded AND IFNULL(g.d1_repair_rows, 0) > 0)" in b
+
+
+def test_detector_covers_campaign_and_cis_document_anomalies():
+    b = bare("V_OZON_FINANCE_NEW_OPERATIONS")
+    for code in ("UNKNOWN_TYPE", "PENDING_CLASS", "NAME_CHANGED", "SIGN_UNEXPECTED", "OUTSIDE_VALID_PERIOD",
+                 "POSTING_NOT_LINKED", "ECON_ON_UNEXPECTED_TYPE", "PREMIUM_PERIOD_UNPARSED", "CAMPAIGN_UNRESOLVED",
+                 "CIS_DOC_WITHOUT_POSTING", "CIS_DOC_WITH_ECON_BLOCK", "CIS_DOC_MULTI_SKU"):
+        assert f"'{code}'" in b, code
+
+
+def test_map_evidence_carries_no_business_amounts():
+    refs = re.findall(r"'([^']*)'\)?,?\s*$", body("V_OZON_FINANCE_OPERATION_MAP"), re.M)
+    amounts = [r for r in refs if re.search(r"\d[\d ]*,\d{2}", r) and "0,00" not in r]
+    assert amounts == []
+
+
+def test_deploy_requires_live_upstream_views():
+    assert deploy.upstream() == ["FCT_OZON_PNL_MONTHLY", "V_OZON_ADS_CPO_ORDERS", "V_OZON_CIS_BUYOUT",
+                                 "V_OZON_MART_FRESHNESS"]

@@ -21,7 +21,7 @@ raw AS (
         + IFNULL(a.commission_rub, 0) + IFNULL(a.amount_rub, 0)) raw_money_rub,
     SUM(IFNULL(a.ozon_bonus_rub, 0)) memo_ozon_bonus_rub,
     SUM(IFNULL(a.ozon_coinvestment_rub, 0)) memo_ozon_coinvestment_rub,
-    SUM(IFNULL(a.buyer_paid_price_rub, 0)) memo_buyer_paid_rub
+    SUM(IFNULL(a.buyer_paid_price_rub * COALESCE(a.quantity, q.q, 1), 0)) memo_buyer_paid_rub
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL` a
   LEFT JOIN q ON q.posting_number = a.posting_number AND q.sku = a.sku
   GROUP BY 1),

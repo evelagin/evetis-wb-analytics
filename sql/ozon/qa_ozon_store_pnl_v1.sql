@@ -2,11 +2,11 @@
 -- QA (read-only) — P&L МАГАЗИНА OZON (D3, OWNER ACK 2026-10-14). Док: docs/finance/OZON_STORE_PNL_PHASE_D3.md.
 -- Каждая проверка — один SELECT (check_name, status, detail); блоки разделены «-- @check <ID>» и исполняются
 -- ПО ОДНОМУ (урок V_OPS / WB QA: единый запрос по всем вью упирается в «query is too complex»).
--- status: PASS / WARN / FAIL / NOT_AVAILABLE. FAIL модели (Q01, Q02, Q04, Q09, Q11, Q17, Q18, Q23) — дефект вью;
+-- status: PASS / WARN / FAIL. FAIL модели (Q01, Q02, Q04, Q09, Q11, Q17, Q18, Q23) — дефект вью;
 -- FAIL данных (Q03, Q05, Q10, Q12, Q13, Q14) — сигнал источника, месяц уже несёт состояние не FINANCIAL_COMPLETE.
 -- WARN — раскрытие известного и объяснённого (остатки атрибуции, мост к L4, жизненный цикл отправлений).
--- Q15, Q21, Q22 читают INFORMATION_SCHEMA и имеют смысл только после развёртывания вью.
--- Q19 (события контроля D1 в Cloud Logging) и Q24 (паритет с проекцией вне Git) здесь не исполняются.
+-- Q15, Q21, Q22 читают INFORMATION_SCHEMA; Q21 и Q22 имеют смысл только после развёртывания вью.
+-- Q24 (паритет с проекцией вне Git) здесь не исполняется.
 -- Ничего не создаёт и не меняет.
 -- ============================================================================
 
@@ -17,7 +17,7 @@ WITH raw AS (
   SELECT CONCAT(CAST(accrual_id AS STRING), '|', CAST(type_id AS STRING), '|', IFNULL(sku, '')) k, amount_rub
   FROM `project-fa311fc0-4d87-4781-986.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`),
 led AS (
-  SELECT IFNULL(parent_key, ledger_key) k, COUNT(DISTINCT IFNULL(parent_key, ledger_key)) roots, SUM(amount_rub) amount_rub
+  SELECT IFNULL(parent_key, ledger_key) k, SUM(amount_rub) amount_rub
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_ACCOUNT_LEDGER`
   WHERE source != 'CIS_DOCUMENT' GROUP BY 1),
 j AS (
@@ -122,13 +122,17 @@ SELECT 'Q09_PROMO_ONCE' check_name,
 FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_ACCOUNT_LEDGER`;
 
 -- @check Q10_MISSING_NE_ZERO
--- Доставлено без начисления → провизорная оценка ≠ 0, а закрытый месяц с такими единицами не FINANCIAL_COMPLETE.
+-- Доставлено без начисления → провизорная оценка ≠ 0 и со всеми входами (COGS, комиссия, логистика), иначе месяц
+-- PARTIAL_SOURCE_MISSING; закрытый месяц с такими единицами не FINANCIAL_COMPLETE.
 SELECT 'Q10_MISSING_NE_ZERO' check_name,
   IF(COUNTIF(provisional_units > 0 AND provisional_open_rub = 0) = 0
-     AND COUNTIF(provisional_units > 0 AND financial_state LIKE 'FINANCIAL_COMPLETE%') = 0, 'PASS', 'FAIL') status,
+     AND COUNTIF(provisional_units > 0 AND financial_state LIKE 'FINANCIAL_COMPLETE%') = 0
+     AND COUNTIF(provisional_inputs_missing > 0 AND financial_state != 'PARTIAL_SOURCE_MISSING'
+                 AND financial_state != 'PENDING_CLASSIFICATION') = 0, 'PASS', 'FAIL') status,
   IFNULL(STRING_AGG(IF(provisional_units > 0,
     CONCAT(FORMAT_DATE('%Y-%m', pnl_month), ': ед. ', CAST(provisional_units AS STRING), ', X ',
-           CAST(ROUND(provisional_open_rub, 2) AS STRING), ', ', financial_state), NULL), '; '), 'доставленных без начисления нет') detail
+           CAST(ROUND(provisional_open_rub, 2) AS STRING), ', без входов ', CAST(provisional_inputs_missing AS STRING),
+           ', ', financial_state), NULL), '; '), 'доставленных без начисления нет') detail
 FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_MONTH_STATE`;
 
 -- @check Q11_ACCOUNT_LEVEL_NE_MISSING
@@ -208,10 +212,20 @@ SELECT 'Q18_MEMO_EXCLUDED' check_name,
 FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_ACCOUNT_LEDGER`;
 
 -- @check Q19_FINANCE_CONTROL
--- События OZON_FINANCE_CONTROL_MISMATCH / ACCRUAL_QUARANTINED (D1) пишутся в Cloud Logging, не в BigQuery:
--- проверка — алерт ozon_runtime_finance_control после развёртывания D1. Здесь не исполняется.
-SELECT 'Q19_FINANCE_CONTROL' check_name, 'NOT_AVAILABLE' status,
-  'события контроля D1 живут в Cloud Logging; источник для BigQuery не загружается' detail;
+-- Загрузки finance_accrual с кодами контроля D1 (OZON_FINANCE_ACCRUAL_QUARANTINED / OZON_FINANCE_CONTROL_MISMATCH
+-- в error_message при status OK) переводят месяцы своего окна в PARTIAL_SOURCE_MISSING и не двигают водяной знак.
+WITH r AS (
+  SELECT * FROM `project-fa311fc0-4d87-4781-986.ozon_raw.OZON_INGESTION_RUNS`
+  WHERE entity = 'finance_accrual' AND REGEXP_CONTAINS(IFNULL(error_message, ''), r'OZON_FINANCE_')),
+s AS (
+  SELECT COUNTIF(finance_control_runs > 0) months_flagged,
+    COUNTIF(finance_control_runs > 0 AND financial_state NOT IN ('PARTIAL_SOURCE_MISSING', 'PENDING_CLASSIFICATION')) months_not_gated
+  FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_MONTH_STATE`)
+SELECT 'Q19_FINANCE_CONTROL' check_name,
+  IF((SELECT months_not_gated FROM s) > 0, 'FAIL', IF((SELECT COUNT(*) FROM r) = 0, 'PASS', 'WARN')) status,
+  CONCAT('загрузок с кодами контроля: ', CAST((SELECT COUNT(*) FROM r) AS STRING),
+         '; месяцев под воротами: ', CAST((SELECT months_flagged FROM s) AS STRING),
+         ', без ворот: ', CAST((SELECT months_not_gated FROM s) AS STRING)) detail;
 
 -- @check Q20_LIFECYCLE
 -- Нетерминальные отправления старше 30 суток относительно водяного знака (раскрытие; признание P&L

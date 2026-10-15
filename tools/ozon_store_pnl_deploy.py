@@ -16,9 +16,10 @@ sql/current/ozon_mart/<OBJECT>.sql в порядке графа зависимо
 отдельный PR: sync_state pending_deploy → captured_live.
 
 Защиты (отказ ДО отправки): закрытый список = объекты D3 манифеста в состоянии pending_deploy; ровно один
-CREATE OR REPLACE VIEW своего имени в файле; запрещённые ключевые слова; существующий объект другого типа или
-новая вью с чужим телом; без --apply — только dry-run; с --apply — чистое дерево и HEAD = свежий origin/main;
-после каждого оператора — перечитывание тела и описания.
+CREATE OR REPLACE VIEW своего имени в файле; запрещённые ключевые слова; каждая внутренняя зависимость вне D3
+(V_OZON_CIS_BUYOUT, V_OZON_ADS_CPO_ORDERS, V_OZON_MART_FRESHNESS, FCT_OZON_PNL_MONTHLY) уже существует как VIEW;
+существующий объект другого типа или новая вью с чужим телом или описанием; без --apply — только dry-run;
+с --apply — чистое дерево и HEAD = свежий origin/main; после каждого оператора — перечитывание тела и описания.
 
 usage:
   python tools/ozon_store_pnl_deploy.py --project <P> --token-command "gcloud auth print-access-token"
@@ -68,6 +69,12 @@ def plan() -> list[tuple[str, str, str]]:
     return [(n, *statement(DATASET, n, f"sql/current/{DATASET}/{n}.sql")) for n in ordered()]
 
 
+def upstream() -> list[str]:
+    """Внутренние зависимости объектов D3 вне закрытого списка — должны уже существовать в production."""
+    m = json.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+    return sorted({d for o in m["objects"] if o["object_name"] in OBJECTS for d in o["dependencies"]} - OBJECTS)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--project", required=True)
@@ -87,14 +94,20 @@ def main(argv=None) -> int:
     views = plan()                                                    # все проверки источника — до сети
     token = resolve_token(a.token_env, a.token_command, os.environ)
     print(f"git HEAD {head} · вью {len(views)} · режим {'APPLY' if a.apply else 'PLAN'}")
+    for n in upstream():
+        was, kind = d2.exists(a.project, DATASET, n, token)
+        if not was or kind != "VIEW":
+            raise SystemExit(f"{DATASET}.{n}: зависимость D3 не существует как VIEW — сначала её развёртывание")
+        print(f"UPSTREAM VIEW {DATASET}.{n}")
     state = {}
-    for n, _, body in views:
+    for n, stmt, body in views:
         was, kind = d2.exists(a.project, DATASET, n, token)
         if was and kind != "VIEW":
             raise SystemExit(f"{DATASET}.{n} существует и это {kind} — отказ")
-        if was and live_view(a.project, DATASET, n, token)[0] != body:
-            # новая вью: до развёртывания её нет; повтор после частичного прогона допустим, только если тело = Git
-            raise SystemExit(f"{DATASET}.{n}: уже существует с чужим телом — дрейф, отказ")
+        if was and live_view(a.project, DATASET, n, token) != (body, declared_description(stmt)):
+            # новая вью: до развёртывания её нет; повтор после частичного прогона допустим, только если тело
+            # и описание = Git
+            raise SystemExit(f"{DATASET}.{n}: уже существует с чужим телом или описанием — дрейф, отказ")
         state[n] = was
         print(f"{'SAME' if was else 'CREATE'} VIEW {DATASET}.{n}")
     for i, (n, stmt, body) in enumerate(views):

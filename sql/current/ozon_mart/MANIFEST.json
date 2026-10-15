@@ -11570,7 +11570,7 @@
       "live_schema_sha256_at_capture": null,
       "live_description_sha256_at_capture": null,
       "live_schema_at_capture": null,
-      "canonical_body_sha256": "4186b2f635ef23ada79fbdf4c3da6971e539d761fa178d99cc77884b24adb1cf",
+      "canonical_body_sha256": "96a14d4865025868895fd2e1f8ca493c7043253e0c60af47a520e80dabc10d46",
       "canonical_description_sha256": "45bf73d2d051d0b06bc310e311fafb37a6727bb21648fbee4ca7e5ddd065bfe5",
       "canonical_schema_sha256": "0e55004ca92a31a53ea11f5eee4010e7464e8e2a599f5b7563b0f06d3413c0ad",
       "canonical_schema_verification": "unverified",
@@ -11880,11 +11880,14 @@
       "canonical_path": "sql/current/ozon_mart/V_OZON_FINANCE_NEW_OPERATIONS.sql",
       "sync_state": "pending_deploy",
       "dependencies": [
+        "V_OZON_CIS_BUYOUT",
         "V_OZON_FINANCE_OPERATION_MAP",
         "V_OZON_STORE_ACCOUNT_LEDGER"
       ],
       "external_dependencies": [
-        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL"
+        "ozon_raw.RAW_OZON_ADS_CAMPAIGNS",
+        "ozon_raw.RAW_OZON_FINANCE_ACCRUAL",
+        "ozon_raw.RAW_OZON_POSTINGS_FBO"
       ],
       "dependency_level": 2,
       "capture_main_sha": null,
@@ -11899,8 +11902,8 @@
       "live_schema_sha256_at_capture": null,
       "live_description_sha256_at_capture": null,
       "live_schema_at_capture": null,
-      "canonical_body_sha256": "3fadea78c436c0e9c9f47a5c2e8a9d7bd14200079cdf7b98e921542c1fd1d706",
-      "canonical_description_sha256": "ea4b872d61cbafc3423770d920427806dc1f1f4313e40321b02658c17de5c483",
+      "canonical_body_sha256": "c63470c0a2016d158a2fd0c4070126c91339da44abe3bb184cc3ee7cbd1f3002",
+      "canonical_description_sha256": "45cb9a8b9ec0d2268a0b2b7d5eb7e658f035e8c4cceae650d33d74c800c53293",
       "canonical_schema_sha256": "a3682923459b2a6e7ffc7a727c291b48fadbfcb06b4d070a277e3d089162b1bd",
       "canonical_schema_verification": "unverified",
       "canonical_column_count": 15,
@@ -12024,7 +12027,7 @@
       "live_schema_sha256_at_capture": null,
       "live_description_sha256_at_capture": null,
       "live_schema_at_capture": null,
-      "canonical_body_sha256": "375d1fda8a3c9d1a0f15e15eae7821167616fb1b31bdceec275c0a5a4cb25aa1",
+      "canonical_body_sha256": "02155994af9c4a56d7cba2e7ab796d8a786b72930247436ac3d3063a54b45864",
       "canonical_description_sha256": "5abecadc95c70cb969d209d66b989a1aba241096a3720250fe4fe7717cf4c8a0",
       "canonical_schema_sha256": "e0aba13e4f699cda183b9efe721ea4302b691b3479b33c23b47b3621c50e7b49",
       "canonical_schema_verification": "unverified",
@@ -12250,11 +12253,11 @@
       "live_schema_sha256_at_capture": null,
       "live_description_sha256_at_capture": null,
       "live_schema_at_capture": null,
-      "canonical_body_sha256": "f6b0c3b586b6fbf53ae00e3530c831d70f83539e47d61f0bf53d570c090ff6b7",
-      "canonical_description_sha256": "6df304a27eda97f49ee1c0a5669573e1121b9dde0dd9f27d66c6f3335c4bfcfb",
-      "canonical_schema_sha256": "29ce514e3447ce7ffdf07b0162256e9106831c75ddeb83256cf364bc3c0e7e3e",
+      "canonical_body_sha256": "26a223b7f657b3d56fb5fdc1e13df36bf8414b3d3b915621ce44f4169f376400",
+      "canonical_description_sha256": "1b237d52de9db1d9018637f8dc33064100c7b1279693e42b59c7ca6f21c5e380",
+      "canonical_schema_sha256": "8fc412fb006ddc37d8faf268d35de08412b6efa274f77fc032c448c4d18bbf2c",
       "canonical_schema_verification": "unverified",
-      "canonical_column_count": 22,
+      "canonical_column_count": 24,
       "canonical_schema": [
         {
           "column_name": "pnl_month",
@@ -12287,106 +12290,118 @@
           "ordinal_position": 5
         },
         {
-          "column_name": "unconsumed_rub",
-          "data_type": "NUMERIC",
+          "column_name": "finance_control_runs",
+          "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 6
         },
         {
-          "column_name": "unlinked_posting_rub",
+          "column_name": "unconsumed_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES",
           "ordinal_position": 7
         },
         {
-          "column_name": "unmapped_sku_rows",
-          "data_type": "INT64",
+          "column_name": "unlinked_posting_rub",
+          "data_type": "NUMERIC",
           "is_nullable": "YES",
           "ordinal_position": 8
         },
         {
-          "column_name": "cogs_gap_units",
+          "column_name": "unmapped_sku_rows",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 9
         },
         {
-          "column_name": "reversal_suspected_postings",
+          "column_name": "cogs_gap_units",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 10
         },
         {
-          "column_name": "reversal_weak_signal_postings",
+          "column_name": "reversal_suspected_postings",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 11
         },
         {
-          "column_name": "d1_repair_rows",
+          "column_name": "reversal_weak_signal_postings",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 12
         },
         {
-          "column_name": "provisional_units",
+          "column_name": "d1_repair_rows",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 13
         },
         {
-          "column_name": "cis_without_document_postings",
+          "column_name": "provisional_units",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 14
         },
         {
-          "column_name": "provisional_revenue_rub",
-          "data_type": "NUMERIC",
+          "column_name": "cis_without_document_postings",
+          "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 15
         },
         {
-          "column_name": "provisional_open_rub",
+          "column_name": "provisional_revenue_rub",
           "data_type": "NUMERIC",
           "is_nullable": "YES",
           "ordinal_position": 16
         },
         {
-          "column_name": "provisional_cogs_missing",
-          "data_type": "INT64",
+          "column_name": "provisional_open_rub",
+          "data_type": "NUMERIC",
           "is_nullable": "YES",
           "ordinal_position": 17
         },
         {
-          "column_name": "in_transit_units",
+          "column_name": "provisional_inputs_missing",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 18
         },
         {
-          "column_name": "known_source_defects",
-          "data_type": "STRING",
+          "column_name": "in_transit_units",
+          "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 19
         },
         {
-          "column_name": "source_freshness_state",
-          "data_type": "STRING",
+          "column_name": "in_transit_without_accrual_units",
+          "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 20
         },
         {
-          "column_name": "financial_state",
+          "column_name": "known_source_defects",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 21
         },
         {
-          "column_name": "month_closure_status",
+          "column_name": "source_freshness_state",
           "data_type": "STRING",
           "is_nullable": "YES",
           "ordinal_position": 22
+        },
+        {
+          "column_name": "financial_state",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 23
+        },
+        {
+          "column_name": "month_closure_status",
+          "data_type": "STRING",
+          "is_nullable": "YES",
+          "ordinal_position": 24
         }
       ]
     },

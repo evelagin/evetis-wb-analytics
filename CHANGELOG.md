@@ -13,7 +13,9 @@ OWNER ACK 2026-10-14 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHAS
 - L1–L4 и `FCT_OZON_*` не меняются (Q15: тело FCT_OZON_PNL_MONTHLY в production = канон); L4 — справочная колонка с мостом.
 - Состояния месяца по данным (водяной знак `finance_accrual`, без CURRENT_DATE): PENDING_CLASSIFICATION →
   PARTIAL_SOURCE_MISSING → UNPROVEN → PARTIAL_AWAITING_ACCRUALS → FINANCIAL_COMPLETE_WITH_TIMING_BRIDGE → FINANCIAL_COMPLETE.
-  Незагруженные сторно D1 видны детектором (14 из 14), M2 — реестром известных дефектов.
+  Доказанно недогруженные месяцы (9 месяцев сторно D1, M2) держит реестр известных дефектов (месяц + код, без сумм),
+  детектор сторно — сторож на будущее; загрузки с кодами контроля D1 не двигают водяной знак и открывают месяц;
+  провизорная оценка X берёт комиссию из выплаты отправления, неизвестный вход — не ноль, а PARTIAL_SOURCE_MISSING.
 - QA `sql/ozon/qa_ozon_store_pnl_v1.sql` (Q01–Q23), инструмент `tools/ozon_store_pnl_deploy.py` (DROP не исполняет),
   тесты `tools/tests/test_ozon_store_pnl.py`. Развёртывание — отдельный OWNER ACK.
 
