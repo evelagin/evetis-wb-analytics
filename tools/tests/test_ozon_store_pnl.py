@@ -252,6 +252,7 @@ def test_watermark_ignores_finance_control_runs_and_backfill_horizon():
     # сутки решает последняя покрывающая успешная загрузка; открытые сутки действуют на все месяцы
     assert "ARRAY_AGG(finance_control_event ORDER BY completed_at DESC LIMIT 1)[OFFSET(0)] finance_control_event" in b
     assert "CROSS JOIN ctrl ct" in b
+    assert "finance_control_event AND (source_from IS NULL OR source_to IS NULL OR source_from > source_to)" in b
 
 
 def test_state_fails_closed_without_watermark():

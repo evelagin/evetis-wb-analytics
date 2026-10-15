@@ -64,12 +64,16 @@ wm AS (
 -- Сутки начислений решает ПОСЛЕДНЯЯ успешная загрузка, которая их покрывает: код контроля D1 в ней —
 -- сутки открыты; более поздний чистый перезапрос тех же суток их закрывает. Месяц заказа пропавшего начисления из
 -- error_message не выводится, поэтому открытые сутки запрещают FINANCIAL_COMPLETE во всех месяцах.
+-- Загрузка с кодом контроля и неразбираемым или перевёрнутым окном считается открытыми сутками (отказ закрыто).
 ctrl AS (
-  SELECT COUNTIF(finance_control_event) finance_control_open_days FROM (
-    SELECT d, ARRAY_AGG(finance_control_event ORDER BY completed_at DESC LIMIT 1)[OFFSET(0)] finance_control_event
-    FROM runs, UNNEST(GENERATE_DATE_ARRAY(source_from, source_to)) d
-    WHERE source_from <= source_to
-    GROUP BY 1)),
+  SELECT
+    (SELECT COUNTIF(finance_control_event) FROM (
+       SELECT d, ARRAY_AGG(finance_control_event ORDER BY completed_at DESC LIMIT 1)[OFFSET(0)] finance_control_event
+       FROM runs, UNNEST(GENERATE_DATE_ARRAY(source_from, source_to)) d
+       WHERE source_from <= source_to
+       GROUP BY 1))
+    + (SELECT COUNTIF(finance_control_event AND (source_from IS NULL OR source_to IS NULL OR source_from > source_to))
+       FROM runs) finance_control_open_days),
 fresh AS (
   SELECT ANY_VALUE(freshness_status) source_freshness_state
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_MART_FRESHNESS`),
