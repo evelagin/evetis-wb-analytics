@@ -12253,9 +12253,9 @@
       "live_schema_sha256_at_capture": null,
       "live_description_sha256_at_capture": null,
       "live_schema_at_capture": null,
-      "canonical_body_sha256": "26a223b7f657b3d56fb5fdc1e13df36bf8414b3d3b915621ce44f4169f376400",
+      "canonical_body_sha256": "cd39a26267b9f8ec4a533820479072c5153f3015e7299f1684ed9cbb7fb2d407",
       "canonical_description_sha256": "1b237d52de9db1d9018637f8dc33064100c7b1279693e42b59c7ca6f21c5e380",
-      "canonical_schema_sha256": "8fc412fb006ddc37d8faf268d35de08412b6efa274f77fc032c448c4d18bbf2c",
+      "canonical_schema_sha256": "21070fb505a228aab9d05b45a03ec4a6c4ad34a458830947668bf0cd0680b7eb",
       "canonical_schema_verification": "unverified",
       "canonical_column_count": 24,
       "canonical_schema": [
@@ -12290,7 +12290,7 @@
           "ordinal_position": 5
         },
         {
-          "column_name": "finance_control_runs",
+          "column_name": "finance_control_open_days",
           "data_type": "INT64",
           "is_nullable": "YES",
           "ordinal_position": 6

@@ -212,20 +212,21 @@ SELECT 'Q18_MEMO_EXCLUDED' check_name,
 FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_ACCOUNT_LEDGER`;
 
 -- @check Q19_FINANCE_CONTROL
--- Загрузки finance_accrual с кодами контроля D1 (OZON_FINANCE_ACCRUAL_QUARANTINED / OZON_FINANCE_CONTROL_MISMATCH
--- в error_message при status OK) переводят месяцы своего окна в PARTIAL_SOURCE_MISSING и не двигают водяной знак.
-WITH r AS (
-  SELECT * FROM `project-fa311fc0-4d87-4781-986.ozon_raw.OZON_INGESTION_RUNS`
-  WHERE entity = 'finance_accrual' AND REGEXP_CONTAINS(IFNULL(error_message, ''), r'OZON_FINANCE_')),
-s AS (
-  SELECT COUNTIF(finance_control_runs > 0) months_flagged,
-    COUNTIF(finance_control_runs > 0 AND financial_state NOT IN ('PARTIAL_SOURCE_MISSING', 'PENDING_CLASSIFICATION')) months_not_gated
-  FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_MONTH_STATE`)
+-- Сутки начислений, последняя успешная загрузка которых несёт код контроля D1 (OZON_FINANCE_ACCRUAL_QUARANTINED /
+-- OZON_FINANCE_CONTROL_MISMATCH в error_message при status OK), запрещают FINANCIAL_COMPLETE во всех месяцах и не
+-- двигают водяной знак; более поздний чистый перезапрос этих суток их закрывает.
+WITH s AS (
+  SELECT MAX(finance_control_open_days) open_days,
+    COUNTIF(finance_control_open_days > 0 AND financial_state NOT IN ('PARTIAL_SOURCE_MISSING', 'PENDING_CLASSIFICATION')) months_not_gated
+  FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_MONTH_STATE`),
+r AS (
+  SELECT COUNT(*) n FROM `project-fa311fc0-4d87-4781-986.ozon_raw.OZON_INGESTION_RUNS`
+  WHERE entity = 'finance_accrual' AND REGEXP_CONTAINS(IFNULL(error_message, ''), r'OZON_FINANCE_'))
 SELECT 'Q19_FINANCE_CONTROL' check_name,
-  IF((SELECT months_not_gated FROM s) > 0, 'FAIL', IF((SELECT COUNT(*) FROM r) = 0, 'PASS', 'WARN')) status,
-  CONCAT('загрузок с кодами контроля: ', CAST((SELECT COUNT(*) FROM r) AS STRING),
-         '; месяцев под воротами: ', CAST((SELECT months_flagged FROM s) AS STRING),
-         ', без ворот: ', CAST((SELECT months_not_gated FROM s) AS STRING)) detail;
+  IF(s.months_not_gated > 0, 'FAIL', IF(s.open_days = 0, 'PASS', 'WARN')) status,
+  CONCAT('загрузок с кодами контроля за всё время: ', CAST(r.n AS STRING), '; открытых суток: ',
+         CAST(s.open_days AS STRING), ', месяцев без ворот: ', CAST(s.months_not_gated AS STRING)) detail
+FROM s CROSS JOIN r;
 
 -- @check Q20_LIFECYCLE
 -- Нетерминальные отправления старше 30 суток относительно водяного знака (раскрытие; признание P&L

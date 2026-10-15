@@ -9,8 +9,9 @@
 -- Закрытие месяца: водяной знак ≥ последний день месяца + 36 суток (D0: к +20 приходит ≥ 99,63 %).
 -- Позднее начисление переоткрывает суммы месяца сами (VIEW).
 --   1 PENDING_CLASSIFICATION — есть строки V_OZON_FINANCE_NEW_OPERATIONS (публикация запрещена);
---   2 PARTIAL_SOURCE_MISSING — действующий известный дефект источника (known_defects); загрузка финансов
---     с кодом контроля OZON_FINANCE_* (карантин начисления / несошедшиеся деньги, D1) в окне месяца;
+--   2 PARTIAL_SOURCE_MISSING — действующий известный дефект источника (known_defects); есть сутки начислений,
+--     последняя успешная загрузка которых несёт код контроля OZON_FINANCE_* (карантин начисления / несошедшиеся
+--     деньги, D1) — во всех месяцах, пока чистый перезапрос этих суток их не закроет;
 --     деньги без колонки или без отправления; COGS 0 или >1 интервала; SKU вне карты; сильный признак
 --     незагруженного сторно реализации (у проданного отправления есть сбор за возврат 59/45/9, а строки
 --     сторно нет); у провизорной оценки нет входа (COGS, комиссия, логистика); после закрытия —
@@ -60,11 +61,15 @@ runs AS (
 wm AS (
   SELECT MAX(LEAST(source_to, DATE_SUB(DATE(completed_at, 'Europe/Moscow'), INTERVAL 1 DAY))) finance_watermark_date
   FROM runs WHERE NOT finance_control_event),
+-- Сутки начислений решает ПОСЛЕДНЯЯ успешная загрузка, которая их покрывает: код контроля D1 в ней —
+-- сутки открыты; более поздний чистый перезапрос тех же суток их закрывает. Месяц заказа пропавшего начисления из
+-- error_message не выводится, поэтому открытые сутки запрещают FINANCIAL_COMPLETE во всех месяцах.
 ctrl AS (
-  SELECT DATE_TRUNC(d, MONTH) m, COUNT(DISTINCT completed_at) finance_control_runs
-  FROM runs, UNNEST(GENERATE_DATE_ARRAY(source_from, source_to)) d
-  WHERE finance_control_event AND source_from <= source_to
-  GROUP BY 1),
+  SELECT COUNTIF(finance_control_event) finance_control_open_days FROM (
+    SELECT d, ARRAY_AGG(finance_control_event ORDER BY completed_at DESC LIMIT 1)[OFFSET(0)] finance_control_event
+    FROM runs, UNNEST(GENERATE_DATE_ARRAY(source_from, source_to)) d
+    WHERE source_from <= source_to
+    GROUP BY 1)),
 fresh AS (
   SELECT ANY_VALUE(freshness_status) source_freshness_state
   FROM `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_MART_FRESHNESS`),
@@ -170,7 +175,7 @@ j AS (
     DATE_ADD(LAST_DAY(months.m), INTERVAL 36 DAY) close_after_date,
     IFNULL(wm.finance_watermark_date >= DATE_ADD(LAST_DAY(months.m), INTERVAL 36 DAY), FALSE) is_closed,
     IFNULL(pend.pending_issue_rows, 0) pending_issue_rows,
-    IFNULL(ct.finance_control_runs, 0) finance_control_runs,
+    IFNULL(ct.finance_control_open_days, 0) finance_control_open_days,
     IFNULL(g.unconsumed_rub, 0) unconsumed_rub,
     IFNULL(g.unlinked_posting_rub, 0) unlinked_posting_rub,
     IFNULL(g.unmapped_sku_rows, 0) unmapped_sku_rows,
@@ -196,12 +201,12 @@ j AS (
   LEFT JOIN prov_m pm ON pm.m = months.m
   LEFT JOIN transit t ON t.m = months.m
   LEFT JOIN pend ON pend.m = months.m
-  LEFT JOIN ctrl ct ON ct.m = months.m
+  CROSS JOIN ctrl ct
   LEFT JOIN kd ON kd.m = months.m)
 SELECT j.*,
   CASE
     WHEN pending_issue_rows > 0 THEN 'PENDING_CLASSIFICATION'
-    WHEN known_source_defects IS NOT NULL OR finance_control_runs > 0
+    WHEN known_source_defects IS NOT NULL OR finance_control_open_days > 0
       OR unconsumed_rub != 0 OR unlinked_posting_rub != 0 OR unmapped_sku_rows > 0 OR cogs_gap_units > 0
       OR reversal_suspected_postings > 0 OR provisional_inputs_missing > 0
       OR (is_closed AND (provisional_units > 0 OR in_transit_without_accrual_units > 0)) THEN 'PARTIAL_SOURCE_MISSING'
