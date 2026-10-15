@@ -70,15 +70,16 @@ def performance_fence(b,doc):
     reports=[];cooldowns=[]
     for text in cycles(b,p):
         _,items=plans(b,p,date.fromisoformat(text))
-        item=items.get('ads_sku_daily')
-        if item is None:continue
-        state=b.state(item['plan']);pr=state['progress'];report=pr.get('report')
-        if report:
-            if report['phase']=='INTENT':fail('ambiguous current report intent; never create a second report')
-            if report['phase']!='POLL':fail('unknown current report phase')
-            reports.append(item['plan']['runtime_plan']['plan_id'])
-        eligible=pr.get('rate_limit',{}).get('eligible_at')
-        if eligible and K.at(eligible)>b.clock():cooldowns.append(eligible)
+        for entity,item in items.items():
+            if entity not in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}:continue
+            state=b.state(item['plan']);pr=state['progress']
+            report=pr.get('report') if entity=='ads_sku_daily' else None
+            if report:
+                if report['phase']=='INTENT':fail('ambiguous current report intent; never create a second report')
+                if report['phase']!='POLL':fail('unknown current report phase')
+                reports.append(item['plan']['runtime_plan']['plan_id'])
+            eligible=pr.get('rate_limit',{}).get('eligible_at')
+            if eligible and K.at(eligible)>b.clock():cooldowns.append(eligible)
     if len(reports)>1:fail('multiple current async report scopes')
     if cooldowns:return {'status':'WAITING','allowance':0,'eligible_at':max(cooldowns,key=K.at),'basis':'SOURCE_COOLDOWN'}
     if reports and reports!=[doc['runtime_plan']['plan_id']]:return {'status':'WAITING','allowance':0,'eligible_at':(b.clock()+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
