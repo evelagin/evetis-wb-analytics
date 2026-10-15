@@ -254,8 +254,15 @@ class Backend(C.Backend):
             # priority queue must not escape a different leaf's active cooldown.
             records=self.store.history(self.manifest['hash'])
             plans=reconstruct_plans(records,self.manifest,now)
-            docs={v['plan']['runtime_plan']['plan_id']:v['plan'] for v in plans.values()
-                  if v['plan']['runtime_plan']['entity'] in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}}
+            # A replaced snapshot retains its cooldown after Moscow midnight.
+            # reconstruct_plans validates every version and rollover link first.
+            versions=list(plans.values())+[r['payload'] for r in records if r['kind']=='CHUNK_PLAN']
+            docs={}
+            for v in versions:
+                d=v['plan'];pid=d['runtime_plan']['plan_id']
+                if d['runtime_plan']['entity'] not in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}:continue
+                if pid in docs and docs[pid]!=d:raise BF.B.EvidenceError('Performance class plan conflicts')
+                docs[pid]=d
             if docs:
                 rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity IN ('ads_campaigns','ads_expense_daily','ads_sku_daily') AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
                 if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')

@@ -233,3 +233,31 @@ def test_replacement_can_read_exact_retained_controller_for_existing_stop819_pro
     assert retained['controller_implementation_hash'] == 'd8b8447d383ce094a7917fa8dd17a4ab73660cd79a71e553d499e33083dc0844'
     assert retained['runtime_implementation_hash'] == '0babe49f45b8947aecb0bb41fd7f9bfa5c6fb82ab11dee97dca377a58470ed06'
     assert retained['verification']['current_data_adapter'] == 'PASS'
+
+
+@pytest.mark.parametrize('target', PERFORMANCE + SELLER)
+@pytest.mark.parametrize('expired', [False, True])
+def test_superseded_historical_snapshot_retains_cooldown_until_exact_expiry(monkeypatch, target, expired):
+    from tools.tenancy.performance_dispatch_image_check import rollover_fixture
+    b, selected, at, old_id, inventories = rollover_fixture(target, expired=expired)
+    original = deepcopy(b.store.records)
+    monkeypatch.setattr(CLOUD.Backend, 'quota', lambda *a: dict(status='ELIGIBLE', allowance=15))
+    monkeypatch.setattr(C, 'policy', lambda *a: None)
+    quota = b.quota({'plans': [selected]}, at)
+    assert old_id in inventories[0]
+    blocked = target in PERFORMANCE and not expired
+    assert quota['status'] == ('WAITING' if blocked else 'ELIGIBLE')
+    assert D.decide_tick([], SHARD, quota)['action'] == ('WAITING' if blocked else 'PREPARE_NEXT')
+    assert b.store.records == original
+
+
+def test_unproven_historical_rollover_cannot_grant_dispatch(monkeypatch):
+    from tools.tenancy.performance_dispatch_image_check import rollover_fixture
+    b, selected, at, _, inventories = rollover_fixture('ads_campaigns')
+    b.store.records = [r for r in b.store.records if r['kind'] != 'CHUNK_SUPERSEDED']
+    original = deepcopy(b.store.records)
+    monkeypatch.setattr(CLOUD.Backend, 'quota', lambda *a: dict(status='ELIGIBLE', allowance=15))
+    monkeypatch.setattr(C, 'policy', lambda *a: None)
+    with pytest.raises(BF.B.EvidenceError, match='snapshot replacement'):
+        b.quota({'plans': [selected]}, at)
+    assert not inventories and b.store.records == original
