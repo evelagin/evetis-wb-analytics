@@ -8,7 +8,8 @@ import { buildTabPlan, identityResidual, reasonText, TAB_COLS, TAB_HEADER, TAB_N
 import { assertOnlyTab, contractSha, CONTRACT_META_KEY, contentSha, decideContract, decidePublish, metaOnly, normalizeGrid, otherTabsFingerprint, publishGate,
   publishRequests, PUBLISH_META_KEY } from '../src/loaders/unitka/ozonstorepnl/publish.js';
 import { ozonStorePnlLoader, publishEnv, type OzonStorePnlDeps } from '../src/loaders/unitka/ozonstorepnl/index.js';
-import { gateSql, pnlSql, type GateInputs } from '../src/loaders/unitka/ozonstorepnl/bq.js';
+import { gateSql, pnlSql, stateSql, type GateInputs, type QaResult } from '../src/loaders/unitka/ozonstorepnl/bq.js';
+import { QA_SQL, qaChecks } from '../src/loaders/unitka/ozonstorepnl/qa.js';
 import type { CellValue } from '../src/loaders/unitka/model.js';
 import { Logger } from '../src/logging.js';
 import { LOADERS } from '../src/loaders/registry.js';
@@ -38,6 +39,7 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
   };
 }
 const GATE_OK: GateInputs = { new_operation_rows: 0, max_abs_conservation_residual_rub: 0, unconsumed_rub: 0, unlinked_posting_rub: 0 };
+const QA_OK: QaResult[] = qaChecks().map((c) => ({ id: c.id, status: c.id.startsWith('Q16') || c.id.startsWith('Q20') ? 'WARN' : 'PASS', detail: '' }));
 const PNL = [
   pnlRow({ pnl_month: { value: '2026-07-01' } }),
   pnlRow({ pnl_month: { value: '2026-08-01' }, financial_state: 'PARTIAL_SOURCE_MISSING', known_source_defects: 'M2_SALE_AMOUNT_REPRESENTATION' }),
@@ -70,11 +72,12 @@ describe('D4 — план вкладки', () => {
 
   it('состояния и причины — только из D3, не окончательные месяцы так и подписаны', () => {
     const p = buildTabPlan(PNL);
-    expect(p.rows.map((r) => r[COL.STATE])).toEqual(['Деньги Ozon сверены', 'Не хватает денег источника', 'Ждём начислений Ozon — предварительно']);
+    expect(p.rows.map((r) => r[COL.STATE])).toEqual(['Деньги Ozon сверены, себестоимость предварительная', 'Не хватает денег источника', 'Ждём начислений Ozon — предварительно']);
+    expect(p.rows[0]![COL.REASON]).toBe('себестоимость предварительная: часть единиц на юридической базе импорта (D3.1)');
     expect(p.rows[1]![COL.REASON]).toBe('M2: сумма реализации хранится не полностью');
     expect(p.rows[2]![COL.REASON]).toBe('доставлено без начисления: 1 ед. (оценка X); в пути: 4 ед.');
     expect(p.rows[2]![COL.CLOSURE]).toBe('Ждём поздних начислений');
-    expect(reasonText(pnlRow({ known_source_defects: 'D1_REVERSAL_NOT_LOADED' }))).toBe('D1: не загружены сторно реализации при возвратах');
+    expect(reasonText(pnlRow({ known_source_defects: 'D1_REVERSAL_NOT_LOADED', financial_state: 'PARTIAL_SOURCE_MISSING' }))).toBe('D1: не загружены сторно реализации при возвратах');
   });
 
   it('неизвестное состояние или нет колонки вью — отказ, а не молчаливый ноль', () => {
@@ -91,28 +94,62 @@ describe('D4 — план вкладки', () => {
   });
 });
 
+describe('D4 — QA D3 в гейте и причины из ворот', () => {
+  it('встроенный QA побайтно равен каноническому файлу D3 (иначе: node scripts/gen_ozon_store_pnl_qa.mjs)', () => {
+    expect(QA_SQL).toBe(readFileSync(new URL('../../sql/ozon/qa_ozon_store_pnl_v1.sql', import.meta.url), 'utf8'));
+    expect(qaChecks().map((c) => c.id.slice(0, 3))).toEqual(Array.from({ length: 23 }, (_, i) => `Q${String(i + 1).padStart(2, '0')}`));
+    const body = (q: string): string => q.replace(/^(\s*--[^\n]*\n)*/, '').trim();
+    expect(qaChecks().every((c) => /^(WITH|SELECT)\b/.test(body(c.sql)) && !c.sql.endsWith(';'))).toBe(true);
+  });
+  it('любой FAIL, ERROR, незнакомый статус или отсутствие QA — блок; WARN — нет', () => {
+    expect(publishGate(PNL, GATE_OK, QA_OK).model).toEqual([]);
+    const with_ = (id: string, status: string): QaResult[] => QA_OK.map((r) => (r.id.startsWith(id) ? { ...r, status, detail: 'x' } : r));
+    expect(publishGate(PNL, GATE_OK, with_('Q06', 'FAIL')).model.join()).toMatch(/QA Q06_ADS_BILLING_IDENTITY: FAIL/);
+    expect(publishGate(PNL, GATE_OK, with_('Q15', 'ERROR')).model.join()).toMatch(/QA Q15_L1_L4_UNCHANGED: ERROR/);
+    expect(publishGate(PNL, GATE_OK, with_('Q21', 'NO_ROW')).model.join()).toMatch(/NO_ROW/);
+    expect(publishGate(PNL, GATE_OK, []).model.join()).toMatch(/QA D3 не выполнен/);
+    expect(publishGate(PNL, GATE_OK).model.join()).toMatch(/QA D3 не выполнен/);
+  });
+  it('причины неполноты — из ворот состояния D3, по строке', () => {
+    const st = [{ pnl_month: { value: '2026-07-01' } },
+      { pnl_month: '2026-08-01', unmapped_sku_rows: 2, cogs_gap_units: 3, reversal_weak_signal_postings: 1, finance_control_open_days: 4 },
+      { pnl_month: '2026-09-01', cis_without_document_postings: 1, in_transit_without_accrual_units: 2, provisional_inputs_missing: 1 }];
+    const p = buildTabPlan(PNL, st);
+    expect(p.rows[1]![COL.REASON]).toBe('M2: сумма реализации хранится не полностью; контроль начислений D1: открытых суток 4; SKU вне карты: 2 строк; себестоимость не найдена: 3 ед.; слабый признак сторно, нужна сверка: 1 отпр.');
+    expect(p.rows[2]![COL.REASON]).toBe('доставлено без начисления: 1 ед. (оценка X, из них выкуп СНГ без документа: 1); у оценки X нет входа: 1; в пути: 4 ед. (без начисления: 2)');
+    expect(() => buildTabPlan(PNL, st.slice(0, 2))).toThrow(/нет строки состояния/);
+  });
+  it('NULL в деньгах — отказ; NULL маржи — пустая ячейка; NUMERIC как Big-объект читается', () => {
+    expect(() => buildTabPlan([pnlRow({ commission_rub: null })])).toThrow(/NULL в денежных колонках commission_rub/);
+    expect(buildTabPlan([pnlRow({ management_net_store_margin: null })]).rows[0]![COL.MARGIN]).toBe('');
+    class Big { constructor(private v: string) {} toString(): string { return this.v; } }
+    const r = pnlRow(); r.premium_rub = new Big('0'); r.seller_base_revenue_rub = new Big(String(r.seller_base_revenue_rub));
+    expect(buildTabPlan([r]).rowIdentityMaxAbs).toBe(0);
+  });
+});
+
 describe('D4 — гейты публикации', () => {
   it('чистые данные — гейтов нет', () => {
-    expect(publishGate(PNL, GATE_OK)).toEqual({ source: [], model: [] });
+    expect(publishGate(PNL, GATE_OK, QA_OK)).toEqual({ source: [], model: [] });
   });
   it('неразобранные операции блокируют: состояние PENDING и строки детектора', () => {
-    expect(publishGate([pnlRow({ financial_state: 'PENDING_CLASSIFICATION' })], GATE_OK).model.join()).toMatch(/PENDING_CLASSIFICATION/);
-    expect(publishGate(PNL, { ...GATE_OK, new_operation_rows: 2 }).model.join()).toMatch(/неразобранных начислений Ozon: 2/);
+    expect(publishGate([pnlRow({ financial_state: 'PENDING_CLASSIFICATION' })], GATE_OK, QA_OK).model.join()).toMatch(/PENDING_CLASSIFICATION/);
+    expect(publishGate(PNL, { ...GATE_OK, new_operation_rows: 2 }, QA_OK).model.join()).toMatch(/неразобранных начислений Ozon: 2/);
   });
   it('нарушенное тождество, несошедшиеся деньги, «сверено» при открытых условиях — блок', () => {
-    expect(publishGate([pnlRow({ management_net_store_profit_rub: 1 })], GATE_OK).model.join()).toMatch(/тождество D3/);
-    expect(publishGate(PNL, { ...GATE_OK, max_abs_conservation_residual_rub: 0.5 }).model.join()).toMatch(/RAW ≠ леджер/);
-    expect(publishGate(PNL, { ...GATE_OK, unconsumed_rub: 1 }).model.join()).toMatch(/без колонки/);
-    expect(publishGate([pnlRow({ provisional_open_rub: 10, provisional_units: 1 })], GATE_OK).model.join()).toMatch(/при открытых условиях/);
-    expect(publishGate([pnlRow({ known_source_defects: 'M2_SALE_AMOUNT_REPRESENTATION' })], GATE_OK).model.join()).toMatch(/при открытых условиях/);
-    expect(publishGate([pnlRow({ month_closure_status: 'OPEN' })], GATE_OK).model.join()).toMatch(/при открытых условиях/);
+    expect(publishGate([pnlRow({ management_net_store_profit_rub: 1 })], GATE_OK, QA_OK).model.join()).toMatch(/тождество D3/);
+    expect(publishGate(PNL, { ...GATE_OK, max_abs_conservation_residual_rub: 0.5 }, QA_OK).model.join()).toMatch(/RAW ≠ леджер/);
+    expect(publishGate(PNL, { ...GATE_OK, unconsumed_rub: 1 }, QA_OK).model.join()).toMatch(/без колонки/);
+    expect(publishGate([pnlRow({ provisional_open_rub: 10, provisional_units: 1 })], GATE_OK, QA_OK).model.join()).toMatch(/при открытых условиях/);
+    expect(publishGate([pnlRow({ known_source_defects: 'M2_SALE_AMOUNT_REPRESENTATION' })], GATE_OK, QA_OK).model.join()).toMatch(/при открытых условиях/);
+    expect(publishGate([pnlRow({ month_closure_status: 'OPEN' })], GATE_OK, QA_OK).model.join()).toMatch(/при открытых условиях/);
   });
   it('пустая вью и пропуск месяца — блок', () => {
-    expect(publishGate([], GATE_OK).model.join()).toMatch(/пусто/);
-    expect(publishGate([PNL[0]!, PNL[2]!], GATE_OK).model.join()).toMatch(/не подряд/);
+    expect(publishGate([], GATE_OK, QA_OK).model.join()).toMatch(/пусто/);
+    expect(publishGate([PNL[0]!, PNL[2]!], GATE_OK, QA_OK).model.join()).toMatch(/не подряд/);
   });
   it('несвежие источники — отдельный гейт источников', () => {
-    const g = publishGate([pnlRow({ source_freshness_state: 'STALE' })], GATE_OK);
+    const g = publishGate([pnlRow({ source_freshness_state: 'STALE' })], GATE_OK, QA_OK);
     expect(g.model).toEqual([]);
     expect(g.source.join()).toMatch(/не свежие \(STALE\)/);
   });
@@ -219,7 +256,8 @@ describe('D4 — загрузчик (репетиция на in-memory книг�
   });
   const deps = (book: FakeBook, pnl: PnlRow[] = PNL, gi: GateInputs = GATE_OK): { d: OzonStorePnlDeps; ro: boolean[] } => {
     const ro: boolean[] = [];
-    return { ro, d: { makeSheets: (_c, readonly) => { ro.push(readonly); return book.gateway(readonly); }, makeBq: () => ({ readPnl: async () => pnl, readGateInputs: async () => gi }) } };
+    return { ro, d: { makeSheets: (_c, readonly) => { ro.push(readonly); return book.gateway(readonly); },
+      makeBq: () => ({ readPnl: async () => pnl, readGateInputs: async () => gi, readStates: async () => [], runQa: async () => QA_OK }) } };
   };
   const withEnv = async (env: Record<string, string>, f: () => Promise<void>): Promise<void> => {
     const keep = { ...process.env }; Object.assign(process.env, env);
@@ -266,6 +304,33 @@ describe('D4 — загрузчик (репетиция на in-memory книг�
       const changed = [pnlRow({ pnl_month: { value: '2026-07-01' }, commission_rub: 44000 }), PNL[1]!, PNL[2]!];
       await ozonStorePnlLoader(ctx(), deps(book, changed).d);
       expect(normalizeGrid(book.tabs.get(7)!.values)).toEqual(normalizeGrid([[...TAB_HEADER], ...buildTabPlan(changed).rows]));
+    });
+  });
+
+  it('план сократился (месяц исчез из вью) — лишняя строка очищается, дальше NOOP', async () => {
+    const book = new FakeBook();
+    await withEnv(ON, async () => {
+      await ozonStorePnlLoader(ctx(), deps(book).d);
+      await ozonStorePnlLoader(ctx(), deps(book, PNL.slice(0, 2)).d);
+      expect(normalizeGrid(book.tabs.get(7)!.values)).toEqual(normalizeGrid([[...TAB_HEADER], ...buildTabPlan(PNL.slice(0, 2)).rows]));
+      book.writes = [];
+      await ozonStorePnlLoader(ctx(), deps(book, PNL.slice(0, 2)).d);
+      expect(book.writes).toEqual([]);
+    });
+  });
+
+  it('ADOPT владельца после ручной правки восстанавливает вкладку; заметка испорчена — принудительная запись', async () => {
+    const book = new FakeBook();
+    await withEnv(ON, async () => {
+      await ozonStorePnlLoader(ctx(), deps(book).d);
+      book.tabs.get(7)!.values[1]![1] = 1;
+      const adopt = contentSha(normalizeGrid(book.tabs.get(7)!.values));
+      await withEnv({ OZON_STORE_PNL_ADOPT_SHA: adopt }, async () => { await ozonStorePnlLoader(ctx(), deps(book).d); });
+      expect(normalizeGrid(book.tabs.get(7)!.values)).toEqual(normalizeGrid([[...TAB_HEADER], ...buildTabPlan(PNL).rows]));
+      book.tabs.get(7)!.notes.set('1|3', 'испорчено'); book.writes = [];
+      await ozonStorePnlLoader(ctx(), deps(book).d);
+      expect(book.writes).toContain('updateCells');
+      expect(book.tabs.get(7)!.notes.get('1|3')).toBe(TAB_NOTES[2]);
     });
   });
 
@@ -317,13 +382,35 @@ describe('D4 — регистрация и изоляция', () => {
     expect(LOADERS['ozon-store-pnl']).toMatchObject({ prodOnly: true, retryTransient: true });
   });
   it('SQL читает только ozon_mart: ни одной ссылки на wb_*', () => {
-    for (const q of [pnlSql('project-fa311fc0-4d87-4781-986'), gateSql('project-fa311fc0-4d87-4781-986')]) {
+    for (const q of [pnlSql('project-fa311fc0-4d87-4781-986'), gateSql('project-fa311fc0-4d87-4781-986'), stateSql('project-fa311fc0-4d87-4781-986'), ...qaChecks().map((c) => c.sql)]) {
       expect(q).toMatch(/\.ozon_mart\./);
-      expect(q).not.toMatch(/wb_/);
-      expect(q.trim()).toMatch(/^SELECT/);
+      // ссылка на таблицу WB — только полное имя в обратных кавычках; текст строк и комментариев не в счёт
+      expect(q).not.toMatch(/`[^`]*\.wb_[A-Za-z0-9_]*\.[^`]*`/);
+      expect([...q.matchAll(/`([^`]+)`/g)].every((m) => /\.(ozon_mart|ozon_raw|evetis_ref)\./.test(m[1]!) || !m[1]!.includes('.'))).toBe(true);
+      expect(q.replace(/^(\s*--[^\n]*\n)*/, '').trim()).toMatch(/^(SELECT|WITH)\b/);
     }
   });
   it('тождество строки считается на неокруглённых значениях', () => {
     expect(identityResidual(pnlRow())).toBeLessThan(1e-9);
+  });
+});
+
+describe('D4 — параллельный QA', () => {
+  it('порядок результатов = порядок файла, не больше QA_CONCURRENCY одновременно, ошибка запроса → ERROR', async () => {
+    const { OzonStorePnlBq, QA_CONCURRENCY } = await import('../src/loaders/unitka/ozonstorepnl/bq.js');
+    let live = 0, peak = 0, calls = 0;
+    const fake = { query: async (o: { query: string }): Promise<[unknown[]]> => {
+      live++; peak = Math.max(peak, live); calls++;
+      await new Promise((r) => setTimeout(r, 2));
+      live--;
+      if (o.query.includes('Q15') || o.query.includes('FCT_OZON_PNL_MONTHLY`\nWHERE')) throw new Error('boom');
+      const id = /'(Q\d\d_[A-Z0-9_]+)' check_name/.exec(o.query)?.[1] ?? 'X';
+      return [[{ check_name: id, status: 'PASS', detail: '' }]];
+    } };
+    const res = await new OzonStorePnlBq('project-fa311fc0-4d87-4781-986', 'EU', fake).runQa();
+    expect(calls).toBe(23);
+    expect(peak).toBeLessThanOrEqual(QA_CONCURRENCY);
+    expect(res.map((r) => r.id)).toEqual(qaChecks().map((c) => c.id));
+    expect(res.find((r) => r.id.startsWith('Q15'))?.status).toBe('ERROR');
   });
 });

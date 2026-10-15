@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import type { CellValue } from '../model.js';
 import { assertOnlyTab, contentSha, normalizeGrid } from '../storepnl/publish.js';
 import { COL, STATE_LABEL, CLOSURE_LABEL, TAB_COLS, TAB_HEADER, TAB_NOTES, identityResidual, toNum, toStr, type PnlRow, type TabPlan } from './tabplan.js';
-import type { GateInputs } from './bq.js';
+import type { GateInputs, QaResult } from './bq.js';
 
 export { assertOnlyTab, contentSha, normalizeGrid, TAB_COLS };
 export const PUBLISH_META_KEY = 'evetis.ozon_store_pnl.published_sha';
@@ -45,9 +45,13 @@ export interface GateResult { source: string[]; model: string[] }
  * представления. Любой непустой список — публикации нет. Известные WARN QA (Q16 мост к L4, Q20 жизненный цикл
  * отправлений) гейтом не являются: они раскрыты в состоянии и причине месяца.
  */
-export function publishGate(pnl: readonly PnlRow[], g: GateInputs): GateResult {
+export function publishGate(pnl: readonly PnlRow[], g: GateInputs, qa?: readonly QaResult[]): GateResult {
   const source: string[] = [];
   const model: string[] = [];
+  // Канонический QA D3 (sql/ozon/qa_ozon_store_pnl_v1.sql): любой FAIL, ошибка запроса или незнакомый статус — блок.
+  // WARN (Q16 мост к L4, Q20 жизненный цикл) — раскрыт и публикацию не останавливает. Без результатов QA — блок.
+  if (qa === undefined || qa.length === 0) model.push('QA D3 не выполнен');
+  for (const r of qa ?? []) if (r.status !== 'PASS' && r.status !== 'WARN') model.push(`QA ${r.id}: ${r.status} — ${r.detail.slice(0, 200)}`);
   if (pnl.length === 0) model.push('представление P&L пусто — публикация стёрла бы вкладку');
   const months: string[] = [];
   for (const p of pnl) {
@@ -108,7 +112,7 @@ const rgb = (h: string): { red: number; green: number; blue: number } =>
 
 /** Фон «Финансового состояния»: окончательное — зелёный; ожидание — жёлтый; недоказанное и неполное — красный. */
 export const STATE_BG: Readonly<Record<string, string>> = {
-  'Деньги Ozon сверены': 'D9EAD3',
+  'Деньги Ozon сверены, себестоимость предварительная': 'D9EAD3',
   'Сверены, ждём поздних начислений': 'FFF2CC',
   'Ждём начислений Ozon — предварительно': 'FFF2CC',
   'Не доказан — нужна сверка': 'FCE5CD',

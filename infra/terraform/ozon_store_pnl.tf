@@ -5,7 +5,7 @@
 #
 # Отдельный Job в образе wb-loader (`node dist/cli.js ozon-store-pnl`) под sa-loaders-prod:
 #   • BigQuery — только чтение ozon_mart (права уже выданы ozon_unitka.tf); таблиц и прав здесь не создаётся;
-#   • Sheets — без OZON_STORE_PNL_PUBLISH=1 токен со scope spreadsheets.readonly (запись невозможна);
+#   • Sheets — без OZON_STORE_PNL_PUBLISH=1 не открывается вовсе (план, QA и гейты — в журнал);
 #     с флагом — запись ТОЛЬКО во вкладку sheetId = OZON_STORE_PNL_SHEET_ID (assertOnlyTab), узкое исключение F-18
 #     (docs/ops/SECURITY_BACKLOG.md) — действует только после OWNER ACK первой записи.
 #
@@ -36,7 +36,8 @@ resource "google_cloud_run_v2_job" "ozon_store_pnl_prod" {
     template {
       service_account = google_service_account.loaders_prod.email
       max_retries     = 0
-      timeout         = "600s"
+      # Канонический QA D3 (23 запроса по стопке вью) идёт параллельно, но прогон — минуты: запас до 30 мин.
+      timeout = "1800s"
       containers {
         image = var.container_image
         args  = ["ozon-store-pnl"]

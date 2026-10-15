@@ -107,7 +107,7 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // в журнал. Повтор после транзиентного отказа безопасен: снимок либо лёг целиком, либо не лёг.
   'unitka-store-pnl': { handler: (ctx) => unitkaStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
   // D4 (OWNER ACK 15.10.2026): P&L магазина Ozon — вкладка «Ozon Магазин P&L». Только чтение ozon_mart; без
-  // OZON_STORE_PNL_PUBLISH=1 Sheets readonly (план и гейты в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
+  // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
 };

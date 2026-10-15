@@ -2,9 +2,9 @@
  * D4 (OWNER ACK 15.10.2026) — загрузчик `ozon-store-pnl`: публикация управленческого P&L магазина Ozon во вкладку
  * «Ozon Магазин P&L» книги Юнитки.
  *
- * Прогон: ozon_mart.V_OZON_STORE_PNL_MONTHLY + входы гейта (детектор, покрытие) — ТОЛЬКО чтение → план вкладки
- * (отпечаток, строки, состояния) в журнал → гейты (источники, модель). Без OZON_STORE_PNL_PUBLISH=1 шлюз Sheets
- * readonly (scope spreadsheets.readonly) и запись невозможна: прогон — только план и гейты.
+ * Прогон: ozon_mart.V_OZON_STORE_PNL_MONTHLY + ворота состояния + детектор и покрытие + канонический QA D3 Q01–Q23 —
+ * ТОЛЬКО чтение → план вкладки (отпечаток, строки, состояния) в журнал → гейты (источники, модель, QA). Без
+ * OZON_STORE_PNL_PUBLISH=1 Sheets не открывается вовсе: прогон — только план и гейты.
  *
  * С флагом: вкладка sheetId = OZON_STORE_PNL_SHEET_ID (название обязано совпасть), отпечаток остальных вкладок книги
  * до записи, решение NOOP / WRITE / REFUSE (ручные правки → отказ), манифест отката (прежнее содержимое) в журнал,
@@ -38,7 +38,7 @@ export function publishEnv(env: NodeJS.ProcessEnv): PublishEnv {
 type SheetsLike = Pick<SheetsRest, 'readSheetMetadata' | 'readValues' | 'readNotes' | 'structureWrite' | 'readSheetsList'>;
 export interface OzonStorePnlDeps {
   makeSheets: (ctx: LoaderContext, readonly: boolean) => SheetsLike;
-  makeBq: (ctx: LoaderContext) => Pick<OzonStorePnlBq, 'readPnl' | 'readGateInputs'>;
+  makeBq: (ctx: LoaderContext) => Pick<OzonStorePnlBq, 'readPnl' | 'readGateInputs' | 'readStates' | 'runQa'>;
 }
 
 export const defaultOzonStorePnlDeps: OzonStorePnlDeps = {
@@ -63,8 +63,12 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   const bq = deps.makeBq(ctx);
   const pnl = await bq.readPnl();
   const gi: GateInputs = await bq.readGateInputs();
-  const plan = buildTabPlan(pnl);
-  const gate = publishGate(pnl, gi);
+  const states = await bq.readStates();
+  const qa = await bq.runQa();
+  const plan = buildTabPlan(pnl, states);
+  const gate = publishGate(pnl, gi, qa);
+  logger.info('ozon_store_pnl_qa', { results: qa.map((r) => ({ id: r.id, status: r.status })),
+    warn: qa.filter((r) => r.status === 'WARN').map((r) => ({ id: r.id, detail: r.detail })) });
   logger.info('ozon_store_pnl_tab_plan', { tab: plan.tab, range: plan.range, fingerprint: plan.fingerprint, rows: plan.rows.length,
     states: stateSummary(pnl), contract: contractSha(), gateInputs: gi, sourceGate: gate.source, modelGate: gate.model,
     write: pub.enabled ? 'ENABLED' : 'DISABLED' });
