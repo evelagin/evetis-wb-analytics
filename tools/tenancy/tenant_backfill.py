@@ -589,6 +589,53 @@ def verify_persistence(doc,ack_hash, *, backend):
     return _verify_coverage(doc,ack_hash,backend=backend,source_only=True)
 
 
+def rejected_campaign_prefix(details, state):
+    """Closed zero-effect GET/429 accounting, never snapshot completion."""
+    if (state["sequence"] != max(details)
+            or any(state[k] != 0 for k in ("rows", "orders", "supplies", "bundles"))
+            or set(state["progress"]) != {"done", "rate_limit"}
+            or state["progress"]["done"] is not False):
+        return False
+    requests = 0; previous_eligible = None; safe_cap = 15
+    try:
+        for count, seq in enumerate(sorted(details), 1):
+            d = details[seq]; diagnostic = d["source_diagnostic"]; cooldown = d["cooldown"]
+            if (set(d) != {"action", "submission_rejected", "source_diagnostic", "cooldown",
+                           "quota_evidence", "quota_basis", "logical_requests"}
+                    or d["action"] != "SOURCE_THROTTLED" or d["submission_rejected"] is not False
+                    or d["quota_evidence"] != {}
+                    or d["quota_basis"] != "HTTP429_KNOWN_REJECTION_RESERVATION_RETAINED"
+                    or type(d["logical_requests"]) is not int or d["logical_requests"] < 1
+                    or set(diagnostic) - {"at", "method", "endpoint", "http_status", "retry-after",
+                                          "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset"}
+                    or any(type(diagnostic[k]) is not int or not 0 <= diagnostic[k] < 10**12
+                           for k in ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset")
+                           if k in diagnostic)
+                    or type(diagnostic["http_status"]) is not int
+                    or (diagnostic["method"], diagnostic["endpoint"], diagnostic["http_status"])
+                        != ("GET", "/api/client/campaign", 429)
+                    or set(cooldown) != {"count", "eligible_at", "safe_cap"}
+                    or type(cooldown["count"]) is not int or cooldown["count"] != count
+                    or type(cooldown["safe_cap"]) is not int
+                    or not 1 <= cooldown["safe_cap"] <= safe_cap):
+                return False
+            retry_after = diagnostic.get("retry-after", 3600)
+            if type(retry_after) is not int or not 0 <= retry_after <= 86400:
+                return False
+            seconds = max(3600, retry_after)
+            at = datetime.fromisoformat(diagnostic["at"].replace("Z", "+00:00"))
+            eligible = datetime.fromisoformat(cooldown["eligible_at"].replace("Z", "+00:00"))
+            if (at.utcoffset() is None or eligible.utcoffset() is None
+                    or not seconds <= (eligible - at).total_seconds() <= seconds + 60
+                    or (previous_eligible is not None and at < previous_eligible)):
+                return False
+            requests += d["logical_requests"]; previous_eligible = eligible; safe_cap = cooldown["safe_cap"]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False
+    return (state["progress"]["rate_limit"] == cooldown
+            and state["requests"] == requests and state["pages"] == requests - len(details))
+
+
 def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
     """Read-back business grain plus source accounting; then append existing scoped evidence.
 
@@ -678,7 +725,12 @@ def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
             "rows_loaded":state["rows"],"source_run_id":p["plan_id"],"evaluated_at":now.isoformat()})
     elif p["entity"] in {"catalog","ads_campaigns"}:
         if p["entity"] == "ads_campaigns" and not state["complete"]:
-            raise B.EvidenceError("campaign snapshot traversal incomplete")
+            # Rejected campaign reads have durable accounting, but no complete
+            # snapshot. Completion/DQ must still reject this partial prefix.
+            if not source_only:
+                raise B.EvidenceError("campaign snapshot traversal incomplete")
+            if not rejected_campaign_prefix(details, state):
+                raise B.EvidenceError("partial campaign source effects unproven")
         if p["entity"]=="catalog":
             table,keys="RAW_OZON_CATALOG","snapshot_date,product_id"
             ids = state["progress"].get("product_ids", [])
@@ -691,7 +743,9 @@ def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
                     raise B.EvidenceError("Catalog final source count differs from prefix")
         else:
             table,keys="RAW_OZON_ADS_CAMPAIGNS","snapshot_date,campaign_id"
-            expected_count=next(d["campaigns"] for d in details.values() if d.get("action")=="CAMPAIGNS_COMPLETE")
+            expected_count=(next(d["campaigns"] for d in details.values()
+                                if d.get("action")=="CAMPAIGNS_COMPLETE")
+                            if state["complete"] else 0)
         snapshot_params = {"day":("DATE",p["observation_date"])}
         prefix = ""
         if p["entity"] == "catalog" and not state["complete"]:
