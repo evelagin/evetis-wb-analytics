@@ -18,13 +18,17 @@ def policy(b):
     if env['CURRENT_DATA_MODE']!=K.TYPE:fail('unknown operational mode')
     source=env['CONTROLLER_SOURCE_SHA']
     marker=b.tables.get_table(b.c['datasets']['ref'],P.name(source))
-    if marker is None:return None
-    p=parse(marker[1]);P.validate(p,b.c,b.manifest['hash'],b.clock())
-    if marker!=({'kind':'current_policy','root':p['hash'][:16]},D.encoded(p)):fail('owner marker differs')
     from tools.tenancy import cloud_controller as C,orchestration_contract as O
-    spec=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(source,p['historical_root'],env['HISTORICAL_SCHEDULER_STATE']))
+    from tools.tenancy import current_release_handoff as HANDOFF
+    association=b.tables.get_table(b.c['datasets']['ref'],HANDOFF.name(source))
+    if marker is None and association is None:return None
+    spec=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(source,b.manifest['hash'],env['HISTORICAL_SCHEDULER_STATE']))
     release=parse(spec[1])['release'] if spec else {}
     O.verify_artifact_source(release,BF.REPO)
+    if association is not None:p=HANDOFF.resolve(b,source,association,release)
+    else:
+        p=parse(marker[1]);P.validate(p,b.c,b.manifest['hash'],b.clock())
+        if marker!=({'kind':'current_policy','root':p['hash'][:16]},D.encoded(p)):fail('owner marker differs')
     if (release.get('current_data_version')!=1 or release.get('verification',{}).get('current_data_adapter')!='PASS'
         or p['runtime_implementation_hash']!=BF.B.implementation_hash()):fail('exact current adapter is not qualified')
     if p['fbo_contract_hash'] is not None:
