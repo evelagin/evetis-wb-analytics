@@ -219,3 +219,17 @@ def test_multiple_current_async_scopes_still_fail_closed(monkeypatch):
 def test_network_free_packaged_performance_dispatch_guard():
     from tools.tenancy.performance_dispatch_image_check import check
     assert set(check().values()) == {'PASS'}
+
+
+def test_replacement_can_read_exact_retained_controller_for_existing_stop819_proof():
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ
+    # A future controller must retain the original certificate's exact context;
+    # this lookup does not create or transfer a recovery certificate.
+    source = '9ef7ad3c05cf2c1f1ed043cf4d0e5cf8a36f19b1'
+    b = SimpleNamespace(c={'orchestration': {'job': {'env': {'CONTROLLER_SOURCE_SHA': 'e' * 40}}}})
+    retained = LQ.qualified_release(b, {'hash': ROOT}, source)
+    assert retained['source_sha'] == source
+    assert retained['image'].endswith('@sha256:4b8635d1dbc7835d62964047755d3891bdf02c56e79f7ce4ae6fcaac36122526')
+    assert retained['controller_implementation_hash'] == 'd8b8447d383ce094a7917fa8dd17a4ab73660cd79a71e553d499e33083dc0844'
+    assert retained['runtime_implementation_hash'] == '0babe49f45b8947aecb0bb41fd7f9bfa5c6fb82ab11dee97dca377a58470ed06'
+    assert retained['verification']['current_data_adapter'] == 'PASS'

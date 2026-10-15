@@ -1,0 +1,38 @@
+{
+  "schema_version": 4,
+  "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:4b8635d1dbc7835d62964047755d3891bdf02c56e79f7ce4ae6fcaac36122526",
+  "source_sha": "9ef7ad3c05cf2c1f1ed043cf4d0e5cf8a36f19b1",
+  "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:5f1b78f98708b81e0d0902b710470635d9c1a49833824b0e45b77bdfbf4ec643",
+  "runtime_implementation_hash": "0babe49f45b8947aecb0bb41fd7f9bfa5c6fb82ab11dee97dca377a58470ed06",
+  "controller_implementation_hash": "d8b8447d383ce094a7917fa8dd17a4ab73660cd79a71e553d499e33083dc0844",
+  "verification": {
+    "ci": "PASS",
+    "exact_image": "PASS",
+    "offline_restart": "PASS",
+    "lost_post_no_repeat": "PASS",
+    "quota_wait_no_source": "PASS",
+    "tenant_isolation": "PASS",
+    "reader_append_separation": "PASS",
+    "full_history_adapter": "PASS",
+    "cadence_overlap_adapter": "PASS",
+    "recent_priority_adapter": "PASS",
+    "terminal_controller_adapter": "PASS",
+    "fbo_zero_effect_adapter": "PASS",
+    "fbo_source_isolation_adapter": "PASS",
+    "current_data_adapter": "PASS"
+  },
+  "cadence_policy": {
+    "version": 1,
+    "profile": "CLIENT001_HISTORICAL_3_STABLE_10_V1",
+    "tenant": "client_001",
+    "project": "mpa-t-client-001",
+    "root": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222",
+    "preferred": "*/3 * * * *",
+    "stable_fallback": "*/10 * * * *",
+    "owner_ack_sha256": "0a7190301fa5b925e6446f9a3f8430239eaa124a6fbeda73a2cd72a2872a42b0"
+  },
+  "controller_timeout_seconds": 1800,
+  "fbo_zero_effect_recovery_version": 1,
+  "fbo_source_isolation_version": 1,
+  "current_data_version": 1
+}
