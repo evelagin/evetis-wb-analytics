@@ -18,9 +18,9 @@ jobs:
   sql-current:
     name: sql-current
     runs-on: ubuntu-latest
-    # The complete tools suite reached only 95% at the measured 20-minute limit.
-    # Keep every test and final SQL validation; allow their measured duration.
-    timeout-minutes: 30
+    # Integrated full tools regression reached 96% at the measured 30-minute limit.
+    # Preserve every test and final SQL validation; allow the complete run to finish.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

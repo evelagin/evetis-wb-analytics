@@ -23,6 +23,7 @@ SOURCE_FILES = (
     'controller_decision_closure_image_check.py',
     'current_release_handoff.py',
     'current_recon_recovery.py','current_recon_image_check.py',
+    'performance_dispatch_image_check.py',
 )
 
 
