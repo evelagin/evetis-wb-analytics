@@ -97,12 +97,14 @@ def test_no_wall_clock_and_no_wb(name):
 
 
 @pytest.mark.parametrize("name", D3)
-def test_manifest_entry_is_new_pending_object(name):
+def test_manifest_entry_is_captured_live_after_deploy(name):
+    # Развёрнуто 2026-10-15 из main a7108ab, readback MATCH, снятие R2C — PENDING_DEPLOYED_MATCH.
     o = next(o for o in MANIFEST["objects"] if o["object_name"] == name)
-    assert o["sync_state"] == "pending_deploy" and o["canonical_schema_verification"] == "unverified"
-    assert all(o[k] is None for k in ("capture_main_sha", "captured_at", "live_body_sha256_at_capture",
-                                      "live_schema_sha256_at_capture", "live_description_sha256_at_capture",
-                                      "live_schema_at_capture"))
+    assert o["sync_state"] == "captured_live" and o["canonical_schema_verification"] == "bigquery_verified"
+    assert o["capture_main_sha"] == "a7108ab80bde302f91887c4954ceff6f705d483d"
+    assert (o["live_body_sha256_at_capture"], o["live_schema_sha256_at_capture"], o["live_description_sha256_at_capture"]) == (
+        o["canonical_body_sha256"], o["canonical_schema_sha256"], o["canonical_description_sha256"])
+    assert o["live_schema_at_capture"] == o["canonical_schema"]
 
 
 def test_existing_l1_l4_and_fct_untouched_by_d3():
@@ -224,14 +226,17 @@ def test_no_view_body_line_ends_with_semicolon_before_the_statement_end():
         assert not [x for x in lines if x.rstrip().endswith(";")], n
 
 
-def test_deploy_plan_is_closed_list_in_dependency_order_with_canonical_bodies():
-    views = deploy.plan()
-    names = [n for n, _, _ in views]
-    assert sorted(names) == D3
+def test_deploy_tool_refuses_after_capture_but_order_and_bodies_hold():
+    # Инструмент одноразовый: объекты уже captured_live — повторное развёртывание отказывается до сети.
+    with pytest.raises(SystemExit):
+        deploy.plan()
+    order = [n for n in MANIFEST["rebuild_order"] if n in deploy.OBJECTS]
+    assert sorted(order) == D3
     deps = {o["object_name"]: o["dependencies"] for o in MANIFEST["objects"]}
-    for i, n in enumerate(names):
-        assert all(d in names[:i] for d in deps[n] if d in deploy.OBJECTS), n
-    for n, stmt, b in views:
+    for i, n in enumerate(order):
+        assert all(d in order[:i] for d in deps[n] if d in deploy.OBJECTS), n
+    for n in order:
+        stmt, b = deploy.statement(deploy.DATASET, n, f"sql/current/{deploy.DATASET}/{n}.sql")
         assert b == body(n).strip().rstrip(";").strip()
         assert stmt.startswith(f"CREATE OR REPLACE VIEW `{P}.ozon_mart.{n}`")
 
