@@ -118,6 +118,7 @@ describe('D4 — QA D3 в гейте и причины из ворот', () => {
     expect(p.rows[1]![COL.REASON]).toBe('M2: сумма реализации хранится не полностью; контроль начислений D1: открытых суток 4; SKU вне карты: 2 строк; себестоимость не найдена: 3 ед.; слабый признак сторно, нужна сверка: 1 отпр.');
     expect(p.rows[2]![COL.REASON]).toBe('доставлено без начисления: 1 ед. (оценка X, из них выкуп СНГ без документа: 1); у оценки X нет входа: 1; в пути: 4 ед. (без начисления: 2)');
     expect(() => buildTabPlan(PNL, st.slice(0, 2))).toThrow(/нет строки состояния/);
+    expect(() => buildTabPlan(PNL, [], true)).toThrow(/нет строк V_OZON_STORE_MONTH_STATE/);
   });
   it('NULL в деньгах — отказ; NULL маржи — пустая ячейка; NUMERIC как Big-объект читается', () => {
     expect(() => buildTabPlan([pnlRow({ commission_rub: null })])).toThrow(/NULL в денежных колонках commission_rub/);
@@ -257,7 +258,8 @@ describe('D4 — загрузчик (репетиция на in-memory книг�
   const deps = (book: FakeBook, pnl: PnlRow[] = PNL, gi: GateInputs = GATE_OK): { d: OzonStorePnlDeps; ro: boolean[] } => {
     const ro: boolean[] = [];
     return { ro, d: { makeSheets: (_c, readonly) => { ro.push(readonly); return book.gateway(readonly); },
-      makeBq: () => ({ readPnl: async () => pnl, readGateInputs: async () => gi, readStates: async () => [], runQa: async () => QA_OK }) } };
+      makeBq: () => ({ readPnl: async () => pnl, readGateInputs: async () => gi,
+        readStates: async () => pnl.map((p) => ({ pnl_month: p.pnl_month })), runQa: async () => QA_OK }) } };
   };
   const withEnv = async (env: Record<string, string>, f: () => Promise<void>): Promise<void> => {
     const keep = { ...process.env }; Object.assign(process.env, env);

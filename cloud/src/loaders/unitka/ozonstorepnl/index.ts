@@ -65,7 +65,7 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   const gi: GateInputs = await bq.readGateInputs();
   const states = await bq.readStates();
   const qa = await bq.runQa();
-  const plan = buildTabPlan(pnl, states);
+  const plan = buildTabPlan(pnl, states, true);
   const gate = publishGate(pnl, gi, qa);
   logger.info('ozon_store_pnl_qa', { results: qa.map((r) => ({ id: r.id, status: r.status })),
     warn: qa.filter((r) => r.status === 'WARN').map((r) => ({ id: r.id, detail: r.detail })) });

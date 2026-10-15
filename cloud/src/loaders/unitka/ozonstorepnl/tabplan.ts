@@ -38,7 +38,7 @@ export const TAB_COLUMNS = [
   { header: 'Компенсации Ozon', note: 'Товарные компенсации (25), месяц начисления. Доход.' },
   { header: 'Управленческий налог 2%', note: '0,02 × выручка продавца, ровно один раз (провизорные единицы несут свой налог внутри оценки X). Управленческий резерв, не налог УСН.' },
   { header: 'Предварительная оценка X', note: 'PROVISIONAL: вклад доставленных, но ещё не начисленных Ozon отправлений (цена − комиссия из выплаты − средняя логистика SKU − себестоимость − налог 2 %). Входит в прибыль, но не является фактом начислений. Неизвестный вход — не ноль: месяц «не хватает денег источника».' },
-  { header: 'Управленческая чистая прибыль магазина', note: 'Management Net Store Profit (D3): выручка − все расходы Ozon (включая кабинет, Premium и биллинг рекламы) + компенсации + оценка X − налог 2 %. Не бухгалтерская: УСН, OPEX и фулфилмент не входят. Окончательна только при состоянии «Деньги Ozon сверены» и закрытом месяце.' },
+  { header: 'Управленческая чистая прибыль магазина', note: 'Management Net Store Profit (D3): выручка − все расходы Ozon (включая кабинет, Premium и биллинг рекламы) + компенсации + оценка X − налог 2 %. Не бухгалтерская: УСН, OPEX и фулфилмент не входят. Окончательной прибыли во вкладке пока нет: себестоимость в части единиц — юридическая база импорта до D3.1; деньги Ozon окончательны только у «сверены» при закрытом месяце.' },
   { header: 'Управленческая чистая маржа', note: 'Управленческая чистая прибыль ÷ (выручка продавца + провизорная выручка X).' },
   { header: 'Прибыль без оценки X (справочно)', note: 'Управленческая чистая прибыль минус предварительная оценка X: только подтверждённые начисления. Справочно, в итог не складывается.' },
   { header: 'Финансовое состояние', note: 'Достоверность месяца (V_OZON_STORE_MONTH_STATE): «Деньги Ozon сверены, себестоимость предварительная»; «Сверены, ждём поздних начислений»; «Ждём начислений Ozon — предварительно»; «Не доказан — нужна сверка»; «Не хватает денег источника»; «Есть неразобранные операции» (публикация блокируется). Деньги Ozon окончательны только у первого при закрытом месяце; себестоимость в части единиц — юридическая база импорта до D3.1, поэтому окончательной прибыли во вкладке пока нет.' },
@@ -147,6 +147,7 @@ export function reasonText(p: PnlRow, s: Record<string, unknown> = {}): string {
   if (pu > 0) out.push(`доставлено без начисления: ${pu} ед. (оценка X${g('cis_without_document_postings') > 0 ? `, из них выкуп СНГ без документа: ${g('cis_without_document_postings')}` : ''})`);
   if (g('provisional_inputs_missing') > 0) out.push(`у оценки X нет входа: ${g('provisional_inputs_missing')}`);
   if (tu > 0) out.push(`в пути: ${tu} ед.${g('in_transit_without_accrual_units') > 0 ? ` (без начисления: ${g('in_transit_without_accrual_units')})` : ''}`);
+  // TODO(D3.1): заменить безусловное раскрытие колонкой доказанности себестоимости из V_OZON_STORE_MONTH_STATE.
   if (toStr(p.financial_state).startsWith('FINANCIAL_COMPLETE')) out.push('себестоимость предварительная: часть единиц на юридической базе импорта (D3.1)');
   return out.join('; ');
 }
@@ -175,10 +176,11 @@ export function identityResidual(p: PnlRow): number {
   );
 }
 
-export function buildTabPlan(pnl: readonly PnlRow[], states: readonly Record<string, unknown>[] = []): TabPlan {
+export function buildTabPlan(pnl: readonly PnlRow[], states: readonly Record<string, unknown>[] = [], requireStates = false): TabPlan {
   const rows: TabCell[][] = [];
   let maxAbs = 0;
   const byMonth = new Map(states.map((s) => [toStr(s.pnl_month).slice(0, 7), s]));
+  if (requireStates && pnl.length && !states.length) throw new Error('нет строк V_OZON_STORE_MONTH_STATE — причины неполноты не раскрыть');
   for (const p of pnl) {
     const missing = REQUIRED_PNL_COLUMNS.filter((k) => !(k in p));
     if (missing.length) throw new Error(`${toStr(p.pnl_month)}: во вью нет колонок ${missing.join(', ')} — схема вью старее кода`);
@@ -187,7 +189,7 @@ export function buildTabPlan(pnl: readonly PnlRow[], states: readonly Record<str
     const n = (k: string): number => toNum(p[k]);
     const month = toStr(p.pnl_month).slice(0, 7);
     const st = byMonth.get(month);
-    if (states.length && !st) throw new Error(`${month}: нет строки состояния V_OZON_STORE_MONTH_STATE`);
+    if ((requireStates || states.length) && !st) throw new Error(`${month}: нет строки состояния V_OZON_STORE_MONTH_STATE`);
     const state = STATE_LABEL[toStr(p.financial_state)];
     if (!state) throw new Error(`${month}: неизвестное состояние «${toStr(p.financial_state)}»`);
     const closure = CLOSURE_LABEL[toStr(p.month_closure_status)];
