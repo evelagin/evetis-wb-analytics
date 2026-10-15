@@ -158,6 +158,12 @@ DROP VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_STORE_ACCOUNT_LEDGER`
 DROP VIEW `project-fa311fc0-4d87-4781-986.ozon_mart.V_OZON_FINANCE_OPERATION_MAP`;
 ```
 
+**Развёрнуто 2026-10-15** (OWNER ACK «OZON D3 APPLY 7 VIEWS») из main `a7108ab`: 7 × CREATE_VIEW, readback тела и
+описания MATCH 7/7; QA Q01–Q23 на развёрнутых вью — 21 PASS, 2 WARN (Q16 мост к L4: 2026-08 CD-3, 2026-09 X + выкуп
+СНГ без документа, 2026-10 провизорная оценка открытого месяца; Q20 застывшие отправления). Существующие объекты
+`ozon_mart` не изменены (28 → 35, last_modified прежних без изменений). Снятие R2C (`verify_current_sql_live`) —
+PENDING_DEPLOYED_MATCH для всех семи → `captured_live`.
+
 ## 8. Известные ограничения (раскрыты, не исправлены)
 
 - **D1 не применён:** сторно реализации (−1) в RAW нет; 9 месяцев заказа — PARTIAL_SOURCE_MISSING (реестр). После
