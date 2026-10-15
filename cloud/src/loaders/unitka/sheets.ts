@@ -332,6 +332,16 @@ export class SheetsRest implements SheetsGateway {
         .map((m) => ({ id: Number(m.metadataId), key: String(m.metadataKey ?? ''), value: String(m.metadataValue ?? '') })) };
   }
 
+  /** Ozon Store P&L (F-18): свойства всех вкладок книги — для отпечатка остальных вкладок до и после записи. Только чтение. */
+  async readSheetsList(): Promise<Array<{ sheetId: number; title: string; index: number; rowCount: number; columnCount: number }>> {
+    const fields = 'sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))';
+    const url = `${API}/${this.spreadsheetId}?fields=${encodeURIComponent(fields)}`;
+    const data = await this.request<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; index?: number; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>('GET', url);
+    return (data.sheets ?? []).map((s) => ({ sheetId: Number(s.properties?.sheetId), title: String(s.properties?.title ?? ''),
+      index: Number(s.properties?.index ?? 0), rowCount: Number(s.properties?.gridProperties?.rowCount ?? 0),
+      columnCount: Number(s.properties?.gridProperties?.columnCount ?? 0) }));
+  }
+
   async readFormulas(range: string): Promise<CellValue[][]> {
     const url = `${API}/${this.spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMULA&dateTimeRenderOption=SERIAL_NUMBER`;
     const data = await this.request<ValueRangeResp>('GET', url);
