@@ -240,6 +240,7 @@ describe('D4 — решение и запросы', () => {
     expect(first('Ждём начислений Ozon — предварительно')).toBe('FFF2CC');
     expect(first('Деньги Ozon сверены, себестоимость предварительная')).toBe('D9EAD3');
     expect(first('Сверены, ждём поздних начислений')).toBe('FFF2CC');
+    expect(first('нужна сверка — 3 · сверено — 2')).toBe('FCE5CD');
   });
   it('повторная запись снимает прежнюю раскладку: УФ, объединения и группы удаляются до новой', () => {
     const d = decidePublish({ current: [], plan }) as Extract<ReturnType<typeof decidePublish>, { action: 'WRITE' }>;

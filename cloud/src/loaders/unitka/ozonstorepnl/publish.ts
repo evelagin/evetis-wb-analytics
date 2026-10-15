@@ -122,6 +122,7 @@ export const STATE_RULES: ReadonlyArray<{ contains: string; bg: string }> = [
   { contains: 'Неполные', bg: 'F4CCCC' },
   { contains: 'неразобранные', bg: 'F4CCCC' },
   { contains: 'Не доказан', bg: 'FCE5CD' },
+  { contains: 'нужна сверка', bg: 'FCE5CD' },
   { contains: 'ждём', bg: 'FFF2CC' },
   { contains: 'сверен', bg: 'D9EAD3' },
 ];
@@ -268,7 +269,11 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
     requests.push({ addDimensionGroup: { range: dim('COLUMNS', a, b) } },
       { updateDimensionGroup: { dimensionGroup: { range: dim('COLUMNS', a, b), depth: 1, collapsed: true }, fields: 'collapsed' } });
   }
-  for (const g of plan.yearGroups) requests.push({ addDimensionGroup: { range: dim('ROWS', g.start, g.end) } });
+  // Sheets помнит «свёрнуто» у пересозданной группы при видимых строках — состояние задаётся явно.
+  for (const g of plan.yearGroups) {
+    requests.push({ addDimensionGroup: { range: dim('ROWS', g.start, g.end) } },
+      { updateDimensionGroup: { dimensionGroup: { range: dim('ROWS', g.start, g.end), depth: 1, collapsed: false }, fields: 'collapsed' } });
+  }
 
   // 8. Заметки заголовка (контракт) и отпечатки.
   requests.push(
