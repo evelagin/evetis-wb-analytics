@@ -207,3 +207,21 @@ def test_reconciled_rejected_prefix_waits_for_quota_then_only_new_attempt_not_re
         b.reconcile=lambda payload:None
         assert C.source_tick(b,f['policy'],day,item)['source_dispatches']==0
         assert len(calls)==1  # Unreconciled new receipt cannot become a second dispatch.
+
+
+@pytest.mark.parametrize('fault',['version2','bool_version','claim_before_actor','claim_after_actor','closure_after_actor'])
+def test_closed_claim_must_be_canonical_and_inside_original_actor_lifetime(fault):
+    from tools.tenancy import controller_cadence as CC
+    with full_fixture() as (b,f):
+        ds=b.c['datasets']['tenant_locks'];cn,xn=CC.names(b.manifest['hash'],517)
+        claim=parse(b.tables.values[(ds,cn)][1]);claim.pop('hash')
+        if fault=='version2':claim['version']=2
+        elif fault=='bool_version':claim['version']=True
+        elif fault=='claim_before_actor':claim['created_at']='2026-10-14T05:33:17Z'
+        elif fault=='claim_after_actor':claim['created_at']='2026-10-14T10:00:00Z'
+        claim=CC.sealed(claim);close=parse(b.tables.values[(ds,xn)][1]);close.pop('hash');close['claim_hash']=claim['hash']
+        if fault in {'claim_after_actor','closure_after_actor'}:close['closed_at']='2026-10-14T10:01:00Z'
+        close=CC.sealed(close);b.tables.values[(ds,cn)]=CC.claim_value(claim);b.tables.values[(ds,xn)]=({'kind':'controller_close','root':b.manifest['hash'][:16]},D.encoded(close))
+        before=deepcopy((f['rows'],b.tables.values))
+        with pytest.raises(BF.B.EvidenceError):observed(b,f)
+        assert before==(f['rows'],b.tables.values)

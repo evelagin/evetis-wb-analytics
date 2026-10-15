@@ -20,7 +20,7 @@ PREDICATES = frozenset({'explicit_phase_b', 'qualified_replacement', 'runtime_un
     'original_checkpoint_lease_LD', 'no_conflicting_RECON', 'paused_inactive_deployment',
     'originals_retained', 'qualified_exact_recovery', 'source_budget_zero'})
 FIELDS = frozenset({'version', 'type', 'tenant', 'project', 'root', 'manifest_hash',
-    'stop_hash', 'controller_execution', 'control_generation', 'claim_hash', 'closure_hash',
+    'stop_hash', 'controller_execution', 'actor_created_at', 'actor_completed_at', 'control_generation', 'claim_hash', 'closure_hash',
     'current_policy_hash', 'day', 'shard', 'plan_id', 'ack_hash', 'run_id', 'source_generation',
     'intent_hash', 'receipt_hash', 'state_hash', 'unit_hash', 'checkpoint_hash', 'lease_hash',
     'lease_value', 'lease_expires_at', 'LD_hash', 'reconciliation', 'reconciliation_hash', 'old_source', 'old_image',
@@ -67,6 +67,8 @@ def header(p, m):
         for h in p[k]: D.check_hash(h)
     from tools.tenancy import full_history as F
     F.stamp(p['verified_at']); F.stamp(p['lease_expires_at'])
+    if not F.stamp(p['actor_created_at']) <= F.stamp(p['actor_completed_at']) <= F.stamp(p['verified_at']):
+        fail('original actor lifetime differs')
     if (not isinstance(p['lease_value'], list) or len(p['lease_value']) != 2
             or D.digest(p['lease_value']) != p['lease_hash']): fail('retained lease proof differs')
     return p
@@ -147,7 +149,7 @@ def validate(p, b, m, records, *, final=True):
     claim = parse(claim_marker[1]) if claim_marker else {}
     close = b.tables.get_table(ds, CC.names(p['root'], p['control_generation'])[1])
     if (claim.get('hash') != p['claim_hash'] or claim.get('execution') != p['controller_execution']
-            or set(claim) != CC.CLAIM_FIELDS
+            or set(claim) != CC.CLAIM_FIELDS or type(claim['version']) is not int or claim['version'] != 1
             or claim['hash'] != D.digest({k: v for k, v in claim.items() if k != 'hash'})
             or (claim['tenant'], claim['project'], claim['root'], claim['generation']) !=
                (p['tenant'], p['project'], p['root'], p['control_generation'])
@@ -155,7 +157,8 @@ def validate(p, b, m, records, *, final=True):
             or claim.get('source') != p['old_source'] or claim.get('image') != p['old_image']
             or claim_marker != CC.claim_value(claim) or not CC.closed(b, claim)
             or parse(close[1]).get('hash') != p['closure_hash']
-            or parse(close[1]).get('status') != 'STOPPED' or parse(close[1]).get('source_dispatches') != 0):
+            or parse(close[1]).get('status') != 'STOPPED' or parse(close[1]).get('source_dispatches') != 0
+            or not CC.at(p['actor_created_at']) <= CC.at(claim['created_at']) <= CC.at(parse(close[1])['closed_at']) <= CC.at(p['actor_completed_at'])):
         fail('already closed original control claim differs')
     from tools.tenancy import full_history as F
     if p['control_generation'] == 506: fail('claim506 is never this recovery')
@@ -293,7 +296,7 @@ def observe(b, m, stop_hash, day, *, owner_ack_sha256, qualification_hash, secur
     facts = dict(unit=units[0], snapshot=snapshot, actor=x, runtime=ex, claim=claim,
                  closure=close, checkpoints=cps, lease=lease, LD=ld)
     p = dict(version=1, type=TYPE, tenant=m['tenant'], project=m['project'], root=m['hash'], manifest_hash=D.digest(m),
-        stop_hash=stop_hash, controller_execution=actor, control_generation=claim['generation'], claim_hash=claim['hash'], closure_hash=parse(close[1])['hash'],
+        stop_hash=stop_hash, controller_execution=actor, actor_created_at=x['createTime'], actor_completed_at=x['completionTime'], control_generation=claim['generation'], claim_hash=claim['hash'], closure_hash=parse(close[1])['hash'],
         current_policy_hash=policy['hash'], day=day, shard=shard, plan_id=doc['runtime_plan']['plan_id'], ack_hash=doc['ack_hash'], run_id=run,
         source_generation=receipt['lease_generation'], intent_hash=D.digest(intents[0]), receipt_hash=D.digest(receipts[0]), state_hash=D.digest(state),
         unit_hash=D.digest(units[0]), checkpoint_hash=D.digest(cps), lease_hash=D.digest(lease), lease_value=list(lease), lease_expires_at=expiry, LD_hash=D.digest(ld), reconciliation=recon,
