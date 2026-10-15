@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-10-15 — OZON D3: 7 вью P&L магазина развёрнуты, состояние снято (captured_live)
+
+`tools/ozon_store_pnl_deploy.py --apply` из main a7108ab (OWNER ACK «OZON D3 APPLY 7 VIEWS»): readback MATCH 7/7, QA
+21 PASS / 2 WARN, существующие объекты не изменены. Манифест `sql/current/ozon_mart`: 7 объектов D3
+`pending_deploy` → `captured_live` по read-only снятию `verify_current_sql_live` (PENDING_DEPLOYED_MATCH); структура
+колонок не меняется.
+
 ## 2026-10-14 — OZON D3: управленческий P&L магазина Ozon — 7 новых вью ozon_mart (НЕ развёрнуто)
 
 OWNER ACK 2026-10-14 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHASE_D3.md`.
