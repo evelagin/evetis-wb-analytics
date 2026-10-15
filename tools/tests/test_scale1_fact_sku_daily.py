@@ -432,7 +432,11 @@ def test_predeploy_render_inlines_every_pending_object_and_stays_a_select():
     pending = {k.split(".")[-1].rstrip("`") for k in render.pending_bodies()}
     cpo_objects = {"V_OZON_ADS_CPO_ORDERS", "V_OZON_ADS_CPO_RESIDUAL_DAILY", "V_OZON_ADS_CPO_PROMOTED_DAILY",
                    "FCT_OZON_SKU_PNL_DAILY", "V_OZON_SKU_PNL_DAILY_OPERATIONAL"}  # Phase B, Git-first
-    assert pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS - ORDER_DATE_MSK_OBJECTS - cpo_objects == set()
+    store_pnl_d3 = {"V_OZON_FINANCE_OPERATION_MAP", "V_OZON_STORE_ACCOUNT_LEDGER", "V_OZON_FINANCE_NEW_OPERATIONS",
+                    "V_OZON_STORE_FINANCE_COVERAGE", "V_OZON_STORE_ADS_RECON_MONTHLY", "V_OZON_STORE_MONTH_STATE",
+                    "V_OZON_STORE_PNL_MONTHLY"}  # D3 «Ozon Магазин P&L», Git-first (tools/ozon_store_pnl_deploy.py)
+    assert (pending - PROMO2_OBJECTS - AIE_OBJECTS - OZON_UNITKA_OBJECTS - ORDER_DATE_MSK_OBJECTS - cpo_objects
+            - store_pnl_d3 == set())
     sample = next(iter(check_blocks().values()))
     assert render.render(sample, {}) == sample
     # ... and its inlining logic is still exercised on the same objects, as if they were pending.
