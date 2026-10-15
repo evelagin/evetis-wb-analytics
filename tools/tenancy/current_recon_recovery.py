@@ -169,7 +169,7 @@ def validate(p, b, m, records, *, final=True):
     lease = b.tables.get_table(ds, BF.CK.lease_name(cid, p['source_generation']))
     saved = p['lease_value']
     if (saved[0].get('owner') != p['run_id'] or parse(saved[1]) != {'mode': 'BOUNDED_PILOT', 'ack_hash': p['ack_hash']}
-            or F.stamp(p['lease_expires_at']).timestamp() != int(saved[0]['until']) + BF.CK.LEASE_TABLE_KEEP.total_seconds()
+            or not 0 <= F.stamp(p['lease_expires_at']).timestamp() - (int(saved[0]['until']) + BF.CK.LEASE_TABLE_KEEP.total_seconds()) < 1
             or (lease is not None and D.digest(lease) != p['lease_hash'])
             or (lease is None and b.clock() < F.stamp(p['lease_expires_at']))):
         fail('original lease changed or disappeared before qualified expiration')

@@ -109,7 +109,7 @@ def full_fixture():
     ds=b.c['datasets']['tenant_locks'];cn,xn=CC.names(b.manifest['hash'],517)
     b.tables.values[(ds,cn)]=CC.claim_value(claim);b.tables.values[(ds,xn)]=({'kind':'controller_close','root':b.manifest['hash'][:16]},D.encoded(close))
     cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16];lease_name=BF.CK.lease_name(cid,gen)
-    until=datetime(2026,10,14,8,31,26,tzinfo=timezone.utc)
+    until=datetime(2026,10,14,8,31,26,652000,tzinfo=timezone.utc)
     lease=({'owner':run,'until':str(int(until.timestamp()))},json.dumps(dict(mode='BOUNDED_PILOT',ack_hash=doc['ack_hash'])))
     b.tables.values[(ds,lease_name)]=lease;b.tables.values[(ds,f'LD_{cid}_{gen:04d}')]=({'owner':run},json.dumps(dict(operation=opname,ack_hash=doc['ack_hash'])))
     cps=[dict(backfill_id='initial',status='RUNNING',lease_generation=gen,evidence_json=json.dumps(dict(proof=None)),updated_at='2026-10-14T06:31:26Z'),dict(backfill_id='observed',status='RUNNING',lease_generation=gen,evidence_json=json.dumps(dict(proof=dict(plan=doc['runtime_plan'],state=state))),updated_at='2026-10-14T06:37:17Z')]
