@@ -1,5 +1,21 @@
 # CHANGELOG.md
 
+## 2026-10-15 — OZON D4: загрузчик вкладки «Ozon Магазин P&L» (НЕ развёрнуто, вкладка не создана)
+
+OWNER ACK 2026-10-15 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHASE_D4.md`.
+
+- **Структура листа (будущая, вкладка не создана):** «Ozon Магазин P&L», 26 колонок A:Z — представление
+  `ozon_mart.V_OZON_STORE_PNL_MONTHLY` (D3) без собственных формул; заголовки и заметки — системный контракт
+  (`contractSha`), смена — только управляемой миграцией.
+- Загрузчик `ozon-store-pnl` (`cloud/src/loaders/unitka/ozonstorepnl/`): чтение ozon_mart, план и отпечаток, гейты модели
+  (неразобранные операции, тождества, «сверено» при открытых условиях, деньги RAW → леджер) и источников (свежесть) —
+  публикация блокируется; NOOP по отпечатку, отказ при ручной правке, манифест отката, атомарная запись, перечитывание и
+  отпечаток остальных вкладок. Без `OZON_STORE_PNL_PUBLISH=1` Sheets readonly.
+- `SheetsRest.readSheetsList()` — новое чтение (свойства вкладок книги), существующие методы не меняются.
+- Инфраструктура (`infra/terraform/ozon_store_pnl.tf`): Job `ozon-store-pnl-prod`, invoker, Scheduler `20 10 * * *` UTC
+  **PAUSED**, алерт по коду; `deploy-prod.yml` и `scheduler-control.yml` знают новый Job. Таблиц и прав BigQuery не добавляется.
+- Follow-up D3.1: доказанность себестоимости (доля `LEGAL_IMPORT_COST_ONLY`) в состоянии месяца.
+
 ## 2026-10-14 — OZON D3: управленческий P&L магазина Ozon — 7 новых вью ozon_mart (НЕ развёрнуто)
 
 OWNER ACK 2026-10-14 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHASE_D3.md`.

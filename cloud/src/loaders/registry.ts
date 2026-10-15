@@ -27,6 +27,7 @@ import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
+import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -105,6 +106,10 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // пишет лишь снимок wb_ops.UNITKA_SKU_COMPONENTS_DAILY (добавление, новый snapshot_id), план вкладки —
   // в журнал. Повтор после транзиентного отказа безопасен: снимок либо лёг целиком, либо не лёг.
   'unitka-store-pnl': { handler: (ctx) => unitkaStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // D4 (OWNER ACK 15.10.2026): P&L магазина Ozon — вкладка «Ozon Магазин P&L». Только чтение ozon_mart; без
+  // OZON_STORE_PNL_PUBLISH=1 Sheets readonly (план и гейты в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
+  // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
+  'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
