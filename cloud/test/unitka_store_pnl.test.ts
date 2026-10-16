@@ -215,6 +215,23 @@ describe('UX — шапка, группы, итоги по годам (2026-10-1
     const bare = buildTabPlan([pnlRow({ month_finance_final: true, sku_month_closed: true, account_invoice_window_closed: true, financial_state: 'UNKNOWN_COST_PRESENT' })]);
     expect(bare.rows[0]![COL.REASON]).toBe('причина неполноты во вью не раскрыта');
   });
+  it('три результата (решение владельца 16.10): A — полный, B — без чрезвычайных, C — без месяца наследия; без двойного учёта', () => {
+    const JULR = pnlRow({ month: '2026-07', financial_state: 'FINANCIAL_COMPLETE', inventory_loss_writeoff_rub: 300, wb_loss_compensation_rub: 100,
+      force_majeure_net_effect_rub: -200, management_net_store_profit_rub: 118 - 200, management_net_store_margin: -0.082 });
+    const AUG = pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS', inventory_loss_writeoff_rub: 500,
+      force_majeure_net_effect_rub: -500, management_net_store_profit_rub: 118 - 500 });
+    const p = buildTabPlan([JULR, AUG, pnlRow()]);
+    expect(p.rowIdentityMaxAbs).toBe(0);
+    expect(p.rows[1]![COL.NET_COMPARABLE]).toBe('');                       // наследие — пусто, не 0
+    expect(p.rows[0]![COL.NET_COMPARABLE]).toBe(p.rows[0]![COL.NET]);      // чрезвычайные июля в C включены
+    const t = p.grid[p.kinds.lastIndexOf('total')]!;
+    expect(t[COL.NET]).toBe(-82 - 382 + 118);                               // A: все месяцы
+    expect(t[COL.NET_EX_FM]).toBe(118 * 3);                                 // B: без чистого эффекта (−200 −500 вернули)
+    expect(t[COL.NET_COMPARABLE]).toBe(-82 + 118);                          // C: без августа-наследия
+    expect(t[COL.NET]).toBe((t[COL.NET_EX_FM] as number) + (t[COL.FM_NET] as number)); // A = B + чистый эффект: эффект учтён один раз
+    expect(p.grid[KPI_ROWS[0]]![COL.NET_COMPARABLE]).toBe(t[COL.NET_COMPARABLE]);
+    expect(String(t[COL.REASON])).toMatch(/прибыль −382,00 ₽/);
+  });
   it('правила состояния: красные раньше жёлтого и зелёного', () => {
     const first = (text: string): string | undefined => STATE_RULES.find((r) => text.toLowerCase().includes(r.contains.toLowerCase()))?.bg;
     expect(first('закрыт — 3 · неразобранные операции — 1')).toBe('F4CCCC');
@@ -233,7 +250,7 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
     const p = buildTabPlan([pnlRow()]);
     expect(p.tab).toBe(TAB_NAME);
     expect(p.header).toEqual([...TAB_HEADER]);
-    expect(p.range).toBe(`'${TAB_NAME}'!A1:Y${FIRST_DATA_ROW + 2}`);
+    expect(p.range).toBe(`'${TAB_NAME}'!A1:Z${FIRST_DATA_ROW + 2}`);
     const r = p.rows[0]!;
     const at = (h: string): unknown => r[TAB_HEADER.indexOf(h)];
     expect(r[COL.MONTH]).toBe('Сентябрь 2026');
@@ -442,7 +459,7 @@ describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запрос
     expect(uc.updateCells.rows).toHaveLength(rows);
   });
 
-  it('в сетке меньше 25 колонок (живая A:U = 21) → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
+  it('в сетке меньше 26 колонок (живая A:U = 21) → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
     const d = decidePublish({ current: oldGrid, publishedSha: shaOf(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, 21);
@@ -671,8 +688,8 @@ describe('Налог 2 % — расшифровка, не второй выче�
     expect(buildTabPlan([pnlRow({ management_tax_rub: 0 })]).rows[0]![COL.NET]).toBe(net);
   });
 
-  it('25 колонок: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
-    expect(TAB_COLS).toBe(25);
+  it('26 колонок: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
+    expect(TAB_COLS).toBe(26);
     expect(TAB_NOTES.every((n) => n.length > 20)).toBe(true);
     expect(TAB_NOTES[3]).toMatch(/повторно НЕ вычитается/);
     expect(buildTabPlan([pnlRow()]).notes).toEqual([...TAB_NOTES]);

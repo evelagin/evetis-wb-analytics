@@ -6,7 +6,7 @@
  * wb_mart.V_WB_STORE_PNL_PRESENTATION (история 2026-05..07 + Phase C с 2026-08, одна власть на месяц).
  * BigQuery — источник истины; вкладка — представление. Модуль чистый: гейт, решение, запросы. I/O — в index.ts.
  *
- * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Y (sha256)
+ * Защита от затирания ручных правок ЗНАЧЕНИЙ: после публикации отпечаток содержимого A1:Z (sha256)
  * лежит в developer metadata вкладки. Писать можно, только если текущее содержимое равно последнему
  * опубликованному, либо явно принятому владельцем UNITKA_STORE_PNL_ADOPT_SHA (первое подключение или
  * восстановление: владелец проверил вкладку и подтверждает ровно это содержимое). Иначе — отказ
@@ -256,7 +256,7 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
 
   // 6. Условное форматирование: прибыль (фон), маржа и справочные результаты (цвет текста), состояние месяца — цветом.
   const resultRanges = [R(body0, body1, COL.NET, COL.NET + 1), R(KPI_ROWS[0], KPI_ROWS[1] + 1, COL.NET, COL.NET + 1)];
-  const signRanges = [R(body0, body1, COL.MARGIN, COL.NET_EX_FM + 1), R(KPI_ROWS[0], KPI_ROWS[1] + 1, COL.MARGIN, COL.NET_EX_FM + 1)];
+  const signRanges = [R(body0, body1, COL.MARGIN, COL.NET_COMPARABLE + 1), R(KPI_ROWS[0], KPI_ROWS[1] + 1, COL.MARGIN, COL.NET_COMPARABLE + 1)];
   const rule = (ranges: unknown[], type: string, value: string, format: Record<string, unknown>): Record<string, unknown> =>
     ({ addConditionalFormatRule: { index: 0, rule: { ranges, booleanRule: { condition: { type, values: [{ userEnteredValue: value }] }, format } } } });
   const cf: Record<string, unknown>[] = [

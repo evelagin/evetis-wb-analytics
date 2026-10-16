@@ -48,7 +48,7 @@ export type ColKind = 'month' | 'money' | 'sum' | 'margin' | 'text';
 export interface ColSpec { header: string; note: string; group: GroupKey; kind: ColKind; detail?: boolean; width: number; ref?: boolean }
 
 /**
- * Контракт представления: 25 колонок A:Y. Заголовок и заметка каждой — системные данные (входят в отпечаток контракта).
+ * Контракт представления: 26 колонок A:Z. Заголовок и заметка каждой — системные данные (входят в отпечаток контракта).
  * detail — подробная колонка, свёрнута в группу; ref — справочная, в прибыль не складывается.
  */
 export const TAB_COLUMNS: readonly ColSpec[] = [
@@ -74,6 +74,7 @@ export const TAB_COLUMNS: readonly ColSpec[] = [
   { header: 'Управленческая чистая прибыль магазина', group: 'RESULT', kind: 'money', width: 120, note: 'Вклад SKU + поправки к факту − расходы кабинета WB + доходы WB − списание утраченного товара + компенсация WB за утрату товара. Налог 2 % уже внутри вклада. Не бухгалтерская: УСН, OPEX и фулфилмент не входят.' },
   { header: 'Управленческая чистая маржа', group: 'RESULT', kind: 'margin', width: 84, note: 'Управленческая чистая прибыль ÷ выручка. У «Итого» — от сумм года.' },
   { header: 'Результат без чрезвычайных статей (справочно)', group: 'RESULT', kind: 'money', ref: true, width: 116, note: 'Управленческая чистая прибыль минус чистый эффект форс-мажора: результат обычной деятельности магазина. Справочно, в итог не складывается.' },
+  { header: 'Сопоставимый результат без наследия (справочно)', group: 'RESULT', kind: 'money', ref: true, width: 116, note: 'Управленческая чистая прибыль месяцев БЕЗ статуса «наследие» (август 2026 — справочная сумма Phase C, LEGACY/PARTIAL: ячейка месяца пуста). Чрезвычайные статьи остальных месяцев включены. В «Итого» — сумма месяцев без наследия: справочно, НЕ полный финансовый результат года (полный — «Управленческая чистая прибыль магазина»). Решение владельца 16.10.' },
   { header: 'Финансовое состояние', group: 'TRUST', kind: 'text', width: 200, note: 'Закрыт; Закрыт, когорта дозревает; Ждём счета WB; Есть неразобранные операции; Есть неизвестные расходы; Справочно: наследие (август 2026 — сравнение). Не влияет на сумму.' },
   { header: 'Мост сроков (справочно, вне прибыли)', group: 'TRUST', kind: 'money', ref: true, width: 108, note: 'Пока когорта не созрела: логистика модели минус факт и ожидаемый вклад ещё не проданных единиц. В прибыль НЕ входит — это сроки WB, а не экономия.' },
   { header: 'Пояснение', group: 'TRUST', kind: 'text', width: 420, note: 'Причины неполноты месяца — только из полей вью: неразобранные операции и неизвестные расходы финотчёта, нефинальный финотчёт, недостающие дни биллинга рекламы, ожидаемые счета WB, дозревание когорты, утрата товара, источник месяца (история H0 / текущий Phase C / наследие листа).' },
@@ -102,6 +103,7 @@ export const COL = {
   NET: colOf('Управленческая чистая прибыль магазина'),
   MARGIN: colOf('Управленческая чистая маржа'),
   NET_EX_FM: colOf('Результат без чрезвычайных статей (справочно)'),
+  NET_COMPARABLE: colOf('Сопоставимый результат без наследия (справочно)'),
   STATE: colOf('Финансовое состояние'),
   BRIDGE: colOf('Мост сроков (справочно, вне прибыли)'),
   REASON: colOf('Пояснение'),
@@ -147,6 +149,7 @@ export const KPI: ReadonlyArray<{ label: string; col: number }> = [
   { label: 'Управленческая прибыль', col: COL.NET },
   { label: 'Маржа', col: COL.MARGIN },
   { label: 'Без форс-мажора', col: COL.NET_EX_FM },
+  { label: 'Сопоставимый, без наследия', col: COL.NET_COMPARABLE },
 ];
 /** Сводка состояний периода в блоке показателей — объединённые ячейки «Достоверность данных». */
 export const KPI_STATE_SPAN = [COL.STATE, COL.REASON + 1] as const;
@@ -182,7 +185,7 @@ export interface TabPlan {
   range: string;
   header: readonly string[];
   notes: readonly string[];
-  /** Вся сетка вкладки A1:Y — шапка, показатели, полоса, заголовок, месяцы и итоги. Отпечаток считается по ней. */
+  /** Вся сетка вкладки A1:Z — шапка, показатели, полоса, заголовок, месяцы и итоги. Отпечаток считается по ней. */
   grid: TabCell[][];
   kinds: RowKind[];
   /** Только строки месяцев, в порядке вью. */
@@ -203,7 +206,7 @@ export function toNum(v: unknown): number {
 const r2 = (x: number): number => Math.round(x * 100) / 100;
 const r6 = (x: number): number => Math.round(x * 1e6) / 1e6;
 /** 1234.5 → «1 234,50» (русская запись суммы в тексте пояснения). */
-const rub = (x: number): string => r2(x).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const rub = (x: number): string => r2(x).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ').replace(/^-/, '−');
 const str = (v: unknown): string => String(v && typeof v === 'object' && 'value' in v ? (v as { value: unknown }).value : v ?? '');
 const bool = (v: unknown): boolean => v === true || v === 'true';
 
@@ -296,6 +299,8 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const row = monthCells(p);
     row[COL.MONTH] = monthLabel(month);
     row[COL.STATE] = label;
+    // Показатель C (решение владельца 16.10): месяц наследия в сопоставимый результат не входит — ячейка пуста, не 0.
+    row[COL.NET_COMPARABLE] = state === 'LEGACY_PARTIAL_KNOWN_DEFECTS' ? '' : r2(n('management_net_store_profit_rub'));
     row[COL.REASON] = reasonText(p);
     rows.push(row);
     raw.push({ year: month.slice(0, 4), month, net: n('management_net_store_profit_rub'), revenue: n('revenue_rub'), state: label });
@@ -316,7 +321,8 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const t = blank();
     t[COL.MONTH] = `Итого ${y} · ${periodText(idx.map((i) => raw[i]!.month))}`;
     TAB_COLUMNS.forEach((c, j) => {
-      if (c.kind === 'money' || c.kind === 'sum') t[j] = r2(idx.reduce((s, i) => s + (rows[i]![j] as number), 0));
+      // Пустая ячейка (месяц наследия в сопоставимом результате) не число и в сумму не входит.
+      if (c.kind === 'money' || c.kind === 'sum') t[j] = r2(idx.reduce((s, i) => s + (typeof rows[i]![j] === 'number' ? rows[i]![j] as number : 0), 0));
     });
     const rev = idx.reduce((s, i) => s + raw[i]!.revenue, 0);
     t[COL.MARGIN] = rev === 0 ? '' : r6(idx.reduce((s, i) => s + raw[i]!.net, 0) / rev);
