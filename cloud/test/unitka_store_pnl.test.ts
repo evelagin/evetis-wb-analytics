@@ -8,8 +8,8 @@ import { parseUnitkaComponents, STORE_PNL_FROM } from '../src/loaders/unitka/sto
 import { snapshotAppendSql, snapshotRecord, storePnlRaiseError, type PnlRow } from '../src/loaders/unitka/storepnl/bq.js';
 import { buildTabPlan, toNum, TAB_HEADER, TAB_NAME } from '../src/loaders/unitka/storepnl/tabplan.js';
 import { unitkaStorePnlLoader, snapshotIdOf, activeNewOperations, publishEnv, type StorePnlDeps } from '../src/loaders/unitka/storepnl/index.js';
-import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, contentSha, assertOnlyTab, PUBLISH_META_KEY, CONTRACT_META_KEY } from '../src/loaders/unitka/storepnl/publish.js';
-import { TAB_NOTES, TAB_COLS, COL } from '../src/loaders/unitka/storepnl/tabplan.js';
+import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, contentSha, assertOnlyTab, assertOwnTab, normalizeGrid, PUBLISH_META_KEY, CONTRACT_META_KEY, SHEET_PROPERTY_FIELDS, STATE_RULES } from '../src/loaders/unitka/storepnl/publish.js';
+import { TAB_NOTES, TAB_COLS, COL, FIRST_DATA_ROW, HEADER_ROW, KPI, KPI_ROWS, SUM_PARTS, DETAIL_GROUPS } from '../src/loaders/unitka/storepnl/tabplan.js';
 import { addDaysIso, isoToSerial, OFFSET, SUMMARY, type CellValue } from '../src/loaders/unitka/model.js';
 import { LoaderError } from '../src/errors.js';
 import { Logger } from '../src/logging.js';
@@ -183,13 +183,59 @@ function pnlRow(o: Partial<Record<string, unknown>> = {}): PnlRow {
   };
 }
 
+describe('UX — шапка, группы, итоги по годам (2026-10-16)', () => {
+  const MAYR = pnlRow({ month: '2026-05', financial_state: 'FINANCIAL_COMPLETE', sku_month_closed: true, month_finance_final: true, revenue_rub: 2000,
+    management_net_store_profit_rub: 118, management_net_store_margin: 0.059 });
+  const DEC = pnlRow({ month: '2025-12', revenue_rub: 500, management_net_store_margin: 0.236 });
+  it('месяцы по годам и «Итого» года: суммы показанных ячеек, маржа = Σ прибыль ÷ Σ выручка', () => {
+    const p = buildTabPlan([DEC, MAYR, pnlRow()]);
+    expect(p.kinds.slice(FIRST_DATA_ROW)).toEqual(['month', 'total', 'month', 'month', 'total']);
+    const t26 = p.grid[p.kinds.lastIndexOf('total')]!;
+    expect(t26[COL.MONTH]).toBe('Итого 2026 · май–сен');
+    for (const c of [COL.REVENUE, COL.SKU, COL.ADJ_SUM, COL.NET, COL.NET_EX_FM]) expect(t26[c]).toBe((p.rows[1]![c] as number) + (p.rows[2]![c] as number));
+    expect(t26[COL.MARGIN]).toBeCloseTo(236 / 3000, 6);
+    expect(t26[COL.STATE]).toBe('закрыт — 1 · ждём счета WB — 1');
+    expect(p.yearGroups).toEqual([{ year: '2025', start: FIRST_DATA_ROW, end: FIRST_DATA_ROW + 1 }, { year: '2026', start: FIRST_DATA_ROW + 2, end: FIRST_DATA_ROW + 4 }]);
+    for (const r of p.rows) for (const [sum, parts] of Object.entries(SUM_PARTS)) expect(r[Number(sum)]).toBeCloseTo(parts.reduce((x, j) => x + (r[j] as number), 0), 6);
+  });
+  it('показатели — над своими колонками и равны «Итого» года; основные колонки не свёрнуты', () => {
+    const p = buildTabPlan([DEC, MAYR, pnlRow()]);
+    const t26 = p.grid[p.kinds.lastIndexOf('total')]!;
+    for (const k of KPI) expect(p.grid[KPI_ROWS[0]]![k.col]).toBe(t26[k.col]);
+    expect(p.grid[KPI_ROWS[0]]![0]).toBe('2026 · май–сен');
+    expect(p.grid[KPI_ROWS[1]]![0]).toBe('2025 · дек');
+    for (const k of KPI) expect(DETAIL_GROUPS.some(([a, b]) => k.col >= a && k.col < b)).toBe(false);
+  });
+  it('правила состояния: красные раньше жёлтого и зелёного', () => {
+    const first = (text: string): string | undefined => STATE_RULES.find((r) => text.toLowerCase().includes(r.contains.toLowerCase()))?.bg;
+    expect(first('закрыт — 3 · неразобранные операции — 1')).toBe('F4CCCC');
+    expect(first('Ждём счета WB')).toBe('FFF2CC');
+    expect(first('Закрыт, когорта дозревает')).toBe('D9EAD3');
+    expect(first('Справочно: наследие, известные дефекты')).toBe('EFEFEF');
+  });
+  it('NOOP после перераскладки: сетка равна плану (normalizeGrid)', () => {
+    const p = buildTabPlan([pnlRow()]);
+    expect(decidePublish({ current: normalizeGrid(p.grid), publishedSha: contentSha(normalizeGrid(p.grid)), plan: p })).toMatchObject({ action: 'NOOP' });
+  });
+});
+
 describe('Phase C — план вкладки «WB Магазин P&L»', () => {
   it('строка складывается, мост сроков — справочно и вне прибыли, состояние по-русски', () => {
     const p = buildTabPlan([pnlRow()]);
     expect(p.tab).toBe(TAB_NAME);
     expect(p.header).toEqual([...TAB_HEADER]);
-    expect(p.range).toBe(`'${TAB_NAME}'!A1:U2`);
-    expect(p.rows[0]).toEqual(['2026-09', 1000, 100, 20, 0, 0, 0, 0, 10, 1, 7, 0, 0, 0, 0, 0, 0, 118, 0.118, 'Ждём счета WB', -260]);
+    expect(p.range).toBe(`'${TAB_NAME}'!A1:Y${FIRST_DATA_ROW + 2}`);
+    const r = p.rows[0]!;
+    const at = (h: string): unknown => r[TAB_HEADER.indexOf(h)];
+    expect(r[COL.MONTH]).toBe('Сентябрь 2026');
+    expect([r[COL.REVENUE], r[COL.SKU], r[COL.TAX], r[COL.ADJ_SUM], r[COL.CABINET_SUM], r[COL.INCOME]]).toEqual([1000, 100, 20, 18, 0, 0]);
+    expect([at('Поправка рекламы'), at('Поправка хранения'), at('Поправка комиссии и цены'), at('Поправка зрелой когорты')]).toEqual([10, 1, 7, 0]);
+    expect([r[COL.LOSS], r[COL.LOSS_COMP], r[COL.FM_NET], r[COL.NET], r[COL.MARGIN], r[COL.NET_EX_FM]]).toEqual([0, 0, 0, 118, 0.118, 118]);
+    expect([r[COL.STATE], r[COL.BRIDGE]]).toEqual(['Ждём счета WB', -260]);
+    expect(r[COL.REASON]).toMatch(/финотчёт месяца ещё не финальный/);
+    // строка складывается из показанных колонок: вклад + поправки − кабинет + доходы − списание + компенсация
+    expect((r[COL.SKU] as number) + (r[COL.ADJ_SUM] as number) - (r[COL.CABINET_SUM] as number) + (r[COL.INCOME] as number)
+      - (r[COL.LOSS] as number) + (r[COL.LOSS_COMP] as number)).toBe(118);
     expect(p.rowIdentityMaxAbs).toBe(0);
     expect(p.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -197,7 +243,8 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
   it('расход кабинета уменьшает прибыль, доход увеличивает; приёмка — в прочих', () => {
     const p = buildTabPlan([pnlRow({ minimum_payment_rub: 50, acceptance_rub: 3, other_marketplace_cost_rub: 2, marketplace_income_rub: 4,
       management_net_store_profit_rub: 118 - 50 - 5 + 4 })]);
-    expect(p.rows[0]![12]).toBe(5);
+    expect(p.rows[0]![TAB_HEADER.indexOf('Прочие расходы WB')]).toBe(5);
+    expect(p.rows[0]![COL.CABINET_SUM]).toBe(55);
     expect(p.rowIdentityMaxAbs).toBe(0);
   });
 
@@ -234,6 +281,8 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
         if (cells.some((c) => c.col > tabState.cols)) throw new Error('exceeds grid limits');
         return new Map(cells.filter((c) => tabState.notes[c.col - 1]).map((c) => [`${c.row}|${c.col}`, tabState.notes[c.col - 1]!] as [string, string]));
       },
+      readSheetStructure: async () => ({ conditionalFormats: Array.from({ length: tabState.cf }, () => ({ ranges: [] })), merges: Array.from({ length: tabState.merges }, () => ({})),
+        columnGroups: tabState.colGroups.map((x) => ({ ...x })), rowGroups: tabState.rowGroups.map((x) => ({ ...x })), rowMetadata: [], columnMetadata: [] }),
       structureWrite: async (reqs) => { applyRequests(reqs); calls.requests.push(...reqs); calls.writes.push(...reqs.filter((r) => 'updateCells' in r).map(() => 'updateCells')); return reqs.length; },
     }),
     makeBq: () => ({
@@ -285,18 +334,31 @@ describe('Phase C — наследие августа', () => {
 });
 
 const TAB_ID = 989153123;
-const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }>; notes: string[]; cols: number } =
-  { title: TAB_NAME, values: [], meta: [], notes: [], cols: 26 };
+const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }>; notes: string[]; cols: number;
+  cf: number; merges: number; colGroups: Array<{ startIndex: number; endIndex: number; depth: number }>; rowGroups: Array<{ startIndex: number; endIndex: number; depth: number }> } =
+  { title: TAB_NAME, values: [], meta: [], notes: [], cols: 26, cf: 0, merges: 0, colGroups: [], rowGroups: [] };
 let nextMetaId = 7;
 
 /** Фейковый Sheets: применяет updateCells и metadata к состоянию вкладки так, как это сделал бы API. */
 function applyRequests(reqs: Record<string, unknown>[]): void {
   for (const r of reqs) {
     const u = (r as { updateCells?: { fields: string; rows: Array<{ values: Array<{ note?: string; userEnteredValue?: { numberValue?: number; stringValue?: string } }> }> } }).updateCells;
-    if (u && u.fields === 'note') tabState.notes = u.rows[0]!.values.map((c) => c.note ?? '');
+    if (u && u.fields === 'note') { if ((u as unknown as { range: { startRowIndex: number } }).range.startRowIndex === HEADER_ROW) tabState.notes = u.rows[0]!.values.map((c) => c.note ?? ''); else tabState.notes = []; }
     else if (u) {
       const next = u.rows.map((row) => row.values.map((c) => (c.userEnteredValue?.numberValue ?? c.userEnteredValue?.stringValue ?? '') as CellValue));
       for (let k = 0; k < next.length; k++) tabState.values[k] = next[k]!;
+    }
+    const kind = Object.keys(r)[0]!;
+    const g = (x: unknown): { dimension: string; startIndex: number; endIndex: number } => (x as { range: { dimension: string; startIndex: number; endIndex: number } }).range;
+    if (kind === 'addConditionalFormatRule') tabState.cf++;
+    if (kind === 'deleteConditionalFormatRule') { if (tabState.cf === 0) throw new Error('No conditional format at index 0'); tabState.cf--; }
+    if (kind === 'mergeCells') tabState.merges++;
+    if (kind === 'unmergeCells') tabState.merges = 0;
+    if (kind === 'addDimensionGroup' || kind === 'deleteDimensionGroup') {
+      const x = g((r as Record<string, unknown>)[kind]); const list = x.dimension === 'ROWS' ? tabState.rowGroups : tabState.colGroups;
+      const i = list.findIndex((y) => y.startIndex === x.startIndex && y.endIndex === x.endIndex);
+      if (kind === 'addDimensionGroup') { if (i >= 0) throw new Error('группа уже есть — глубина выросла бы'); list.push({ startIndex: x.startIndex, endIndex: x.endIndex, depth: 1 }); }
+      else { if (i < 0) throw new Error('No group to delete'); list.splice(i, 1); }
     }
     const ad = (r as { appendDimension?: { dimension: string; length: number } }).appendDimension;
     if (ad && ad.dimension === 'COLUMNS') tabState.cols += ad.length;
@@ -313,63 +375,90 @@ function applyRequests(reqs: Record<string, unknown>[]): void {
 describe('WB STORE P&L AUTO-PUBLISH — решение, гейт и запросы', () => {
   const AUGR = pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS' });
   const plan = buildTabPlan([AUGR, pnlRow()]);
-  const want = [[...plan.header], ...plan.rows];
+  const want = plan.grid.map((r) => [...r]);
   const old = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
-  const oldGrid = [[...old.header], ...old.rows];
+  const oldGrid = old.grid.map((r) => [...r]);
+  const shaOf = (g: CellValue[][]): string => contentSha(normalizeGrid(g));
 
   it('NOOP идемпотентно; отпечаток дописывается, если его нет', () => {
     expect(decidePublish({ current: want, plan })).toMatchObject({ action: 'NOOP', setMeta: true });
-    expect(decidePublish({ current: want, publishedSha: contentSha(want), plan })).toMatchObject({ action: 'NOOP', setMeta: false });
+    expect(decidePublish({ current: want, publishedSha: shaOf(want), plan })).toMatchObject({ action: 'NOOP', setMeta: false });
   });
 
   it('вкладка = последней публикации → WRITE; ручная правка значения → отказ', () => {
-    expect(decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', clearRows: 0, adopted: false });
-    const edited = oldGrid.map((r) => [...r]); edited[2]![1] = 12345;
-    expect(decidePublish({ current: edited, publishedSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
+    expect(decidePublish({ current: oldGrid, publishedSha: shaOf(oldGrid), plan })).toMatchObject({ action: 'WRITE', clearRows: 0, adopted: false });
+    const edited = oldGrid.map((r) => [...r]); edited[FIRST_DATA_ROW]![1] = 12345;
+    expect(decidePublish({ current: edited, publishedSha: shaOf(oldGrid), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
   });
 
   it('ADOPT: первое подключение и восстановление только для ровно проверенного содержимого', () => {
     expect(decidePublish({ current: oldGrid, plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_UNTRACKED' });
-    expect(decidePublish({ current: oldGrid, adoptSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
+    expect(decidePublish({ current: oldGrid, adoptSha: shaOf(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
     expect(decidePublish({ current: oldGrid, adoptSha: 'f'.repeat(64), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
-    expect(decidePublish({ current: oldGrid, publishedSha: 'a'.repeat(64), adoptSha: contentSha(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
+    expect(decidePublish({ current: oldGrid, publishedSha: 'a'.repeat(64), adoptSha: shaOf(oldGrid), plan })).toMatchObject({ action: 'WRITE', adopted: true });
     expect(decidePublish({ current: oldGrid, publishedSha: 'a'.repeat(64), adoptSha: 'b'.repeat(64), plan })).toMatchObject({ action: 'REFUSE', code: 'STORE_PNL_TAB_EDITED' });
   });
 
-  it('один атомарный batchUpdate: значения, форматы строк данных, отпечаток; всё в sheetId вкладки', () => {
-    const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
+  it('один атомарный batchUpdate: значения, раскладка, заметки строки 7, отпечатки; всё в sheetId вкладки', () => {
+    const d = decidePublish({ current: oldGrid, publishedSha: shaOf(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 20, d, 7);
-    expect(reqs.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell', 'repeatCell',
-      'updateCells', 'updateDeveloperMetadata', 'createDeveloperMetadata']);
-    // сброс форматов строк данных A:U — до записи новых форматов (смена схемы не оставляет фон/цвет прежних колонок)
-    expect(reqs[1]).toEqual({ repeatCell: { range: { sheetId: TAB_ID, startRowIndex: 1, endRowIndex: plan.rows.length + 1, startColumnIndex: 0, endColumnIndex: 21 },
-      cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat(numberFormat,backgroundColor,textFormat.foregroundColor)' } });
-    // строка 1: только заметки заголовка (fields = note); форматы — только строки данных
-    const rowZero = reqs.filter((r) => JSON.stringify(r).includes('"startRowIndex":0'));
-    expect(rowZero.map((r) => Object.keys(r)[0])).toEqual(['updateCells', 'updateCells']);
-    expect((rowZero[1] as { updateCells: { fields: string } }).updateCells.fields).toBe('note');
+    const kinds = reqs.map((r) => Object.keys(r)[0]);
+    expect(kinds.slice(0, 3)).toEqual(['repeatCell', 'updateCells', 'updateCells']); // сброс форматов, снятие заметок, значения
+    expect(kinds).toContain('updateSheetProperties');
+    expect(kinds.filter((k) => k === 'addConditionalFormatRule').length).toBe(4 + STATE_RULES.length);
+    expect(kinds.filter((k) => k === 'addDimensionGroup')).toHaveLength(DETAIL_GROUPS.length + plan.yearGroups.length);
+    const ids = JSON.stringify(reqs).match(/"sheetId":\d+/g) ?? [];
+    expect(new Set(ids)).toEqual(new Set([`"sheetId":${TAB_ID}`]));
+    const notes = reqs.filter((r) => (r as { updateCells?: { fields: string } }).updateCells?.fields === 'note').at(-1) as { updateCells: { range: { startRowIndex: number } } };
+    expect(notes.updateCells.range.startRowIndex).toBe(HEADER_ROW);
     expect(JSON.stringify(reqs.at(-2))).toMatch(/"metadataLocation":\{"sheetId":989153123\}/);
     expect(JSON.stringify(reqs.at(-1))).toContain(CONTRACT_META_KEY);
   });
 
-  it('сетка короче плана → appendDimension той же вкладки; лишние строки чистятся в A:U', () => {
-    const longer = [...oldGrid, ['2026-11', 1]];
-    const d = decidePublish({ current: longer, publishedSha: contentSha(longer), plan });
+  it('сетка короче плана → appendDimension той же вкладки; лишние строки чистятся', () => {
+    const longer = [...oldGrid, ...Array.from({ length: 3 }, () => ['хвост', 1])];
+    const d = decidePublish({ current: longer, publishedSha: shaOf(longer), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
     const reqs = publishRequests(plan, TAB_ID, 2, d);
-    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'ROWS', length: 12 } });
-    const uc = (reqs[1] as { updateCells: { range: Record<string, number>; rows: unknown[] } }).updateCells;
-    expect(uc.range).toEqual({ sheetId: TAB_ID, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 21 });
-    expect(uc.rows).toHaveLength(4);
+    const rows = plan.grid.length + d.clearRows;
+    expect(d.clearRows).toBe(longer.length - plan.grid.length);
+    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'ROWS', length: rows + 10 - 2 } });
+    const uc = reqs.find((r) => (r as { updateCells?: { fields: string } }).updateCells?.fields === 'userEnteredValue') as { updateCells: { range: Record<string, number>; rows: unknown[] } };
+    expect(uc.updateCells.range).toEqual({ sheetId: TAB_ID, startRowIndex: 0, endRowIndex: rows, startColumnIndex: 0, endColumnIndex: TAB_COLS });
+    expect(uc.updateCells.rows).toHaveLength(rows);
   });
 
-  it('в сетке меньше 21 колонки (живая A:Q = 17) → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
-    const d = decidePublish({ current: oldGrid, publishedSha: contentSha(oldGrid), plan });
+  it('в сетке меньше 25 колонок (живая A:U = 21) → appendDimension COLUMNS той же вкладки в том же batchUpdate', () => {
+    const d = decidePublish({ current: oldGrid, publishedSha: shaOf(oldGrid), plan });
     if (d.action !== 'WRITE') throw new Error('ожидалась запись');
-    const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, 17);
-    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'COLUMNS', length: 4 } });
-    expect(publishRequests(plan, TAB_ID, 20, d, 7, undefined, 21).some((r) => 'appendDimension' in r)).toBe(false);
+    const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, 21);
+    expect(reqs[0]).toEqual({ appendDimension: { sheetId: TAB_ID, dimension: 'COLUMNS', length: TAB_COLS - 21 } });
+    expect(publishRequests(plan, TAB_ID, 20, d, 7, undefined, TAB_COLS).some((r) => 'appendDimension' in r)).toBe(false);
+  });
+
+  it('повторная запись снимает прежнюю раскладку: УФ, объединения и группы удаляются до новой', () => {
+    const d = decidePublish({ current: oldGrid, publishedSha: shaOf(oldGrid), plan });
+    if (d.action !== 'WRITE') throw new Error('ожидалась запись');
+    const reqs = publishRequests(plan, TAB_ID, 20, d, 7, undefined, TAB_COLS,
+      { conditionalFormats: 3, merges: true, columnGroups: [{ startIndex: 3, endIndex: 4, depth: 1 }], rowGroups: [{ startIndex: 7, endIndex: 9, depth: 1 }] });
+    const kinds = reqs.map((r) => Object.keys(r)[0]);
+    expect(kinds.filter((k) => k === 'deleteConditionalFormatRule')).toHaveLength(3);
+    expect(kinds.filter((k) => k === 'deleteDimensionGroup')).toHaveLength(2);
+    expect(kinds.indexOf('unmergeCells')).toBeLessThan(kinds.indexOf('mergeCells'));
+    expect(kinds.lastIndexOf('deleteDimensionGroup')).toBeLessThan(kinds.indexOf('addDimensionGroup'));
+    expect(publishRequests(plan, TAB_ID, 20, d, 7).map((r) => Object.keys(r)[0])).not.toContain('unmergeCells');
+  });
+
+  it('assertOwnTab: раскладка только своей вкладки; название, индекс и размеры сетки не меняются', () => {
+    expect(() => assertOwnTab(TAB_ID, [{ deleteSheet: { sheetId: TAB_ID } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ updateSheetProperties: { properties: { sheetId: TAB_ID, title: 'x' }, fields: 'title' } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ updateSheetProperties: { properties: { sheetId: TAB_ID, gridProperties: { rowCount: 1 } }, fields: 'gridProperties(rowCount)' } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ updateSheetProperties: { properties: { sheetId: TAB_ID, index: 0, gridProperties: {} }, fields: SHEET_PROPERTY_FIELDS } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ mergeCells: { range: { sheetId: 1 } } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ addConditionalFormatRule: { rule: { ranges: [{ sheetId: TAB_ID }, { sheetId: 1 }] } } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ deleteConditionalFormatRule: { sheetId: 1, index: 0 } }])).toThrow(/вне вкладки/);
+    expect(() => assertOwnTab(TAB_ID, [{ updateDimensionGroup: { dimensionGroup: { range: { sheetId: 1 } } } }])).toThrow(/вне вкладки/);
   });
 
   it('assertOnlyTab: чужой sheetId, чужой тип запроса, чужой metadataId — отказ', () => {
@@ -443,7 +532,7 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
   it('схема A:Q без отпечатка контракта: плановый прогон НЕ мигрирует (STORE_PNL_CONTRACT_MIGRATION_REQUIRED), записей нет', async () => {
     const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
     // живая вкладка A:Q: сетка 17 колонок (11.10 чтение заметок R1..U1 падало «exceeds grid limits»)
-    tabState.values = [[...init.header], ...init.rows]; tabState.meta = []; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 17;
+    tabState.values = [[...init.header], ...init.rows]; tabState.meta = []; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 21;
     const adopt = contentSha(tabState.values);
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_ADOPT_SHA: adopt }, async () => {
       const a = deps(PNL);
@@ -457,21 +546,24 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
   });
 
   it('управляемая миграция: точный отпечаток контракта → одна атомарная запись A:U, заметки, два отпечатка; дальше NOOP без допусков', async () => {
-    // как в production 11.10: вкладка A:Q на сетке 17 колонок, свой отпечаток публикации, без заметок и контракта — ADOPT не нужен
+    // как в production 16.10: вкладка A:U (21 колонка, заметки в строке 1), свой отпечаток публикации и прежний контракт
     const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
-    tabState.values = [[...init.header], ...init.rows]; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 17;
+    tabState.values = [init.header.slice(0, 21), ...init.rows.map((r) => r.slice(0, 21))]; tabState.notes = []; tabState.title = TAB_NAME; tabState.cols = 21;
+    tabState.cf = 0; tabState.merges = 0; tabState.colGroups = []; tabState.rowGroups = [];
     tabState.meta = [{ id: nextMetaId++, key: PUBLISH_META_KEY, value: contentSha(tabState.values) }];
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID),
       UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
       const a = deps(PNL);
       await unitkaStorePnlLoader(ctx(), a.d);
       expect(a.calls.readonly).toBe(false);
-      expect(a.calls.writes).toEqual(['updateCells', 'updateCells']); // значения + заметки, один batchUpdate
+      expect(a.calls.writes).toEqual(['updateCells', 'updateCells', 'updateCells']); // снятие заметок, значения, заметки строки 7 — один batchUpdate
+      expect(tabState.colGroups).toHaveLength(DETAIL_GROUPS.length);
+      expect(tabState.rowGroups).toHaveLength(1);
       expect(tabState.values[0]).toHaveLength(TAB_COLS);
       expect(tabState.cols).toBe(TAB_COLS);                     // сетка расширена в том же batchUpdate
       expect(tabState.notes).toEqual([...TAB_NOTES]);
       expect(tabState.meta.map((m) => m.key).sort()).toEqual([CONTRACT_META_KEY, PUBLISH_META_KEY].sort());
-      expect(tabState.meta.find((m) => m.key === PUBLISH_META_KEY)!.value).toBe(contentSha(tabState.values));
+      expect(tabState.meta.find((m) => m.key === PUBLISH_META_KEY)!.value).toBe(contentSha(normalizeGrid(tabState.values)));
       expect(tabState.meta.find((m) => m.key === CONTRACT_META_KEY)!.value).toBe(contractSha());
     });
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
@@ -487,8 +579,9 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
       const a = deps(PNL);
       await unitkaStorePnlLoader(ctx(), a.d);
-      expect(a.calls.writes).toEqual(['updateCells', 'updateCells']);
+      expect(a.calls.writes).toEqual(['updateCells', 'updateCells', 'updateCells']);
       expect(tabState.notes).toEqual([...TAB_NOTES]);
+      expect(tabState.colGroups).toHaveLength(DETAIL_GROUPS.length);
       const b = deps(PNL);
       await unitkaStorePnlLoader(ctx(), b.d);
       expect(b.calls.writes).toEqual([]);
@@ -500,8 +593,9 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
     await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
       const a = deps(PNL);
       await unitkaStorePnlLoader(ctx(), a.d);
-      expect(a.calls.writes).toEqual(['updateCells', 'updateCells']);
+      expect(a.calls.writes).toEqual(['updateCells', 'updateCells', 'updateCells']);
       expect(tabState.meta.find((m) => m.key === CONTRACT_META_KEY)!.value).toBe(contractSha());
+      expect(tabState.cf).toBe(4 + STATE_RULES.length);
     });
   });
 
@@ -542,8 +636,8 @@ describe('Налог 2 % — расшифровка, не второй выче�
     expect(buildTabPlan([pnlRow({ management_tax_rub: 0 })]).rows[0]![COL.NET]).toBe(net);
   });
 
-  it('21 колонка: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
-    expect(TAB_COLS).toBe(21);
+  it('25 колонок: у каждого заголовка есть заметка; заметки входят в отпечаток плана', () => {
+    expect(TAB_COLS).toBe(25);
     expect(TAB_NOTES.every((n) => n.length > 20)).toBe(true);
     expect(TAB_NOTES[3]).toMatch(/повторно НЕ вычитается/);
     expect(buildTabPlan([pnlRow()]).notes).toEqual([...TAB_NOTES]);
@@ -555,8 +649,8 @@ describe('Утрата товара: списание и компенсация 
     force_majeure_net_effect_rub: 69479.72 - 281074.51, management_net_store_profit_rub: 118 - 281074.51 + 69479.72 };
   it('колонки O/P/Q: списание (расход), компенсация (доход), чистый эффект справочно; строка складывается без Q', () => {
     const p = buildTabPlan([pnlRow(JUL)]);
-    expect(p.header.slice(14, 17)).toEqual(['Списание утраченного товара', 'Компенсация WB за утрату товара', 'Чистый эффект форс-мажора (справочно)']);
-    expect(p.rows[0]!.slice(14, 18)).toEqual([281074.51, 69479.72, -211594.79, -211476.79]);
+    expect(p.header.slice(COL.LOSS, COL.FM_NET + 1)).toEqual(['Списание утраченного товара', 'Компенсация WB за утрату товара', 'Чистый эффект форс-мажора (справочно)']);
+    expect([COL.LOSS, COL.LOSS_COMP, COL.FM_NET, COL.NET, COL.NET_EX_FM].map((c) => p.rows[0]![c])).toEqual([281074.51, 69479.72, -211594.79, -211476.79, 118]);
     expect(p.rowIdentityMaxAbs).toBe(0);
   });
   // Нетто в одной колонке арифметически не отличимо в строке — его исключает SQL (списание = Σ позиций отчётов WB,
