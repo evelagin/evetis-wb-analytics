@@ -18,9 +18,9 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest } from '../sheets.js';
 import { colA1, type CellValue } from '../model.js';
 import { OzonStorePnlBq, type GateInputs } from './bq.js';
-import { buildTabPlan, TAB_NOTES, toStr, type PnlRow } from './tabplan.js';
+import { buildTabPlan, HEADER_ROW, TAB_NOTES, toStr, type PnlRow } from './tabplan.js';
 import { contractSha, CONTRACT_META_KEY, decideContract, decidePublish, metaOnly, normalizeGrid, otherTabsFingerprint,
-  publishGate, publishRequests, PUBLISH_META_KEY, TAB_COLS } from './publish.js';
+  publishGate, publishRequests, PUBLISH_META_KEY, TAB_COLS, type TabStructure } from './publish.js';
 
 export interface PublishEnv { enabled: boolean; sheetId?: number; adoptSha?: string; migrateContract?: string }
 
@@ -35,7 +35,7 @@ export function publishEnv(env: NodeJS.ProcessEnv): PublishEnv {
   return { enabled, sheetId: sid ? Number(sid) : undefined, adoptSha: adopt || undefined, migrateContract: mig || undefined };
 }
 
-type SheetsLike = Pick<SheetsRest, 'readSheetMetadata' | 'readValues' | 'readNotes' | 'structureWrite' | 'readSheetsList'>;
+type SheetsLike = Pick<SheetsRest, 'readSheetMetadata' | 'readValues' | 'readNotes' | 'structureWrite' | 'readSheetsList' | 'readSheetStructure'>;
 export interface OzonStorePnlDeps {
   makeSheets: (ctx: LoaderContext, readonly: boolean) => SheetsLike;
   makeBq: (ctx: LoaderContext) => Pick<OzonStorePnlBq, 'readPnl' | 'readGateInputs' | 'readStates' | 'runQa'>;
@@ -69,7 +69,7 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   const gate = publishGate(pnl, gi, qa);
   logger.info('ozon_store_pnl_qa', { results: qa.map((r) => ({ id: r.id, status: r.status })),
     warn: qa.filter((r) => r.status === 'WARN').map((r) => ({ id: r.id, detail: r.detail })) });
-  logger.info('ozon_store_pnl_tab_plan', { tab: plan.tab, range: plan.range, fingerprint: plan.fingerprint, rows: plan.rows.length,
+  logger.info('ozon_store_pnl_tab_plan', { tab: plan.tab, range: plan.range, fingerprint: plan.fingerprint, rows: plan.rows.length, gridRows: plan.grid.length,
     states: stateSummary(pnl), contract: contractSha(), gateInputs: gi, sourceGate: gate.source, modelGate: gate.model,
     write: pub.enabled ? 'ENABLED' : 'DISABLED' });
 
@@ -99,11 +99,14 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
     const [values] = await sheets.readValues([`'${plan.tab}'!A1:${colA1(TAB_COLS)}${Math.max(tab.rowCount, 1)}`]);
     return { rowCount: tab.rowCount, columnCount: tab.columnCount, metas, contracts, values: values ?? [] };
   };
-  // Заметки заголовка — системные; читать можно только внутри сетки (за её пределами Sheets API отказывает).
-  const headerNotesOff = async (gridCols: number): Promise<number> => {
+  // Заметки строки заголовка — системные; читать можно только внутри сетки (за её пределами Sheets API отказывает).
+  const headerNotesOff = async (gridCols: number, gridRows: number): Promise<number> => {
+    const row = HEADER_ROW + 1;
+    // Строки заголовка ещё нет в сетке (новая маленькая вкладка) — заметок нет, нужна запись.
+    if (gridRows < row) return 0;
     const inGrid = Math.min(TAB_NOTES.length, gridCols);
-    const notes = inGrid > 0 ? await sheets.readNotes(plan.tab, TAB_NOTES.slice(0, inGrid).map((_, i) => ({ row: 1, col: i + 1 }))) : new Map<string, string>();
-    return TAB_NOTES.findIndex((n, i) => i >= inGrid || notes.get(`1|${i + 1}`) !== n);
+    const notes = inGrid > 0 ? await sheets.readNotes(plan.tab, TAB_NOTES.slice(0, inGrid).map((_, i) => ({ row, col: i + 1 }))) : new Map<string, string>();
+    return TAB_NOTES.findIndex((n, i) => i >= inGrid || notes.get(`${row}|${i + 1}`) !== n);
   };
 
   const othersBefore = otherTabsFingerprint(await sheets.readSheetsList(), sheetId);
@@ -113,7 +116,7 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   const c = decideContract({ publishedContract: t.contracts[0]?.value, allowMigrationTo: pub.migrateContract,
     firstPublication: d.action === 'WRITE' && d.first });
   if (!c.ok) throw new LoaderError(c.message, 'OZON_STORE_PNL_CONTRACT_MIGRATION_REQUIRED');
-  const notesOff = await headerNotesOff(t.columnCount);
+  const notesOff = await headerNotesOff(t.columnCount, t.rowCount);
   // NOOP по значениям не должен оставить миграцию без отпечатка контракта или заметки не по контракту.
   if (d.action === 'NOOP' && (c.migrate || notesOff >= 0 || t.contracts[0]?.value !== contractSha())) {
     d = { action: 'WRITE', sha: d.sha, previousSha: d.sha, clearRows: 0, adopted: false, first: false };
@@ -125,9 +128,13 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
     // Манифест отката: прежнее содержимое вкладки и его отпечаток — до записи.
     logger.info('ozon_store_pnl_rollback_manifest', { sheetId, previousSha: d.previousSha, previousContract: t.contracts[0]?.value ?? null,
       previousRows: normalizeGrid(t.values).length, previousValues: normalizeGrid(t.values) });
-    await sheets.structureWrite(publishRequests(plan, sheetId, t.rowCount, d, t.metas[0]?.id, t.contracts[0]?.id, t.columnCount));
+    // Прежняя раскладка (УФ, объединения, группы) снимается в том же batchUpdate — запись идемпотентна.
+    const st = await sheets.readSheetStructure(plan.tab, t.rowCount, t.columnCount);
+    const current: TabStructure = { conditionalFormats: st.conditionalFormats.length, merges: st.merges.length > 0,
+      columnGroups: st.columnGroups, rowGroups: st.rowGroups ?? [] };
+    await sheets.structureWrite(publishRequests(plan, sheetId, t.rowCount, d, t.metas[0]?.id, t.contracts[0]?.id, t.columnCount, current));
     logger.info('ozon_store_pnl_tab_published', { action: 'WRITE', sheetId, sha: d.sha, previousSha: d.previousSha, adopted: d.adopted,
-      first: d.first, fingerprint: plan.fingerprint, rows: plan.rows.length + 1, clearedRows: d.clearRows, contract: contractSha(), migrated: c.migrate });
+      first: d.first, fingerprint: plan.fingerprint, rows: plan.grid.length, clearedRows: d.clearRows, contract: contractSha(), migrated: c.migrate });
   }
   // Перечитывание: ровно план, ровно один отпечаток, контракт кода, заметки контракта, остальные вкладки не тронуты.
   const after = await readTab();
@@ -135,8 +142,8 @@ export async function ozonStorePnlLoader(ctx: LoaderContext, deps: OzonStorePnlD
   if (check.action !== 'NOOP' || check.setMeta || after.contracts[0]?.value !== contractSha()) {
     throw new LoaderError('перечитанная вкладка, её отпечаток или контракт не равны опубликованному плану', 'OZON_STORE_PNL_PUBLISH_READBACK');
   }
-  const bad = await headerNotesOff(after.columnCount);
-  if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}1 не равна контракту`, 'OZON_STORE_PNL_PUBLISH_READBACK');
+  const bad = await headerNotesOff(after.columnCount, after.rowCount);
+  if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}${HEADER_ROW + 1} не равна контракту`, 'OZON_STORE_PNL_PUBLISH_READBACK');
   const othersAfter = otherTabsFingerprint(await sheets.readSheetsList(), sheetId);
   if (othersAfter !== othersBefore) throw new LoaderError('отпечаток остальных вкладок книги изменился во время публикации', 'OZON_STORE_PNL_OTHER_TABS_CHANGED');
   logger.info('ozon_store_pnl_readback', { sheetId, sha: check.sha, otherTabs: othersAfter });
