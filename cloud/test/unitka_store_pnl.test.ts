@@ -206,6 +206,15 @@ describe('UX — шапка, группы, итоги по годам (2026-10-1
     expect(p.grid[KPI_ROWS[1]]![0]).toBe('2025 · дек');
     for (const k of KPI) expect(DETAIL_GROUPS.some(([a, b]) => k.col >= a && k.col < b)).toBe(false);
   });
+  it('«Итого» раскрывает справочный месяц наследия; неполный месяц без причины — явная пометка; суммы с запятой', () => {
+    const AUG = pnlRow({ month: '2026-08', financial_state: 'LEGACY_PARTIAL_KNOWN_DEFECTS', management_net_store_profit_rub: 118 });
+    const p = buildTabPlan([AUG, pnlRow({ unknown_rub: 1234.5, month_finance_final: true })]);
+    const t = p.grid[p.kinds.lastIndexOf('total')]!;
+    expect(String(t[COL.REASON])).toMatch(/Включает справочный месяц наследия: Август 2026 \(прибыль 118,00 ₽\)/);
+    expect(String(p.rows[1]![COL.REASON])).toMatch(/неизвестные расходы: 1 234,50 ₽/);
+    const bare = buildTabPlan([pnlRow({ month_finance_final: true, sku_month_closed: true, account_invoice_window_closed: true, financial_state: 'UNKNOWN_COST_PRESENT' })]);
+    expect(bare.rows[0]![COL.REASON]).toBe('причина неполноты во вью не раскрыта');
+  });
   it('правила состояния: красные раньше жёлтого и зелёного', () => {
     const first = (text: string): string | undefined => STATE_RULES.find((r) => text.toLowerCase().includes(r.contains.toLowerCase()))?.bg;
     expect(first('закрыт — 3 · неразобранные операции — 1')).toBe('F4CCCC');
@@ -281,6 +290,8 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
         if (cells.some((c) => c.col > tabState.cols)) throw new Error('exceeds grid limits');
         return new Map(cells.filter((c) => tabState.notes[c.col - 1]).map((c) => [`${c.row}|${c.col}`, tabState.notes[c.col - 1]!] as [string, string]));
       },
+      readSheetsList: async () => [{ sheetId: 1, title: 'WB_Юнит_2025', index: 0, rowCount: 800, columnCount: 600 + tabState.otherTamper },
+        { sheetId: TAB_ID, title: tabState.title, index: 2, rowCount: 20, columnCount: tabState.cols }],
       readSheetStructure: async () => ({ conditionalFormats: Array.from({ length: tabState.cf }, () => ({ ranges: [] })), merges: Array.from({ length: tabState.merges }, () => ({})),
         columnGroups: tabState.colGroups.map((x) => ({ ...x })), rowGroups: tabState.rowGroups.map((x) => ({ ...x })), rowMetadata: [], columnMetadata: [] }),
       structureWrite: async (reqs) => { applyRequests(reqs); calls.requests.push(...reqs); calls.writes.push(...reqs.filter((r) => 'updateCells' in r).map(() => 'updateCells')); return reqs.length; },
@@ -335,12 +346,14 @@ describe('Phase C — наследие августа', () => {
 
 const TAB_ID = 989153123;
 const tabState: { title: string; values: CellValue[][]; meta: Array<{ id: number; key: string; value: string }>; notes: string[]; cols: number;
-  cf: number; merges: number; colGroups: Array<{ startIndex: number; endIndex: number; depth: number }>; rowGroups: Array<{ startIndex: number; endIndex: number; depth: number }> } =
-  { title: TAB_NAME, values: [], meta: [], notes: [], cols: 26, cf: 0, merges: 0, colGroups: [], rowGroups: [] };
+  otherTamper: number; cf: number; merges: number; colGroups: Array<{ startIndex: number; endIndex: number; depth: number }>; rowGroups: Array<{ startIndex: number; endIndex: number; depth: number }> } =
+  { title: TAB_NAME, values: [], meta: [], notes: [], cols: 26, otherTamper: 0, cf: 0, merges: 0, colGroups: [], rowGroups: [] };
 let nextMetaId = 7;
 
 /** Фейковый Sheets: применяет updateCells и metadata к состоянию вкладки так, как это сделал бы API. */
+let tamperOnWrite = false;
 function applyRequests(reqs: Record<string, unknown>[]): void {
+  if (tamperOnWrite) tabState.otherTamper++;
   for (const r of reqs) {
     const u = (r as { updateCells?: { fields: string; rows: Array<{ values: Array<{ note?: string; userEnteredValue?: { numberValue?: number; stringValue?: string } }> }> } }).updateCells;
     if (u && u.fields === 'note') { if ((u as unknown as { range: { startRowIndex: number } }).range.startRowIndex === HEADER_ROW) tabState.notes = u.rows[0]!.values.map((c) => c.note ?? ''); else tabState.notes = []; }
@@ -597,6 +610,28 @@ describe('WB STORE P&L AUTO-PUBLISH — загрузчик', () => {
       expect(tabState.meta.find((m) => m.key === CONTRACT_META_KEY)!.value).toBe(contractSha());
       expect(tabState.cf).toBe(4 + STATE_RULES.length);
     });
+  });
+
+  it('боевой случай: прежний контракт A:U и свой отпечаток, плановый прогон без допуска — отказ до записи', async () => {
+    const init = buildTabPlan([AUGR, pnlRow({ revenue_rub: 999 })]);
+    tabState.values = [init.header.slice(0, 21), ...init.rows.map((r) => r.slice(0, 21))]; tabState.notes = []; tabState.cols = 21;
+    tabState.meta = [{ id: nextMetaId++, key: PUBLISH_META_KEY, value: contentSha(normalizeGrid(tabState.values)) },
+      { id: nextMetaId++, key: CONTRACT_META_KEY, value: '77efab2db80ab5e3223b95f28c8d1c450c5dfadd859a06a4ce10ba6237fe0ad4' }];
+    await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID) }, async () => {
+      const a = deps(PNL);
+      await expect(unitkaStorePnlLoader(ctx(), a.d)).rejects.toMatchObject({ code: 'STORE_PNL_CONTRACT_MIGRATION_REQUIRED' });
+      expect(a.calls.requests).toEqual([]);
+    });
+  });
+
+  it('остальные вкладки изменились во время записи → STORE_PNL_OTHER_TABS_CHANGED', async () => {
+    tabState.meta = tabState.meta.filter((m) => m.key !== CONTRACT_META_KEY);
+    tamperOnWrite = true;
+    try {
+      await withEnv({ UNITKA_STORE_PNL_PUBLISH: '1', UNITKA_STORE_PNL_SHEET_ID: String(TAB_ID), UNITKA_STORE_PNL_MIGRATE_CONTRACT: contractSha() }, async () => {
+        await expect(unitkaStorePnlLoader(ctx(), deps(PNL).d)).rejects.toMatchObject({ code: 'STORE_PNL_OTHER_TABS_CHANGED' });
+      });
+    } finally { tamperOnWrite = false; }
   });
 
   it('контракт: совпадает → без миграции; иной → только по точному допуску', () => {

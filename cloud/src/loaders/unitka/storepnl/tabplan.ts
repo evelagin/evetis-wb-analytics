@@ -202,6 +202,8 @@ export function toNum(v: unknown): number {
 }
 const r2 = (x: number): number => Math.round(x * 100) / 100;
 const r6 = (x: number): number => Math.round(x * 1e6) / 1e6;
+/** 1234.5 → «1 234,50» (русская запись суммы в тексте пояснения). */
+const rub = (x: number): string => r2(x).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const str = (v: unknown): string => String(v && typeof v === 'object' && 'value' in v ? (v as { value: unknown }).value : v ?? '');
 const bool = (v: unknown): boolean => v === true || v === 'true';
 
@@ -219,8 +221,8 @@ export function reasonText(p: PnlRow): string {
   else if (authority === 'HISTORICAL_CANONICAL') out.push('история: канонический расчёт по финотчёту WB (H0)');
   if (!bool(p.month_finance_final)) out.push('финотчёт месяца ещё не финальный');
   if (n('pending_rows') > 0) out.push(`неразобранных операций финотчёта: ${n('pending_rows')}`);
-  if (n('unknown_rub') > 0.5) out.push(`неизвестные расходы: ${r2(n('unknown_rub'))} ₽`);
-  if (n('unconsumed_finance_rub') > 0.5) out.push(`деньги финотчёта без колонки P&L: ${r2(n('unconsumed_finance_rub'))} ₽`);
+  if (n('unknown_rub') > 0.5) out.push(`неизвестные расходы: ${rub(n('unknown_rub'))} ₽`);
+  if (n('unconsumed_finance_rub') > 0.5) out.push(`деньги финотчёта без колонки P&L: ${rub(n('unconsumed_finance_rub'))} ₽`);
   if (n('ads_days') > 0 && n('ads_final_days') < n('ads_days')) out.push(`реклама: финальный биллинг за ${n('ads_final_days')} из ${n('ads_days')} дн.`);
   if (!bool(p.account_invoice_window_closed)) {
     const miss = [n('minimum_payment_invoices') > 0 ? '' : 'минимальный платёж', n('utilization_invoices') > 0 ? '' : 'утилизация'].filter(Boolean);
@@ -228,6 +230,8 @@ export function reasonText(p: PnlRow): string {
   }
   if (!bool(p.sku_month_closed) && st !== 'LEGACY_PARTIAL_KNOWN_DEFECTS') out.push('когорта дозревает (мост сроков — справочно)');
   if (n('inventory_loss_qty') > 0) out.push(`утрата товара: ${n('inventory_loss_qty')} ед. (списание по себестоимости)`);
+  // Неполный месяц без раскрытой причины — честная пометка, а не пустая ячейка.
+  if (!st.startsWith('FINANCIAL_COMPLETE') && out.every((x) => x.startsWith('история') || x.startsWith('утрата'))) out.push('причина неполноты во вью не раскрыта');
   return out.join('; ');
 }
 
@@ -317,7 +321,11 @@ export function buildTabPlan(pnl: readonly PnlRow[]): TabPlan {
     const rev = idx.reduce((s, i) => s + raw[i]!.revenue, 0);
     t[COL.MARGIN] = rev === 0 ? '' : r6(idx.reduce((s, i) => s + raw[i]!.net, 0) / rev);
     t[COL.STATE] = stateSummaryText(idx.map((i) => raw[i]!.state));
-    t[COL.REASON] = 'Сумма строк месяцев года. Состояние — сводка месяцев; окончательны только «Закрыт».';
+    // Наследие (август 2026 — справочная сумма Phase C) входит в сумму года как есть; размер раскрыт явно (решение владельца — оставить или исключить).
+    const legacy = idx.filter((i) => raw[i]!.state === STATE_LABEL.LEGACY_PARTIAL_KNOWN_DEFECTS);
+    const legacyNet = legacy.reduce((x, i) => x + (rows[i]![COL.NET] as number), 0);
+    t[COL.REASON] = 'Сумма строк месяцев года. Состояние — сводка месяцев; окончательны только «Закрыт».'
+      + (legacy.length ? ` Включает справочный месяц наследия: ${legacy.map((i) => rows[i]![COL.MONTH]).join(', ')} (прибыль ${rub(legacyNet)} ₽).` : '');
     body.push(t); kindsBody.push('total');
     totals.set(y, t);
   }

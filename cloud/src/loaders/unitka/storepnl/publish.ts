@@ -187,7 +187,7 @@ export function publishRequests(plan: TabPlan, sheetId: number, gridRows: number
   const requests: Record<string, unknown>[] = [];
 
   // 1. Сетка и снятие прежней раскладки.
-  if (rows + 10 > gridRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: rows + 10 - gridRows } });
+  if (rows > gridRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: rows - gridRows + 10 } });
   if (gridCols < TAB_COLS) requests.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: TAB_COLS - gridCols } });
   for (let i = 0; i < current.conditionalFormats; i++) requests.push({ deleteConditionalFormatRule: { sheetId, index: 0 } });
   for (const g of [...current.columnGroups].sort((a, b) => b.depth - a.depth)) requests.push({ deleteDimensionGroup: { range: dim('COLUMNS', g.startIndex, g.endIndex) } });
@@ -363,4 +363,15 @@ export function assertOnlyTab(sheetId: number, requests: readonly Record<string,
     }
     if (!ok) throw new Error(`запрос вне вкладки: ${JSON.stringify(r).slice(0, 200)}`);
   }
+}
+
+/**
+ * Отпечаток ОСТАЛЬНЫХ вкладок книги (F-18): sheetId, название, индекс, размеры сетки — до и после записи обязаны
+ * совпасть (как у «Ozon Магазин P&L»). Записи вне вкладки исключены assertOwnTab; отпечаток доказывает это на живой книге.
+ */
+export function otherTabsFingerprint(sheets: ReadonlyArray<{ sheetId: number; title: string; index: number; rowCount: number; columnCount: number }>,
+  ownSheetId: number): string {
+  const others = sheets.filter((s) => s.sheetId !== ownSheetId).map((s) => [s.sheetId, s.title, s.index, s.rowCount, s.columnCount])
+    .sort((a, b) => Number(a[0]) - Number(b[0]));
+  return createHash('sha256').update(JSON.stringify(others)).digest('hex');
 }

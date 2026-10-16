@@ -22,7 +22,7 @@ import { quoteSheet } from '../section.js';
 import { parseUnitkaComponents } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan, HEADER_ROW, type TabPlan } from './tabplan.js';
-import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, PUBLISH_META_KEY, CONTRACT_META_KEY, TAB_COLS,
+import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, otherTabsFingerprint, PUBLISH_META_KEY, CONTRACT_META_KEY, TAB_COLS,
   type TabStructure } from './publish.js';
 import { TAB_NOTES } from './tabplan.js';
 import { STORE_PNL_FROM } from './parse.js';
@@ -53,7 +53,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 
 export interface StorePnlDeps {
   makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'structureWrite' | 'readSheetStructure'>
-    & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes'>;
+    & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes' | 'readSheetsList'>;
   makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
   now: () => Date;
 }
@@ -179,6 +179,7 @@ export async function publishStorePnlTab(sheets: StorePnlSheets, plan: TabPlan, 
   if (d.action === 'REFUSE') throw new LoaderError(d.message, d.code);
   // NOOP по значениям не должен оставить миграцию без отпечатка контракта или заметки не по контракту.
   if (d.action === 'NOOP' && (c.migrate || notesOff >= 0)) d = { action: 'WRITE', sha: d.sha, previousSha: d.sha, clearRows: 0, adopted: false };
+  const othersBefore = d.action === 'WRITE' ? otherTabsFingerprint(await sheets.readSheetsList(), sheetId) : '';
   if (d.action === 'NOOP') {
     if (d.setMeta) await sheets.structureWrite(metaOnly(sheetId, d.sha, t.metas[0]?.id));
     logger.info('store_pnl_tab_published', { action: 'NOOP', sheetId, sha: d.sha, fingerprint: plan.fingerprint, metaUpdated: d.setMeta });
@@ -200,4 +201,7 @@ export async function publishStorePnlTab(sheets: StorePnlSheets, plan: TabPlan, 
   // Заметки заголовка после прогона — ровно тексты контракта (и после NOOP).
   const bad = await readHeaderNotes(after.columnCount, after.rowCount);
   if (bad >= 0) throw new LoaderError(`заметка заголовка ${colA1(bad + 1)}${HEADER_ROW + 1} не равна контракту`, 'STORE_PNL_PUBLISH_READBACK');
+  if (d.action === 'WRITE' && otherTabsFingerprint(await sheets.readSheetsList(), sheetId) !== othersBefore) {
+    throw new LoaderError('отпечаток остальных вкладок книги изменился во время публикации', 'STORE_PNL_OTHER_TABS_CHANGED');
+  }
 }
