@@ -100,7 +100,8 @@ def test_lost_ack_after_each_actual_write_never_reinserts(stage):
     'new_unknown_STOP','security_fail','latest_queued','latest_absent','count_missing',
     'ordinary_target_drift','completed_historical_report'])
 def test_fresh_initial_predicates_abort_before_writes(fault,monkeypatch):
-    with fixture() as (b,f):
+    # Undo nested pytest patches before the packaged fixture restores its originals.
+    with fixture() as (b,f), monkeypatch.context() as monkeypatch:
         ds=b.c['datasets']['tenant_locks'];orig_request=b.request;orig_select=b.select
         if fault=='actor404':
             b.request=lambda method,url,body=None: (_ for _ in ()).throw(BF.TT.TableError('HTTP 404')) if url.endswith(f['base']['actor']['name']) else orig_request(method,url,body)
@@ -193,7 +194,8 @@ def test_full_root_consumer_approves_only_f507_and_never_another_STOP(monkeypatc
     from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB
     from tools.tenancy import full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR
     from tools.tenancy import full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG,current_recon_recovery as CUR
-    with fixture() as (b,f):
+    # Undo nested pytest patches before the packaged fixture restores its originals.
+    with fixture() as (b,f), monkeypatch.context() as monkeypatch:
         p=observed(b);R.publish(b,p,b.manifest);b.full_tables=b.tables
         monkeypatch.setattr(CC,'acquire',lambda *a:None);monkeypatch.setattr(CC,'enabled',lambda *a:False)
         for module in (FC,PB,PT,FR,CR,ZE,LQ,PAG,CUR):monkeypatch.setattr(module,'load',lambda *a:[])
@@ -207,7 +209,8 @@ def test_full_root_consumer_approves_only_f507_and_never_another_STOP(monkeypatc
 
 
 def test_slow_observation_or_transport_never_turns_stale_facts_into_fresh(monkeypatch):
-    with fixture() as (b,f):
+    # Undo nested pytest patches before the packaged fixture restores its originals.
+    with fixture() as (b,f), monkeypatch.context() as monkeypatch:
         original=R.fresh_boundary; clock=[NOW]; b.clock=lambda:clock[0]
         def slow(*args):
             result=original(*args);clock[0]+=timedelta(minutes=16);return result
@@ -218,7 +221,8 @@ def test_slow_observation_or_transport_never_turns_stale_facts_into_fresh(monkey
 
 @pytest.mark.parametrize('after_first_write',[False,True])
 def test_freshness_rechecked_immediately_before_each_write(monkeypatch,after_first_write):
-    with fixture() as (b,f):
+    # Undo nested pytest patches before the packaged fixture restores its originals.
+    with fixture() as (b,f), monkeypatch.context() as monkeypatch:
         p=observed(b);original_observe=R.observe;original_create=b.tables.create_marker;clock=[NOW];b.clock=lambda:clock[0]
         def slow_observe(*args,**kwargs):
             value=original_observe(*args,**kwargs)
