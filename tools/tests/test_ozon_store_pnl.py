@@ -96,7 +96,11 @@ def test_no_wall_clock_and_no_wb(name):
     assert ".WB_" not in b and "`WB_" not in b
 
 
-@pytest.mark.parametrize("name", D3)
+# 2026-10-16: карта операций изменена Git-first (тип 29 → ANY) и ждёт развёртывания; снимок 15.10 сохранён.
+D3_PENDING = {"V_OZON_FINANCE_OPERATION_MAP"}
+
+
+@pytest.mark.parametrize("name", [n for n in D3 if n not in D3_PENDING])
 def test_manifest_entry_is_captured_live_after_deploy(name):
     # Развёрнуто 2026-10-15 из main a7108ab, readback MATCH, снятие R2C — PENDING_DEPLOYED_MATCH.
     o = next(o for o in MANIFEST["objects"] if o["object_name"] == name)
@@ -105,6 +109,18 @@ def test_manifest_entry_is_captured_live_after_deploy(name):
     assert (o["live_body_sha256_at_capture"], o["live_schema_sha256_at_capture"], o["live_description_sha256_at_capture"]) == (
         o["canonical_body_sha256"], o["canonical_schema_sha256"], o["canonical_description_sha256"])
     assert o["live_schema_at_capture"] == o["canonical_schema"]
+
+
+@pytest.mark.parametrize("name", sorted(D3_PENDING))
+def test_pending_entry_keeps_previous_live_capture(name):
+    o = next(o for o in MANIFEST["objects"] if o["object_name"] == name)
+    assert o["sync_state"] == "pending_deploy" and o["canonical_schema_verification"] == "unverified"
+    # прежнее снятие 15.10 не переписано: тело меняется, схема и описание — нет
+    assert o["capture_main_sha"] == "a7108ab80bde302f91887c4954ceff6f705d483d"
+    assert o["canonical_body_sha256"] != o["live_body_sha256_at_capture"]
+    assert (o["canonical_schema_sha256"], o["canonical_description_sha256"]) == (
+        o["live_schema_sha256_at_capture"], o["live_description_sha256_at_capture"])
+    assert V.sha256_text(body(name)) == o["canonical_body_sha256"]
 
 
 def test_existing_l1_l4_and_fct_untouched_by_d3():
@@ -301,3 +317,13 @@ def test_map_evidence_carries_no_business_amounts():
 def test_deploy_requires_live_upstream_views():
     assert deploy.upstream() == ["FCT_OZON_PNL_MONTHLY", "V_OZON_ADS_CPO_ORDERS", "V_OZON_CIS_BUYOUT",
                                  "V_OZON_MART_FRESHNESS"]
+
+
+def test_type29_sign_any_only_sign_changed():
+    """2026-10-16: тип 29 несёт сторно услуги вместе со сторно продажи (положительная строка) — знак ANY,
+    как у типа 32. Класс, колонка P&L и база даты не меняются; остальные типы последней мили — NEG."""
+    b = body("V_OZON_FINANCE_OPERATION_MAP")
+    row = re.search(r"\(29, '([^']*)', '([^']*)', '([^']*)', '([^']*)', '([^']*)',", b)
+    assert row and row.groups() == ("Доставка до места выдачи", "DIRECT_SKU", "F", "ORDER_MONTH", "ANY")
+    for t in (28, 98, 30):
+        assert re.search(rf"\({t}, '[^']*', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG',", b), t
