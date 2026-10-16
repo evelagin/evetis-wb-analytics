@@ -24,6 +24,7 @@ SOURCE_FILES = (
     'current_release_handoff.py',
     'current_recon_recovery.py','current_recon_image_check.py',
     'performance_dispatch_image_check.py',
+    'f507_recovery.py','f507_recovery_image_check.py','fixtures/f507_boundary.json','fixtures/f507_records.json','fixtures/f507_fresh.json',
 )
 
 
@@ -93,6 +94,10 @@ def block(c, settings, repo, release=None):
     diagnostic_recovery='fbo_zero_effect_recovery_version' in release
     single_diagnostic='fbo_source_isolation_version' in release
     current_data='current_data_version' in release
+    exact_f507='exact_f507_recovery_version' in release
+    if exact_f507:
+        expected.add('exact_f507_recovery_version')
+        if release.get('schema_version')!=4 or type(release['exact_f507_recovery_version']) is not int or release['exact_f507_recovery_version']!=1:raise ValueError('unqualified exact f507 recovery')
     if current_data:
         expected.add('current_data_version')
         if release.get('schema_version')!=4 or type(release['current_data_version']) is not int or release['current_data_version']!=1:raise ValueError('unqualified operational adapter')
@@ -121,6 +126,7 @@ def block(c, settings, repo, release=None):
     if diagnostic_recovery:required.add('fbo_zero_effect_adapter')
     if single_diagnostic:required.add('fbo_source_isolation_adapter')
     if current_data:required.add('current_data_adapter')
+    if exact_f507:required.add('exact_f507_recovery')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
