@@ -18,7 +18,7 @@ OPTIONS (description = "Таксономия начислений Ozon как д
 AS
 SELECT * FROM UNNEST([
   STRUCT(32 AS type_id, 'Логистика' AS operation_name, 'DIRECT_SKU' AS pnl_class, 'E' AS pnl_column, 'ORDER_MONTH' AS date_basis, 'ANY' AS expected_sign, CAST(NULL AS DATE) AS valid_from, CAST(NULL AS DATE) AS valid_to, 'D0 2026-10-11: экономический блок продажи + логистика; положительные строки - перерасчёт' AS evidence_ref),
-  (29, 'Доставка до места выдачи', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: последняя миля; несёт экономический блок'),
+  (29, 'Доставка до места выдачи', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'ANY', NULL, NULL, 'D0: последняя миля; несёт экономический блок. ANY с 2026-10-16: 2026-10-15 положительная строка - сторно услуги вместе со сторно продажи в том же начислении (есть зеркальная отрицательная строка, нетто отправления 0)'),
   (28, 'Последняя миля', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: 2025-04..05; несёт экономический блок'),
   (98, 'Доставка до места выдачи силами Ozon', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: последняя миля Ozon'),
   (30, 'Выдача товара', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG', NULL, NULL, 'D0: 2025-06'),

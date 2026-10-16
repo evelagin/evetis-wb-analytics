@@ -78,7 +78,8 @@ STORE_PNL_D3 = {"V_OZON_FINANCE_OPERATION_MAP", "V_OZON_STORE_ACCOUNT_LEDGER", "
                 "V_OZON_STORE_FINANCE_COVERAGE", "V_OZON_STORE_ADS_RECON_MONTHLY", "V_OZON_STORE_MONTH_STATE",
                 "V_OZON_STORE_PNL_MONTHLY"}
 # Развёрнуто 2026-10-15 из main a7108ab, снято read-only (PENDING_DEPLOYED_MATCH) — Git-first цикл закрыт.
-STORE_PNL_D3_PENDING: set = set()
+# 2026-10-16: тип 29 expected_sign NEG → ANY (OWNER ACK «D3 TYPE-29 SIGN FIX») — Git-first до развёртывания.
+STORE_PNL_D3_PENDING: set = {"V_OZON_FINANCE_OPERATION_MAP"}
 NON_R2A = {"ozon_mart": {"V_OZON_COMMISSION_RECOVERY", "V_OZON_CIS_BUYOUT", "FCT_OZON_SKU_PNL_DAILY",
                          "FCT_OZON_SKU_PNL_MONTHLY", "FCT_OZON_PNL_MONTHLY",
                          # Gate 8: провизорная экономика Ozon
