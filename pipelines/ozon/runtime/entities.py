@@ -724,6 +724,30 @@ def _date_chunks(d0, d1, days):
         cur = end + timedelta(days=1)
 
 
+def msk_day_report_window(d0, d1):
+    """Канон D2: сутки МСК d0..d1 включительно → поля даты POST /api/client/statistics.
+
+    «День» отчёта по SKU — московские сутки. Поля dateFrom/dateTo (ГГГГ-ММ-ДД) — те же сутки МСК
+    целиком, 00:00–23:59:59 (+03:00, без перехода на летнее время). Замер D2 2026-10-11 (3 окна,
+    18 кампаний): суммы суток по кампаниям равны ответу с моментами [d0−1 21:00Z, d1 21:00Z) и
+    биллингу /statistics/expense (кроме упора в дневной бюджет: там статистика выше списания).
+    Прежние моменты d0T00:00Z..d1T00:00Z теряли 00:00–02:59 МСК суток d0, а сутки d1 давали только
+    за эту ночь (TECH_DEBT P2-5). Окно длиннее ADS_SKU_STRICT_CHUNK_DAYS суток не заказывается:
+    после 62 суток Ozon молча отдаёт ноль строк.
+    """
+    if d0 > d1:
+        raise ValueError(f"окно отчёта: начало {d0} позже конца {d1}")
+    if (d1 - d0).days + 1 > ADS_SKU_STRICT_CHUNK_DAYS:
+        raise ValueError(f"окно отчёта {d0}..{d1} длиннее {ADS_SKU_STRICT_CHUNK_DAYS} суток")
+    return {"dateFrom": d0.isoformat(), "dateTo": d1.isoformat()}
+
+
+def msk_day_report_windows(d0, d1):
+    """Сутки МСК d0..d1 → окна отчёта: сплошь, без разрывов и пересечений, каждое ≤ 60 суток."""
+    return [(c0, c1, msk_day_report_window(c0, c1))
+            for c0, c1 in _date_chunks(d0, d1, ADS_SKU_STRICT_CHUNK_DAYS)]
+
+
 _CAMPAIGN_FILE_RE = re.compile(r"^(\d+)")
 
 
@@ -862,7 +886,7 @@ def _ads_sku_rows_strict(run_id, ts, d0, d1):
         for i in range(0, len(active), ADS_SKU_BATCH):
             batch = active[i:i + ADS_SKU_BATCH]
             code, sub = perf_post("/api/client/statistics",
-                                  {"campaigns": batch, "dateFrom": str(c0), "dateTo": str(c1),
+                                  {"campaigns": batch, **msk_day_report_window(c0, c1),
                                    "groupBy": "DATE"})
             uuid = (sub or {}).get("UUID")
             if not uuid:
@@ -912,102 +936,99 @@ def ads_sku_daily(run_id, ts, frm, to):
 
 
 def _ads_sku_rows_legacy(run_id, ts, d0, d1):
-    """Прежний путь EVETIS — без изменений поведения (дифференциальный тест T2)."""
-    # Окно отчёта — от d0T00:00Z до d1T00:00Z, то есть (d1 - d0) суток. Длиннее
-    # PERFORMANCE_REPORT_MAX_DAYS Ozon молча отдаёт ноль строк. Окно здесь НЕ
-    # дробится: границы — UTC-моменты, а сутки отчёта московские, и любое
-    # дробление даёт либо разрыв, либо одни сутки в двух частях
-    # (docs/architecture/TECH_DEBT.md, P2-5).
-    if (d1 - d0).days > PERFORMANCE_REPORT_MAX_DAYS:
-        _strict_cap("ads_sku_daily",
-                    f"окно {(d1 - d0).days} сут. длиннее {PERFORMANCE_REPORT_MAX_DAYS} сут., "
-                    "Performance API вернёт ноль строк",
-                    f"запускать окнами не длиннее {PERFORMANCE_REPORT_MAX_DAYS} сут. "
-                    "до решения по границам суток (TECH_DEBT P2-5)",
-                    window=f"{d0}..{d1}")
+    """Путь EVETIS. D2: окна — сутки МСК (msk_day_report_windows), CSV одной кампании разбирается.
+
+    Прежде отчёт заказывался одним запросом с моментами UTC from=d0T00:00Z, to=d1T00:00Z: сутки
+    d0 теряли 00:00–02:59 МСК, сутки d1 приходили только за эту ночь, а MERGE оставлял значение
+    последнего прогона — каждые сутки окончательно фиксировались без ночи (TECH_DEBT P2-5).
+    Теперь сутки d0..d1 запрашиваются целиком, отрезками ≤ 60 суток (суточный прогон — один
+    отрезок, бэкфилл SINCE/UNTIL — несколько, стык без разрыва и пересечения). Партия из одной
+    кампании приходит CSV, а не ZIP, и раньше терялась молча (P2-6). Периметр, ошибки и их
+    обработка — без изменений.
+    """
     code, txt = perf_get("/api/client/campaign")
     # Ветка code != 200 → пустой периметр оставлена как была (OPEN QUESTION R1).
     if code != 200:
         _strict_cap("ads_sku_daily", "список кампаний не получен, периметр пуст",
                     "повторить прогон; проверить доступ Performance API", http=code)
-    ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
-    # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
-    active = set()
-    c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={d0}&dateTo={d1}")
-    if c2 == 200:
-        for r in _csv_rows(t2):
-            if r.get("ID") and _rub(r.get("Расход")) > 0:
-                active.add(r["ID"])
-    else:
-        _strict_cap("ads_sku_daily", "расход кампаний за окно не получен, периметр пуст",
-                    "повторить прогон", http=c2, window=f"{d0}..{d1}")
-    ids = [i for i in ids if i in active]
+    all_ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
     rows = []
-    for i in range(0, len(ids), 10):
-        batch = ids[i:i + 10]
-        code, sub = perf_post("/api/client/statistics",
-                              {"campaigns": batch, "from": f"{d0}T00:00:00Z",
-                               "to": f"{d1}T00:00:00Z", "groupBy": "DATE"})
-        uuid = (sub or {}).get("UUID")
-        if not uuid:
-            _strict_cap("ads_sku_daily", "отчёт не заказан: в ответе нет UUID",
-                        "повторить прогон", http=code, batch_size=len(batch),
-                        window=f"{d0}..{d1}")
-            continue
-        state = None
-        for _ in range(ADS_REPORT_POLL_ATTEMPTS):
-            time.sleep(10)
-            c3, st = perf_get(f"/api/client/statistics/{uuid}", raw_text=False)
-            state = st.get("state") if c3 == 200 else None
-            if c3 == 200 and st.get("state") in ("OK", "ERROR"):
-                break
-        if state != "OK":
-            _strict_cap("ads_sku_daily", "отчёт не готов или завершился ошибкой",
-                        "повторить прогон", state=state, batch_size=len(batch),
-                        window=f"{d0}..{d1}")
-        c4, blob = perf_get(f"/api/client/statistics/report?UUID={uuid}", raw_text=True)
-        if c4 != 200:
-            _strict_cap("ads_sku_daily", "отчёт не скачан", "повторить прогон",
-                        http=c4, batch_size=len(batch), window=f"{d0}..{d1}")
-            continue
-        try:
-            z = zipfile.ZipFile(io.BytesIO(blob.encode("utf-8", "surrogateescape")))
-            files = [z.read(n).decode("utf-8-sig") for n in z.namelist()]
-            names = z.namelist()
-        except Exception:
-            # Партия из ОДНОЙ кампании приходит text/csv, а не ZIP (документация
-            # /api/client/statistics/report). Такая партия сейчас теряется молча —
-            # это известный дефект, исправление меняет поведение EVETIS
-            # (docs/architecture/TECH_DEBT.md, P2-6).
-            _strict_cap("ads_sku_daily", "отчёт не разобран как ZIP-архив",
-                        "если в партии одна кампания, ответ — CSV (известный дефект); "
-                        "до исправления такая партия не загружается",
-                        batch_size=len(batch), window=f"{d0}..{d1}")
-            continue
-        for name, txt2 in zip(names, files):
-            cid = name.split("_")[0]
-            lines = txt2.splitlines()
-            for r in _csv_rows("\n".join(lines[1:])):
-                sku = (r.get("sku") or "").strip()
-                if not sku:
-                    continue
-                dd = r["День"]
-                iso = f"{dd[6:10]}-{dd[3:5]}-{dd[0:2]}"
-                rows.append(dict(date=iso, campaign_id=cid, sku=sku,
-                    attributed_spend_rub=_rub(r.get("Расход, ₽, с НДС")),
-                    # счётчики: отсутствие показателя — ноль наблюдений, а не NULL
-                    impressions=int(_rub(r.get("Показы")) or 0),
-                    clicks=int(_rub(r.get("Клики")) or 0),
-                    cart_adds=int(_rub(r.get("Добавления в корзину")) or 0),
-                    orders=int(_rub(r.get("Продано товаров")) or 0),
-                    revenue_promo_rub=_rub(r.get("Продажи в продвижении, ₽")),
-                    ordered_total_rub=_rub(r.get("Заказано на сумму, ₽")),
-                    drr_promo_pct=_rub(r.get("ДРР в продвижении, %")),
-                    drr_total_pct=_rub(r.get("ДРР (общий), %")),
-                    attribution_status="ATTRIBUTED_ACTUAL",
-                    source_payload_hash=h(iso, cid, sku),
-                    **_meta("POST /api/client/statistics (async report)", run_id, ts)))
-        time.sleep(3)
+    for c0, c1, window in msk_day_report_windows(d0, d1):
+        # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
+        active = set()
+        c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={c0}&dateTo={c1}")
+        if c2 == 200:
+            for r in _csv_rows(t2):
+                if r.get("ID") and _rub(r.get("Расход")) > 0:
+                    active.add(r["ID"])
+        else:
+            _strict_cap("ads_sku_daily", "расход кампаний за окно не получен, периметр пуст",
+                        "повторить прогон", http=c2, window=f"{c0}..{c1}")
+        ids = [i for i in all_ids if i in active]
+        for i in range(0, len(ids), ADS_SKU_BATCH):
+            batch = ids[i:i + ADS_SKU_BATCH]
+            code, sub = perf_post("/api/client/statistics",
+                                  {"campaigns": batch, **window, "groupBy": "DATE"})
+            uuid = (sub or {}).get("UUID")
+            if not uuid:
+                _strict_cap("ads_sku_daily", "отчёт не заказан: в ответе нет UUID",
+                            "повторить прогон", http=code, batch_size=len(batch),
+                            window=f"{c0}..{c1}")
+                continue
+            state = None
+            for _ in range(ADS_REPORT_POLL_ATTEMPTS):
+                time.sleep(10)
+                c3, st = perf_get(f"/api/client/statistics/{uuid}", raw_text=False)
+                state = st.get("state") if c3 == 200 else None
+                if c3 == 200 and st.get("state") in ("OK", "ERROR"):
+                    break
+            if state != "OK":
+                _strict_cap("ads_sku_daily", "отчёт не готов или завершился ошибкой",
+                            "повторить прогон", state=state, batch_size=len(batch),
+                            window=f"{c0}..{c1}")
+            c4, blob = perf_get(f"/api/client/statistics/report?UUID={uuid}", raw_text=True)
+            if c4 != 200:
+                _strict_cap("ads_sku_daily", "отчёт не скачан", "повторить прогон",
+                            http=c4, batch_size=len(batch), window=f"{c0}..{c1}")
+                continue
+            raw = blob.encode("utf-8", "surrogateescape")
+            if raw[:2] == b"PK":
+                z = zipfile.ZipFile(io.BytesIO(raw))
+                files = [(n.split("_")[0], z.read(n).decode("utf-8-sig")) for n in z.namelist()]
+            elif len(batch) == 1:
+                # P2-6: одна кампания — ответ text/csv (документация /api/client/statistics/report)
+                files = [(batch[0], raw.decode("utf-8-sig"))]
+            else:
+                _strict_cap("ads_sku_daily", "отчёт по нескольким кампаниям пришёл не ZIP-архивом",
+                            "проверить формат отчёта", batch_size=len(batch), window=f"{c0}..{c1}")
+                continue
+            for cid, txt2 in files:
+                lines = txt2.splitlines()
+                for r in _csv_rows("\n".join(lines[1:])):
+                    sku = (r.get("sku") or "").strip()
+                    if not sku:
+                        continue
+                    dd = r["День"]
+                    iso = f"{dd[6:10]}-{dd[3:5]}-{dd[0:2]}"
+                    if not (str(c0) <= iso <= str(c1)):
+                        # Сутки вне запрошенного окна — нарушен контракт суток МСК: строка
+                        # перезаписала бы полные сутки частичными. Не записывать ничего.
+                        raise RuntimeError(f"ads_sku_daily: строка за {iso} вне окна {c0}..{c1}")
+                    rows.append(dict(date=iso, campaign_id=cid, sku=sku,
+                        attributed_spend_rub=_rub(r.get("Расход, ₽, с НДС")),
+                        # счётчики: отсутствие показателя — ноль наблюдений, а не NULL
+                        impressions=int(_rub(r.get("Показы")) or 0),
+                        clicks=int(_rub(r.get("Клики")) or 0),
+                        cart_adds=int(_rub(r.get("Добавления в корзину")) or 0),
+                        orders=int(_rub(r.get("Продано товаров")) or 0),
+                        revenue_promo_rub=_rub(r.get("Продажи в продвижении, ₽")),
+                        ordered_total_rub=_rub(r.get("Заказано на сумму, ₽")),
+                        drr_promo_pct=_rub(r.get("ДРР в продвижении, %")),
+                        drr_total_pct=_rub(r.get("ДРР (общий), %")),
+                        attribution_status="ATTRIBUTED_ACTUAL",
+                        source_payload_hash=h(iso, cid, sku),
+                        **_meta("POST /api/client/statistics (async report)", run_id, ts)))
+            time.sleep(3)
     return rows
 
 
