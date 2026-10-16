@@ -120,6 +120,10 @@ jobs:
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_recon_image_check
       - name: verify Performance cooldown before source dispatch (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.performance_dispatch_image_check
+      - name: exact f507 owner recovery regression (offline)
+        run: python -m pytest -q tools/tests/test_f507_recovery.py
+      - name: exact f507 recovery transport (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.f507_recovery_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 
