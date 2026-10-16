@@ -239,3 +239,50 @@ resource "google_cloud_run_v2_job_iam_member" "ozon_scheduler_invoke" {
   role     = "roles/run.invoker"
   member   = "serviceAccount:${local.ozon_scheduler_sa}"
 }
+
+# ── Наблюдаемость D1: контроль денег начислений Ozon (finance_accrual) ──────────────────────────
+# В обычном режиме EVETIS расхождение контроля денег суток и карантин начисления НЕ валят сущность
+# (иначе Юнитка Ozon, читающая только OK-прогоны, замёрзла бы на окно 30 суток). Вместо отказа
+# pipelines/ozon/runtime/entities.py пишет JSON-строку в stdout: common.log() → print(json.dumps(kw)),
+# Cloud Run разбирает её в LogEntry: поле severity → уровень записи, остальные поля → jsonPayload.
+# Код события — jsonPayload.code: OZON_FINANCE_CONTROL_MISMATCH / OZON_FINANCE_ACCRUAL_QUARANTINED
+# (severity ERROR), OZON_FINANCE_CONTROL_SKIPPED (WARNING — под фильтр не попадает намеренно).
+# DRO-1 читает только status прогона (OK), поэтому без этой политики события не читал бы никто.
+# Отдельная политика: условия существующих политик на месте не меняются (см. ozon_unitka.tf, 06.10.2026).
+# Канал тот же, что у Юнитки и CPO. Применять — только по отдельному ACK владельца.
+resource "google_monitoring_alert_policy" "ozon_runtime_finance_control" {
+  count        = var.unitka_alert_email == "" ? 0 : 1
+  display_name = "OZON finance_accrual: деньги начислений не сошлись или начисление в карантине"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "OZON_FINANCE_* уровня ERROR в логах ozon-runtime-*"
+    condition_matched_log {
+      filter = <<-EOT
+        resource.type="cloud_run_job"
+        resource.labels.job_name=~"^ozon-runtime-"
+        severity>=ERROR
+        jsonPayload.code!=""
+        jsonPayload.code=~"^OZON_FINANCE_"
+      EOT
+      label_extractors = {
+        error_code = "EXTRACT(jsonPayload.code)"
+        day        = "EXTRACT(jsonPayload.day)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
+  documentation {
+    content   = "Загрузка начислений Ozon (finance_accrual) записала строки, но деньги суток не доказаны. Прогон остался OK, Юнитка не заблокирована. OZON_FINANCE_CONTROL_MISMATCH: Σ total_amount ≠ Σ разобранного — в ответе Ozon появился блок, который разбор не читает (остаток в jsonPayload.residual_rub). OZON_FINANCE_ACCRUAL_QUARANTINED: у экономического блока несогласованные знаки, начисление не записано (jsonPayload.accrual_id). Событие повторяется ежедневно, пока сутки в окне 30 суток. Пометка: ozon_raw.OZON_INGESTION_RUNS.error_message у строки entity=finance_accrual. Что делать: расширить _finance_rows (pipelines/ozon/runtime/entities.py) и дозагрузить сутки; история — tools/ozon_d1_finance_repair.py. Док: docs/ozon/OZON_FINANCE_TAXONOMY_V1.md §3b."
+    mime_type = "text/markdown"
+  }
+  depends_on = [google_project_service.enabled]
+}

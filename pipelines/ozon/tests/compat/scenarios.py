@@ -144,7 +144,10 @@ class FakeOzon:
             n = self.pages["fin"]
             per_day = a.get("fin_pages_per_day", 1)
             more = a.get("endless") or (n % per_day != 0)
+            # total_amount — как в настоящем ответе: эталон его не читает (валюта та же),
+            # текущий runtime сверяет по нему деньги суток (D1) и не пишет лишних событий.
             return 200, {"accruals": [{"accrual_id": f"A{n}", "accrued_category": "OTHER", "unit_number": n,
+                                       "total_amount": {"amount": "1.5", "currency": "RUB"},
                                        "non_item_fee": {"type_id": 1, "accrued": {"amount": "1.5"}}}],
                          "last_id": f"L{n}" if more else ""}
         if path == "/api/client/campaign":
