@@ -495,6 +495,8 @@ def wake(base, root):
         approved += zero_effect + quarantines + PAG.load(backend,manifest,records)
         from tools.tenancy import current_recon_recovery as CURRENT_RECON
         approved += CURRENT_RECON.load(backend,manifest,records)
+        from tools.tenancy import f507_recovery as EXACT_F507
+        approved += EXACT_F507.load(backend,manifest,records)
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
