@@ -95,7 +95,13 @@ def validate(p,b,m,records,*,final=True):
  sh=b.store.history(p['shard'],max_records=F.MAX_LEAF_RECORDS);doc,receipt=verify_shard(p,sh,final=final)
  if not any(r['kind']=='CHUNK_PLAN' and r['sequence']==p['index'] and r['payload']['plan']==doc and r['payload']['shard_root']==p['shard'] for r in records):fail('frozen leaf absent')
  lease=b.tables.get_table(b.c['datasets']['tenant_locks'],BF.CK.lease_name('50c5d90dbf43ac9c',190))
- if not lease or D.digest(lease)!=p['original_lease_hash']:fail('original lease changed')
+ if lease is None:
+  # The RUNNING checkpoint supplies the term; the certificate's lease hash
+  # must reproduce from it, so neither copy alone can shorten the TTL.
+  until=PT.running_lease_until(b,p['project'],'fbo_postings',p['ack_hash'],190,p['run_id'])
+  if (not final or until is None or D.digest(PT.lease_value(p['run_id'],p['ack_hash'],until))!=p['original_lease_hash']
+      or not PT.lease_expired(b,until)):fail('original lease absent before qualified expiration')
+ elif D.digest(lease)!=p['original_lease_hash']:fail('original lease changed')
  rows=b.select(f"SELECT DISTINCT status,lease_owner,error_code,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='fbo_postings' AND plan_hash=@ack AND lease_generation=190 LIMIT 3",{'ack':('STRING',p['ack_hash'])})
  original=dict(status='RUNNING',lease_owner=p['run_id'],error_code=None,evidence_json='{"mode": "BOUNDED_PILOT", "proof": null}')
  if D.digest(original)!=p['original_checkpoint_hash'] or original not in rows:fail('original checkpoint bytes changed')

@@ -4,6 +4,7 @@ No automatic recovery, success receipt, reconciliation or source replay. The
 original STOP, intent, RUNNING checkpoint and lease remain immutable. A fresh
 owner attestation and packaged old-image proof are mandatory before publication.
 """
+import json
 import re
 from datetime import timedelta
 from tools.tenancy import durable_plan as D,tenant_backfill as BF,full_history as F
@@ -34,6 +35,26 @@ FIELDS=frozenset(EXACT)|{'version','type','tenant','project','manifest_hash','ne
  'source_state_hash','closure_hash','hash'}
 
 def fail(message):raise BF.B.EvidenceError('full pretransport recovery: '+message)
+
+# BigQuery alone removes an original lease table: start() sets its
+# expirationTime to lease_until+LEASE_TABLE_KEEP. Absence is accepted only
+# strictly after that instant plus a clock-skew grace, never earlier.
+LEASE_EXPIRY_GRACE=timedelta(seconds=5)
+def lease_value(run_id,ack_hash,until):
+ """Exact (labels, description) start() wrote; label until is whole epoch seconds."""
+ return {'until':str(int(until.timestamp())),'owner':run_id},json.dumps({'mode':'BOUNDED_PILOT','ack_hash':ack_hash})
+def lease_expired(b,until):return b.clock()>=until+BF.CK.LEASE_TABLE_KEEP+LEASE_EXPIRY_GRACE
+def lease_until(value):
+ """Retained checkpoint TIMESTAMP (REST epoch or ISO UTC) or None if ambiguous."""
+ from tools.tenancy import cloud_controller as C
+ try:return C.timestamp(value) if isinstance(value,str) else None
+ except (BF.B.EvidenceError,TypeError,ValueError):return None
+def running_lease_until(b,project,entity,ack_hash,generation,run_id):
+ """The original RUNNING checkpoint is the durable copy of the lease term."""
+ rows=b.select(f"SELECT DISTINCT FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ',lease_until,'UTC') AS lease_until FROM `{project}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity=@entity AND plan_hash=@ack AND lease_generation=@gen AND status='RUNNING' AND lease_owner=@run AND run_id=@run LIMIT 2",
+  {'entity':('STRING',entity),'ack':('STRING',ack_hash),'gen':('INT64',generation),'run':('STRING',run_id)})
+ if len(rows)!=1 or set(rows[0])!={'lease_until'}:return None
+ return lease_until(rows[0]['lease_until'])
 def sealed(p):return dict(p,hash=D.digest(p))
 def authority_name(p):return 'BFPT_AUTH_'+p['root']+'_'+p['stop_hash']
 def certificate_name(p):return 'BFPT_'+p['hash']
@@ -88,7 +109,13 @@ def validate(p,b,m,records,*,final=True):
  sh=b.store.history(p['shard'],max_records=F.MAX_LEAF_RECORDS);doc=verify_shard(p,sh,final=final)
  if not any(r['kind']=='DEPENDENCY_PLAN' and r['payload']['plan']==doc and r['payload']['shard_root']==p['shard'] for r in records):fail('frozen dependency missing')
  lease=b.tables.get_table(b.c['datasets']['tenant_locks'],f"L_50c5d90dbf43ac9c_{p['lease_generation']:04d}")
- if not lease or lease[0].get('owner')!=p['run_id'] or parse(lease[1]).get('ack_hash')!=p['ack_hash']:fail('original lease differs')
+ if lease is None:
+  # The certificate retains no lease bytes; the original RUNNING checkpoint
+  # (verified below) is the only durable term. Only a completed closure may
+  # outlive the table, and the LD_/checkpoint checks below stay mandatory.
+  until=running_lease_until(b,p['project'],'catalog',p['ack_hash'],p['lease_generation'],p['run_id'])
+  if not final or until is None or not lease_expired(b,until):fail('original lease absent before qualified expiration')
+ elif lease[0].get('owner')!=p['run_id'] or parse(lease[1]).get('ack_hash')!=p['ack_hash']:fail('original lease differs')
  if final and b.tables.get_table(b.c['datasets']['tenant_locks'],f"LD_50c5d90dbf43ac9c_{p['lease_generation']:04d}")!=release_value(p):fail('source-free release differs')
  rows=[checkpoint_row(r) for r in b.select(f"SELECT DISTINCT status,lease_owner,error_code,evidence_json FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='catalog' AND plan_hash=@ack AND lease_generation=170 LIMIT 3",{'ack':('STRING',p['ack_hash'])})]
  if len(rows)>2:fail('extra checkpoint evidence version')
