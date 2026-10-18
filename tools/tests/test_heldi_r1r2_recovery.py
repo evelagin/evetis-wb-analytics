@@ -377,7 +377,7 @@ class Live:
         b.journal = 'mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS'
         def select(sql, params):
             if 'COUNT(*)' in sql:
-                key = 'journal' if 'OZON_INGESTION_RUNS' in sql else ('foreign' if 'NOT (entity' in sql else 'checkpoints')
+                key = 'journal' if 'OZON_INGESTION_RUNS' in sql else ('foreign' if 'NOT (IFNULL(entity' in sql else 'checkpoints')
                 return [{'n': self.counts[key]}]
             return s.w.select(sql, params)
         b.select = select
@@ -448,3 +448,19 @@ def test_r2_live_boundary_false_pass_cases_fail_closed(monkeypatch, fault):
     L = Live(R2, monkeypatch, R2_FAULTS[fault])
     with pytest.raises((BF.B.EvidenceError, KeyError, TypeError)):
         L.run()
+
+
+# ---------------------------------------------------------------- partial publication is never an acceptance
+@pytest.mark.parametrize('module,n', [(R1, 8), (R2, 4)])
+def test_partial_publication_never_resolves_the_stop(monkeypatch, module, n):
+    for k in range(1, n):  # every interruption point before the final commit marker
+        s = make(module, monkeypatch); s.w.lose_at = s.w.attempts + k
+        with pytest.raises(Crash):
+            module.publish(s.b, s.p, s.m)
+        rs = s.b.store.history(module.ROOT)
+        assert module.load(s.b, s.m, rs) == []
+        assert module.STOP in {D.digest(r) for r in rs if r['kind'] == 'STOPPED'}
+        if module is R1:  # the shard stays blocked: no proof is loadable from a partial state
+            assert D.decide_tick(s.b.store.history(R1.SHARD), R1.SHARD, {'status': 'ELIGIBLE'},
+                                 verified_pretransport=R1.load(s.b, s.m, rs))['action'] == 'RECOVER_RECEIPT_OR_STOP'
+        monkeypatch.undo()

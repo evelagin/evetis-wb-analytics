@@ -276,9 +276,9 @@ def fresh_effects(b, after):
     if not leases or leases[-1] != x['lease_max']:
         fail('later source lease')
     j = b.select(f"SELECT COUNT(*) AS n FROM `{b.journal}` WHERE started_at>=@t", {'t': ('TIMESTAMP', after)})
-    cp = b.select("SELECT COUNT(*) AS n FROM `mpa-t-client-001.tenant_ops.BACKFILL_CHECKPOINTS` WHERE updated_at>=@t AND entity!='orchestration' AND IFNULL(run_id,'')!=@run",
+    cp = b.select("SELECT COUNT(*) AS n FROM `mpa-t-client-001.tenant_ops.BACKFILL_CHECKPOINTS` WHERE (updated_at>=@t OR updated_at IS NULL) AND IFNULL(entity,'')!='orchestration' AND IFNULL(run_id,'')!=@run",
                   {'t': ('TIMESTAMP', after), 'run': ('STRING', RUN)})
-    foreign = b.select("SELECT COUNT(*) AS n FROM `mpa-t-client-001.tenant_ops.BACKFILL_CHECKPOINTS` WHERE run_id=@run AND NOT (entity='supplies' AND lease_generation=285 AND plan_hash=@ack)",
+    foreign = b.select("SELECT COUNT(*) AS n FROM `mpa-t-client-001.tenant_ops.BACKFILL_CHECKPOINTS` WHERE run_id=@run AND NOT (IFNULL(entity,'')='supplies' AND IFNULL(lease_generation,-1)=285 AND IFNULL(plan_hash,'')=@ack)",
                        {'run': ('STRING', RUN), 'ack': ('STRING', ACK_HASH)})
     if j != [{'n': 0}] or cp != [{'n': 0}] or foreign != [{'n': 0}]:
         fail('source journal/checkpoint after actor')
