@@ -356,6 +356,9 @@ def monitoring(backend,manifest,records,done,p,now):
     for module in (PB,PT,FR,ZE):
         if any(r['kind']==module.KIND for r in records):approved+=module.load(backend,manifest,records)
     if any(r['kind']==CR.KIND for r in records):approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
+    # Same exact owner acceptances as the full_controller STOP gate (STOP819, f507).
+    from tools.tenancy import current_recon_recovery as CURRENT_RECON,f507_recovery as EXACT_F507
+    approved += CURRENT_RECON.load(backend,manifest,records)+EXACT_F507.load(backend,manifest,records)
     stops={D.digest(r) for r in records if r['kind']=='STOPPED'}-{x['stop_hash'] for x in approved}
     plans={n:r['payload'] for n,r in enumerate(records) if r['kind'] in {'CHUNK_PLAN','DEPENDENCY_PLAN'} and not (local and r['payload']['plan']['runtime_plan']['entity']=='fbo_postings')}
     waiting=len(pending_receipts(backend,plans))
