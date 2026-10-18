@@ -1,9 +1,12 @@
 """Packaged, network-free proofs for the exact Heldi R1/R2 owner recoveries."""
+import hashlib
 from copy import deepcopy
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from tools.tenancy import cloud_access as A, tenant_backfill as BF, durable_plan as D, full_history as F
 from tools.tenancy import full_retained_pretransport_recovery as R1, full_inventory_gate_recovery as R2
 from pipelines.ozon.runtime import full_resume as FR
+from tools.tenancy.validation import parse_tenant_json as parse
 
 SAMPLE = dict(new_source='2' * 40, new_image='europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:' + '2' * 64,
               new_implementation_hash='3' * 64, owner_ack_sha256='4' * 64, qualification_hash='5' * 64, review_hash='6' * 64,
@@ -62,8 +65,70 @@ def unknown_predicates_block(module, p, m):
             raise AssertionError('unknown recovery predicate accepted')
 
 
+def staged_descriptors_real_hashes():
+    """Real fresh_effects + verify_artifact_source of THIS image: the byte-pinned 18.10 ec2b3a7 descriptor and the
+    image's own staged PAUSED descriptor built from its actual packaged hashes pass; any deviation stops."""
+    from tools.tenancy import cloud_controller as C, orchestration_contract as O
+    stamp = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc)
+    pinned = parse((BF.REPO / 'tools/tenancy/fixtures/heldi_post_rollout_staged_descriptor.json').read_text())
+    assert hashlib.sha256(pinned['description'].encode()).hexdigest() == R1.STAGED_DESCRIPTORS[pinned['name']][1]
+    path = BF.REPO / 'CONTROLLER_SOURCE_SHA'
+    own = path.read_text().strip() if path.exists() else '1' * 40
+    base = parse((BF.REPO / 'infra/tenant/releases/backfill/ec2b3a7bcf73d52a20c2032db6a28d65f3833887.json').read_text())
+    image = 'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:' + 'e' * 64
+    release = dict(base, source_sha=own, image=image, controller_implementation_hash=O.implementation_hash(BF.REPO))
+    assert release['runtime_implementation_hash'] == BF.B.implementation_hash(), 'Ozon runtime changed'
+    O.verify_artifact_source(release, BF.REPO)
+    labels = {'root': R1.ROOT[:16], 'kind': 'deployment_spec'}
+
+    def spec(source, rel, state='PAUSED'):
+        return C.descriptor_name(source, R1.ROOT, state), (dict(labels), D.encoded(dict(settings=dict(release=source, root_hash=R1.ROOT, scheduler_state=state), release=rel)))
+
+    def run(extra, env_source=own, env_image=image, actor=R1.baseline()['actor']['createTime']):
+        tables = {('tenant_locks', z['name']): (z['labels'], '{}', z['created_ms']) for z in R1.baseline()['locks_after_actor']}
+        tables[('tenant_locks', pinned['name'])] = (pinned['labels'], pinned['description'], pinned['created_ms'])
+        for name, value, created in extra:
+            tables[('tenant_locks', name)] = (value[0], value[1], created)
+        get = lambda ds, n: (lambda v: (v[0], v[1]) if v else None)(tables.get((ds, n)))
+        listing = lambda ds, with_expiry=False: [(n, v[0], stamp(v[2]), None) if with_expiry else (n, v[0], stamp(v[2]))
+                                                 for (d, n), v in tables.items() if d == ds]
+        c = deepcopy(BF.target('client_001'))
+        c['orchestration'] = {'job': {'env': {'CONTROLLER_SOURCE_SHA': env_source, 'HISTORICAL_SCHEDULER_STATE': 'PAUSED', 'CONTROLLER_IMAGE': env_image}}}
+        b = SimpleNamespace(c=c, tables=SimpleNamespace(get_table=get, list_tables=listing), journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS',
+                            select=lambda sql, params: [{'n': 0}])
+        R1.fresh_effects(b, actor)
+
+    later = pinned['created_ms'] + 3600000
+    run([spec(own, release) + (later,)])
+    run([spec(own, release) + (later,)], actor=R2.baseline()['actor']['createTime'])
+    run([])   # the pinned descriptor alone (the current production state)
+    forged = dict(release, controller_implementation_hash='0' * 64)
+    bad = {
+        'foreign_implementation_hash': [spec(own, forged) + (later,)],
+        'enabled_own_descriptor': [spec(own, release, 'ENABLED') + (later,)],
+        'third_source': [spec('6' * 40, dict(release, source_sha='6' * 40)) + (later,)],
+        'image_differs_from_installed': [spec(own, dict(release, image=image.replace('e' * 64, 'f' * 64))) + (later,)],
+        'unknown_table': [('X_unknown', ({}, '{}'), later)],
+    }
+    for case, extra in bad.items():
+        try:
+            run(extra)
+        except BF.B.EvidenceError:
+            continue
+        raise AssertionError('staged descriptor false pass: ' + case)
+    try:
+        run([], env_source='6' * 40)   # installed env cannot vouch for a descriptor it does not own
+        run([spec(own, release) + (later,)], env_source='6' * 40)
+    except BF.B.EvidenceError:
+        pass
+    else:
+        raise AssertionError('foreign installed source accepted own descriptor')
+    return own
+
+
 def check():
     m = FR.manifest(); x1 = R1.baseline()
+    staged_descriptors_real_hashes()
     i, doc, prep, authority = intent_dispatch(); job = prep['job'].rsplit('/', 1)[-1]
     assert D.digest(i) == R1.INTENT and sorted(D.digest(r) for r in x1['shard_records']) == x1['protected_shard_hashes']
     # Old derivation reproduces the rejection before any credential or transport.
@@ -120,7 +185,8 @@ def check():
     return {'r1_old_scope_rejection_reproduced': 'PASS', 'r1_zero_token_and_transport': 'PASS',
             'r1_replacement_exact_dispatch': 'PASS', 'r1_shard_stops_without_closure': 'PASS',
             'r1_new_sequence_after_closure': 'PASS', 'r1_tampered_proof_blocks': 'PASS', 'r1_unknown_predicates_block': 'PASS',
-            'r2_independent_certificate': 'PASS', 'r2_unknown_predicates_block': 'PASS', 'r2_finishing_peer_waits': 'PASS'}
+            'r2_independent_certificate': 'PASS', 'r2_unknown_predicates_block': 'PASS', 'r2_finishing_peer_waits': 'PASS',
+            'r1r2_staged_descriptors_real_hashes': 'PASS'}
 
 
 if __name__ == '__main__':
