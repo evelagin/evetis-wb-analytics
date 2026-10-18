@@ -98,3 +98,45 @@ def test_historical_qualified_runtime_pair_survives_next_diagnostic_release():
  assert retained['marketplaces']['ozon']['runtime_image']==r['runtime_image'] and c==original
  bad=deepcopy(r);bad['runtime_implementation_hash']='f'*64
  with pytest.raises(ValueError,match='registration differs'):O.historical_contract(c,bad)
+
+# Factual RUNNING checkpoint term of generation 190; the fixture lease label
+# until=1791731789 is its whole-second projection, as start() writes both.
+TERM='2026-10-11T15:16:29.489259Z'
+
+@pytest.mark.parametrize('case',['present','present_after_term','absent_before','absent_at_kept_expiry','absent_after',
+ 'absent_after_LD_changed','absent_after_LD_missing','absent_after_checkpoint_changed','absent_after_no_term',
+ 'absent_after_ambiguous_term','absent_after_term_differs_from_certificate','present_bytes_changed'])
+def test_original_lease_may_vanish_only_after_certificate_bound_ttl(monkeypatch,case):
+ from datetime import timedelta
+ from tools.tenancy import full_pretransport_recovery as PT
+ m,p,b,root,sh,objects,rows,effects,*_=fixture()
+ monkeypatch.setattr(R,'observe',lambda *a,**k:(deepcopy(p),{}))
+ assert R.publish(b,p,m)==p and R.load(b,m,root)==[p]
+ terms={'absent_after_no_term':[],'absent_after_ambiguous_term':[{'lease_until':TERM},{'lease_until':'2026-10-11T14:16:29.489259Z'}],
+  # One second earlier would expire earlier; the certificate lease hash rejects it.
+  'absent_after_term_differs_from_certificate':[{'lease_until':'2026-10-11T15:16:28.489259Z'}]}.get(case,[{'lease_until':TERM}])
+ base=b.select;asked=[]
+ def select(sql,params):
+  if 'AS lease_until' not in sql:return base(sql,params)
+  assert params=={'entity':('STRING','fbo_postings'),'ack':('STRING',p['ack_hash']),'gen':('INT64',190),'run':('STRING',p['run_id'])}
+  asked.append(sql);return deepcopy(terms)
+ b.select=select
+ deadline=PT.lease_until(TERM)+BF.CK.LEASE_TABLE_KEEP+PT.LEASE_EXPIRY_GRACE
+ lease='L_50c5d90dbf43ac9c_0190';before=deepcopy(effects)
+ if case=='absent_after_term_differs_from_certificate':deadline-=timedelta(seconds=1)
+ if case.startswith('absent'):del objects[lease]
+ b.clock={'absent_before':lambda:deadline-timedelta(microseconds=1),
+          'absent_at_kept_expiry':lambda:deadline-PT.LEASE_EXPIRY_GRACE}.get(case,lambda:deadline)
+ if case=='absent_after_LD_changed':objects['LD_50c5d90dbf43ac9c_0190']=({'owner':p['run_id']},'{}')
+ if case=='absent_after_LD_missing':del objects['LD_50c5d90dbf43ac9c_0190']
+ if case=='absent_after_checkpoint_changed':rows[0]['evidence_json']='{"mode": "BOUNDED_PILOT", "proof": 0}'
+ if case=='present_bytes_changed':objects[lease]=({'owner':p['run_id'],'until':'1791731788'},objects[lease][1])
+ if case in ('present','present_after_term','absent_after'):
+  assert R.load(b,m,root)==[p] and bool(asked)==(case=='absent_after')
+ else:
+  reason={'absent_after_LD_changed':'additive failed closure','absent_after_LD_missing':'additive failed closure',
+   'absent_after_checkpoint_changed':'checkpoint','present_bytes_changed':'original lease changed'}.get(case,'qualified expiration')
+  with pytest.raises(BF.B.EvidenceError,match=reason):R.load(b,m,root)
+ assert effects==before
+ if case=='absent_after':
+  with pytest.raises(BF.B.EvidenceError,match='qualified expiration'):R.validate(p,b,m,root,final=False)

@@ -1,0 +1,3443 @@
+{
+ "actor": {
+  "completionTime": "2026-10-17T07:46:39.936370Z",
+  "conditions": [
+   {
+    "lastTransitionTime": "2026-10-17T07:45:41.334600Z",
+    "message": "Started deployed execution in 20.74s.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "Started"
+   },
+   {
+    "executionReason": "NON_ZERO_EXIT_CODE",
+    "lastTransitionTime": "2026-10-17T07:46:39.936370Z",
+    "message": "Task tenant-backfill-controller-ff9bq-task0 failed with exit code: 2 and message: The container exited with an error.",
+    "state": "CONDITION_FAILED",
+    "type": "Completed"
+   },
+   {
+    "lastTransitionTime": "2026-10-17T07:45:20.417399Z",
+    "message": "Imported container image.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "ContainerReady"
+   },
+   {
+    "lastTransitionTime": "2026-10-17T07:45:20.588126Z",
+    "message": "Provisioned imported containers.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "ResourcesAvailable"
+   }
+  ],
+  "createTime": "2026-10-17T07:45:19.663793Z",
+  "creator": "sa-backfill-wake@mpa-t-client-001.iam.gserviceaccount.com",
+  "etag": "\"CI_PzNYGEOjawrwC/cHJvamVjdHMvbXBhLXQtY2xpZW50LTAwMS9sb2NhdGlvbnMvZXVyb3BlLXdlc3QxL2pvYnMvdGVuYW50LWJhY2tmaWxsLWNvbnRyb2xsZXIvZXhlY3V0aW9ucy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1mZjlicQ\"",
+  "failedCount": 1,
+  "generation": "1",
+  "job": "tenant-backfill-controller",
+  "launchStage": "GA",
+  "logUri": "https://console.cloud.google.com/logs/viewer?project=mpa-t-client-001&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22tenant-backfill-controller%22%0Aresource.labels.location%3D%22europe-west1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22tenant-backfill-controller-ff9bq%22",
+  "name": "projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-ff9bq",
+  "observedGeneration": "1",
+  "parallelism": 1,
+  "startTime": "2026-10-17T07:45:23.324526Z",
+  "taskCount": 1,
+  "template": {
+   "containers": [
+    {
+     "command": [
+      "python",
+      "-m",
+      "tools.tenancy.cloud_controller"
+     ],
+     "env": [
+      {
+       "name": "BQ_LOCATION",
+       "value": "EU"
+      },
+      {
+       "name": "TENANT_BINDING_REQUIRED",
+       "value": "1"
+      },
+      {
+       "name": "CONTROLLER_SOURCE_SHA",
+       "value": "8429b691f3c348e515a5db42d57c8ff040a46018"
+      },
+      {
+       "name": "HISTORICAL_CADENCE_POLICY",
+       "value": "eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de"
+      },
+      {
+       "name": "BQ_REF_DATASET",
+       "value": "ref"
+      },
+      {
+       "name": "GCP_PROJECT_ID",
+       "value": "mpa-t-client-001"
+      },
+      {
+       "name": "BQ_RAW_DATASET",
+       "value": "ozon_raw"
+      },
+      {
+       "name": "TENANT_ID",
+       "value": "client_001"
+      },
+      {
+       "name": "HISTORICAL_SCHEDULER_STATE",
+       "value": "ENABLED"
+      },
+      {
+       "name": "STRICT_PAGE_CAPS",
+       "value": "1"
+      },
+      {
+       "name": "CURRENT_DATA_MODE",
+       "value": "CURRENT_DATA_V1"
+      },
+      {
+       "name": "BACKFILL_ROOT_HASH",
+       "value": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+      },
+      {
+       "name": "CONTROLLER_IMAGE",
+       "value": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88"
+      }
+     ],
+     "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88",
+     "resources": {
+      "limits": {
+       "cpu": "1000m",
+       "memory": "1Gi"
+      }
+     }
+    }
+   ],
+   "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
+   "maxRetries": 0,
+   "serviceAccount": "sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com",
+   "timeout": "1800s"
+  },
+  "uid": "18db4a52-02cc-4450-9f8b-a5dcb41d9b0d",
+  "updateTime": "2026-10-17T07:45:19.663793Z"
+ },
+ "actor_tasks": {
+  "tasks": [
+   {
+    "completionTime": "2026-10-17T07:46:38.197620Z",
+    "conditions": [
+     {
+      "state": "CONDITION_SUCCEEDED",
+      "type": "Started"
+     },
+     {
+      "executionReason": "NON_ZERO_EXIT_CODE",
+      "message": "The container exited with an error.",
+      "state": "CONDITION_FAILED",
+      "type": "Completed"
+     }
+    ],
+    "containers": [
+     {
+      "command": [
+       "python",
+       "-m",
+       "tools.tenancy.cloud_controller"
+      ],
+      "env": [
+       {
+        "name": "BQ_LOCATION",
+        "value": "EU"
+       },
+       {
+        "name": "TENANT_BINDING_REQUIRED",
+        "value": "1"
+       },
+       {
+        "name": "CONTROLLER_SOURCE_SHA",
+        "value": "8429b691f3c348e515a5db42d57c8ff040a46018"
+       },
+       {
+        "name": "HISTORICAL_CADENCE_POLICY",
+        "value": "eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de"
+       },
+       {
+        "name": "BQ_REF_DATASET",
+        "value": "ref"
+       },
+       {
+        "name": "GCP_PROJECT_ID",
+        "value": "mpa-t-client-001"
+       },
+       {
+        "name": "BQ_RAW_DATASET",
+        "value": "ozon_raw"
+       },
+       {
+        "name": "TENANT_ID",
+        "value": "client_001"
+       },
+       {
+        "name": "HISTORICAL_SCHEDULER_STATE",
+        "value": "ENABLED"
+       },
+       {
+        "name": "STRICT_PAGE_CAPS",
+        "value": "1"
+       },
+       {
+        "name": "CURRENT_DATA_MODE",
+        "value": "CURRENT_DATA_V1"
+       },
+       {
+        "name": "BACKFILL_ROOT_HASH",
+        "value": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+       },
+       {
+        "name": "CONTROLLER_IMAGE",
+        "value": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88"
+       }
+      ],
+      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88",
+      "resources": {
+       "limits": {
+        "cpu": "1000m",
+        "memory": "1Gi"
+       }
+      }
+     }
+    ],
+    "createTime": "2026-10-17T07:45:19.663793Z",
+    "etag": "\"CODPzNYGEPjUwZ8B/cHJvamVjdHMvbXBhLXQtY2xpZW50LTAwMS9sb2NhdGlvbnMvZXVyb3BlLXdlc3QxL2pvYnMvdGVuYW50LWJhY2tmaWxsLWNvbnRyb2xsZXIvZXhlY3V0aW9ucy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1mZjlicS90YXNrcy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1mZjlicS10YXNrMA\"",
+    "execution": "tenant-backfill-controller-ff9bq",
+    "generation": "1",
+    "job": "tenant-backfill-controller",
+    "lastAttemptResult": {
+     "exitCode": 2,
+     "status": {
+      "code": 10,
+      "message": "The container exited with an error."
+     }
+    },
+    "name": "projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-ff9bq/tasks/tenant-backfill-controller-ff9bq-task0",
+    "observedGeneration": "1",
+    "scheduledTime": "2026-10-17T07:45:23.324526Z",
+    "serviceAccount": "sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com",
+    "startTime": "2026-10-17T07:45:41.334600Z",
+    "timeout": "1800s",
+    "updateTime": "2026-10-17T07:46:40.334523Z"
+   }
+  ]
+ },
+ "checkpoints_after_actor": [
+  {
+   "n": 0
+  }
+ ],
+ "claims": {
+  "1291": {
+   "claim": [
+    {
+     "kind": "controller_wake",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"created_at\":\"2026-10-17T07:40:12.598775+00:00\",\"execution\":\"projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-7t77r\",\"generation\":1291,\"hash\":\"bf7dc5d8ad28f6a2c37aad0246e23b0b80fbd9bc79ead92960be52f32dc78f9a\",\"image\":\"europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88\",\"policy_hash\":\"eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de\",\"project\":\"mpa-t-client-001\",\"root\":\"bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222\",\"source\":\"8429b691f3c348e515a5db42d57c8ff040a46018\",\"tenant\":\"client_001\",\"version\":1}"
+   ],
+   "closure": [
+    {
+     "kind": "controller_close",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"claim_hash\":\"bf7dc5d8ad28f6a2c37aad0246e23b0b80fbd9bc79ead92960be52f32dc78f9a\",\"closed_at\":\"2026-10-17T07:42:05.294454+00:00\",\"hash\":\"e02c48a80ab2b4115ab952f47e5111883afb4535ac454a6e427ef93b421367d1\",\"source_dispatches\":0,\"status\":\"STOPPED\",\"version\":1}"
+   ]
+  },
+  "1292": {
+   "claim": [
+    {
+     "kind": "controller_wake",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"created_at\":\"2026-10-17T07:43:26.590647+00:00\",\"execution\":\"projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-smzs2\",\"generation\":1292,\"hash\":\"0b8bf6cdd0c3ee1136b33f0ba11d9a2f629dda563e80a2dd520b34a8f52b5ebc\",\"image\":\"europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88\",\"policy_hash\":\"eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de\",\"project\":\"mpa-t-client-001\",\"root\":\"bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222\",\"source\":\"8429b691f3c348e515a5db42d57c8ff040a46018\",\"tenant\":\"client_001\",\"version\":1}"
+   ],
+   "closure": [
+    {
+     "kind": "controller_close",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"claim_hash\":\"0b8bf6cdd0c3ee1136b33f0ba11d9a2f629dda563e80a2dd520b34a8f52b5ebc\",\"closed_at\":\"2026-10-17T07:44:54.801768+00:00\",\"hash\":\"1712ded70b7dbb3375fe234f2799e3016fcc8634f30cb8a2f9ba4c83e58e84f3\",\"source_dispatches\":0,\"status\":\"STOPPED\",\"version\":1}"
+   ]
+  },
+  "1293": {
+   "claim": [
+    {
+     "kind": "controller_wake",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"created_at\":\"2026-10-17T07:49:47.902070+00:00\",\"execution\":\"projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-tnbdm\",\"generation\":1293,\"hash\":\"1db14f22e41f04ec62006e82aadba4c158fc2ba184801957f17bc67532b53a5c\",\"image\":\"europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88\",\"policy_hash\":\"eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de\",\"project\":\"mpa-t-client-001\",\"root\":\"bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222\",\"source\":\"8429b691f3c348e515a5db42d57c8ff040a46018\",\"tenant\":\"client_001\",\"version\":1}"
+   ],
+   "closure": [
+    {
+     "kind": "controller_close",
+     "root": "bb3ceca51ec5add6"
+    },
+    "{\"claim_hash\":\"1db14f22e41f04ec62006e82aadba4c158fc2ba184801957f17bc67532b53a5c\",\"closed_at\":\"2026-10-17T07:51:49.009739+00:00\",\"hash\":\"1291c730aae92900795869a7fd3dd6ea72a96659505bb80ff5740108f38259be\",\"source_dispatches\":0,\"status\":\"MONITORING\",\"version\":1}"
+   ]
+  }
+ },
+ "journal_after_actor": [
+  {
+   "n": 0
+  }
+ ],
+ "lease_max": "L_50c5d90dbf43ac9c_0285",
+ "locks_after_actor": [
+  {
+   "created_ms": 1792199473624,
+   "labels": {
+    "kind": "chunk_plan",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFR_7f266095116bdc256d93d97e6a69683e2f531ba41af89fdf26ca1580f9148989"
+  },
+  {
+   "created_ms": 1792199548129,
+   "labels": {
+    "kind": "chunk_plan",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFR_3b333c7f116f9f81c7c34437b527ee989306f0e1b24374169ac4c9f9ccf5edab"
+  },
+  {
+   "created_ms": 1792199691886,
+   "labels": {
+    "owner": "bf-901cc8b0-7b6f-4a5b-91f8-24cd14d4e3a0",
+    "until": "1792206880"
+   },
+   "name": "L_50c5d90dbf43ac9c_0285"
+  },
+  {
+   "created_ms": 1792199692244,
+   "labels": {
+    "kind": "dispatch_intent",
+    "root": "0cbd288401b04b40"
+   },
+   "name": "BFQ_0cbd288401b04b4085d6a71ee4b2cb358b7dcf5fd9a774337865eb48c8a6d716_0000000068_DISPATCH_INTENT"
+  },
+  {
+   "created_ms": 1792199692903,
+   "labels": {
+    "kind": "dispatch_intent",
+    "root": "0cbd288401b04b40"
+   },
+   "name": "BFR_561d5b50877b4075b27c7d898ac88fe8fe33e5b8ad5bbfe062037af0dc6321be"
+  },
+  {
+   "created_ms": 1792199693722,
+   "labels": {
+    "kind": "stopped",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFR_e2b59cec26cf61f6cfecb804d6bacdd81fb5ecd5bfadf95ad710837dd8801ea5"
+  },
+  {
+   "created_ms": 1792199695432,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001165"
+  },
+  {
+   "created_ms": 1792199789091,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001166"
+  },
+  {
+   "created_ms": 1792199881195,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001166"
+  },
+  {
+   "created_ms": 1792199962557,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001167"
+  },
+  {
+   "created_ms": 1792200053972,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001167"
+  },
+  {
+   "created_ms": 1792200114564,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001168"
+  },
+  {
+   "created_ms": 1792200205631,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001168"
+  },
+  {
+   "created_ms": 1792200331766,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001169"
+  },
+  {
+   "created_ms": 1792200422986,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001169"
+  },
+  {
+   "created_ms": 1792200479559,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001170"
+  },
+  {
+   "created_ms": 1792200576136,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001170"
+  },
+  {
+   "created_ms": 1792200692342,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001171"
+  },
+  {
+   "created_ms": 1792200794570,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001171"
+  },
+  {
+   "created_ms": 1792200864732,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001172"
+  },
+  {
+   "created_ms": 1792200956369,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001172"
+  },
+  {
+   "created_ms": 1792201049135,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001173"
+  },
+  {
+   "created_ms": 1792201144147,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001173"
+  },
+  {
+   "created_ms": 1792201229377,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001174"
+  },
+  {
+   "created_ms": 1792201331262,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001174"
+  },
+  {
+   "created_ms": 1792201411362,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001175"
+  },
+  {
+   "created_ms": 1792201506988,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001175"
+  },
+  {
+   "created_ms": 1792201596719,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001176"
+  },
+  {
+   "created_ms": 1792201694245,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001176"
+  },
+  {
+   "created_ms": 1792201768530,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001177"
+  },
+  {
+   "created_ms": 1792201862893,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001177"
+  },
+  {
+   "created_ms": 1792201917982,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001178"
+  },
+  {
+   "created_ms": 1792202009059,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001178"
+  },
+  {
+   "created_ms": 1792202130663,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001179"
+  },
+  {
+   "created_ms": 1792202219524,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001179"
+  },
+  {
+   "created_ms": 1792202304735,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001180"
+  },
+  {
+   "created_ms": 1792202400880,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001180"
+  },
+  {
+   "created_ms": 1792202534141,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001181"
+  },
+  {
+   "created_ms": 1792202637754,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001181"
+  },
+  {
+   "created_ms": 1792202865655,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001182"
+  },
+  {
+   "created_ms": 1792202969863,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001182"
+  },
+  {
+   "created_ms": 1792203027405,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001183"
+  },
+  {
+   "created_ms": 1792203127730,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001183"
+  },
+  {
+   "created_ms": 1792203211550,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001184"
+  },
+  {
+   "created_ms": 1792203309913,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001184"
+  },
+  {
+   "created_ms": 1792203396414,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001185"
+  },
+  {
+   "created_ms": 1792203493495,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001185"
+  },
+  {
+   "created_ms": 1792203574312,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001186"
+  },
+  {
+   "created_ms": 1792203672549,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001186"
+  },
+  {
+   "created_ms": 1792203753152,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001187"
+  },
+  {
+   "created_ms": 1792203843465,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001187"
+  },
+  {
+   "created_ms": 1792203927347,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001188"
+  },
+  {
+   "created_ms": 1792204021054,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001188"
+  },
+  {
+   "created_ms": 1792204102894,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001189"
+  },
+  {
+   "created_ms": 1792204197879,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001189"
+  },
+  {
+   "created_ms": 1792204285371,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001190"
+  },
+  {
+   "created_ms": 1792204375950,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001190"
+  },
+  {
+   "created_ms": 1792204470162,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001191"
+  },
+  {
+   "created_ms": 1792204575858,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001191"
+  },
+  {
+   "created_ms": 1792204645966,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001192"
+  },
+  {
+   "created_ms": 1792204728308,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001192"
+  },
+  {
+   "created_ms": 1792204831781,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001193"
+  },
+  {
+   "created_ms": 1792204926526,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001193"
+  },
+  {
+   "created_ms": 1792204982599,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001194"
+  },
+  {
+   "created_ms": 1792205074778,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001194"
+  },
+  {
+   "created_ms": 1792205182980,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001195"
+  },
+  {
+   "created_ms": 1792205277554,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001195"
+  },
+  {
+   "created_ms": 1792205363168,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001196"
+  },
+  {
+   "created_ms": 1792205450882,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001196"
+  },
+  {
+   "created_ms": 1792205513797,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001197"
+  },
+  {
+   "created_ms": 1792205597687,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001197"
+  },
+  {
+   "created_ms": 1792205725698,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001198"
+  },
+  {
+   "created_ms": 1792205823270,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001198"
+  },
+  {
+   "created_ms": 1792205902010,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001199"
+  },
+  {
+   "created_ms": 1792205987160,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001199"
+  },
+  {
+   "created_ms": 1792206129159,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001200"
+  },
+  {
+   "created_ms": 1792206228039,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001200"
+  },
+  {
+   "created_ms": 1792206273806,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001201"
+  },
+  {
+   "created_ms": 1792206389855,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001201"
+  },
+  {
+   "created_ms": 1792206449187,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001202"
+  },
+  {
+   "created_ms": 1792206542279,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001202"
+  },
+  {
+   "created_ms": 1792206814300,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001203"
+  },
+  {
+   "created_ms": 1792206902833,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001203"
+  },
+  {
+   "created_ms": 1792206986853,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001204"
+  },
+  {
+   "created_ms": 1792207070543,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001204"
+  },
+  {
+   "created_ms": 1792207167342,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001205"
+  },
+  {
+   "created_ms": 1792207256915,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001205"
+  },
+  {
+   "created_ms": 1792207366104,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001206"
+  },
+  {
+   "created_ms": 1792207454078,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001206"
+  },
+  {
+   "created_ms": 1792207529128,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001207"
+  },
+  {
+   "created_ms": 1792207616981,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001207"
+  },
+  {
+   "created_ms": 1792207712809,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001208"
+  },
+  {
+   "created_ms": 1792207806096,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001208"
+  },
+  {
+   "created_ms": 1792207889109,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001209"
+  },
+  {
+   "created_ms": 1792207997088,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001209"
+  },
+  {
+   "created_ms": 1792208032469,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001210"
+  },
+  {
+   "created_ms": 1792208121087,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001210"
+  },
+  {
+   "created_ms": 1792208254523,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001211"
+  },
+  {
+   "created_ms": 1792208339681,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001211"
+  },
+  {
+   "created_ms": 1792208579882,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001212"
+  },
+  {
+   "created_ms": 1792208666605,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001212"
+  },
+  {
+   "created_ms": 1792208785882,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001213"
+  },
+  {
+   "created_ms": 1792208872979,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001213"
+  },
+  {
+   "created_ms": 1792208970226,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001214"
+  },
+  {
+   "created_ms": 1792209073392,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001214"
+  },
+  {
+   "created_ms": 1792209153060,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001215"
+  },
+  {
+   "created_ms": 1792209256001,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001215"
+  },
+  {
+   "created_ms": 1792209330607,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001216"
+  },
+  {
+   "created_ms": 1792209421100,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001216"
+  },
+  {
+   "created_ms": 1792209503683,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001217"
+  },
+  {
+   "created_ms": 1792209584776,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001217"
+  },
+  {
+   "created_ms": 1792209734299,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001218"
+  },
+  {
+   "created_ms": 1792209838654,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001218"
+  },
+  {
+   "created_ms": 1792209878751,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001219"
+  },
+  {
+   "created_ms": 1792209977592,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001219"
+  },
+  {
+   "created_ms": 1792210064167,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001220"
+  },
+  {
+   "created_ms": 1792210156292,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001220"
+  },
+  {
+   "created_ms": 1792210203931,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001221"
+  },
+  {
+   "created_ms": 1792210304019,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001221"
+  },
+  {
+   "created_ms": 1792210405705,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001222"
+  },
+  {
+   "created_ms": 1792210494780,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001222"
+  },
+  {
+   "created_ms": 1792210587937,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001223"
+  },
+  {
+   "created_ms": 1792210671667,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001223"
+  },
+  {
+   "created_ms": 1792210763253,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001224"
+  },
+  {
+   "created_ms": 1792210855855,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001224"
+  },
+  {
+   "created_ms": 1792210916074,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001225"
+  },
+  {
+   "created_ms": 1792211000056,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001225"
+  },
+  {
+   "created_ms": 1792211128655,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001226"
+  },
+  {
+   "created_ms": 1792211218530,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001226"
+  },
+  {
+   "created_ms": 1792211324977,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001227"
+  },
+  {
+   "created_ms": 1792211422889,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001227"
+  },
+  {
+   "created_ms": 1792211485989,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001228"
+  },
+  {
+   "created_ms": 1792211594132,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001228"
+  },
+  {
+   "created_ms": 1792211635237,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001229"
+  },
+  {
+   "created_ms": 1792211729788,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001229"
+  },
+  {
+   "created_ms": 1792211851489,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001230"
+  },
+  {
+   "created_ms": 1792211936047,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001230"
+  },
+  {
+   "created_ms": 1792211990100,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001231"
+  },
+  {
+   "created_ms": 1792212085775,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001231"
+  },
+  {
+   "created_ms": 1792212173347,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001232"
+  },
+  {
+   "created_ms": 1792212284172,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001232"
+  },
+  {
+   "created_ms": 1792212386331,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001233"
+  },
+  {
+   "created_ms": 1792212471313,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001233"
+  },
+  {
+   "created_ms": 1792212545843,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001234"
+  },
+  {
+   "created_ms": 1792212650180,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001234"
+  },
+  {
+   "created_ms": 1792212719657,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001235"
+  },
+  {
+   "created_ms": 1792212807629,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001235"
+  },
+  {
+   "created_ms": 1792212891851,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001236"
+  },
+  {
+   "created_ms": 1792212979771,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001236"
+  },
+  {
+   "created_ms": 1792213109892,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001237"
+  },
+  {
+   "created_ms": 1792213217467,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001237"
+  },
+  {
+   "created_ms": 1792213310219,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001238"
+  },
+  {
+   "created_ms": 1792213419213,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001238"
+  },
+  {
+   "created_ms": 1792213447083,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001239"
+  },
+  {
+   "created_ms": 1792213539146,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001239"
+  },
+  {
+   "created_ms": 1792213618471,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001240"
+  },
+  {
+   "created_ms": 1792213733818,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001240"
+  },
+  {
+   "created_ms": 1792213799034,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001241"
+  },
+  {
+   "created_ms": 1792213914212,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001241"
+  },
+  {
+   "created_ms": 1792213976937,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001242"
+  },
+  {
+   "created_ms": 1792214075799,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001242"
+  },
+  {
+   "created_ms": 1792214188677,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001243"
+  },
+  {
+   "created_ms": 1792214288459,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001243"
+  },
+  {
+   "created_ms": 1792214386893,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001244"
+  },
+  {
+   "created_ms": 1792214477160,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001244"
+  },
+  {
+   "created_ms": 1792214518905,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001245"
+  },
+  {
+   "created_ms": 1792214607856,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001245"
+  },
+  {
+   "created_ms": 1792214702371,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001246"
+  },
+  {
+   "created_ms": 1792214788346,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001246"
+  },
+  {
+   "created_ms": 1792214914793,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001247"
+  },
+  {
+   "created_ms": 1792215028356,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001247"
+  },
+  {
+   "created_ms": 1792215094263,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001248"
+  },
+  {
+   "created_ms": 1792215209939,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001248"
+  },
+  {
+   "created_ms": 1792215270393,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001249"
+  },
+  {
+   "created_ms": 1792215357858,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001249"
+  },
+  {
+   "created_ms": 1792215412888,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001250"
+  },
+  {
+   "created_ms": 1792215509156,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001250"
+  },
+  {
+   "created_ms": 1792215633431,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001251"
+  },
+  {
+   "created_ms": 1792215729598,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001251"
+  },
+  {
+   "created_ms": 1792215814933,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001252"
+  },
+  {
+   "created_ms": 1792215921539,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001252"
+  },
+  {
+   "created_ms": 1792216001804,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001253"
+  },
+  {
+   "created_ms": 1792216105091,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001253"
+  },
+  {
+   "created_ms": 1792216177377,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001254"
+  },
+  {
+   "created_ms": 1792216308449,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001254"
+  },
+  {
+   "created_ms": 1792216354565,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001255"
+  },
+  {
+   "created_ms": 1792216443581,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001255"
+  },
+  {
+   "created_ms": 1792216537236,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001256"
+  },
+  {
+   "created_ms": 1792216644270,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001256"
+  },
+  {
+   "created_ms": 1792216706897,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001257"
+  },
+  {
+   "created_ms": 1792216810084,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001257"
+  },
+  {
+   "created_ms": 1792216920306,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001258"
+  },
+  {
+   "created_ms": 1792217021437,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001258"
+  },
+  {
+   "created_ms": 1792217083344,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001259"
+  },
+  {
+   "created_ms": 1792217196310,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001259"
+  },
+  {
+   "created_ms": 1792217253257,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001260"
+  },
+  {
+   "created_ms": 1792217347899,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001260"
+  },
+  {
+   "created_ms": 1792217416325,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001261"
+  },
+  {
+   "created_ms": 1792217516794,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001261"
+  },
+  {
+   "created_ms": 1792217610530,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001262"
+  },
+  {
+   "created_ms": 1792217710008,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001262"
+  },
+  {
+   "created_ms": 1792217794877,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001263"
+  },
+  {
+   "created_ms": 1792217905606,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001263"
+  },
+  {
+   "created_ms": 1792217974677,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001264"
+  },
+  {
+   "created_ms": 1792218071044,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001264"
+  },
+  {
+   "created_ms": 1792218158890,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001265"
+  },
+  {
+   "created_ms": 1792218271958,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001265"
+  },
+  {
+   "created_ms": 1792218323375,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001266"
+  },
+  {
+   "created_ms": 1792218426478,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001266"
+  },
+  {
+   "created_ms": 1792218519004,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001267"
+  },
+  {
+   "created_ms": 1792218625036,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001267"
+  },
+  {
+   "created_ms": 1792218699388,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001268"
+  },
+  {
+   "created_ms": 1792218803159,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001268"
+  },
+  {
+   "created_ms": 1792218872447,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001269"
+  },
+  {
+   "created_ms": 1792218974310,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001269"
+  },
+  {
+   "created_ms": 1792219054859,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001270"
+  },
+  {
+   "created_ms": 1792219177679,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001270"
+  },
+  {
+   "created_ms": 1792219231234,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001271"
+  },
+  {
+   "created_ms": 1792219342990,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001271"
+  },
+  {
+   "created_ms": 1792219421448,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001272"
+  },
+  {
+   "created_ms": 1792219521205,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001272"
+  },
+  {
+   "created_ms": 1792219589179,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001273"
+  },
+  {
+   "created_ms": 1792219698361,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001273"
+  },
+  {
+   "created_ms": 1792219767260,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001274"
+  },
+  {
+   "created_ms": 1792219900653,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001274"
+  },
+  {
+   "created_ms": 1792219935912,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001275"
+  },
+  {
+   "created_ms": 1792220038053,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001275"
+  },
+  {
+   "created_ms": 1792220137697,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001276"
+  },
+  {
+   "created_ms": 1792220231124,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001276"
+  },
+  {
+   "created_ms": 1792220316199,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001277"
+  },
+  {
+   "created_ms": 1792220435445,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001277"
+  },
+  {
+   "created_ms": 1792220500831,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001278"
+  },
+  {
+   "created_ms": 1792220619574,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001278"
+  },
+  {
+   "created_ms": 1792220686050,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001279"
+  },
+  {
+   "created_ms": 1792220797570,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001279"
+  },
+  {
+   "created_ms": 1792220855760,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001280"
+  },
+  {
+   "created_ms": 1792220966625,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001280"
+  },
+  {
+   "created_ms": 1792221045359,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001281"
+  },
+  {
+   "created_ms": 1792221163865,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001281"
+  },
+  {
+   "created_ms": 1792221217661,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001282"
+  },
+  {
+   "created_ms": 1792221332482,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001282"
+  },
+  {
+   "created_ms": 1792221401022,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001283"
+  },
+  {
+   "created_ms": 1792221499354,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001283"
+  },
+  {
+   "created_ms": 1792221578114,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001284"
+  },
+  {
+   "created_ms": 1792221706187,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001284"
+  },
+  {
+   "created_ms": 1792221770662,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001285"
+  },
+  {
+   "created_ms": 1792221867231,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001285"
+  },
+  {
+   "created_ms": 1792221931171,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001286"
+  },
+  {
+   "created_ms": 1792222037221,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001286"
+  },
+  {
+   "created_ms": 1792222113402,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001287"
+  },
+  {
+   "created_ms": 1792222214544,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001287"
+  },
+  {
+   "created_ms": 1792222345939,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001288"
+  },
+  {
+   "created_ms": 1792222443111,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001288"
+  },
+  {
+   "created_ms": 1792222475051,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001289"
+  },
+  {
+   "created_ms": 1792222588629,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001289"
+  },
+  {
+   "created_ms": 1792222657303,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001290"
+  },
+  {
+   "created_ms": 1792222777414,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001290"
+  },
+  {
+   "created_ms": 1792222812716,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001291"
+  },
+  {
+   "created_ms": 1792222925347,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001291"
+  },
+  {
+   "created_ms": 1792223006703,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001292"
+  },
+  {
+   "created_ms": 1792223094859,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001292"
+  },
+  {
+   "created_ms": 1792223196442,
+   "labels": {
+    "kind": "stopped",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFR_e29a27b161ccc1ff537765ad3f7b928f46b62722d0adf640064d2c3157495e4e"
+  },
+  {
+   "created_ms": 1792223388033,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001293"
+  },
+  {
+   "created_ms": 1792223509074,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001293"
+  },
+  {
+   "created_ms": 1792223526881,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001294"
+  },
+  {
+   "created_ms": 1792223632917,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001294"
+  },
+  {
+   "created_ms": 1792223729821,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001295"
+  },
+  {
+   "created_ms": 1792223834110,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001295"
+  },
+  {
+   "created_ms": 1792223912788,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001296"
+  },
+  {
+   "created_ms": 1792224026776,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001296"
+  },
+  {
+   "created_ms": 1792224129185,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001297"
+  },
+  {
+   "created_ms": 1792224227922,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001297"
+  },
+  {
+   "created_ms": 1792224271572,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001298"
+  },
+  {
+   "created_ms": 1792224374967,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001298"
+  },
+  {
+   "created_ms": 1792224463828,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001299"
+  },
+  {
+   "created_ms": 1792224578606,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001299"
+  },
+  {
+   "created_ms": 1792224610772,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001300"
+  },
+  {
+   "created_ms": 1792224742645,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001300"
+  },
+  {
+   "created_ms": 1792224820917,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001301"
+  },
+  {
+   "created_ms": 1792224933548,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001301"
+  },
+  {
+   "created_ms": 1792224996529,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001302"
+  },
+  {
+   "created_ms": 1792225105468,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001302"
+  },
+  {
+   "created_ms": 1792225176530,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001303"
+  },
+  {
+   "created_ms": 1792225285000,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001303"
+  },
+  {
+   "created_ms": 1792225365052,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001304"
+  },
+  {
+   "created_ms": 1792225462826,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001304"
+  },
+  {
+   "created_ms": 1792225533426,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001305"
+  },
+  {
+   "created_ms": 1792225645298,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001305"
+  },
+  {
+   "created_ms": 1792225709832,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001306"
+  },
+  {
+   "created_ms": 1792225817592,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001306"
+  },
+  {
+   "created_ms": 1792225911799,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001307"
+  },
+  {
+   "created_ms": 1792226036912,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001307"
+  },
+  {
+   "created_ms": 1792226073051,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001308"
+  },
+  {
+   "created_ms": 1792226168427,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001308"
+  },
+  {
+   "created_ms": 1792226267793,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001309"
+  },
+  {
+   "created_ms": 1792226363325,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001309"
+  },
+  {
+   "created_ms": 1792226400715,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001310"
+  },
+  {
+   "created_ms": 1792226512108,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001310"
+  },
+  {
+   "created_ms": 1792226592955,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001311"
+  },
+  {
+   "created_ms": 1792226698331,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001311"
+  },
+  {
+   "created_ms": 1792226789140,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001312"
+  },
+  {
+   "created_ms": 1792226897927,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001312"
+  },
+  {
+   "created_ms": 1792226983732,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001313"
+  },
+  {
+   "created_ms": 1792227085595,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001313"
+  },
+  {
+   "created_ms": 1792227149516,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001314"
+  },
+  {
+   "created_ms": 1792227248882,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001314"
+  },
+  {
+   "created_ms": 1792227349132,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001315"
+  },
+  {
+   "created_ms": 1792227450316,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001315"
+  },
+  {
+   "created_ms": 1792227544282,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001316"
+  },
+  {
+   "created_ms": 1792227659264,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001316"
+  },
+  {
+   "created_ms": 1792227715411,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001317"
+  },
+  {
+   "created_ms": 1792227834014,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001317"
+  },
+  {
+   "created_ms": 1792227873214,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001318"
+  },
+  {
+   "created_ms": 1792227967297,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001318"
+  },
+  {
+   "created_ms": 1792228059378,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001319"
+  },
+  {
+   "created_ms": 1792228175451,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001319"
+  },
+  {
+   "created_ms": 1792228256730,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001320"
+  },
+  {
+   "created_ms": 1792228370771,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001320"
+  },
+  {
+   "created_ms": 1792228414855,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001321"
+  },
+  {
+   "created_ms": 1792228523016,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001321"
+  },
+  {
+   "created_ms": 1792228594002,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001322"
+  },
+  {
+   "created_ms": 1792228703616,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001322"
+  },
+  {
+   "created_ms": 1792228777504,
+   "labels": {
+    "kind": "controller_wake",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCW_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001323"
+  },
+  {
+   "created_ms": 1792228881988,
+   "labels": {
+    "kind": "controller_close",
+    "root": "bb3ceca51ec5add6"
+   },
+   "name": "BFCX_bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222_0000001323"
+  }
+ ],
+ "observed_at": "2026-10-18T08:47:31.180350+00:00",
+ "peer": {
+  "completionTime": "2026-10-17T07:45:52.123382Z",
+  "conditions": [
+   {
+    "lastTransitionTime": "2026-10-17T07:42:38.699598Z",
+    "message": "Started deployed execution in 24.38s.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "Started"
+   },
+   {
+    "executionReason": "NON_ZERO_EXIT_CODE",
+    "lastTransitionTime": "2026-10-17T07:45:52.123382Z",
+    "message": "Task tenant-backfill-controller-smzs2-task0 failed with exit code: 2 and message: The container exited with an error.",
+    "state": "CONDITION_FAILED",
+    "type": "Completed"
+   },
+   {
+    "lastTransitionTime": "2026-10-17T07:42:14.233411Z",
+    "message": "Imported container image.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "ContainerReady"
+   },
+   {
+    "lastTransitionTime": "2026-10-17T07:42:14.312308Z",
+    "message": "Provisioned imported containers.",
+    "state": "CONDITION_SUCCEEDED",
+    "type": "ResourcesAvailable"
+   }
+  ],
+  "createTime": "2026-10-17T07:42:13.580057Z",
+  "creator": "sa-backfill-wake@mpa-t-client-001.iam.gserviceaccount.com",
+  "etag": "\"CNXNzNYGEKjvy5QC/cHJvamVjdHMvbXBhLXQtY2xpZW50LTAwMS9sb2NhdGlvbnMvZXVyb3BlLXdlc3QxL2pvYnMvdGVuYW50LWJhY2tmaWxsLWNvbnRyb2xsZXIvZXhlY3V0aW9ucy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1zbXpzMg\"",
+  "failedCount": 1,
+  "generation": "1",
+  "job": "tenant-backfill-controller",
+  "launchStage": "GA",
+  "logUri": "https://console.cloud.google.com/logs/viewer?project=mpa-t-client-001&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22tenant-backfill-controller%22%0Aresource.labels.location%3D%22europe-west1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22tenant-backfill-controller-smzs2%22",
+  "name": "projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-smzs2",
+  "observedGeneration": "1",
+  "parallelism": 1,
+  "startTime": "2026-10-17T07:42:17.317673Z",
+  "taskCount": 1,
+  "template": {
+   "containers": [
+    {
+     "command": [
+      "python",
+      "-m",
+      "tools.tenancy.cloud_controller"
+     ],
+     "env": [
+      {
+       "name": "BQ_LOCATION",
+       "value": "EU"
+      },
+      {
+       "name": "TENANT_BINDING_REQUIRED",
+       "value": "1"
+      },
+      {
+       "name": "CONTROLLER_SOURCE_SHA",
+       "value": "8429b691f3c348e515a5db42d57c8ff040a46018"
+      },
+      {
+       "name": "HISTORICAL_CADENCE_POLICY",
+       "value": "eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de"
+      },
+      {
+       "name": "BQ_REF_DATASET",
+       "value": "ref"
+      },
+      {
+       "name": "GCP_PROJECT_ID",
+       "value": "mpa-t-client-001"
+      },
+      {
+       "name": "BQ_RAW_DATASET",
+       "value": "ozon_raw"
+      },
+      {
+       "name": "TENANT_ID",
+       "value": "client_001"
+      },
+      {
+       "name": "HISTORICAL_SCHEDULER_STATE",
+       "value": "ENABLED"
+      },
+      {
+       "name": "STRICT_PAGE_CAPS",
+       "value": "1"
+      },
+      {
+       "name": "CURRENT_DATA_MODE",
+       "value": "CURRENT_DATA_V1"
+      },
+      {
+       "name": "BACKFILL_ROOT_HASH",
+       "value": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+      },
+      {
+       "name": "CONTROLLER_IMAGE",
+       "value": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88"
+      }
+     ],
+     "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88",
+     "resources": {
+      "limits": {
+       "cpu": "1000m",
+       "memory": "1Gi"
+      }
+     }
+    }
+   ],
+   "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
+   "maxRetries": 0,
+   "serviceAccount": "sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com",
+   "timeout": "1800s"
+  },
+  "uid": "c0867ea6-003f-4afb-ad15-994821603951",
+  "updateTime": "2026-10-17T07:42:13.580057Z"
+ },
+ "peer_tasks": {
+  "tasks": [
+   {
+    "completionTime": "2026-10-17T07:45:49.711095Z",
+    "conditions": [
+     {
+      "state": "CONDITION_SUCCEEDED",
+      "type": "Started"
+     },
+     {
+      "executionReason": "NON_ZERO_EXIT_CODE",
+      "message": "The container exited with an error.",
+      "state": "CONDITION_FAILED",
+      "type": "Completed"
+     }
+    ],
+    "containers": [
+     {
+      "command": [
+       "python",
+       "-m",
+       "tools.tenancy.cloud_controller"
+      ],
+      "env": [
+       {
+        "name": "BQ_LOCATION",
+        "value": "EU"
+       },
+       {
+        "name": "TENANT_BINDING_REQUIRED",
+        "value": "1"
+       },
+       {
+        "name": "CONTROLLER_SOURCE_SHA",
+        "value": "8429b691f3c348e515a5db42d57c8ff040a46018"
+       },
+       {
+        "name": "HISTORICAL_CADENCE_POLICY",
+        "value": "eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de"
+       },
+       {
+        "name": "BQ_REF_DATASET",
+        "value": "ref"
+       },
+       {
+        "name": "GCP_PROJECT_ID",
+        "value": "mpa-t-client-001"
+       },
+       {
+        "name": "BQ_RAW_DATASET",
+        "value": "ozon_raw"
+       },
+       {
+        "name": "TENANT_ID",
+        "value": "client_001"
+       },
+       {
+        "name": "HISTORICAL_SCHEDULER_STATE",
+        "value": "ENABLED"
+       },
+       {
+        "name": "STRICT_PAGE_CAPS",
+        "value": "1"
+       },
+       {
+        "name": "CURRENT_DATA_MODE",
+        "value": "CURRENT_DATA_V1"
+       },
+       {
+        "name": "BACKFILL_ROOT_HASH",
+        "value": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+       },
+       {
+        "name": "CONTROLLER_IMAGE",
+        "value": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88"
+       }
+      ],
+      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:3082a258335166edf1a64f21a889b0ad8ee29777e6eb2b2dbb9779ef61cfdc88",
+      "resources": {
+       "limits": {
+        "cpu": "1000m",
+        "memory": "1Gi"
+       }
+      }
+     }
+    ],
+    "createTime": "2026-10-17T07:42:13.580057Z",
+    "etag": "\"COrPzNYGEMjWtkM/cHJvamVjdHMvbXBhLXQtY2xpZW50LTAwMS9sb2NhdGlvbnMvZXVyb3BlLXdlc3QxL2pvYnMvdGVuYW50LWJhY2tmaWxsLWNvbnRyb2xsZXIvZXhlY3V0aW9ucy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1zbXpzMi90YXNrcy90ZW5hbnQtYmFja2ZpbGwtY29udHJvbGxlci1zbXpzMi10YXNrMA\"",
+    "execution": "tenant-backfill-controller-smzs2",
+    "generation": "1",
+    "job": "tenant-backfill-controller",
+    "lastAttemptResult": {
+     "exitCode": 2,
+     "status": {
+      "code": 10,
+      "message": "The container exited with an error."
+     }
+    },
+    "name": "projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-smzs2/tasks/tenant-backfill-controller-smzs2-task0",
+    "observedGeneration": "1",
+    "scheduledTime": "2026-10-17T07:42:17.317673Z",
+    "serviceAccount": "sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com",
+    "startTime": "2026-10-17T07:42:38.699598Z",
+    "timeout": "1800s",
+    "updateTime": "2026-10-17T07:46:50.141405Z"
+   }
+  ]
+ },
+ "protected_root_hashes": [
+  "00e45544717bd96e87df27516b91329cf0adef0960165a7e3229092f55c2ee5f",
+  "013242cd7986f077c3f05aa4897f3269dde7f6a9d32dc3d1ee393db866fdce62",
+  "01f66a339bf98d25d0044e9d9afdaa9ee409d3b57dac6e4b461a46d85a5019af",
+  "021d2f9fef19173398f4f6a2007cf42b95ae637883f896224bd3205e1995787c",
+  "025643aaf544c8710191d9585f597492a3e03a62b1d643f8daa07c5adf16a2b6",
+  "028507f1a6827bc1a09d60249faa4d5c26a05ff6fa833b8b16ba44825d63279f",
+  "042fb27eca3b80210ec555e9b5ad0c54f0483c7bd8d2350fb10fa79cddf65aea",
+  "063ee1b42b9fb3d8668df2945f7b1145fc98ee993a18294b6790c7a91da1c37d",
+  "06515464e19cc7b71cf127dec1236317ef03edaf71186b06f5d2db4875d1deb1",
+  "071d4eef61f69387997384ae8a651c3ccb512a7782adbf5c6f503a074f1864e1",
+  "07c93eb7038587dae60a4c9024b3c50264c1e240d6012920ba59f17972edf60e",
+  "07cf95882c2d69d1a0dbfa0ace547c578b898012d142bfa4c1bb267da5d72d0b",
+  "08257cd494e9f7a694b6f59924ee41c9223a9fdfbfb75c3d4ac99cb0cb7f471c",
+  "094c488927180ca9737c01e6017eda509dd7482c69b43f4ea264935ae09b9c2b",
+  "09859432be71cd701a3978221355d30173f83b7d05c2634f6f779282c3369119",
+  "09a86eb2060bdc9d7bcd00c903bec2b188a4f2acbbdf6894578fe898f5968bb1",
+  "09ca323c77cba8cdc9d15671e442052efeec811c7e0aa1b6e1081d971f90b82a",
+  "0adc764ce3a5f2b337b724287b6829a0b9fe40196b45ff45fefaa618dbd5ff6d",
+  "0df69217a392ae2ad9ecc1175a87a37fb26b958460c02463d23be74a255d1a80",
+  "0e80e6473bc0b24ab27349d00d1ed818d7b234edd919ccfae33e1fb28e06c8e8",
+  "0e93709ee3d9e5dc902b94ccd8a718ee877f6d01a04208fb710c09d11d209edb",
+  "0f431f8e4f98aefba2046836ff934a4b02e7da0ec2f319860fe84ebfe84c8268",
+  "1003017576babb1f1e9923a50e295c3d31ad854fbf4891b96a58d7543c625414",
+  "110931bc5c202f3a7f211c7171a056bb60ac3f713bc87f4030563045a766f2d4",
+  "1540a420cd9bcb595f4cd7b273512111efe5a021b78641a205fd96c21583d84e",
+  "1670938c22cb36b41ae4f71d3ee348804aeb5d41c319bb4bb43e85ef21428a6a",
+  "171d2c77b704860ae59d46aa5fc4f66d024b1afd1f75f2ad1787144beeb736f2",
+  "17a26e8fa95a0c4fb44f745a63ae4f2efabaedbba48441f0ab130cc3f4a3809c",
+  "17dfc4b2ecd88a4b9ffabf24bd5caaa75d5850b6ecb63e279d1db4d1022d8482",
+  "19b381dbec0a7a93c97d145e22afcd0dc6c641423779ae18409eb82ed159c751",
+  "1b43651b1f85ed00190d3d9459a58cffc218b365ab6c57923e889935ab337a31",
+  "1b447fb821ed108360afe36f9cea50ad2620565c457b7b35c30cfe4e007a69c9",
+  "1c2013dade1b15d1645a5e2d5058595d65dc5ac466c469ca3a41cde4f289084b",
+  "1c29223995d62f1cb07d54653bf08a693273ffb8285a723acad7cc83392e3678",
+  "1d7fab6fc44245b4c9a0892cd8b6f0a6ae49558efea3320832cdaf5b74f93208",
+  "1e914783b3bc98fd64d027de57abb6b764f306b8b9788e99364d882f0e467a7f",
+  "1f0858c9f1bdec3f08b87f287c318ff8b617e390beb2369213367d9f9e69f6ad",
+  "1f45c90c2aeefcb13c05dae92ac918f1db7dc93b25652afd68dee1d21a15ec00",
+  "200577ff13f87c57c8ffcaf9d21b0a4596fb46cfb211d5ccbacdda6a5a0b12c8",
+  "20739cdfce76ef2eb7c0c5e76fded0b5a655fd17ee299646323d511151850a65",
+  "20e446dcfd2acd10e9bf25a9635f1ebcf06b68c29d0f87d46d3ea1e8b358c667",
+  "2184087c1e0ee7b79d1f00b55e15b1b12b80c2133f189109310bf67f44eb3aae",
+  "2264f374c47705f0387d6c4b8c80333aa4d08e38b3a7e8c0527d7289d84ea895",
+  "2288f08451417e43fd140b4327627ace621da1afc20a72ddd6db79e8da429258",
+  "2323003e01affa5f31e42bf9555d145eddbec4e4b5f6fbd0ce093078f46f3d3b",
+  "23b6ba89cd4d38179749f61f39bc7b5217da0928ecf1ff7265b04f7166825f33",
+  "25cb6ab1b628bda99dc9801557436b9bf54a46de2d94c765cb636dfb6e9e55e8",
+  "26638839ca7fa6ca8965e675d28b78aa2378a42e51db124699a487190e0c25cd",
+  "2b26c5dd7f6e5091cb33813586e4cb10ed54ec16293dc7cb1a856cc32e126aa7",
+  "2b82fd12eca65189296cd266b3e557aca6b6ec2604e590527dc5f6df104a8971",
+  "2c430d1dd3f8f4f2ab6f30ae6ac493ecf7286d7369b0e0bf42ea8a5625b06beb",
+  "2c9a75653906469f036c45ea9853e82753bf8262dc5ae54f6e5839a292fa8515",
+  "2cd1df6b23ec12de2c5773e8b55956cf979a7073500af30a819261a674d7ae41",
+  "2d116bb899ae85cc1e4e680049c6350d491a8dd019a22ff706d7dee8b6af6ba5",
+  "2db822c890ff7bda252c49cf282633b13991c4e7ad086af34cbab6c357fbc4b2",
+  "2e89e06e43f251c8de3d728296b737e9467f6481d25aa709a2a38ef7193f8289",
+  "2e8ec8a7a1b89bc9e937bc085c01c408c738ca00edcda84f393cd55e91c3aee7",
+  "2f29af46ed1216e48b6b67fb8e1cacf4cfa3c9e32936ac328a24a9aa289bd104",
+  "2f4e13feeb9e7849c86e9817b67b50e7f9523c81d195f40cc3be404b26db6c67",
+  "30cac02e99e11840dcc5096dc28e855e744d641750fc2a1be328fccae61a36ba",
+  "3209463cc31d0908d11fe8d70272f09604ac69bd707c0842a34177b73dcfdea9",
+  "3406710add1baa61ebcb289502dae115474dd3e7b64fe20a25560736e4ef1cc3",
+  "35be5784eb79c80ec77a501b13cc81a81370f3126e807354240db552d2b29fa9",
+  "363786c9335c0a2713ac0a598b31528c35802a0381f2a7171018415213335384",
+  "394d3ec0959ad80da22a0a24c7b1568cf0142a89031b78227d9c68511116a783",
+  "3a1c7196d876c892c60d3cce3ccb77692dfbf55c59e89cc432a04985a3b0e8ef",
+  "3aa7d746ad18142fba1a78e76d94c6a07d2ab2936ef18757d07735c8f3d89072",
+  "3abe933916c22c13d19811b83fa5e2750f8ffa22bfd750433c97305618b09a1e",
+  "3b333c7f116f9f81c7c34437b527ee989306f0e1b24374169ac4c9f9ccf5edab",
+  "3bc66f4d2ab53f5be66bcd888d9f4d73d6365db00c0932c88191a68852c53156",
+  "3d72650c6806888ceb14b7aea3ebff27353d799784623808e9b106fc494bb47b",
+  "3d78a40e206f3598469d770dbfe53f63e36157f4f7f657ac53d0f5539471d4b8",
+  "3e36eeb9571bbea932af8e01464da6e132406e445883c0a8e57b166e8ee227cf",
+  "3f75e1bea8fbe4666acb10a3857b3dd17d95b2d739fda62299dac3d818b62c3c",
+  "3f95654bea1c2ff14ddd8c65eba82011dbad669d6d14faa7337ba786dac530a9",
+  "3fb40db73b36b829f1f6670ff8236bf3d4997fc72c4c471639a300233eb0f095",
+  "41862ecfca1a90d500bbfdafa474f3f2bbe49fdf51faed9717995d8aa1c513a4",
+  "42f2188777d4b0bdf7a76a201856781a6af9be9c2902c02ef8d98d02ca03a557",
+  "43373d31d14baadcd6caf581928be8dae215f984bf56f64e0cc34af32b15d95c",
+  "441f195e23d1bf0489b0ba2cc571f9cb7d9b11c784b6082d3f7c9cdd1dc9573c",
+  "446681f790fd7bd0a88e26e0fedf8a7485ba5f1f82bb57ff24372942c3eaa53d",
+  "47fcc8d680f6d42ebe87fed2322c08c0b55cae7feca277a9667176a0fc469361",
+  "481efd098322fa3ab77b43e0bfc4c273d0dacbd386295769878318631662024b",
+  "494d081879bc5d2cb8308e3cd97f9d0cd91a5dbe87e0c5bb5e6b51fd61a04ebe",
+  "4a044cac1ee34370641718cb87dd61476d968d977c921f8fc8b55c5f478feede",
+  "4b21a100263ea6db233910d141539e7c009babfd068227b3651ebb02d532bab8",
+  "4c101be33c4dee809b11155ce2e1eab42fc77c771478fc102f6e7752cb766e19",
+  "4c547d9d4b220c62962bc3db17083c4a0864bc40e2a6f6e7c20d4dba772b0a35",
+  "4e01e86eea50285b03f11a5dd1e3ff19101a2b67320ed4b7743c23de6819e11e",
+  "5020f5e08fee43a971b35f85b54cbd1daabb2be568215538ff50143dc4c8d823",
+  "50f19f94a9c1afff2fec61fff26dc33fb3349d0809a7007eb6c27bf5aee567c9",
+  "533161d90e9c5a20005e75efa2637b42198a5a77f6d24edef0e6a3347881e4bd",
+  "537ff24d91fcd35b9a7220ed438b522ea11e204a724a2efe9cdc58c728926a03",
+  "539eedf6608ce3d37443d4da954ac522968ae5bb95572286ed52e5fe322a4794",
+  "540b90d714ed62eab4078915edaa76d2c58f3c7eaa2205bfab8e778603e825cc",
+  "54d6990bc271e6e53509e3dedd82ee97ecc67d453ba250f9a59c13f7b8db3cd7",
+  "54da6de0f8e09405d8dace625fb996999836e3da76abfa342b05bb996bbe0ba5",
+  "55064c545ad84b26a62b3ddf8791b3eae2895415b148439d37b899f361c6edd6",
+  "55608917e55f8768101b20e3783f62af2e9f6d39c86f69b82e6773e30bc9471f",
+  "55bdd8663a711e486cfeb3713a9ab6b3582aca14997d4e608e131e0a5e298bcd",
+  "56391c202c03fb3c8bae1b83b1dc86cdbed23cbc54554c1ca2976f3769cee45c",
+  "58378642ddf5f839a42d93d2b7fa01d6e2a06093c9685cadba11395c5cf5a636",
+  "59061e7ff04df69dc01e5b215d66bec38be7e03a7a49cc27b13f979dceb8fe58",
+  "594c34d690b1697b0cd4bac64febecf66f4b782ae01f42bf34304da4c613cb8e",
+  "5989c79d9e8a123e124d53a9d3fd745c018b474fabebfcd6d6eb2be15cf26c8f",
+  "5a6da8b77b7d409ec372d76fc99331cd9177a6bc67ff63fc1e2895ca9bcdba69",
+  "5aec1926c065b36e1b48de0c2a1c0433c2f8fcb73253445acda8b1dffa1ed71f",
+  "5b8f461198986756edbf525a371a46efe39726bc1901f188bf2956f545e012bf",
+  "5bb1fba2a935bbfc6a5075535009fa291ecf4a6d0db9303d017b0b0b96e17fc0",
+  "5c79b6d19ef61690c3b685776665719d213404f13735b641f36d53b1ac8d05e5",
+  "5e285ee060df09f66049a524a7069548c7cb0ccd532dd6bb208ca3acfb32faec",
+  "5efd584fc4961f9fb123c708fb51832f64bacd18c318c4de18270b6069dac6cc",
+  "5fa5c3774bdb1d3c7a27d81e1cd5bf50a447885051ab747e1c070b135481154d",
+  "61ddd31e325d459c4444f76f826b5191ad448d1f83d51c6c0fb6b1cb5740844c",
+  "621b243f4dd9e8b63e5dc0c51440ee1a990ba699eb554149946f74998ed5627c",
+  "621f2ae26b60cc96482f031e9149b8bf18db3f6001f5a125592a2244a4b0f761",
+  "63dea23882aa384e0d293db7d66ecdc2c0f002d2ccec292cb4e2154475ac21ed",
+  "6851868cc1248acb5c5eed09b5b3b909f1608e5ddf3a6a7640c1ac09914d3c76",
+  "6a73c46d77fb2a6dfe2b73a77860661068dbe2dc031072bbcec1accb6bbf7cec",
+  "6a99295586786467c1875a09060a3088802052aff52b9900aa0609914787f566",
+  "6a99ed27cba3108e66ffb5d72ee93c2eecfdf64b23eb313d0bc256298bdc5d49",
+  "6baafb8532a5f4e3bc0002efd526939ed99897d4a0b0dc53255265cea9a8168c",
+  "6bb23bccd6393d867096244e65e6fb014251ec126fc155fbaf0fca502b1b5df7",
+  "6cb3626971c3b2210de707a561015b7a8c4fccb47795225752a7c4a037c2317f",
+  "6e144a649ec68ad37b3b2fb0b7acf73b61b1ff011c6805a9ecfd4d7a6ebb52c3",
+  "6e9770674c5c4176caa65faf07937575660e10c537beddc6ff9d9a2ef4f7e5e8",
+  "70484f2045ab8176d57ba1c02c21cdd14a24af097242c8dcd891feca7c595999",
+  "70a011b5c8d2647631c9261d0add8665ef11490db2b83bd455a3585436d9407b",
+  "71ea3ac04ab36f7bc9775dedbb8cc8a4d3d7a021a6b2934f6d477cfc0c74fd6a",
+  "7399841c7f243e064b917638a1c7039d0973651ec7e96d567a1b96bbf3ea2b75",
+  "758a63b0809f26974a1df00716421ae8c06aa546ddaf17e6000aad062310842e",
+  "75b18f6a660b4aabc71d8d3541e4ae8813521d56216d6744d6f0c6f5b15621f3",
+  "75ca014db2c7942b813053a35aad756e5389d0735fb35015b2e888e7562195b5",
+  "772f6eb33e7460ac56b669d3e3bb1439761c99f06c6a55ff3a1c7a4cd711ba20",
+  "77f0e1897ff659f5ff5fa149f8e62b880ed68354c8c10fe6ea5f5cfb6d2d386c",
+  "78d762ccb82ea25199c2517104b79783910e89f1c2acf0fe1b2074be8a1330da",
+  "798129a25d6a4f7dec620e6d33a64da06424062fec89d59512e9741241e5ec10",
+  "7c0cffe57769d692758134f17f78145154d729292d5031685faae1b3bbb3ee55",
+  "7c634f18caa40a1eb891b1f93d11a6a943e900888aeac1c6b8c73b2e21b51fa1",
+  "7df591e95a868db226ceaa59c1af6ca4e2e1634374e84135f15e658b78dcd2ee",
+  "7e6b0b3d3f1f2e9dc18ea5eb36f43a35574bc8b0e0d56ba2f08793f3ab3d8e92",
+  "7f266095116bdc256d93d97e6a69683e2f531ba41af89fdf26ca1580f9148989",
+  "7f9cad9025f43bc6a39431d43741b1a6b6f2853e5aa4d46580da614ec27b6740",
+  "7f9f56e3c288dfc7f90437e749e771076f3dcc998fd1e3987f0b38c85fdf0258",
+  "80ff36eb4f5dc212d6065f2c53bf370c8f70a051f9a8e64ffff94b05b6e1d32c",
+  "816d3adcbdc4d95f0a8857fa09758dde583f70204038f7c1018ba42fed299264",
+  "819289e8f26d6609ea8a0ff6b304376c51eb950bab31f6f3f1a85fee03407a31",
+  "821eea2d341c78807d72b1f09795a4f89eccbc329b8bd68030a12a713e85735d",
+  "8220541b386a788cd6d96d6a772062a09a239fe9fee62a53f267badd02a9539e",
+  "82318e88cc4baf8f5880f562da3b1621d3efad37f07a3c0d861c59f50fbc6ac6",
+  "847684f8c22a185bb70aeedece21eeef0963b728e312de96852f29947a1e459f",
+  "848bb8c150a9f0d9a5f62b6f623b9be8a0a875dda89be1d52f6ff95467166d9e",
+  "850fca9564f41432e5d0d643b8d2c5aeec19ab196088836c5ddb40c6a6a752c2",
+  "863d0b0b1600e3890d1d38ea14d879d60bcd9fd51eb6b679a5c3d61870adaa39",
+  "8a1a68a9ab88eed14d6ca569e72e5aba2d83f5dd464c888e0c90a76908057eb3",
+  "8aba47193b7f5671546ea122092d42d0f2a23a11fcc1af3f760e81a1c6f4d334",
+  "8af9ab6758d965a456bbe4a4d1bb38f9ef0d4b2fc44b38ebebda63e2581a06cb",
+  "8be76e573fce344c82bc7578602723a707597ea6e244ff688474688ae80709f9",
+  "8bf807dd5728a30b81980f73b741b7ef8c278e16fed17eec573b24d277a11fbc",
+  "8c25f638621cdd3d6874cf630f61a646fe84b63014867b96adcc44a95d09a885",
+  "8cd18cda5150de13c38bbafc003fcedd4fe4fb9020d21072c2c62409ff8f6095",
+  "8d1b96dd091a63eb3901dd1c3622a1254c750994daba66edcac28fd3462f89fc",
+  "8d60395860c5fb915e86d89ac954926d7c0d25f128cdcb8bae0ed0841339bad8",
+  "8dc7a634ec5b2e74bc4a684fc63bd0685112cac049bc1810524b3eca11073727",
+  "8ef813503246c4c53eb6090e163a36c5bba44b23f3db6d1562934130a4274536",
+  "9040bc816bf2971a7d392dee839156c8d626787888bef98a85063aa2a33056f6",
+  "91a3f48043124ae79f02b6ed1eedf4aabcb7e5009de1752161f4a474dfef0992",
+  "91f355f7784d9ce5832dc39660ee578e6f82dcf8bd0a62142659b442825cd66d",
+  "9209b3f5bfc60f1675dcbb8b2c3dc92ff83380c84eb4042b168a54a9e1b9aeb1",
+  "937abcfd6d7d41a5762e863159dc51a4b5c17aa41dd56891e239e5371ccedda6",
+  "945d4fc52fdc1fb45425b282025cc9003716523559c9dee5aa87e99e6e3cc426",
+  "94fc2a903766a57b65429fe5fd4f94dbb34fd837ebc7212acc38045df079acf2",
+  "9521a911e8ee20f5bd60d3dae3b4f3ec3c25e7a6c5ca2c767dbfb22cf1bb3957",
+  "9538b9a18a282ea82bbd15b82dc3237b0c1d5d73c0350c0e0d1fb52302a3cba7",
+  "9659438c34e503f462489503dd7d5217e4d6925bb6cb11707b6f98488b7b9472",
+  "96bd084f6893bae0acf9d468423b5b3a914a055a7ce5107ad2662bc3568a06c7",
+  "97545b8c45258e335fea5b9683d5e21aced8aa88a73dae5ccf375b5d786d717c",
+  "99f7498a494d76b0b5d70fd3b4a044527b9a2e65a821778dfda7eda99b758281",
+  "9ab90289ffdefbf7f3aac6b4c8cca026ce5303ef979900bdcdddcc9d6e4b178b",
+  "9bd32638c51527d32ea9d11019326dbfbe475cfd0b7b9864c87688a49f766c16",
+  "9bd4d8467ca852367c18549acb30864c43482b051ed5200a0371dc4903ce9f83",
+  "9c2f28b65ac8f4817cd939252ef532866ec1f68673e8e60cf6c70b2daeae98dc",
+  "9c3bc1bb04c6c2c1a5a83ebbe4fd869c7439ecc2b88bbe80dea078f9358b048b",
+  "9c80455598d195a281bf39e994ac18357f36d1370bc30e4b00ca145de1540eff",
+  "9e3880db6eb2cbc6a6eb724418cac225ad5a2e6923f4bd05c231dc5e1b9aa071",
+  "9efe5811aae5f9f9f7f365b2134b5610d57691accff3523651dfeb1b6155689e",
+  "9fd55178f9611547b2b315b0347f9198976616746654005af3447a492443ede3",
+  "a04c21cb844b717620ca74b134a0d1bd191370e27a1488d7c3256213397f8c3b",
+  "a079d9847d99e0f3ccab5986cdb0e69e8e799940527b0803d21d6050b444b111",
+  "a07fbac5e89b0da98b830a90d32ded7aea0c7ec98ad1937b5158892155ebe3cb",
+  "a2118b3c166a0cba4649239338c8f8e0150fa909be99d49240b6b19352187553",
+  "a26a868b6363f3860a19525e93675f7d319f4a660ed25c8d80e534f32a5cae37",
+  "a3ab96a4c386e85d10a547a3323911d329d86d97655bb5fd6ba46b9836960eca",
+  "a3ada528943f6c35438d5758fef8cc3d40e635356159f9dccce1a5f1ce65452c",
+  "a434f3dd640e96990a88506d2d2dca59eca32b200e023f7b2c1864c1fbbdf6c4",
+  "a4ef4cb0e3e1a3c118c8b9c49be8f355f95cdfe7ab0ba8c6e67c764a90c6f0ee",
+  "a53ef9f7e072a369723fe988e7f03cbe2df903ab4a1bf39ea628cf5b5f3fb9a4",
+  "a5478069aae4b248b7fc5da8c9ebd911197b9af5976afc6af2e3a32844972c6e",
+  "a7de058059890e69fe9c4ba77ddef30b152eaba98f4d0f667ca36a000fdf635e",
+  "a83bf41b905f58d04a9ba48a1935d60df87808beb1ca13f58f3eb3c636dd1f21",
+  "a85f795f2d73b57c2389d9365da86c8a545fc40610d7cbc5531e5efb1e4a653b",
+  "ab38e2ce99c381203f1e3e10679e499cc6d81e916554f25bdcc117fa0f2963af",
+  "ae188c9c7055382a03b0126670b6dd63abbbc412606883e3d0387c4d50d5b578",
+  "ae286062f72a05b95bba97ee6c35c6eb777c7993a972bea81be3f743fc1dd037",
+  "afe7dfb5914b8b1d81711532adbe6164055f2d4c476c8d7b03cec0760a2459ae",
+  "b064324b45622ab86d2f3c359b01609eff26075f6fc5c07f5a451fcad5bbd872",
+  "b163f1a8b7de6e9b8ffa9589fac1468a02d8e80b85c5971f6f82c1af34694a9c",
+  "b17b4f710c1ca4ebf17c31d116bf2d3934c760ca6c7495b3e2cb946be4375a42",
+  "b2d9af7429acb3122b150d69a9e645dab17022f5f6b85bdec6d1d44858369094",
+  "b2e28cf64f575bd0c1c4143c97fc62a2de1dafd3980347d5a288fd86beab60f5",
+  "b32d14ded6937403d4f72d50f2c67c2366e47f6d66b395de9d172a88dee34707",
+  "b3c13dcdd0c67075e673dc95937a416867c6274e4da744da0db7a3030414468f",
+  "b4057d3b9755703e9bdf13f0994ce2968b693c691bc579da3ae46e47fa6baf8d",
+  "b4ebfc5784542dd22f89a7e1d4c2ced53f00db63f2d1332e5af89555cd60e87f",
+  "b980603fbb4122ba50d1329546d3bc6b8c0a0f06693dc2f5bdc57d15df9e3ff9",
+  "ba9339c3d6acaaaf030b357fdb035d97ea03e64c77b31d97104d9f0cd8d88d8d",
+  "be55bf5558cc81977d2f04155ef1e410bb3e9fd1bf3ef270c9af60ea771869a7",
+  "befe2d15fd099acc1969d907be18631cea021a01996904bf5697c999c3662b7b",
+  "bf2132ae0702bfe78b02df51f110076538ef2d9d97458400496b312ddc2da5e1",
+  "bf66d47b11b795df2a669341dda6bb5f3718cc876ef017b412572a55c87e5989",
+  "bf73bc3f34cc7ad194fbdddefbf49370bbc672979df5a317496b6e451bc0ef07",
+  "c0ff2d1b4e846bc071006b895a596dcdc06aa014cca90f72822830c09f75be01",
+  "c10704bef641b3fdb5f3d71cd3a1a5388b7b1fed58d3961ffed1245992a0eecc",
+  "c15bec20ec0f276b716465eb814f207d5e9376e1f2cdc050ef850224d2965ba1",
+  "c1a4742ec173016423905166500f3ea6215ed4fb1d2a0a0ad806fe93a0e305fc",
+  "c23ebad1064ea503b87bdb74dd552148ae89617237318039bf45841d6433a866",
+  "c3bbef411af7d6f286fd76322f1f40c2dbdbfc8bb7cd4a9b65fcf581d709bfc1",
+  "c3df0ff36aed7e79c9fd16f10dc81e73252b1abfabacdcdff0332f5ce9b7b87a",
+  "c3f456bfa3558bdf5f94f57c6d03acaed78e9b0399499cc16a55b50b99cce825",
+  "c42a6c2236990eb69c0a4ebfe3ffe4e8f1af207e226dd36d4045f52b0cd7c9da",
+  "c595125dd49bf920703a727a6f973d61f80cc76165972b707cad24bf8078bf1e",
+  "c5b921b4f69ed457de9b60872dfd75d700ee3873d79a77627c13eb49c68bc76d",
+  "c6f5b939357cf5adf9a1efafd78f1f258dc54535bb64f1abf45c8f2c52aa627f",
+  "c7658c403a45e41df59e8b0a78dd4cd056ea5747b873b241e1dc77dbf41b95c9",
+  "c8accceb6ca9855625ff833a6b1d496d2953a3ad8e8967ea8af895ccbd922684",
+  "c91283b87f3bc6692ae00e872d8f4dca9eec3b110349c9c847d743b63fc8abde",
+  "ca1666a6e96fcb7d75705de871550f6db71bf6c9c591c0c98098d7701e44368b",
+  "cd9e1f2b350f4d095adf20b57891e51cf0e80c3d6087e49afc642c4a93c236a8",
+  "ce9b49d40a4aa4396c7872b15294cdd114af0a9a37bd0506eec10f3c1874391e",
+  "cea95dd37999796172e33ecf3825e82359165d74c194d8fa7ae0751f95222af5",
+  "ced563080518cb63cba1f3193b77d132e77e6e6d9ddf87eba535bb65e59087a9",
+  "cefaa30bb17b5ca7756c95eb16c433f4d99493c1722f41fb8881e8a5d6294bc0",
+  "cf0392921e5f91a026f74aeff59e9972f00daee4d040876e4d6a502e171bd858",
+  "cf7363b9d0c418f314a98c3f0fa7dddfb0b2330f5518fe733f379fe2054dd184",
+  "cfd5929c039b7a9436d5acfaf1e8c881c71a2ff713068b55950a0caf8e7b2583",
+  "d06c4bd2f89f2a994166261798c8a9e2be0ad700f647f85e65312b478d69a850",
+  "d1d17a8530f99d358d57931fa1d7cc920754728519a22e156c2b588c3871b159",
+  "d1e7de021c0ebf3f08fa767ae5b71498fae0da49c8b5780128a6d900abde5510",
+  "d226a1945f834ece0998a5828b64fdf33387a11edc3adf8b75ae12a523cd1477",
+  "d343a7b6add633648132e53dc2223cb8244c6e4ed143fa082dd05d75bcc42227",
+  "d34edc2e30af715648f69f9290f4e8a849b4a0b68ff8653e4fd4d8cd84269282",
+  "d460cdf44ad6f81267c70cc43436a0b32d2975cd2295d215238d4f360bcc057b",
+  "d4d55e81a149e0c4eff8b8177430b7a01cd3f1d4d56b85f7ad0c1a960cb4da7b",
+  "d51b865f018b7a53157ab41f93f905c4f3e8d346330b5c1ab958f32daa9ec4e1",
+  "d694f3b1a46d16b81169fe156c2c9c32e5b11f6fa96501ee5434c6ad97fd47b1",
+  "d6ffa2d682b21d153cbe495fccdfbfe7e963ae9494c8dcacd1b817e9df7d3876",
+  "d9ec6bd9b65c914c266e2edc945758a99360e85c936d76163a7b6befde9d8829",
+  "dad8c5cfc6411b0e291e84381d8ca93311f525e5f01203f7c178d65a8b502dce",
+  "db85d48c0173062606969983cb2e1bedac1a787f57e338bba250eced37f2d319",
+  "dc24e9ee272a37dd4cbe330e544d263924fcf780b04ac3d43ed7c958ca870f40",
+  "dca8dc227cfb53d988854f5e36cae73eaa8e8df7a4982d302c79ad5e12b9c64b",
+  "dcd9cf6e2ef346442ee11c55735528d876aa493de41582dcfc0f2084facfed45",
+  "de1f0b51fb01c500e27de09bae8455c9d8a83d2a65bfcceef75630de98ecaa42",
+  "df213fbc86764751ae1d2ecd4c2a1d2cfaaf6d7e4e53acd66c5bbe6f96817ff7",
+  "e04e5d1e81c9d803218f2bca88783124d0133684de5b8fd9ccf7902fa2548060",
+  "e0f511224e99f4546d09c899047863894aaea99dde872b4310a8f7ac2fdbbdd9",
+  "e1b60f7333d300c2403e895220dbca052dbb6c87371e626fb9c599f267e19daf",
+  "e29a27b161ccc1ff537765ad3f7b928f46b62722d0adf640064d2c3157495e4e",
+  "e2b59cec26cf61f6cfecb804d6bacdd81fb5ecd5bfadf95ad710837dd8801ea5",
+  "e36fd2d001c8470c81c3dd016331dc06ecbf1b02c4edc5da76ced44ede4f002d",
+  "e3da09261de486cb3fb3d72e0abd8b9925788e7c8d2d530ebf8c6652f76e9bea",
+  "e4cffe5227376b5b538902cc8c6cf3035d74e2b105938ffa79dc47160daf2149",
+  "e4f041fa6c01d743b152b45445704a09715f64e41afc50a0710483d498a2f463",
+  "e60a28618b8c14b92f0b6cd999c0aa494e662e54ccfb4e8d5f437c1342dabfc0",
+  "e60a7920e6a8b223fc1e107fc11ee59c9347a678de526174b605519dff209b74",
+  "e627797697da28b80f5e80bb0d0f8bfba40baa1470c3c2c80c7d0a700a0f22c0",
+  "e9431a09aefc4418348428573d7923d95f421ed2fe568072248084e6448937ae",
+  "eb715be7ccff95ae25dd91ff5410cc4d005543bf69922fa6dd39e9fd1be6b496",
+  "ece2ff5625e47ec599885c863196b934a4db9e544d46514c9466ffc3f1ee31f9",
+  "ed50e11a3cd77b8b23007a35dfcb4b1aa07cde5ecd0751ec997b1423e0704499",
+  "ef60f9d4fe9a4955211080f6b8d7c425793f69e28680dc40b610798201970067",
+  "efbe27dc8d3e79b7dc86d7f0a06781af1a09bba3954931b604c776b35295a78d",
+  "f03952974a44c85524e5b352a3139052ddc90c95ace3119f4189b938d83d2522",
+  "f08966fb1f4907a395d9ac9f7313b89b393c401e936d83110739c8b6c778f0db",
+  "f0c593976fb1db93b4aca2f1f4b1a4e2f15d5d35e2ef059e043af91978b726ac",
+  "f14ff014503d64b2bebacea6078ac815d1437fdbd6d424583faaadf7ec7ce14f",
+  "f170fd84e3f6b27a5592028248f6d5bbdab4f48b2ad9633755ec7884571e5709",
+  "f2ac66a6b6417b174f450fbf8da122d14f95513a86498bfe6a89ad8aa874daa5",
+  "f2c6fcc8f8c0579b504e12e5ba634d9183df186bbc5267822744e5ec4aacebf9",
+  "f329e3974a7d0a74377182b67df19ce5aa0aec92d22997deaaef9859affc6a91",
+  "f3e044bdc6c48bf5d326bae4b511179d036a04b076afd6964353264898a094d9",
+  "f507723075c393505983b7c07353d1c0c820427c415cf2d4ffcf0aad72f0eac4",
+  "f78e404f29123fe2e676c8085e903b3d5988f24a17935cc8312f1d7d1cd03d51",
+  "f7c165ee19dd1f8238c475873c1f0af7ec22f90b9c1536b89a360e0ac56ff344",
+  "f7ca662f517d50767d10463145ace8af7946b0340775bd9f1de82278e8888491",
+  "f811adff287161de7ce8ff7206ab20c1eb38ca2512400b9fb372cf5cb097e420",
+  "f86cb3c92b8bdc24cdc0777f8d5279f5e3476778b6ca3e6d2bd4c7b9e48979d0",
+  "f8d457d5a890e377441fb3ec43910ea6f134162fbb4f6dbbaa7d9bf942ec970c",
+  "f9f4a5b8b2abfa85eaa22845f2682d65bce77fb314f7795a4d5b894792622439",
+  "faaca23de7e2c16bd39fea9f31b4ef8f6a7cc0c5e81a0e7be25ae6ed52167952",
+  "fba0c5d51f7ef8d2a2106507bbaa9af6a4d389e981aa7999dd423136544d5d9c",
+  "fbd0f410137bec7d62bac0d21232051e87934e47b0f9f7a44253498ed181692d",
+  "fc5eed7f19f0d01f1da01b99a3c8e2d3612075fd180ebacd56b9a4cc30878bf1",
+  "fc846797e97c1acbdff99561a9e53a10c273dc5a0549590413e9983a7f6362b0",
+  "fd733fdb9a2d6586274b03b46f6cd0171e6aa138e91793dff17524ce2c055b8d",
+  "fe02ea4a66cca9de3d843881b58ee9b4c6ca1a392ce58a43a67424e430d464ca",
+  "ffa223657146249310a9d659347e50f687db8787c81b847bff97850b5667611c"
+ ],
+ "protected_root_set_hash": "1336aab597e21348ec228e843bd5a749a94850c6a5d78c9f43cdc8dd0eabd733",
+ "root": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222",
+ "runtime_runjob_audit": [],
+ "stop": {
+  "kind": "STOPPED",
+  "payload": {
+   "controller_execution": "projects/mpa-t-client-001/locations/europe-west1/jobs/tenant-backfill-controller/executions/tenant-backfill-controller-ff9bq",
+   "diagnostic": {
+    "category": "EVIDENCE",
+    "stage": "MANIFEST_ROOT",
+    "version": 1
+   },
+   "reason": "CONTROLLER_GATE_OR_EVIDENCE_FAILURE"
+  },
+  "root_hash": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222",
+  "sequence": 0,
+  "version": "CLOUD_BACKFILL_V1"
+ }
+}

@@ -20,7 +20,7 @@ STATUSES = frozenset({'DISPATCHED','MONITORING','WAITING','CHUNK_COMPLETE',
     'FULL_HISTORY_COMPLETE','SOURCE_FREE_RECOVERED','QUIESCENT_PAUSED',
     'LOCAL_SOURCE_QUARANTINED','STOPPED','WAITING_READ_RETRY','SNAPSHOT_DAY_ROLLOVER','RECONCILED_BOUNDARY'})
 WAITS = frozenset({'WAIT_ACTIVE_CONTROLLER','WAIT_ACTIVE_RUNTIME',
-                   'WAIT_RECONCILIATION','SKIP_AUTHORITY_HELD'})
+                   'WAIT_RECONCILIATION','SKIP_AUTHORITY_HELD','WAIT_CONTROLLER_FINALIZATION'})
 
 
 def fail(reason):raise BF.B.EvidenceError('controller cadence: '+reason)
@@ -97,13 +97,41 @@ def verify_execution_template(backend,x,block,*,policy_time=None,runtime_hash=No
     O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':t}},block)
 
 
-def inventory(backend):
+FINALIZATION_GRACE_SECONDS = 300
+
+
+def finalizing(backend, x):
+    """Exact peer whose single task ended but whose execution is not yet final."""
+    execution(backend,x)
+    timeout=backend.c['orchestration']['job']['timeout']
+    if not re.fullmatch(r'[0-9]+s',timeout):fail('controller timeout contract unknown')
+    if (x.get('taskCount',1)!=1 or x.get('runningCount',0) or x.get('succeededCount',0)
+            or x.get('failedCount',0)+x.get('cancelledCount',0)!=1):
+        fail('unknown finishing controller state')
+    if (backend.clock()-at(x['createTime'])).total_seconds()>int(timeout[:-1])+FINALIZATION_GRACE_SECONDS:
+        fail('terminal controller state not finalized within bound')
+    return x
+
+
+def inventory(backend, *, finalization_wait=True):
     from tools.tenancy import orchestration_contract as O
     base,_=BF.resources(backend.c);name=base+'/jobs/'+O.JOB
     job=backend.request('GET',BF.RUN_API+'/'+name);O.verify_job(job,backend.c['orchestration'])
     values=BF.execution_inventory(backend.request,name)['executions']
-    active=[execution(backend,x,active=True) for x in values if not x.get('completionTime')]
     own=getattr(backend,'current_execution',None)
+    # Cloud Run publishes a failed/cancelled task before the execution's
+    # completionTime (observed up to ~60 s). A peer in that window is neither
+    # active nor proven terminal: this wake waits without claiming and the
+    # next wake re-reads. Past the task timeout it is unknown again (STOP).
+    if not any(x.get('name')==own and not x.get('completionTime') for x in values):fail('own active controller not visible')
+    finishing=[x for x in values if not x.get('completionTime') and x.get('name')!=own
+               and (x.get('failedCount',0) or x.get('cancelledCount',0))]
+    if finishing and not finalization_wait:fail('unknown active controller state')
+    if finishing:
+        for x in finishing:finalizing(backend,x)
+        from tools.tenancy.cloud_tick import OverlapWait
+        raise OverlapWait('WAIT_CONTROLLER_FINALIZATION')
+    active=[execution(backend,x,active=True) for x in values if not x.get('completionTime')]
     if not any(x['name']==own for x in active):fail('own active controller not visible')
     if job.get('runningCount',0)>len(active):fail('incomplete active controller inventory')
     return sorted(active,key=lambda x:(at(x['createTime']),x['name']))

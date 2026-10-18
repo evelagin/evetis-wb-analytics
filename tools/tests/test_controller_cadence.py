@@ -15,7 +15,7 @@ def test_actual_packaged_overlap_and_entrypoint_contract():
     assert set(check().values())=={'PASS'}
 
 
-@pytest.mark.parametrize('fault',['image','identity','env','retry','timestamp','terminal','not_visible'])
+@pytest.mark.parametrize('fault',['image','identity','env','retry','timestamp','terminal_past_bound','terminal_and_running','terminal_and_succeeded','not_visible'])
 def test_unknown_peer_never_converts_to_wait(fault):
     m,r,c,b,x,objects,commits=protocol()
     if fault=='image':x[0]['template']['containers'][0]['image']='unqualified'
@@ -23,11 +23,47 @@ def test_unknown_peer_never_converts_to_wait(fault):
     if fault=='env':x[0]['template']['containers'][0]['env'].append({'name':'TENANT_BINDING_REQUIRED','value':'0'})
     if fault=='retry':x[0]['retriedCount']=1
     if fault=='timestamp':x[0]['createTime']='unknown'
-    if fault=='terminal':x[0]['failedCount']=1
+    if fault.startswith('terminal'):x[0]['failedCount']=1
+    if fault=='terminal_past_bound':x[0]['createTime']=(NOW-timedelta(seconds=600+CC.FINALIZATION_GRACE_SECONDS+1)).isoformat()
+    if fault=='terminal_and_running':x[0]['runningCount']=1
+    if fault=='terminal_and_succeeded':x[0]['succeededCount']=1
     if fault=='not_visible':b=b(2);b.current_execution+='missing'
     else:b=b(2)
     with pytest.raises(BF.B.EvidenceError) as e:CC.acquire(b)
     assert not isinstance(e.value,T.OverlapWait) and not objects and not commits
+
+
+@pytest.mark.parametrize('field',['failedCount','cancelledCount'])
+def test_peer_task_ended_but_execution_not_final_is_a_bounded_wait(field):
+    """Heldi STOP e29a27b1: Cloud Run showed the peer's failed task ~60 s before completionTime."""
+    m,r,c,b,x,objects,commits=protocol()
+    x[0][field]=1
+    with pytest.raises(T.OverlapWait) as e:CC.acquire(b(2))
+    assert e.value.status=='WAIT_CONTROLLER_FINALIZATION' and not objects and not commits
+    x[0]['completionTime']=NOW.isoformat()
+    with pytest.raises(T.OverlapWait) as e:CC.acquire(b(2))
+    assert e.value.status=='WAIT_ACTIVE_CONTROLLER' and not objects
+    x[1].update(completionTime=NOW.isoformat(),succeededCount=1)
+    assert CC.acquire(b(2))['generation']==1 and len(objects)==1
+
+
+@pytest.mark.parametrize('fault',['image','retry','two_failed','future'])
+def test_finishing_peer_must_still_be_exact(fault):
+    m,r,c,b,x,objects,commits=protocol()
+    x[0]['failedCount']=1
+    if fault=='image':x[0]['template']['containers'][0]['image']='unqualified'
+    if fault=='retry':x[0]['retriedCount']=1
+    if fault=='two_failed':x[0]['failedCount']=2
+    if fault=='future':x[0]['createTime']=(NOW+timedelta(seconds=5)).isoformat()
+    with pytest.raises(BF.B.EvidenceError) as e:CC.acquire(b(2))
+    assert not isinstance(e.value,T.OverlapWait) and not objects and not commits
+
+
+def test_own_failed_state_is_never_a_wait():
+    m,r,c,b,x,objects,commits=protocol()
+    x[2]['failedCount']=1
+    with pytest.raises(BF.B.EvidenceError) as e:CC.acquire(b(2))
+    assert not isinstance(e.value,T.OverlapWait) and not objects
 
 
 def test_atomic_cas_fences_even_when_both_lists_miss_each_other():
@@ -192,3 +228,17 @@ def test_class_c_predicates_and_recent_order_are_preserved():
     from tools.tenancy.full_leaf_recovery import PREDICATES
     from tools.tenancy.recent_priority_image_check import check as recent
     assert len(PREDICATES)==19 and recent()['recent_installed_drain_order']=='PASS'
+
+
+def test_finalization_wait_can_be_disabled_after_a_committed_stop():
+    m,r,c,b,x,objects,commits=protocol()
+    x[0]['failedCount']=1
+    with pytest.raises(BF.B.EvidenceError) as e:CC.inventory(b(2),finalization_wait=False)
+    assert not isinstance(e.value,T.OverlapWait)
+
+
+def test_missing_own_execution_fails_before_any_wait():
+    m,r,c,b,x,objects,commits=protocol()
+    x[0]['failedCount']=1;bb=b(2);bb.current_execution+='missing'
+    with pytest.raises(BF.B.EvidenceError,match='own active controller not visible') as e:CC.acquire(bb)
+    assert not isinstance(e.value,T.OverlapWait) and not objects

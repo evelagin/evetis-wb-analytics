@@ -240,3 +240,17 @@ def test_no_eligible_recent_leaf_returns_cooldown_wait_without_stop_or_dispatch(
     out,_=H.wake(p.b,p.m['hash'])
     assert out['status']=='WAITING' and out['eligible_at']==eligible and not p.dispatches
     assert not any(r['kind']=='STOPPED' for r in p.b.store.history(p.m['hash']))
+
+
+@pytest.mark.parametrize('module',['current_recon_recovery','f507_recovery'])
+def test_monitoring_counts_the_same_exact_acceptances_as_the_stop_gate(monkeypatch,module):
+    """Heldi 16.10: progress reported unresolved_STOP=2 although the gate dispatched (STOP819 + f507 accepted)."""
+    import importlib
+    from tools.tests.test_durable_plan import Backend
+    m=fixture()[0];p,_=policy(m);memory=Backend()
+    stop=dict(version=D.VERSION,root_hash=m['hash'],kind='STOPPED',sequence=0,payload=dict(reason='X'))
+    records=[dict(kind='CHUNK_PLAN',payload=dict(index=0,plan=dict(ack_hash='a'*64),shard_root='b'*64)),stop]
+    b=SimpleNamespace(c=memory.c,store=memory.store)
+    assert P.monitoring(b,m,records,{},p,NOW)['windows']['RECENT_180']['unresolved_STOP']==1
+    monkeypatch.setattr(importlib.import_module('tools.tenancy.'+module),'load',lambda *a:[dict(stop_hash=D.digest(stop))])
+    assert P.monitoring(b,m,records,{},p,NOW)['windows']['RECENT_180']['unresolved_STOP']==0
