@@ -55,3 +55,54 @@ def test_closed_policy_does_not_authorize_diagnostics_source_budget(monkeypatch)
  p['source_budget']=12;p=Z.sealed({k:v for k,v in p.items() if k!='hash'})
  with pytest.raises(BF.B.EvidenceError):Z.header(p,m)
  assert not effects
+
+
+def accepted_quarantine():
+    """Completed closure with the factual SELECT * projection of its RUNNING checkpoint."""
+    m,p,b,root,sh,objects,rows,effects=fixture()
+    # REST epoch TIMESTAMP, exactly as BigQuery returns it to the controller.
+    cp=[dict(rows[0],run_id=p['run_id'],lease_generation=p['generation'],lease_until='1.791731789489259E9')]
+    p=Z.sealed(dict({k:v for k,v in p.items() if k!='hash'},checkpoint_hash=D.digest(cp)))
+    b.select=lambda *a:deepcopy(cp)
+    cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16]
+    sh.append(Z.closure(p));objects[f'LD_{cid}_0190']=Z.release_value(p)
+    objects[Z.cert(p)]=Z.value(p);objects[Z.auth(p)]=Z.value(p)
+    root.append(dict(version=D.VERSION,root_hash=m['hash'],kind=Z.KIND,sequence=p['index'],payload=p))
+    assert Z.load(b,m,root)==[p]
+    return m,p,b,root,objects,cp,cid,effects
+
+
+@pytest.mark.parametrize('case',['present','present_after_term','absent_before','absent_at_kept_expiry','absent_after',
+    'absent_after_LD_changed','absent_after_LD_missing','absent_after_checkpoint_changed','absent_after_foreign_checkpoint_owner',
+    'absent_after_term_differs_from_certificate','absent_after_term_unparseable','present_bytes_changed'])
+def test_original_lease_may_vanish_only_after_certificate_bound_ttl(case):
+    from datetime import timedelta
+    from tools.tenancy import full_pretransport_recovery as PT
+    m,p,b,root,objects,cp,cid,effects=accepted_quarantine()
+    deadline=PT.lease_until(cp[0]['lease_until'])+BF.CK.LEASE_TABLE_KEEP+PT.LEASE_EXPIRY_GRACE
+    lease=BF.CK.lease_name(cid,190);before=deepcopy(effects)
+    if case.startswith('absent'):del objects[lease]
+    b.clock={'absent_before':lambda:deadline-timedelta(microseconds=1),
+             'absent_at_kept_expiry':lambda:deadline-PT.LEASE_EXPIRY_GRACE}.get(case,lambda:deadline)
+    if case=='absent_after_LD_changed':objects[f'LD_{cid}_0190']=({'owner':p['run_id']},'{}')
+    if case=='absent_after_LD_missing':del objects[f'LD_{cid}_0190']
+    if case=='absent_after_checkpoint_changed':cp[0]['lease_until']='1.791727789489259E9'
+    # A certificate re-sealed over altered checkpoint bytes is still bound by its lease hash.
+    if case in ('absent_after_foreign_checkpoint_owner','absent_after_term_differs_from_certificate','absent_after_term_unparseable'):
+        cp[0].update({'absent_after_foreign_checkpoint_owner':dict(lease_owner='bf-foreign'),
+                      'absent_after_term_differs_from_certificate':dict(lease_until='1.791731788489259E9'),
+                      'absent_after_term_unparseable':dict(lease_until='soon')}[case])
+        q=Z.sealed(dict({k:v for k,v in p.items() if k!='hash'},checkpoint_hash=D.digest(cp)))
+        root[-1]=dict(root[-1],payload=q);objects[Z.cert(q)]=Z.value(q);objects[Z.auth(q)]=Z.value(q)
+        objects[f'LD_{cid}_0190']=Z.release_value(q);p=q
+    b.select=lambda *a:deepcopy(cp)
+    if case=='present_bytes_changed':objects[lease]=({'owner':p['run_id'],'until':'1791731788'},objects[lease][1])
+    if case in ('present','present_after_term','absent_after'):
+        assert Z.load(b,m,root)==[p]
+    else:
+        reason={'absent_after_LD_changed':'closure absent','absent_after_LD_missing':'closure absent',
+            'absent_after_checkpoint_changed':'checkpoint bytes','present_bytes_changed':'lease bytes'}.get(case,'qualified expiration')
+        with pytest.raises(BF.B.EvidenceError,match=reason):Z.load(b,m,root)
+    assert effects==before
+    if case=='absent_after':
+        with pytest.raises(BF.B.EvidenceError,match='qualified expiration'):Z.validate(p,b,m,root,final=False)

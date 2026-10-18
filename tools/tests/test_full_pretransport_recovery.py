@@ -142,3 +142,50 @@ def test_effect_ambiguity_or_new_unsupported_risk_never_closes_intent(monkeypatc
  if fault=='unknown_stop':records.append(dict(records[1],payload={'reason':'new unsupported incident'}))
  with pytest.raises(BF.B.EvidenceError):R.publish(b,p,m)
  assert not effects
+
+def expired_protocol(monkeypatch,terms=None):
+ """Accepted closure with the lease table removed only by BigQuery TTL."""
+ from datetime import timedelta
+ b,m,p,records,sh,objects,rows,effects,*_=protocol(monkeypatch)
+ assert R.publish(b,p,m)==p and R.load(b,m,records)==[p]
+ until=b.clock()+BF.CK.LEASE_TTL;deadline=until+BF.CK.LEASE_TABLE_KEEP+R.LEASE_EXPIRY_GRACE
+ terms=[{'lease_until':until.strftime('%Y-%m-%dT%H:%M:%S.%fZ')}] if terms is None else terms
+ base=b.select;asked=[]
+ def select(sql,params):
+  if 'AS lease_until' not in sql:return base(sql,params)
+  asked.append(params)
+  assert params=={'entity':('STRING','catalog'),'ack':('STRING',p['ack_hash']),'gen':('INT64',170),'run':('STRING',p['run_id'])}
+  assert "status='RUNNING'" in sql and 'lease_owner=@run' in sql and 'run_id=@run' in sql
+  return deepcopy(terms)
+ b.select=select
+ return b,m,p,records,objects,rows,effects,deadline,asked
+
+@pytest.mark.parametrize('case',['present','present_after_term','absent_before','absent_at_kept_expiry','absent_after',
+ 'absent_after_LD_changed','absent_after_LD_missing','absent_after_checkpoint_changed','absent_after_no_term',
+ 'absent_after_ambiguous_term','absent_after_later_term','absent_after_foreign_projection','present_foreign_owner','present_foreign_ack'])
+def test_original_lease_may_vanish_only_after_retained_ttl(monkeypatch,case):
+ from datetime import timedelta
+ terms={'absent_after_no_term':[],'absent_after_foreign_projection':[{'lease_until':None}],
+  'absent_after_ambiguous_term':[{'lease_until':'2026-10-10T17:00:00.000000Z'},{'lease_until':'2026-10-10T16:00:00.000000Z'}],
+  'absent_after_later_term':[{'lease_until':'2026-10-11T17:00:00.000000Z'}]}.get(case)
+ b,m,p,records,objects,rows,effects,deadline,asked=expired_protocol(monkeypatch,terms)
+ lease='L_50c5d90dbf43ac9c_0170';before=deepcopy(effects)
+ if case.startswith('absent'):del objects[lease]
+ b.clock={'absent_before':lambda:deadline-timedelta(microseconds=1),
+          'absent_at_kept_expiry':lambda:deadline-R.LEASE_EXPIRY_GRACE}.get(case,lambda:deadline)
+ if case=='absent_after_LD_changed':objects['LD_50c5d90dbf43ac9c_0170']=({'owner':p['run_id']},'{}')
+ if case=='absent_after_LD_missing':del objects['LD_50c5d90dbf43ac9c_0170']
+ if case=='absent_after_checkpoint_changed':rows[0]['error_code']='CHANGED'
+ if case=='present_foreign_owner':objects[lease]=({'owner':'bf-foreign'},objects[lease][1])
+ if case=='present_foreign_ack':objects[lease]=(objects[lease][0],D.encoded({'mode':'BOUNDED_PILOT','ack_hash':'f'*64}))
+ if case in ('present','present_after_term','absent_after'):
+  assert R.load(b,m,records)==[p]
+  assert bool(asked)==(case=='absent_after')
+ else:
+  reason={'absent_after_LD_changed':'source-free release','absent_after_LD_missing':'source-free release',
+   'absent_after_checkpoint_changed':'checkpoint','present_foreign_owner':'original lease differs','present_foreign_ack':'original lease differs'}.get(case,'qualified expiration')
+  with pytest.raises(BF.B.EvidenceError,match=reason):R.load(b,m,records)
+ assert effects==before
+ # Publication itself never accepts a missing lease: only a completed closure may outlive it.
+ if case=='absent_after':
+  with pytest.raises(BF.B.EvidenceError,match='qualified expiration'):R.validate(p,b,m,records,final=False)
