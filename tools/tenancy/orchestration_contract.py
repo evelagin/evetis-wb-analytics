@@ -25,6 +25,8 @@ SOURCE_FILES = (
     'current_recon_recovery.py','current_recon_image_check.py',
     'performance_dispatch_image_check.py',
     'f507_recovery.py','f507_recovery_image_check.py','fixtures/f507_boundary.json','fixtures/f507_records.json','fixtures/f507_fresh.json',
+    'full_retained_pretransport_recovery.py','full_inventory_gate_recovery.py','heldi_r1r2_image_check.py',
+    'fixtures/heldi_r1_boundary.json','fixtures/heldi_r2_boundary.json','fixtures/heldi_leaf465_seq68_intent.json',
 )
 
 
@@ -95,6 +97,10 @@ def block(c, settings, repo, release=None):
     single_diagnostic='fbo_source_isolation_version' in release
     current_data='current_data_version' in release
     exact_f507='exact_f507_recovery_version' in release
+    exact_r1r2='exact_r1r2_recovery_version' in release
+    if exact_r1r2:
+        expected.add('exact_r1r2_recovery_version')
+        if release.get('schema_version')!=4 or not exact_f507 or type(release['exact_r1r2_recovery_version']) is not int or release['exact_r1r2_recovery_version']!=1:raise ValueError('unqualified exact R1/R2 recovery')
     if exact_f507:
         expected.add('exact_f507_recovery_version')
         if release.get('schema_version')!=4 or type(release['exact_f507_recovery_version']) is not int or release['exact_f507_recovery_version']!=1:raise ValueError('unqualified exact f507 recovery')
@@ -127,6 +133,7 @@ def block(c, settings, repo, release=None):
     if single_diagnostic:required.add('fbo_source_isolation_adapter')
     if current_data:required.add('current_data_adapter')
     if exact_f507:required.add('exact_f507_recovery')
+    if exact_r1r2:required.add('exact_r1r2_recovery')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

@@ -124,6 +124,10 @@ jobs:
         run: python -m pytest -q tools/tests/test_f507_recovery.py
       - name: exact f507 recovery transport (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.f507_recovery_image_check
+      - name: exact Heldi R1/R2 owner recoveries (offline)
+        run: python -m pytest -q tools/tests/test_heldi_r1r2_recovery.py
+      - name: exact Heldi R1/R2 recovery image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.heldi_r1r2_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 
