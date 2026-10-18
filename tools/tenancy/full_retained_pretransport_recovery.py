@@ -281,14 +281,19 @@ def staged_descriptor(b, name, labels, stamp, expiry):
     marker = b.tables.get_table(b.c['datasets']['tenant_locks'], name)
     if marker is None or marker[0] != labels or not isinstance(marker[1], str):
         return False
-    desc = parse(marker[1])
+    try:
+        desc = parse(marker[1])
+    except (BF.B.EvidenceError, ValueError):
+        return False
     if (not isinstance(desc, dict) or set(desc) != {'settings', 'release'} or marker[1] != D.encoded(desc)
-            or not isinstance(desc['settings'], dict) or not isinstance(desc['release'], dict)):
+            or not isinstance(desc['settings'], dict) or not isinstance(desc['release'], dict)
+            or not isinstance(desc['release'].get('verification'), dict)
+            or not {'controller_implementation_hash', 'runtime_implementation_hash'} <= set(desc['release'])):
         return False
     source = desc['settings'].get('release')
     if (desc['settings'] != dict(release=source, root_hash=ROOT, scheduler_state='PAUSED') or source == OLD
             or name != C.descriptor_name(source, ROOT, 'PAUSED') or desc['release'].get('source_sha') != source
-            or desc['release'].get('verification', {}).get('exact_r1r2_recovery') != 'PASS'):
+            or desc['release']['verification'].get('exact_r1r2_recovery') != 'PASS'):
         return False
     if name in STAGED_DESCRIPTORS:
         created, digest = STAGED_DESCRIPTORS[name]

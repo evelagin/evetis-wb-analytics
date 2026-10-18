@@ -479,6 +479,13 @@ def staged(L, name=None, labels=None, created=None, description=None):
     return name
 
 
+def full_release(L):
+    p = L.s.p
+    return dict(source_sha=p['new_source'], image=p['new_image'], controller_implementation_hash=p['new_implementation_hash'],
+                runtime_image=p['runtime_image'], runtime_implementation_hash=p['runtime_implementation_hash'],
+                verification={'exact_r1r2_recovery': 'PASS'})
+
+
 def installed(L, source=None, settings=None, release=None, created=1792400000000):
     from tools.tenancy import cloud_controller as C
     p = L.s.p; source = source or p['new_source']
@@ -542,6 +549,8 @@ PINNED_FAULTS = {
     'expiration_set': lambda L: (staged(L), L.expiry.__setitem__(POST['name'], '1794787200000')),
     'description_null': lambda L: staged(L, description='null'),
     'release_not_object': lambda L: staged(L, description=D.encoded(dict(settings=json.loads(POST['description'])['settings'], release='x'))),
+    'description_not_json': lambda L: staged(L, description='{"settings": '),
+    'description_duplicate_keys': lambda L: staged(L, description='{"release":{},"release":{},"settings":{}}'),
 }
 
 
@@ -558,8 +567,11 @@ INSTALLED_FAULTS = {
     'env_other_source': lambda L: L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_SOURCE_SHA', '7' * 40),
     'settings_enabled': lambda L: L.__setattr__('override', dict(settings=dict(release=L.s.p['new_source'], root_hash=R1.ROOT, scheduler_state='ENABLED'))),
     'release_other_source': lambda L: L.__setattr__('override', dict(release=dict(source_sha='7' * 40, verification={'exact_r1r2_recovery': 'PASS'}))),
-    'release_unqualified': lambda L: L.__setattr__('override', dict(release=dict(source_sha=L.s.p['new_source'], verification={}))),
-    'original_source': lambda L: L.__setattr__('override', dict(source=R1.OLD)),
+    'release_unqualified': lambda L: L.__setattr__('override', dict(release=dict(full_release(L), verification={'exact_r1r2_recovery': 'FAIL'}))),
+    'release_without_verification': lambda L: L.__setattr__('override', dict(release=dict(full_release(L), verification='PASS'))),
+    'release_without_hashes': lambda L: L.__setattr__('override', dict(release={k: v for k, v in full_release(L).items() if k != 'runtime_implementation_hash'})),
+    'original_source': lambda L: (L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_SOURCE_SHA', R1.OLD),
+                                  L.__setattr__('override', dict(source=R1.OLD, release=dict(full_release(L), source_sha=R1.OLD)))),
     'third_source': lambda L: L.__setattr__('override', dict(source='6' * 40)),
     'image_differs_from_installed': lambda L: L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_IMAGE', 'other@sha256:' + '0' * 64),
 }

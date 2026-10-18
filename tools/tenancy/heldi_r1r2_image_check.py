@@ -116,9 +116,9 @@ def staged_descriptors_real_hashes():
         except BF.B.EvidenceError:
             continue
         raise AssertionError('staged descriptor false pass: ' + case)
+    run([], env_source='6' * 40)       # the byte-pinned descriptor never depends on the installed env
     try:
-        run([], env_source='6' * 40)   # installed env cannot vouch for a descriptor it does not own
-        run([spec(own, release) + (later,)], env_source='6' * 40)
+        run([spec(own, release) + (later,)], env_source='6' * 40)   # a foreign installed env cannot vouch for it
     except BF.B.EvidenceError:
         pass
     else:
@@ -128,7 +128,7 @@ def staged_descriptors_real_hashes():
 
 def check():
     m = FR.manifest(); x1 = R1.baseline()
-    staged_descriptors_real_hashes()
+    own = staged_descriptors_real_hashes()
     i, doc, prep, authority = intent_dispatch(); job = prep['job'].rsplit('/', 1)[-1]
     assert D.digest(i) == R1.INTENT and sorted(D.digest(r) for r in x1['shard_records']) == x1['protected_shard_hashes']
     # Old derivation reproduces the rejection before any credential or transport.
@@ -186,7 +186,7 @@ def check():
             'r1_replacement_exact_dispatch': 'PASS', 'r1_shard_stops_without_closure': 'PASS',
             'r1_new_sequence_after_closure': 'PASS', 'r1_tampered_proof_blocks': 'PASS', 'r1_unknown_predicates_block': 'PASS',
             'r2_independent_certificate': 'PASS', 'r2_unknown_predicates_block': 'PASS', 'r2_finishing_peer_waits': 'PASS',
-            'r1r2_staged_descriptors_real_hashes': 'PASS'}
+            'r1r2_staged_descriptors_real_hashes': 'PASS', 'r1r2_staged_descriptor_own_source_' + own: 'PASS'}
 
 
 if __name__ == '__main__':
