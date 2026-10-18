@@ -137,7 +137,7 @@ def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,securi
         if n==O.JOB and cloud:
             from tools.tenancy import controller_cadence as CC
             if not getattr(b,'wake_claim',None):fail('canonical cloud controller claim required')
-            CC.inventory(b)
+            CC.inventory(b,finalization_wait=False)  # may follow a committed STOP: never report a wait
         elif any(not x.get('completionTime') for x in xs):fail('active execution')
         if n in b.c['marketplaces']['ozon']['jobs']:runtime_inventory.extend(xs)
     op=b.request('GET',BF.RUN_API+'/'+rc['operation']);execution=op.get('metadata',{}).get('name');x=b.request('GET',BF.RUN_API+'/'+execution)
