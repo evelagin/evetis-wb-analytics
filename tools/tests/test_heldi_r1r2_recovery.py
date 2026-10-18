@@ -592,6 +592,19 @@ def test_post_rollout_installed_descriptor_false_pass_cases_fail_closed(monkeypa
 
 
 @pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_installed_descriptor_requires_canonical_encoding(monkeypatch, module):
+    def mutate(L):
+        staged(L); name = installed(L)
+        labels, text = L.s.w.meta[('tenant_locks', name)]
+        L.s.w.meta[('tenant_locks', name)] = (labels, json.dumps(json.loads(text), indent=1))   # same content, not canonical
+    L = Live(module, monkeypatch, mutate=mutate)
+    from tools.tenancy import orchestration_contract as O
+    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: None)
+    with pytest.raises(BF.B.EvidenceError, match='unexpected lock/fence/lease after actor'):
+        L.run()
+
+
+@pytest.mark.parametrize('module', [R1, R2])
 def test_post_rollout_installed_descriptor_requires_exact_artifact_source(monkeypatch, module):
     L = Live(module, monkeypatch, mutate=lambda L: (staged(L), installed(L)))
     from tools.tenancy import orchestration_contract as O
