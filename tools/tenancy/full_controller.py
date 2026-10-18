@@ -230,7 +230,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -484,6 +484,8 @@ def wake(base, root):
             failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
             paused_bootstrap=PB.load(backend,manifest,records) if any(r['kind']==PB.KIND for r in records) else []
             rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
+            from tools.tenancy import full_retained_pretransport_recovery as R1
+            rejected=rejected+(R1.load(backend,manifest,records) if any(r['kind']==R1.KIND for r in records) else [])
         backend.verified_cooldown_failures=failed
         backend.verified_pretransport_rejections=rejected
         zero_effect=ZE.load(backend,manifest,records) if any(r['kind']==ZE.KIND for r in records) else []
@@ -497,6 +499,8 @@ def wake(base, root):
         approved += CURRENT_RECON.load(backend,manifest,records)
         from tools.tenancy import f507_recovery as EXACT_F507
         approved += EXACT_F507.load(backend,manifest,records)
+        from tools.tenancy import full_inventory_gate_recovery as R2
+        approved += R2.load(backend,manifest,records)
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.

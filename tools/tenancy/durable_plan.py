@@ -19,6 +19,7 @@ KINDS = KINDS | {'FULL_LEAF_STOP_RECOVERED','FULL_FIRST_RECEIPT_STOP_RECOVERED'}
 KINDS = KINDS | {'FULL_COOLDOWN_FAILED_RECOVERED','FAILED_SOURCE_ATTEMPT_SUPERSEDED'}
 KINDS = KINDS | {'FULL_POLICY_BOOTSTRAP_STOP_RECOVERED','FULL_CONTROLLER_CLOSURE_RECOVERED'}
 KINDS = KINDS | {'FULL_PRETRANSPORT_STOP_RECOVERED','DISPATCH_PRETRANSPORT_REJECTED'}
+KINDS = KINDS | {'FULL_RETAINED_PRETRANSPORT_STOP_RECOVERED','FULL_INVENTORY_GATE_STOP_RECOVERED'}
 KINDS = KINDS | {'FULL_FBO_ZERO_EFFECT_FAILED_RECOVERED','DISPATCH_ZERO_EFFECT_FAILED_CLOSED'}
 KINDS = KINDS | {'FULL_LEAF_QUARANTINED_SOURCE_CONTRACT','DISPATCH_SOURCE_CONTAINED_FAILED_CLOSED'}
 KINDS = KINDS | {'FULL_PRE_AUTHORITY_GATE_STOP_RECOVERED','FULL_CURRENT_PARTIAL_PERSISTENCE_STOP_RECOVERED'}
@@ -280,6 +281,15 @@ def quota_decision(reservations, unknown_exports, now, report_phase=None, floor=
     return {"status": "WAITING", "allowance": 0, "eligible_at": min(expiry for n, expiry in active).isoformat()}
 
 
+def pretransport_module(proof):
+    """Each exact pretransport closure keeps its own closed module; no shared authority."""
+    from tools.tenancy import full_pretransport_recovery as PT, full_retained_pretransport_recovery as R1
+    kind=proof.get('type') if isinstance(proof,dict) else None
+    if kind==PT.TYPE:return PT
+    if kind==R1.TYPE:return R1
+    raise BF.B.EvidenceError('unknown pretransport closure type')
+
+
 def decide_tick(records, plan_hash, quota, active_execution=False, verified_failures=(), verified_controller_recoveries=(), verified_dispatch_recoveries=(), verified_failed_cooldown=(), verified_pretransport=(), verified_fbo_zero_effect=()):
     """Pure fail-closed dispatch protocol; network adapter must obey this verdict.
 
@@ -301,11 +311,11 @@ def decide_tick(records, plan_hash, quota, active_execution=False, verified_fail
         ZE.verify_shard(proof,current)
         recovered.add(proof['receipt_sequence'])
     for proof in verified_pretransport:
-        from tools.tenancy import full_pretransport_recovery as PT
         from pipelines.ozon.runtime import full_resume as FR
-        PT.header(proof,FR.manifest())
+        module=pretransport_module(proof)
+        module.header(proof,FR.manifest())
         if proof['shard']!=plan_hash:raise BF.B.EvidenceError('foreign pretransport closure')
-        PT.verify_shard(proof,current)
+        module.verify_shard(proof,current)
         recovered.add(proof['receipt_sequence'])
     for proof in verified_failed_cooldown:
         import cooldown_failed as CF

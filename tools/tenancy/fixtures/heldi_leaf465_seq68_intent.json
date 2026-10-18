@@ -1,0 +1,103 @@
+{
+ "kind": "DISPATCH_INTENT",
+ "payload": {
+  "plan": {
+   "ack_hash": "18721b388ab7f956ce4525f54e122624b964af8921094c4c890c0c533071777c",
+   "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:ea71acd9860d1d29d225451d56ac98aac2c0f69fa323b5d03c3d4de08abade21",
+   "max_order_batches": 1,
+   "max_requests": 400,
+   "max_units": 20,
+   "mode": "BOUNDED_PILOT",
+   "runtime_plan": {
+    "bundle_page_cap": 500,
+    "entity": "supplies",
+    "fbo_page_cap": 200,
+    "from": "2026-09-17",
+    "generation": "product-identity-20261005-supplies",
+    "implementation_hash": "d1f381374ef3fa9ad625b4784c8707c8c6b8fd0008faf02a6ffd76997d815c43",
+    "minimum_ms": 60000,
+    "order_batch": 5,
+    "origin": "2026-10-05T18:09:15.335675+00:00",
+    "plan_id": "9b4702a141928eb1f4630ec85b2488838610dace63bd80701a3bf215d7ac1320",
+    "project": "mpa-t-client-001",
+    "raw": "ozon_raw",
+    "ref": "ref",
+    "to": "2026-09-17",
+    "version": "WINDOW_V1",
+    "window_days": 1
+   },
+   "tenant_id": "client_001"
+  },
+  "preparation": {
+   "ack_hash": "18721b388ab7f956ce4525f54e122624b964af8921094c4c890c0c533071777c",
+   "job": "projects/mpa-t-client-001/locations/europe-west1/jobs/ozon-runtime-daily",
+   "lease_generation": 285,
+   "overrides": {
+    "overrides": {
+     "containerOverrides": [
+      {
+       "env": [
+        {
+         "name": "ENTITIES",
+         "value": "supplies"
+        },
+        {
+         "name": "SINCE",
+         "value": "2026-09-17"
+        },
+        {
+         "name": "UNTIL",
+         "value": "2026-09-17"
+        },
+        {
+         "name": "INGESTION_RUN_ID",
+         "value": "bf-901cc8b0-7b6f-4a5b-91f8-24cd14d4e3a0"
+        },
+        {
+         "name": "BACKFILL_MODE",
+         "value": "WINDOW_V1"
+        },
+        {
+         "name": "BACKFILL_TARGET_PROJECT",
+         "value": "mpa-t-client-001"
+        },
+        {
+         "name": "BACKFILL_GENERATION",
+         "value": "product-identity-20261005-supplies"
+        },
+        {
+         "name": "BACKFILL_ORIGIN",
+         "value": "2026-10-05T18:09:15.335675+00:00"
+        },
+        {
+         "name": "BACKFILL_MAX_REQUESTS",
+         "value": "400"
+        },
+        {
+         "name": "BACKFILL_MAX_UNITS",
+         "value": "20"
+        },
+        {
+         "name": "BACKFILL_RESUME_PLAN_ID",
+         "value": "9b4702a141928eb1f4630ec85b2488838610dace63bd80701a3bf215d7ac1320"
+        },
+        {
+         "name": "BACKFILL_FULL_AUTHORITY",
+         "value": "{\"index\":465,\"plan_id\":\"9b4702a141928eb1f4630ec85b2488838610dace63bd80701a3bf215d7ac1320\",\"receipt_sequence\":68,\"root\":\"bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222\",\"shard\":\"0cbd288401b04b4085d6a71ee4b2cb358b7dcf5fd9a774337865eb48c8a6d716\"}"
+        },
+        {
+         "name": "BACKFILL_FULL_ROOT_HASH",
+         "value": "bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222"
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "run_id": "bf-901cc8b0-7b6f-4a5b-91f8-24cd14d4e3a0"
+  }
+ },
+ "root_hash": "0cbd288401b04b4085d6a71ee4b2cb358b7dcf5fd9a774337865eb48c8a6d716",
+ "sequence": 68,
+ "version": "CLOUD_BACKFILL_V1"
+}

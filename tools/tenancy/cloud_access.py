@@ -127,6 +127,28 @@ def select_body(c, body):
         raise TT.TableError("unreviewed query function denied")
 
 
+def retained_supplies_index(m, doc, full_authority, c, today):
+    """FULL leaf of the exact retained Supplies document pinned in the frozen FULL manifest.
+
+    No other reused qualification document, tenant or program is admitted; the
+    caller still binds root, shard, sequence, plan and the committed intent.
+    """
+    from tools.tenancy import full_history as F, tenant_backfill as BF
+    index = full_authority.get("index")
+    retained = [i for i, x in enumerate(m["programs"]) if x.get("entity") == "supplies"]
+    if (doc != m.get("retained_supplies") or not BF.QF.matches(doc)
+            or (m["tenant"], m["project"]) != (c["tenant_id"], c["project_id"])
+            or len(retained) != 1 or type(index) is not int or index != retained[0]
+            or m["programs"][index].get("kind") != "RETAINED_INVENTORY"
+            or m["programs"][index].get("accepted_qualification_plan")):
+        raise TT.TableError("FULL authority admits only a frozen leaf or the exact retained Supplies document")
+    try:
+        F.validate_leaf(m, index, doc, today)
+    except BF.B.EvidenceError:
+        raise TT.TableError("retained Supplies leaf differs from the frozen FULL program") from None
+    return index
+
+
 class CloudAccess:
     def __init__(self, contract, tokens, send=wire):
         self.c, self.tokens, self.send = contract, tokens, send
@@ -273,7 +295,12 @@ class CloudAccess:
             m=FR.manifest()
             if not isinstance(full_authority,dict) or set(full_authority)!={'root','index','shard','receipt_sequence','plan_id'}:
                 raise TT.TableError('closed FULL dispatch authority required')
-            index=FR.scope(p,m['hash'])
+            # A frozen FULL leaf is re-derived from its plan. The one reused
+            # qualification document admitted by the FULL manifest (retained
+            # Supplies) has no FULL generation, so its leaf is the manifest's
+            # unique RETAINED_INVENTORY program and the document must be exact.
+            from datetime import datetime
+            index=FR.scope(p,m['hash']) if FR.matches(doc) else retained_supplies_index(m,doc,full_authority,c,datetime.now(BF.B.MSK).date())
             sequence=full_authority['receipt_sequence']
             authority={'root':m['hash'],'index':index,'shard':F.shard_root(m,index,doc),
                        'receipt_sequence':sequence,'plan_id':p['plan_id']}
@@ -292,6 +319,9 @@ class CloudAccess:
                     or prepared['job']!=base+'/jobs/'+job or prepared['overrides']!=body):
                 raise TT.TableError('FULL prepared dispatch differs from committed intent')
             expected['BACKFILL_FULL_AUTHORITY']=D.encoded(authority)
+            # tenant_backfill.start and controller_cadence.runtime always pair
+            # the authority with the FULL root; the runtime refuses it otherwise.
+            expected['BACKFILL_FULL_ROOT_HASH']=m['hash']
         elif full_intent is not None:
             raise TT.TableError('FULL intent without authority')
         if values != expected:

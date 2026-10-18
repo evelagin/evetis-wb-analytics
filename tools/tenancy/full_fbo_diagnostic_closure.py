@@ -95,9 +95,19 @@ def validate(p,b,m,records,*,final=True):
     if F.shard_root(m,p['index'],doc)!=p['shard'] or not any(z['kind']=='CHUNK_PLAN' and z['sequence']==p['index'] and z['payload']['plan']==doc for z in records):fail('leaf/root ownership differs')
     if not set(p['protected_shard_hashes'])<={D.digest(z) for z in sh} or any(z['kind']=='RECONCILED' and z['sequence']==p['sequence'] for z in sh):fail('history changed or fake RECON')
     cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16];ds=b.c['datasets']['tenant_locks'];ln=BF.CK.lease_name(cid,p['generation'])
-    if D.digest(b.tables.get_table(ds,ln))!=p['lease_hash']:fail('original lease bytes differ')
     cp=b.select(f"SELECT * FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE entity='fbo_postings' AND plan_hash=@ack AND lease_generation=@gen ORDER BY updated_at LIMIT 30",{'ack':('STRING',p['ack_hash']),'gen':('INT64',p['generation'])})
     if D.digest(cp)!=p['checkpoint_hash']:fail('original checkpoint bytes differ')
+    lease=b.tables.get_table(ds,ln)
+    if lease is None:
+        # Term from the certificate-bound RUNNING checkpoint; the certificate's
+        # lease hash must reproduce from it. Only a completed closure qualifies.
+        from tools.tenancy import full_pretransport_recovery as PT
+        row=cp[0] if len(cp)==1 and isinstance(cp[0],dict) else {}
+        until=PT.lease_until(row.get('lease_until'))
+        if (not final or until is None or (row.get('status'),row.get('lease_owner'),row.get('run_id'))!=('RUNNING',p['run_id'],p['run_id'])
+                or D.digest(PT.lease_value(p['run_id'],p['ack_hash'],until))!=p['lease_hash']
+                or not PT.lease_expired(b,until)):fail('original lease absent before qualified expiration')
+    elif D.digest(lease)!=p['lease_hash']:fail('original lease bytes differ')
     if b.state(doc)!=BF.B.initial(doc['runtime_plan']) or D.digest(b.state(doc))!=p['state_hash']:fail('quarantined source state changed')
     if final and (closure(p) not in sh or b.tables.get_table(ds,f'LD_{cid}_{p["generation"]:04d}')!=release_value(p)):fail('additive zero-effect closure absent')
     return doc,rc
@@ -137,7 +147,7 @@ def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,securi
         if n==O.JOB and cloud:
             from tools.tenancy import controller_cadence as CC
             if not getattr(b,'wake_claim',None):fail('canonical cloud controller claim required')
-            CC.inventory(b)
+            CC.inventory(b,finalization_wait=False)  # may follow a committed STOP: never report a wait
         elif any(not x.get('completionTime') for x in xs):fail('active execution')
         if n in b.c['marketplaces']['ozon']['jobs']:runtime_inventory.extend(xs)
     op=b.request('GET',BF.RUN_API+'/'+rc['operation']);execution=op.get('metadata',{}).get('name');x=b.request('GET',BF.RUN_API+'/'+execution)
