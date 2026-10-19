@@ -6,6 +6,7 @@ and before any credential or Run POST. Sequence 68 is closed as rejected; no
 receipt, success, reconciliation or replay is created. The original STOP, intent,
 RUNNING checkpoint and lease stay immutable. Publication needs a separate owner ACK.
 """
+import hashlib
 from datetime import timedelta
 from tools.tenancy import durable_plan as D, tenant_backfill as BF, full_history as F
 from tools.tenancy.validation import parse_tenant_json as parse
@@ -41,6 +42,15 @@ FIELDS = frozenset({'version', 'type', 'tenant', 'project', 'root', 'manifest_ha
     'protected_root_hashes', 'protected_root_set_hash', 'protected_shard_hashes', 'archive', 'archive_hash',
     'effect_hash', 'closure_hash', 'predicates', 'production_gates', 'verified_at', 'historical_cause',
     'source_budget', 'hash'})
+
+
+# Staged PAUSED descriptors created after the actor by owner rollouts of an R1/R2 replacement,
+# byte-pinned: name -> (creationTime ms, sha256 of description). 18.10.2026 13:31:53Z rollout of
+# ec2b3a7 (journal sha256 c5a2bc5ced958aeb5a217db48f9cabaa4c73c8c9410da4e1c0c41b3201e57786).
+STAGED_DESCRIPTORS = {
+    'BF_SPEC_ec2b3a7bcf73d52a20c2032db6a28d65f3833887_' + ROOT + '_PAUSED':
+        (1792330313467, '994273f023f0b515038c89c7945699e66b621aacb1d617dbb2f3c65dd55c73cd'),
+}
 
 
 def fail(s): raise BF.B.EvidenceError('exact R1 recovery: ' + s)
@@ -261,6 +271,41 @@ def recovery_artifact(name, labels):
             and labels.get('kind') in {KIND.lower(), R2.KIND.lower(), SHARD_KIND.lower()})
 
 
+def staged_descriptor(b, name, labels, stamp, expiry):
+    """Only a staged PAUSED descriptor of a qualified R1/R2 replacement: the byte-pinned rollout one,
+    or the installed controller's own descriptor of its qualified release. Never ENABLED, another root,
+    another source or the original source."""
+    from tools.tenancy import cloud_controller as C, orchestration_contract as O
+    if labels != {'root': ROOT[:16], 'kind': 'deployment_spec'} or expiry is not None:
+        return False
+    marker = b.tables.get_table(b.c['datasets']['tenant_locks'], name)
+    if marker is None or marker[0] != labels or not isinstance(marker[1], str):
+        return False
+    try:
+        desc = parse(marker[1])
+    except (BF.B.EvidenceError, ValueError):
+        return False
+    if (not isinstance(desc, dict) or set(desc) != {'settings', 'release'} or marker[1] != D.encoded(desc)
+            or not isinstance(desc['settings'], dict) or not isinstance(desc['release'], dict)
+            or not isinstance(desc['release'].get('verification'), dict)
+            or not {'controller_implementation_hash', 'runtime_implementation_hash'} <= set(desc['release'])):
+        return False
+    source = desc['settings'].get('release')
+    if (desc['settings'] != dict(release=source, root_hash=ROOT, scheduler_state='PAUSED') or source == OLD
+            or name != C.descriptor_name(source, ROOT, 'PAUSED') or desc['release'].get('source_sha') != source
+            or desc['release']['verification'].get('exact_r1r2_recovery') != 'PASS'):
+        return False
+    if name in STAGED_DESCRIPTORS:
+        created, digest = STAGED_DESCRIPTORS[name]
+        return round(F.stamp(stamp).timestamp() * 1000) == created and hashlib.sha256(marker[1].encode()).hexdigest() == digest
+    env = b.c['orchestration']['job']['env']
+    if (env.get('CONTROLLER_SOURCE_SHA') != source or env.get('HISTORICAL_SCHEDULER_STATE') != 'PAUSED'
+            or env.get('CONTROLLER_IMAGE') != desc['release'].get('image')):
+        return False
+    O.verify_artifact_source(desc['release'], BF.REPO)
+    return True
+
+
 def fresh_effects(b, after):
     """No source preparation, journal, checkpoint or lock beyond the archived boundary."""
     x = baseline(); locks = b.c['datasets']['tenant_locks']
@@ -270,6 +315,8 @@ def fresh_effects(b, after):
         if F.stamp(stamp) < F.stamp(after):
             continue
         if name in archived or recovery_artifact(name, labels) or name.startswith(('BFCW_' + ROOT + '_', 'BFCX_' + ROOT + '_')):
+            continue
+        if name.startswith('BF_SPEC_') and staged_descriptor(b, name, labels, stamp, rest[0] if rest else 'unknown'):
             continue
         fail('unexpected lock/fence/lease after actor: ' + name[:40])
     leases = sorted(n for n, *_ in b.tables.list_tables(locks) if n.startswith('L_50c5d90dbf43ac9c_'))

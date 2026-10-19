@@ -370,6 +370,8 @@ class Live:
         self.executions = {x1['actor']['name']: copy.deepcopy(x1['actor']), x2['actor']['name']: copy.deepcopy(x2['actor']),
                            x2['peer']['name']: copy.deepcopy(x2['peer'])}
         self.counts = {'journal': 0, 'checkpoints': 0, 'foreign': 0}
+        self.created = {}   # table name -> creationTime ms (default: before every actor)
+        self.expiry = {}    # table name -> expirationTime (default: none)
         # archived post-actor locks that are not durable records of this test store (claims, lease, fences)
         self.locks = [(z['name'], z['labels'], z['created_ms']) for z in self.x['locks_after_actor'] if not z['name'].startswith('BFR_')]
         b = s.b
@@ -385,10 +387,10 @@ class Live:
         def listing(ds, with_expiry=False):
             if ds != 'tenant_locks':
                 return []
-            rows = [(n, v[0], 1792100000000) for (d, n), v in s.w.meta.items() if d == 'tenant_locks']
+            rows = [(n, v[0], self.created.get(n, 1792100000000)) for (d, n), v in s.w.meta.items() if d == 'tenant_locks']
             rows += [z for z in self.locks if ('tenant_locks', z[0]) not in s.w.meta]
             ts = lambda c: datetime.fromtimestamp(c / 1000, timezone.utc)
-            return [(n, l, ts(c), None) if with_expiry else (n, l, ts(c)) for n, l, c in rows]
+            return [(n, l, ts(c), self.expiry.get(n)) if with_expiry else (n, l, ts(c)) for n, l, c in rows]
         b.tables.list_tables = listing
         for g in range(1, 1324):  # the real chain is complete; archived values cover 1291..1293
             cn, xn = CC.names(R1.ROOT, g)
@@ -464,3 +466,148 @@ def test_partial_publication_never_resolves_the_stop(monkeypatch, module, n):
             assert D.decide_tick(s.b.store.history(R1.SHARD), R1.SHARD, {'status': 'ELIGIBLE'},
                                  verified_pretransport=R1.load(s.b, s.m, rs))['action'] == 'RECOVER_RECEIPT_OR_STOP'
         monkeypatch.undo()
+
+
+# ---------------------------------------------------------------- actual post-rollout state (18.10 PAUSED rollout of ec2b3a7)
+POST = json.loads((BF.REPO / 'tools/tenancy/fixtures/heldi_post_rollout_staged_descriptor.json').read_text())
+
+
+def staged(L, name=None, labels=None, created=None, description=None):
+    name = name or POST['name']
+    L.s.w.meta[('tenant_locks', name)] = (dict(labels or POST['labels']), description if description is not None else POST['description'])
+    L.created[name] = POST['created_ms'] if created is None else created
+    return name
+
+
+def full_release(L):
+    p = L.s.p
+    return dict(source_sha=p['new_source'], image=p['new_image'], controller_implementation_hash=p['new_implementation_hash'],
+                runtime_image=p['runtime_image'], runtime_implementation_hash=p['runtime_implementation_hash'],
+                verification={'exact_r1r2_recovery': 'PASS'})
+
+
+def installed(L, source=None, settings=None, release=None, created=1792400000000):
+    from tools.tenancy import cloud_controller as C
+    p = L.s.p; source = source or p['new_source']
+    L.s.b.c['orchestration']['job']['env'].setdefault('CONTROLLER_IMAGE', p['new_image'])
+    settings = settings or dict(release=source, root_hash=R1.ROOT, scheduler_state='PAUSED')
+    release = release or dict(source_sha=source, image=p['new_image'], controller_implementation_hash=p['new_implementation_hash'],
+                              runtime_image=p['runtime_image'], runtime_implementation_hash=p['runtime_implementation_hash'],
+                              verification={'exact_r1r2_recovery': 'PASS'})
+    return staged(L, C.descriptor_name(settings['release'], settings['root_hash'], settings['scheduler_state']),
+                  description=D.encoded(dict(settings=settings, release=release)), created=created)
+
+
+def test_post_rollout_fixture_is_the_live_descriptor():
+    from tools.tenancy import cloud_controller as C
+    import hashlib
+    desc = json.loads(POST['description'])
+    assert POST['name'] == C.descriptor_name('ec2b3a7bcf73d52a20c2032db6a28d65f3833887', R1.ROOT, 'PAUSED')
+    assert hashlib.sha256(POST['description'].encode()).hexdigest() == POST['description_sha256'] == R1.STAGED_DESCRIPTORS[POST['name']][1]
+    assert POST['created_ms'] == R1.STAGED_DESCRIPTORS[POST['name']][0]
+    assert desc['settings'] == dict(release='ec2b3a7bcf73d52a20c2032db6a28d65f3833887', root_hash=R1.ROOT, scheduler_state='PAUSED')
+    assert POST['created_ms'] > F.stamp(R2.baseline()['actor']['createTime']).timestamp() * 1000   # after both actors
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_state_blocked_without_exact_allowance(monkeypatch, module):
+    """Reproduces ec2b3a7: the staged descriptor of the rollout is an 'unexpected lock' for R1 and R2."""
+    L = Live(module, monkeypatch, mutate=staged)
+    monkeypatch.setattr(R1, 'STAGED_DESCRIPTORS', {})
+    with pytest.raises(BF.B.EvidenceError, match='unexpected lock/fence/lease after actor: BF_SPEC_ec2b3a7'):
+        L.run()
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_pinned_descriptor_passes(monkeypatch, module):
+    L = Live(module, monkeypatch, mutate=staged)
+    assert L.run() == module.boundary_summary()
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_pinned_and_installed_replacement_pass(monkeypatch, module):
+    calls = []
+    L = Live(module, monkeypatch, mutate=lambda L: (staged(L), installed(L)))
+    from tools.tenancy import orchestration_contract as O
+    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: calls.append(r['source_sha']))
+    assert L.run() == module.boundary_summary() and calls == [L.s.p['new_source']]
+
+
+PINNED_FAULTS = {
+    'description_byte': lambda L: staged(L, description=POST['description'].replace('"PAUSED"', '"PAUSED" ', 1)),
+    'description_noncanonical': lambda L: staged(L, description=json.dumps(json.loads(POST['description']), indent=1)),
+    'created_plus_1ms': lambda L: staged(L, created=POST['created_ms'] + 1),
+    'recreated_later': lambda L: staged(L, created=POST['created_ms'] + 3600000),
+    'labels_kind': lambda L: staged(L, labels=dict(POST['labels'], kind='deployment')),
+    'labels_extra': lambda L: staged(L, labels=dict(POST['labels'], x='y')),
+    'enabled_same_body': lambda L: (staged(L), staged(L, name=POST['name'][:-len('PAUSED')] + 'ENABLED')),
+    'enabled_settings': lambda L: staged(L, name=POST['name'][:-len('PAUSED')] + 'ENABLED',
+                                         description=POST['description'].replace('"scheduler_state":"PAUSED"', '"scheduler_state":"ENABLED"')),
+    'other_root': lambda L: (staged(L), staged(L, name=POST['name'].replace(R1.ROOT, '0' * 64), labels=dict(POST['labels'], root='0' * 16))),
+    'unknown_table': lambda L: (staged(L), L.locks.append(('X_unknown', {}, POST['created_ms']))),
+    'descriptor_unreadable': lambda L: (L.locks.append((POST['name'], POST['labels'], POST['created_ms']))),
+    'expiration_set': lambda L: (staged(L), L.expiry.__setitem__(POST['name'], '1794787200000')),
+    'description_null': lambda L: staged(L, description='null'),
+    'release_not_object': lambda L: staged(L, description=D.encoded(dict(settings=json.loads(POST['description'])['settings'], release='x'))),
+    'description_not_json': lambda L: staged(L, description='{"settings": '),
+    'description_duplicate_keys': lambda L: staged(L, description='{"release":{},"release":{},"settings":{}}'),
+}
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+@pytest.mark.parametrize('fault', sorted(PINNED_FAULTS))
+def test_post_rollout_pinned_descriptor_false_pass_cases_fail_closed(monkeypatch, module, fault):
+    L = Live(module, monkeypatch, mutate=PINNED_FAULTS[fault])
+    with pytest.raises(BF.B.EvidenceError, match='unexpected lock/fence/lease after actor'):
+        L.run()
+
+
+INSTALLED_FAULTS = {
+    'env_enabled': lambda L: L.s.b.c['orchestration']['job']['env'].__setitem__('HISTORICAL_SCHEDULER_STATE', 'ENABLED'),
+    'env_other_source': lambda L: L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_SOURCE_SHA', '7' * 40),
+    'settings_enabled': lambda L: L.__setattr__('override', dict(settings=dict(release=L.s.p['new_source'], root_hash=R1.ROOT, scheduler_state='ENABLED'))),
+    'release_other_source': lambda L: L.__setattr__('override', dict(release=dict(source_sha='7' * 40, verification={'exact_r1r2_recovery': 'PASS'}))),
+    'release_unqualified': lambda L: L.__setattr__('override', dict(release=dict(full_release(L), verification={'exact_r1r2_recovery': 'FAIL'}))),
+    'release_without_verification': lambda L: L.__setattr__('override', dict(release=dict(full_release(L), verification='PASS'))),
+    'release_without_hashes': lambda L: L.__setattr__('override', dict(release={k: v for k, v in full_release(L).items() if k != 'runtime_implementation_hash'})),
+    'original_source': lambda L: (L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_SOURCE_SHA', R1.OLD),
+                                  L.__setattr__('override', dict(source=R1.OLD, release=dict(full_release(L), source_sha=R1.OLD)))),
+    'third_source': lambda L: L.__setattr__('override', dict(source='6' * 40)),
+    'image_differs_from_installed': lambda L: L.s.b.c['orchestration']['job']['env'].__setitem__('CONTROLLER_IMAGE', 'other@sha256:' + '0' * 64),
+}
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+@pytest.mark.parametrize('fault', sorted(INSTALLED_FAULTS))
+def test_post_rollout_installed_descriptor_false_pass_cases_fail_closed(monkeypatch, module, fault):
+    def mutate(L):
+        L.override = {}
+        INSTALLED_FAULTS[fault](L)
+        staged(L); installed(L, **L.override)
+    L = Live(module, monkeypatch, mutate=mutate)
+    from tools.tenancy import orchestration_contract as O
+    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: None)
+    with pytest.raises(BF.B.EvidenceError, match='unexpected lock/fence/lease after actor'):
+        L.run()
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_installed_descriptor_requires_canonical_encoding(monkeypatch, module):
+    def mutate(L):
+        staged(L); name = installed(L)
+        labels, text = L.s.w.meta[('tenant_locks', name)]
+        L.s.w.meta[('tenant_locks', name)] = (labels, json.dumps(json.loads(text), indent=1))   # same content, not canonical
+    L = Live(module, monkeypatch, mutate=mutate)
+    from tools.tenancy import orchestration_contract as O
+    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: None)
+    with pytest.raises(BF.B.EvidenceError, match='unexpected lock/fence/lease after actor'):
+        L.run()
+
+
+@pytest.mark.parametrize('module', [R1, R2])
+def test_post_rollout_installed_descriptor_requires_exact_artifact_source(monkeypatch, module):
+    L = Live(module, monkeypatch, mutate=lambda L: (staged(L), installed(L)))
+    from tools.tenancy import orchestration_contract as O
+    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: (_ for _ in ()).throw(ValueError('implementation hash differs')))
+    with pytest.raises(ValueError, match='implementation hash differs'):
+        L.run()
