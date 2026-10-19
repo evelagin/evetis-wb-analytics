@@ -166,6 +166,13 @@ PERF_ALLOWED_POST = frozenset({"/api/client/statistics"})
 class ApiPathDenied(RuntimeError):
     """Путь не входит в белый список «только чтение»: запрос не отправляется."""
 BACKOFF = [3, 6, 12, 24, 48]
+# Страницы списка кампаний (идемпотентный GET) — единственное чтение Performance, которое
+# повторяется на HTTP 429: Ozon отказывает странице, запрошенной в ту же секунду, что и
+# предыдущая (09–19.10: страница 1 → 200, страница 2 → 429, 38 раз подряд; 05.10 те же
+# 7 страниц прошли с 5 повторами за 32 с). Заказ отчётов и статистика на 429 не повторяются;
+# Retry-After длиннее последней паузы возвращает отказ в долгий кулдаун контура.
+PERF_429_RETRY_GET = re.compile(r"^/api/client/campaign\?page=[1-9][0-9]{0,4}&pageSize=100$")
+PERF_429_RETRIES = 4
 
 class _CredentialCache:
     """No ordinary cache read outside the controlled loader (not a Python sandbox)."""
@@ -515,6 +522,12 @@ def _perf_diagnostic(status, headers):
                 pass
 
 
+def _perf_429_retryable(req):
+    parsed = urllib.parse.urlsplit(req.full_url)
+    return (req.get_method() == "GET" and parsed.hostname == "api-performance.ozon.ru"
+            and bool(PERF_429_RETRY_GET.fullmatch(parsed.path + "?" + parsed.query)))
+
+
 def _request(req, attempt=0, raw_text=False, *, allow_retries=True):
     credentialed = (hasattr(req, "_seller_profile") or urllib.parse.urlsplit(req.full_url).hostname == "api-seller.ozon.ru"
                     or any(k.lower() in ("api-key", "client-id") for k, _ in req.header_items()))
@@ -545,6 +558,12 @@ def _request(req, attempt=0, raw_text=False, *, allow_retries=True):
         if performance:
             _perf_diagnostic(e.code, e.headers)
             _perf_request_evidence(req,e.code)
+        if allow_retries and performance and e.code == 429 and _perf_429_retryable(req) and attempt < PERF_429_RETRIES:
+            pause = max(BACKOFF[attempt], PERF_DIAGNOSTIC.get("retry-after", 0))
+            if pause <= BACKOFF[PERF_429_RETRIES - 1]:
+                STATS["retries"] += 1
+                time.sleep(pause)
+                return _request(req, attempt + 1, raw_text, allow_retries=allow_retries)
         if allow_retries and not report_submit and (not performance or e.code != 429) and e.code in (429, 500, 502, 503, 504) and attempt < len(BACKOFF):
             STATS["retries"] += 1
             time.sleep(BACKOFF[attempt])
