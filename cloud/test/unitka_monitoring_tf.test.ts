@@ -24,12 +24,13 @@ describe('heartbeat: отсутствие события = сигнал', () => 
   it('создаётся выключенной: метрика не заполняется задним числом', () => {
     expect(hb).toMatch(/enabled\s+=\s+false/);
   });
-  it('окно 24 ч + duration: WB 3 ч (после резерва 09:30Z) = 27 ч, остальные 2 ч = 26 ч', () => {
+  it('heartbeat: окно 24 ч + duration 1 ч = 25 ч у всех четырёх (duration ≤ 24 ч, сумма ≤ 25 ч)', () => {
     expect(hb).toContain('[24h])) or vector(0)) < 1');
     expect(hb).toContain('duration            = each.value.duration');
-    expect(tf).toMatch(/unitka_wb_lcd_committed = \{[\s\S]*?duration\s+=\s+"10800s"/);
-    for (const k of ['unitka_ozon_lcd_committed', 'unitka_store_pnl_published', 'ozon_store_pnl_published']) {
-      expect(tf).toMatch(new RegExp(`${k} = \\{[\\s\\S]*?duration\\s+=\\s+"7200s"`));
+    for (const k of ['unitka_wb_lcd_committed', 'unitka_ozon_lcd_committed', 'unitka_store_pnl_published', 'ozon_store_pnl_published']) {
+      const m = tf.match(new RegExp(`${k} = \\{[\\s\\S]*?duration\\s+=\\s+"(\\d+)s"`));
+      expect(m).not.toBeNull();
+      expect(24 * 3600 + Number(m![1])).toBeLessThanOrEqual(25 * 3600);
     }
   });
   it('ни одно PromQL-окно не длиннее 25 ч: предел пользовательских лог-метрик', () => {
@@ -38,6 +39,8 @@ describe('heartbeat: отсутствие события = сигнал', () => 
     expect(ranges.length).toBeGreaterThan(0);
     for (const h of ranges) expect(h).toBeLessThanOrEqual(25);
     expect(tf).not.toMatch(/\[2[6-9]h\]/);
+    // у PromQL с duration > 0 — только окно heartbeat; прочие условия без выдержки
+    expect([...tf.matchAll(/duration\s+=\s+"(\d+)s"/g)].every((m) => m[1] === '0' || m[1] === '3600')).toBe(true);
   });
 });
 
