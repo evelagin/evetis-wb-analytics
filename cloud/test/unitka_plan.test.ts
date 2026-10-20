@@ -105,7 +105,7 @@ describe('buildPlan', () => {
     expect(p.closedDays).toBe(10);
     // 24 × 10 × 9 факт + 24 × 30 × 2 ставки + reverse + 2 LCD
     expect(p.expected).toHaveLength(24 * 10 * 9 + 24 * 30 * 2 + 3);
-    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, pass: true });
+    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, pass: true });
     expect(p.gaps.stock).toBe(10);
     expect(p.gaps.storage).toBe(24);
   });
@@ -160,11 +160,11 @@ describe('buildPlan', () => {
   describe('инвариант с пересечением продажа × отказ (20.10.2026, unitka-engine-prod-qs2p4)', () => {
     const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
     it('продажа без возврата и отказ без продажи — пересечение 0, проходит', () => {
-      expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, pass: true });
+      expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, pass: true });
     });
     it('продажа и последующий возврат одного srid — проходит; ставки не меняются', () => {
       const p = buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: 1 }) }));
-      expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, pass: true });
+      expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, returnTail: 0, pass: true });
       expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs())));
     });
     it('несколько пересечений — проходит', () => {
@@ -173,7 +173,7 @@ describe('buildPlan', () => {
     });
     it('текущий случай: 535 = 492 + 44 − 1', () => {
       const p = buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 1 }) }));
-      expect(p.invariant).toEqual({ shipments: 535, sales: 492, refusals: 44, overlap: 1, pass: true });
+      expect(p.invariant).toEqual({ shipments: 535, sales: 492, refusals: 44, overlap: 1, returnTail: 0, pass: true });
     });
     it('без пересечения тот же срез по-прежнему отклоняется (как в инциденте)', () => {
       expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 0 }) })))).toBe('INVARIANT_FAIL');
@@ -192,6 +192,41 @@ describe('buildPlan', () => {
     it('пересечение отсутствует, дробное, отрицательное или больше групп — INVARIANT_FAIL, не ноль', () => {
       for (const v of [null, 0.5, -1, 53, 546]) {
         expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: v }) })))).toBe('INVARIANT_FAIL');
+      }
+    });
+  });
+  describe('инвариант с хвостом доказанного возврата (продажа за началом окна, «Возврат» и плечо в окне)', () => {
+    const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
+    // Срез LCD 03.11–17.11.2026 для srid ebM…3.1: продажа 04.10 вне окна, «Возврат» и его плечо 19.10 в окне —
+    // srid в shipments (одно плечо), но ни в sales, ни в refusals; вью отдаёт return_tail = 1.
+    it('хвост одного srid — проходит; ставки не меняются', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 1 }) }));
+      expect(p.invariant).toEqual({ shipments: 598, sales: 545, refusals: 52, overlap: 0, returnTail: 1, pass: true });
+      expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 0, sales: 546 }) }))));
+    });
+    it('августовский бэктест LCD 05.08: хвост eAL…0.0 учтён, но одиночное плечо 25.07 без «Возврата» по-прежнему отклоняет', () => {
+      // Реальный срез: 552 отправления, 494 продажи, 56 отказов, хвост 1 (eAL…0.0: продажа 06.07 вне окна, «Возврат» 21.07)
+      // и ещё 1 srid с одним плечом и только «Возмещением…» — не доказанный возврат: 552 ≠ 494 + 56 − 0 + 1.
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 552, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 1 }) })))).toBe('INVARIANT_FAIL');
+      // Без неподтверждённого плеча тот же срез проходит только благодаря хвосту
+      expect(buildPlan(inputs({ logistics: logistics({ shipments: 551, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 1 }) })).invariant).toMatchObject({ returnTail: 1, pass: true });
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 551, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 0 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('хвост и пересечение одновременно — проходит', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ shipments: 599, sales: 547, saleRefusalOverlap: 2, returnTail: 2 }) }));
+      expect(p.invariant).toMatchObject({ overlap: 2, returnTail: 2, pass: true });
+    });
+    it('без хвоста тот же срез отклоняется: одиночное плечо без «Возврата» (только «Возмещение…») — INVARIANT_FAIL', () => {
+      // 598 отправлений, 545 продаж, 52 отказа: лишний srid — одно плечо без продажи и без «Возврата», вью отдаёт 0
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 0 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('хвост не маскирует действительно лишний или недостающий srid', () => {
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 599, returnTail: 1 }) })))).toBe('INVARIANT_FAIL');
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 597, returnTail: 1 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('хвост отсутствует, дробный, отрицательный или больше shipments − refusals — INVARIANT_FAIL, не ноль', () => {
+      for (const v of [null, 0.5, -1, 547]) {
+        expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: v }) })))).toBe('INVARIANT_FAIL');
       }
     });
   });

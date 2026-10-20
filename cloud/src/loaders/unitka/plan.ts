@@ -142,7 +142,7 @@ export interface Plan {
   cells: PlannedCell[];       // подмножество expected, где лист ≠ BQ
   rates: RateLine[];
   reverseRate: number;
-  invariant: { shipments: number; sales: number; refusals: number; overlap: number; pass: boolean };
+  invariant: { shipments: number; sales: number; refusals: number; overlap: number; returnTail: number; pass: boolean };
   sourcesByDay: Record<string, Record<string, number>>;
   gaps: Record<string, number>;
   legacy: LegacyFormulas;
@@ -403,12 +403,19 @@ export function buildPlan(inp: PlanInputs): Plan {
   if (overlap === null || !Number.isInteger(overlap) || overlap < 0 || overlap > Math.min(Math.max(salesN, 0), store.refusals)) {
     throw new LoaderError(`V_UNITKA_LOGISTICS_RATES: некорректное sale_refusal_overlap у строки магазина: ${String(overlap)} (sales ${store.sales}, refusals ${store.refusals})`, 'INVARIANT_FAIL');
   }
+  // Хвост доказанного возврата: продажа srid ушла за начало окна, «Возврат» и его плечо остались — srid в shipments,
+  // но ни в sales, ни в refusals. Вью считает его независимо (одно плечо, без «Продажи», с «Возвратом»). Нет поля или оно
+  // не целое в [0, shipments − refusals] — отказ, не 0. Одиночное плечо без «Возврата» сюда не входит и отклоняется.
+  const returnTail = store.returnTail;
+  if (returnTail === null || !Number.isInteger(returnTail) || returnTail < 0 || returnTail > store.shipments - store.refusals) {
+    throw new LoaderError(`V_UNITKA_LOGISTICS_RATES: некорректное return_tail у строки магазина: ${String(returnTail)} (shipments ${store.shipments}, refusals ${store.refusals})`, 'INVARIANT_FAIL');
+  }
   const invariant = {
-    shipments: store.shipments, sales: salesN, refusals: store.refusals, overlap,
-    pass: store.shipments === salesN + store.refusals - overlap,
+    shipments: store.shipments, sales: salesN, refusals: store.refusals, overlap, returnTail,
+    pass: store.shipments === salesN + store.refusals - overlap + returnTail,
   };
   if (!invariant.pass) {
-    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED − OVERLAP: ${store.shipments} ≠ ${store.sales} + ${store.refusals} − ${overlap}`, 'INVARIANT_FAIL');
+    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED − OVERLAP + RETURN_TAIL: ${store.shipments} ≠ ${store.sales} + ${store.refusals} − ${overlap} + ${returnTail}`, 'INVARIANT_FAIL');
   }
   const cstore = inp.commission.find((r) => r.nmId === 0);
   if (!cstore || cstore.sales <= 0 || cstore.commissionRate === null || !(cstore.commissionRate > 0)) {
