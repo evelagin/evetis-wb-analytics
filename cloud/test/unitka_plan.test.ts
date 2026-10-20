@@ -105,7 +105,7 @@ describe('buildPlan', () => {
     expect(p.closedDays).toBe(10);
     // 24 × 10 × 9 факт + 24 × 30 × 2 ставки + reverse + 2 LCD
     expect(p.expected).toHaveLength(24 * 10 * 9 + 24 * 30 * 2 + 3);
-    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, pass: true });
+    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, pass: true });
     expect(p.gaps.stock).toBe(10);
     expect(p.gaps.storage).toBe(24);
   });
@@ -156,6 +156,44 @@ describe('buildPlan', () => {
   });
   it('инвариант n ≠ sales + ref — INVARIANT_FAIL до записи', () => {
     expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ sales: 540 }) })))).toBe('INVARIANT_FAIL');
+  });
+  describe('инвариант с пересечением продажа × отказ (20.10.2026, unitka-engine-prod-qs2p4)', () => {
+    const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
+    it('продажа без возврата и отказ без продажи — пересечение 0, проходит', () => {
+      expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, pass: true });
+    });
+    it('продажа и последующий возврат одного srid — проходит; ставки не меняются', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: 1 }) }));
+      expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, pass: true });
+      expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs())));
+    });
+    it('несколько пересечений — проходит', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ sales: 550, saleRefusalOverlap: 5 }) }));
+      expect(p.invariant).toMatchObject({ overlap: 5, pass: true });
+    });
+    it('текущий случай: 535 = 492 + 44 − 1', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 1 }) }));
+      expect(p.invariant).toEqual({ shipments: 535, sales: 492, refusals: 44, overlap: 1, pass: true });
+    });
+    it('без пересечения тот же срез по-прежнему отклоняется (как в инциденте)', () => {
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 0 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('граница окна: возврат в окне, продажа до начала окна — srid только с плечом, без продажи — отклоняется', () => {
+      // у srid в окне одно плечо и нет «Продажи»: он в shipments, но ни в sales, ни в refusals, пересечение 0
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('граница окна: продажа в окне, возврат после конца окна — обычная продажа, пересечение 0, проходит', () => {
+      expect(buildPlan(inputs({ logistics: logistics({ saleRefusalOverlap: 0 }) })).invariant.pass).toBe(true);
+    });
+    it('действительно лишний или недостающий srid при пересечении — отклоняется', () => {
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598, sales: 546, saleRefusalOverlap: 1 }) })))).toBe('INVARIANT_FAIL');
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 596, sales: 546, saleRefusalOverlap: 1 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('пересечение отсутствует, дробное, отрицательное или больше групп — INVARIANT_FAIL, не ноль', () => {
+      for (const v of [null, 0.5, -1, 53, 546]) {
+        expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: v }) })))).toBe('INVARIANT_FAIL');
+      }
+    });
   });
   it('дубль nmID×дата — DUP_KEY', () => {
     const fx = facts();

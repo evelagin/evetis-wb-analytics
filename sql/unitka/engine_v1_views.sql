@@ -292,7 +292,8 @@ FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
 -- (решение владельца 11.09). Первое плечо srid — прямое, второе — обратное.
--- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref проверяет Engine.
+-- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref − sale_refusal_overlap проверяет Engine
+-- (продажа с последующим возвратом входит в обе группы — 20.10.2026).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LOGISTICS_RATES` AS
 WITH w AS (
   SELECT DATE_SUB(last_closed_date, INTERVAL 29 DAY) AS d1, last_closed_date AS d2
@@ -321,19 +322,29 @@ a AS (
          COUNTIF(son = 'Логистика') AS nlog, COUNTIF(son = 'Доставка') AS ndlv,
          SUM(IF(son = 'Доставка', fwd, 0)) AS dlvfwd
   FROM p GROUP BY nm
+),
+-- Продажа с последующим возвратом (инцидент 20.10.2026, unitka-engine-prod-qs2p4): у srid есть «Продажа»
+-- и два плеча логистики, поэтому он одновременно в sales и в refusals. Пересечение считается независимо —
+-- по уникальным srid, входящим в ОБЕ группы, на том же срезе b и в том же окне; ставки не меняются.
+ov AS (
+  SELECT COUNT(*) AS n
+  FROM p
+  WHERE legs >= 2 AND srid IN (SELECT srid FROM b WHERE son = 'Продажа')
 )
 SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n, 0)), 4) AS direct_rate,
        ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref, 0)), 4) AS reverse_rate,
        ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
        nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
-       CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to
+       CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to,
+       CAST(NULL AS INT64) AS sale_refusal_overlap
 FROM a
 UNION ALL
 SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n), 0)), 4),
        SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref), 0)), 4),
        ROUND(SUM(fwd), 2), ROUND(SUM(rev), 2),
        SUM(nlog), SUM(ndlv), ROUND(SUM(dlvfwd), 2),
-       (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w)
+       (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w),
+       (SELECT n FROM ov)
 FROM a;
 -- ─── 5. Комиссия WB + эквайринг, то же окно [LCD−29, LCD] ────────────────────
 -- Точная копия s8finsql_()/s8fin_() из Apps Script: тариф ROUND(cpw/base/100, 6)

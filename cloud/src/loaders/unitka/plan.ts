@@ -142,7 +142,7 @@ export interface Plan {
   cells: PlannedCell[];       // подмножество expected, где лист ≠ BQ
   rates: RateLine[];
   reverseRate: number;
-  invariant: { shipments: number; sales: number; refusals: number; pass: boolean };
+  invariant: { shipments: number; sales: number; refusals: number; overlap: number; pass: boolean };
   sourcesByDay: Record<string, Record<string, number>>;
   gaps: Record<string, number>;
   legacy: LegacyFormulas;
@@ -396,12 +396,19 @@ export function buildPlan(inp: PlanInputs): Plan {
   if (!store || store.shipments <= 0 || store.directRate === null || store.reverseRate === null) {
     throw new LoaderError('V_UNITKA_LOGISTICS_RATES: нет строки магазина или окно пусто', 'INVARIANT_FAIL');
   }
+  // Продажа с последующим возвратом входит и в sales, и в refusals (инцидент 20.10.2026): пересечение
+  // считает вью независимо по srid. Нет поля или оно не целое в [0, min(sales, refusals)] — отказ, не 0.
+  const overlap = store.saleRefusalOverlap;
+  const salesN = store.sales ?? -1;
+  if (overlap === null || !Number.isInteger(overlap) || overlap < 0 || overlap > Math.min(Math.max(salesN, 0), store.refusals)) {
+    throw new LoaderError(`V_UNITKA_LOGISTICS_RATES: некорректное sale_refusal_overlap у строки магазина: ${String(overlap)} (sales ${store.sales}, refusals ${store.refusals})`, 'INVARIANT_FAIL');
+  }
   const invariant = {
-    shipments: store.shipments, sales: store.sales ?? -1, refusals: store.refusals,
-    pass: store.shipments === (store.sales ?? -1) + store.refusals,
+    shipments: store.shipments, sales: salesN, refusals: store.refusals, overlap,
+    pass: store.shipments === salesN + store.refusals - overlap,
   };
   if (!invariant.pass) {
-    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED: ${store.shipments} ≠ ${store.sales} + ${store.refusals}`, 'INVARIANT_FAIL');
+    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED − OVERLAP: ${store.shipments} ≠ ${store.sales} + ${store.refusals} − ${overlap}`, 'INVARIANT_FAIL');
   }
   const cstore = inp.commission.find((r) => r.nmId === 0);
   if (!cstore || cstore.sales <= 0 || cstore.commissionRate === null || !(cstore.commissionRate > 0)) {
