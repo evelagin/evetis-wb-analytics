@@ -292,8 +292,8 @@ FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
 -- (решение владельца 11.09). Первое плечо srid — прямое, второе — обратное.
--- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref − sale_refusal_overlap проверяет Engine
--- (продажа с последующим возвратом входит в обе группы — 20.10.2026).
+-- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref − sale_refusal_overlap + return_tail проверяет Engine
+-- (продажа с последующим возвратом входит в обе группы — 20.10.2026; хвост доказанного возврата — ни в одну).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LOGISTICS_RATES` AS
 WITH w AS (
   SELECT DATE_SUB(last_closed_date, INTERVAL 29 DAY) AS d1, last_closed_date AS d2
@@ -317,11 +317,23 @@ p AS (
          SUM(IF(rn = 1, amt, 0)) AS fwd, SUM(IF(rn > 1, amt, 0)) AS rev, MAX(legs) AS legs
   FROM l GROUP BY srid
 ),
+-- Хвост доказанного возврата: единственное плечо srid в окне — ОБРАТНОЕ (прямое ушло за начало окна вместе с
+-- «Продажей»). Чтобы граница окна не превращала обратное плечо в прямое, хвост не входит в популяцию прямых
+-- (числитель и знаменатель direct_rate), а его плечо идёт в пул обратных (reverse_sum, знаменатель reverse_rate =
+-- refusals + хвосты) — так же, как это плечо учитывалось, пока продажа была в окне. У SKU return_tail = число хвостов
+-- (Engine считает порог своей ставки по прямым: shipments − return_tail). Без хвостов (обычное состояние)
+-- результат совпадает с прежним определением побайтно. shipments и refusals не меняют смысла (инвариант V1).
+pt AS (
+  SELECT p.*, (legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
+                        AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')) AS tail
+  FROM p
+),
 a AS (
-  SELECT nm, COUNT(*) AS n, SUM(fwd) AS fwd, COUNTIF(legs >= 2) AS ref, SUM(rev) AS rev,
+  SELECT nm, COUNT(*) AS n, COUNTIF(tail) AS nt, SUM(IF(tail, 0, fwd)) AS fwd, COUNTIF(legs >= 2) AS ref,
+         SUM(rev) + SUM(IF(tail, fwd, 0)) AS rev,
          COUNTIF(son = 'Логистика') AS nlog, COUNTIF(son = 'Доставка') AS ndlv,
-         SUM(IF(son = 'Доставка', fwd, 0)) AS dlvfwd
-  FROM p GROUP BY nm
+         SUM(IF(son = 'Доставка' AND NOT tail, fwd, 0)) AS dlvfwd
+  FROM pt GROUP BY nm
 ),
 -- Продажа с последующим возвратом (инцидент 20.10.2026, unitka-engine-prod-qs2p4): у srid есть «Продажа»
 -- и два плеча логистики, поэтому он одновременно в sales и в refusals. Пересечение считается независимо —
@@ -330,21 +342,32 @@ ov AS (
   SELECT COUNT(*) AS n
   FROM p
   WHERE legs >= 2 AND srid IN (SELECT srid FROM b WHERE son = 'Продажа')
+),
+-- Хвост доказанного возврата (follow-up инцидента 20.10.2026): «Продажа» srid ушла за начало окна, а «Возврат» и его
+-- плечо остались в окне. Такой srid в shipments (одно плечо), но ни в sales, ни в refusals. Считается независимо:
+-- уникальные srid с ровно одним плечом в окне, БЕЗ «Продажи» и С «Возвратом» на том же срезе b. Одиночное плечо без
+-- «Возврата» (только «Возмещение…» или ничего) сюда не входит и по-прежнему отклоняется. Классификация плеча — pt/a.
+rt AS (
+  SELECT COUNT(*) AS n
+  FROM p
+  WHERE legs = 1
+    AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
+    AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')
 )
-SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n, 0)), 4) AS direct_rate,
-       ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref, 0)), 4) AS reverse_rate,
+SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt, 0)), 4) AS direct_rate,
+       ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref + nt, 0)), 4) AS reverse_rate,
        ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
        nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
        CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to,
-       CAST(NULL AS INT64) AS sale_refusal_overlap
+       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail
 FROM a
 UNION ALL
-SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n), 0)), 4),
-       SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref), 0)), 4),
+SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt), 0)), 4),
+       SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4),
        ROUND(SUM(fwd), 2), ROUND(SUM(rev), 2),
        SUM(nlog), SUM(ndlv), ROUND(SUM(dlvfwd), 2),
        (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w),
-       (SELECT n FROM ov)
+       (SELECT n FROM ov), (SELECT n FROM rt)
 FROM a;
 -- ─── 5. Комиссия WB + эквайринг, то же окно [LCD−29, LCD] ────────────────────
 -- Точная копия s8finsql_()/s8fin_() из Apps Script: тариф ROUND(cpw/base/100, 6)
