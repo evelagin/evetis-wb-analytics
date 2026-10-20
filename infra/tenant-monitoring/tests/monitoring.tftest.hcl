@@ -28,8 +28,12 @@ run "freshness_covers_every_daily_entity_with_policy_sla" {
   variables { freshness_enabled = true }
   assert {
     condition = google_monitoring_alert_policy.data_freshness.enabled == true && alltrue([for e in ["catalog", "stocks", "prices", "finance_accrual", "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"] :
-    strcontains(google_monitoring_alert_policy.data_freshness.conditions[0].condition_prometheus_query_language[0].query, "entity=\"${e}\"}[24h]), \"entity\", \"${e}\"")])
-    error_message = "Все 8 сущностей суточного контура, окно 24 ч (SLA политики)."
+    strcontains(google_monitoring_alert_policy.data_freshness.conditions[0].condition_prometheus_query_language[0].query, "label_replace((sum(increase(logging_googleapis_com:user_tenant_current_certified{monitored_resource=\"cloud_run_job\",entity=\"${e}\"}[24h])) or vector(0)), \"entity\", \"${e}\", \"\", \"\") < 1")])
+    error_message = "Все 8 сущностей суточного контура, окно 24 ч (SLA политики), счёт сертификатов."
+  }
+  assert {
+    condition     = !strcontains(google_monitoring_alert_policy.data_freshness.conditions[0].condition_prometheus_query_language[0].query, "absent_over_time")
+    error_message = "Наличие нулевых точек — не свежесть: только счёт событий с vector(0)."
   }
   assert {
     condition     = google_monitoring_alert_policy.data_freshness.conditions[0].condition_prometheus_query_language[0].duration == "1800s"
@@ -40,8 +44,8 @@ run "freshness_covers_every_daily_entity_with_policy_sla" {
 run "single_wait_or_single_tick_failure_is_not_an_incident" {
   command = plan
   assert {
-    condition     = strcontains(google_monitoring_alert_policy.tick_attempt_failed.conditions[0].condition_prometheus_query_language[0].query, ">= 2") && strcontains(google_monitoring_alert_policy.controller_completions.conditions[0].condition_prometheus_query_language[0].query, "result=\"succeeded\"}[30m]")
-    error_message = "Нужны два отказа Scheduler подряд и 30 мин без успешных завершений."
+    condition     = strcontains(google_monitoring_alert_policy.tick_attempt_failed.conditions[0].condition_prometheus_query_language[0].query, ">= 2") && google_monitoring_alert_policy.controller_completions.conditions[0].condition_prometheus_query_language[0].query == "(sum(increase(run_googleapis_com:job_completed_execution_count{monitored_resource=\"cloud_run_job\",job_name=\"tenant-backfill-controller\",result=\"succeeded\"}[30m])) or vector(0)) < 1"
+    error_message = "Нужны два отказа Scheduler подряд; «нет завершений» = 0 успешных за 30 мин, включая отсутствие ряда и ряд из нулей."
   }
   assert {
     condition     = google_monitoring_alert_policy.controller_stopped.alert_strategy[0].notification_prompts == toset(["OPENED"]) || google_monitoring_alert_policy.controller_stopped.alert_strategy[0].notification_prompts == tolist(["OPENED"])

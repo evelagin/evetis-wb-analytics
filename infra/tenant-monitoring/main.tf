@@ -17,10 +17,14 @@ locals {
   runbook = "Регламент: docs/ops/TENANT_ALERTS_CLIENT001.md. Автоматического восстановления нет; аварийная пауза — только по действующему ACK владельца."
   # Окно 24 ч = snapshot_sla_seconds/fbo_sla_seconds политики суточного контура (86400).
   # Для пользовательских лог-метрик PromQL видит не больше 25 ч: окно 24 ч + повтор 30 мин.
-  # absent_over_time в Cloud Monitoring возвращает ряд без меток (проверено запросом 19.10),
-  # поэтому сущность ставится label_replace: один инцидент на сущность, в письме — её имя.
+  # Счёт событий, а не наличие точек: лог-метрика пишет нули рядом с событием, и
+  # absent_over_time принял бы ряд из одних нулей за «есть данные» (проверено 20.10 на ряде
+  # completed_execution_count: окно из 2–3 нулевых точек → absent пусто, increase 0).
+  # Нет ряда вовсе → `or vector(0)`. Сущность ставится label_replace: инцидент на сущность.
   freshness_query = join(" or ", [for e in var.expected_entities :
-  "label_replace(absent_over_time(logging_googleapis_com:user_tenant_current_certified{monitored_resource=\"cloud_run_job\",entity=\"${e}\"}[24h]), \"entity\", \"${e}\", \"\", \"\")"])
+  "label_replace((sum(increase(logging_googleapis_com:user_tenant_current_certified{monitored_resource=\"cloud_run_job\",entity=\"${e}\"}[24h])) or vector(0)), \"entity\", \"${e}\", \"\", \"\") < 1"])
+  # То же для завершений контроллера: нет ряда и ряд из нулей — оба «0 успешных завершений».
+  completions_query = "(sum(increase(run_googleapis_com:job_completed_execution_count{monitored_resource=\"cloud_run_job\",job_name=\"tenant-backfill-controller\",result=\"succeeded\"}[30m])) or vector(0)) < 1"
 }
 
 resource "terraform_data" "target_guard" {
@@ -174,7 +178,7 @@ resource "google_monitoring_alert_policy" "controller_completions" {
     condition_prometheus_query_language {
       # Тик каждые 3 мин: 30 мин — 10 тиков. Одиночные штатные ожидания (WAITING_READ_RETRY
       # завершаются с ошибкой) не мешают соседним тикам завершиться успешно.
-      query               = "absent_over_time(run_googleapis_com:job_completed_execution_count{monitored_resource=\"cloud_run_job\",job_name=\"tenant-backfill-controller\",result=\"succeeded\"}[30m])"
+      query               = local.completions_query
       duration            = "0s"
       evaluation_interval = "60s"
     }
