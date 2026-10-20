@@ -181,7 +181,7 @@ def source_tick(b,p,day,item):
     budget=WB.of(b)
     if action=='RECONCILE':
         if budget is not None and not budget.allows(WB.RECONCILE_SECONDS):
-            return WB.handoff('RECONCILE',operational_entity=doc['runtime_plan']['entity'])
+            return WB.handoff('RECONCILE',budget,operational_entity=doc['runtime_plan']['entity'])
         seq=decision['sequence'];payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==seq)
         if payload['plan']!=doc:fail('current receipt plan differs')
         result=b.reconcile(payload)
@@ -190,7 +190,7 @@ def source_tick(b,p,day,item):
         history=b.store.history(shard)
     if b.state(doc)['complete']:
         if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
-            return WB.handoff('COMPLETE',operational_entity=doc['runtime_plan']['entity'])
+            return WB.handoff('COMPLETE',budget,operational_entity=doc['runtime_plan']['entity'])
         cert=certificate(b,p,day,item,history)
         if cert is not None:
             b.store.commit(b.current_root,'CURRENT_CERT',P.ORDER.index(doc['runtime_plan']['entity']),cert,b.clock())
@@ -203,7 +203,7 @@ def source_tick(b,p,day,item):
         return {'status':'SNAPSHOT_DAY_ROLLOVER','source_dispatches':0}
     if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
         # Declined BEFORE any intent/lease: nothing durable, no source call.
-        return WB.handoff('DISPATCH',operational_entity=doc['runtime_plan']['entity'])
+        return WB.handoff('DISPATCH',budget,operational_entity=doc['runtime_plan']['entity'])
     prepared=[];received=[];seq=decision['sequence']
     def before(preparation):
         if prepared:fail('one intent per source wake')
@@ -271,7 +271,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     for entity in P.eligible(p,{e:True for e in certs}):
         if entity in partial:continue
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
-            return WB.handoff('LEAF',operational_entity=entity)
+            return WB.handoff('LEAF',budget,operational_entity=entity)
         item=items.get(entity)
         if item is None:
             doc=P.document(p,day,entity);item={'day':day.isoformat(),'policy_hash':p['hash'],'plan':doc,'shard':P.shard(p,day,doc)}

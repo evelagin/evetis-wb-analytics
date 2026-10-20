@@ -48,6 +48,10 @@ def exhausted(result):
     return str(result.get('basis', '')).startswith('WAKE_BUDGET')
 
 
-def handoff(kind, **extra):
-    """A declined step: no source call, nothing durable written, the next tick continues."""
-    return dict({'status': 'WAITING', 'source_dispatches': 0, 'basis': 'WAKE_BUDGET_' + kind}, **extra)
+def handoff(kind, budget=None, **extra):
+    """A declined step: no source call, nothing durable written, the next tick continues.
+
+    The wake's elapsed/remaining seconds at the decision go into the result (logs):
+    repeated WAKE_BUDGET_* handoffs with large elapsed mean no progress, not health."""
+    timing = {} if budget is None else {'wake_elapsed_seconds': round(budget.elapsed()), 'wake_remaining_seconds': round(budget.remaining())}
+    return dict({'status': 'WAITING', 'source_dispatches': 0, 'basis': 'WAKE_BUDGET_' + kind}, **timing, **extra)

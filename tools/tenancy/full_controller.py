@@ -573,7 +573,7 @@ def wake(base, root):
     budget=WB.of(backend)
     for index in pending:
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
-            return WB.handoff('LEAF',index=index),backend
+            return WB.handoff('LEAF',budget,index=index),backend
         backend.index=index
         item=plans.get(index)
         if item is None:
@@ -622,7 +622,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action=='RECONCILE':
         if budget is not None and not budget.allows(WB.RECONCILE_SECONDS):
             # Not started: the terminal receipt stays the elected authority; the next tick drains it.
-            return WB.handoff('RECONCILE',index=index),backend
+            return WB.handoff('RECONCILE',budget,index=index),backend
         payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence)
         if payload['plan']!=doc:raise BF.B.EvidenceError('full terminal receipt scope differs')
         intent=next(r for r in history if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence)
@@ -644,7 +644,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if state['complete']:
         if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
             if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
-            return WB.handoff('COMPLETE',index=index),backend
+            return WB.handoff('COMPLETE',budget,index=index),backend
         if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'}:
             day=str(backend.clock().astimezone(BF.B.MSK).date())
             fresh=backend.store.history(root)
@@ -678,7 +678,7 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
         # Declined BEFORE any intent/lease: nothing durable, no source call. After a
         # reconcile in this wake, the proven RECONCILED boundary hands off the rest.
         if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
-        return WB.handoff('DISPATCH',index=index),backend
+        return WB.handoff('DISPATCH',budget,index=index),backend
     terminal=[r for r in history if r['kind']=='RECONCILED']
     if terminal:
         last=max(terminal,key=lambda r:r['sequence'])['payload']

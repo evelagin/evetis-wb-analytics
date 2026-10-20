@@ -411,6 +411,7 @@ def test_full_leaf_declines_reconcile_and_completion_before_starting(monkeypatch
     m = {'hash': ROOT, 'programs': [{}] * 3}
     result, _ = H.leaf_wake(b, m, 2, {'plan': {'runtime_plan': {'entity': 'supplies'}}, 'shard_root': '2' * 64}, [])
     assert result['basis'] == expected and result['source_dispatches'] == 0 and not touched and WB.exhausted(result)
+    assert result['wake_remaining_seconds'] < WB.CLOSE_RESERVE_SECONDS + (WB.RECONCILE_SECONDS if action == 'RECONCILE' else WB.COMPLETE_SECONDS)
 
 
 def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
