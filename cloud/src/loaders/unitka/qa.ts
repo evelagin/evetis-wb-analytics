@@ -162,7 +162,7 @@ export function evaluate(snap: Snapshot, plan: Plan, opts: EvaluateOpts = {}): Q
   // Дубли и инвариант — уже гарантированы планом; фиксируем как PASS для полного отчёта.
   // BLOCKS: число блоков — из секции (не константа 24); пустая секция и дубли уже отсеяны preflight.
   checks.push({ name: 'BLOCKS', pass: plan.blocks.length > 0 && new Set(plan.blocks.map((b) => b.nmId)).size === plan.blocks.length, count: plan.blocks.length, sample: [] });
-  checks.push({ name: 'DIRECT_LOGISTICS_INVARIANT', pass: plan.invariant.pass, count: plan.invariant.shipments, sample: [`${plan.invariant.shipments} = ${plan.invariant.sales} + ${plan.invariant.refusals} − ${plan.invariant.overlap}`] });
+  checks.push({ name: 'DIRECT_LOGISTICS_INVARIANT', pass: plan.invariant.pass, count: plan.invariant.shipments, sample: [`${plan.invariant.shipments} = ${plan.invariant.sales} + ${plan.invariant.refusals} − ${plan.invariant.overlap} + ${plan.invariant.returnTail}`] });
   checks.push({ name: 'NO_DUPLICATE_DATE_NMID', pass: true, count: 0, sample: [] });
 
   return { pass: checks.every((c) => c.pass), checks };
