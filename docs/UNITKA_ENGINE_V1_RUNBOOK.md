@@ -79,7 +79,7 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 | `SOURCE_STALE` | LCD отстаёт от D-1 > `UNITKA_MAX_LAG_DAYS` | проверить `wb-funnel-prod` и `wb-mart-prod` (`LOADER_RUNS`, `MART_RUNS`); Engine ничего не пишет, догонит сам |
 | `SHEETS_API` | 403/404/5xx от Sheets | 403 — доступ SA к книге / Sheets API не включён; 404 — id книги/имя листа; повтор — следующее окно |
 | `STRUCTURE_DRIFT` | нет 24 nmID в строке 735, даты не совпадают, пропали формулы расчётных колонок или сводки | кто-то менял Master; восстановить структуру, не «подстраивать» Engine |
-| `MONTH_SECTION_MISSING` | секции месяца LCD нет в колонке A (Engine 2.0.0) | подготовить месяц: `unitka-month-prep` (§5c); Engine месяц не создаёт |
+| `MONTH_SECTION_MISSING` | секции месяца LCD нет в колонке A (Engine 2.0.0) | с Gate 10 суточный прогон создаёт месяц сам (`ensureWbMonthSection`); при отказе создания — код отказа (CHAIN_GAP, COGS_MISSING, TEMPLATE_MISMATCH, MONTH_*) и `docs/ops/UNITKA_MONTH_TRANSITION_2026-11.md`; ручной `unitka-month-prep` (§5c) — резерв |
 | `MONTH_SECTION_AMBIGUOUS` | заголовок месяца встречается дважды | убрать дубль заголовка вручную; записи не было |
 | `MONTH_SECTION_INVALID` | секция не проходит контракт (даты, шапка, MTD, nmID, сетка) | сверить секцию с `docs/UNITKA_CALENDAR_V2.md` §2; не чинить Engine'ом |
 | `MONTH_ROLLOVER_REQUIRED` | (история, Engine ≤ 1.2.0) LCD в другом месяце, чем блоки | в 2.0.0 не возникает — см. `MONTH_SECTION_*` |
@@ -175,10 +175,13 @@ SELECT * FROM `wb_mart.V_UNITKA_ENGINE_STATUS`;
 * `ORDERS_SOURCE_DIVERGENCE` с `verdict=SAME_DAY_CANCEL_OUTSIDE_Q` — не сбой загрузки: воронка не считает заказ,
   отменённый в день заказа, а отмена в S есть. Сверка это не чинит; ждёт решения владельца по контракту отмен.
 
-## 5c. Calendar V2: подготовка месяца (`unitka-month-prep`) — НЕ активировано
+## 5c. Calendar V2: подготовка месяца (`unitka-month-prep`) — ручной резерв
 
-Документ: `docs/UNITKA_CALENDAR_V2.md`. Суточный Engine месяц не создаёт; за ≤ 5 дней до конца месяца он пишет
-предупреждение `NEXT_MONTH_SECTION_MISSING`, если следующего месяца нет.
+Документ: `docs/UNITKA_CALENDAR_V2.md`. **С Gate 10 (24.09.2026) суточный прогон создаёт месяц сам** — 2-го числа, когда
+кандидат LCD входит в новый месяц (`wb_lifecycle.ensureWbMonthSection`, тот же планировщик, без отпечатка манифеста;
+события `unitka_month_prep_rollback_manifest` и `NEW_MONTH_CREATED`). Предупреждение `NEXT_MONTH_SECTION_MISSING` (за ≤ 5
+дней до конца месяца) ожидаемо до 2-го числа и сигналом не является. Ручной путь ниже — резерв при отказе создания
+(сценарий и проверка — `docs/ops/UNITKA_MONTH_TRANSITION_2026-11.md`).
 
 * План (без записи): `node dist/cli.js unitka-month-prep` — лог `unitka_month_prep_plan` (статус, строки, слоты,
   COGS новых блоков с происхождением).
