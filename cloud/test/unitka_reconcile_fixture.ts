@@ -205,7 +205,7 @@ export function reconFactsFor(from: string, to: string, over: (f: FactRow) => Pa
 export function rates(lcd: string): { logistics: LogisticsRateRow[]; commission: CommissionRateRow[] } {
   const w = { windowFrom: addDaysIso(lcd, -29), windowTo: lcd };
   return {
-    logistics: [{ nmId: 0, shipments: 600, directRate: 60.5, refusals: 50, reverseRate: REV_RATE, forwardSum: 1, reverseSum: 1, nLogistics: 1, nDelivery: 1, deliveryComponentSum: 0, sales: 550, ...w }],
+    logistics: [{ nmId: 0, shipments: 600, directRate: 60.5, refusals: 50, reverseRate: REV_RATE, forwardSum: 1, reverseSum: 1, nLogistics: 1, nDelivery: 1, deliveryComponentSum: 0, sales: 550, saleRefusalOverlap: 0, ...w }],
     commission: [{ nmId: 0, sales: 550, logisticsPerUnit: 69, commissionRate: 0.45, ...w }],
   };
 }
@@ -273,7 +273,7 @@ export class ReconRunner implements QueryRunner {
     if (sql.includes('V_UNITKA_LAST_CLOSED_DATE')) return [{ last_closed_date: bqDate(this.lcd), d1_msk: bqDate(this.lcd) }] as T[];
     if (sql.includes('V_UNITKA_RECON_FACT')) return this.facts.map((f) => this.factRow(f, true)) as T[];
     if (sql.includes('V_UNITKA_DAILY_FACT')) return this.facts.filter((f) => f.date.slice(0, 7) === this.lcd.slice(0, 7) && f.skuActive !== false).map((f) => this.factRow(f, false)) as T[];
-    if (sql.includes('V_UNITKA_LOGISTICS_RATES')) return r.logistics.map((x) => ({ nm_id: x.nmId, shipments: x.shipments, direct_rate: x.directRate, refusals: x.refusals, reverse_rate: x.reverseRate, forward_sum: x.forwardSum, reverse_sum: x.reverseSum, n_logistics: x.nLogistics, n_delivery: x.nDelivery, delivery_component_sum: x.deliveryComponentSum, sales: x.sales, window_from: bqDate(x.windowFrom), window_to: bqDate(x.windowTo) })) as T[];
+    if (sql.includes('V_UNITKA_LOGISTICS_RATES')) return r.logistics.map((x) => ({ nm_id: x.nmId, shipments: x.shipments, direct_rate: x.directRate, refusals: x.refusals, reverse_rate: x.reverseRate, forward_sum: x.forwardSum, reverse_sum: x.reverseSum, n_logistics: x.nLogistics, n_delivery: x.nDelivery, delivery_component_sum: x.deliveryComponentSum, sales: x.sales, window_from: bqDate(x.windowFrom), window_to: bqDate(x.windowTo), sale_refusal_overlap: x.saleRefusalOverlap })) as T[];
     if (sql.includes('V_UNITKA_COMMISSION_RATES')) return r.commission.map((x) => ({ nm_id: x.nmId, sales: x.sales, logistics_per_unit: x.logisticsPerUnit, commission_rate: x.commissionRate, window_from: bqDate(x.windowFrom), window_to: bqDate(x.windowTo) })) as T[];
     if (sql.includes('V_UNITKA_RECON_INTEGRITY') || sql.includes('V_UNITKA_INTEGRITY')) return this.integrityRows as T[];
     if (sql.includes('COGS_CANONICAL')) return this.cogsRows as T[];
