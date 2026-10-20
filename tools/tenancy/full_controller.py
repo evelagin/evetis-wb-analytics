@@ -470,37 +470,18 @@ def wake(base, root):
         if claim is not None:
             base.wake_claim=claim
             # A preceding holder may have committed completion/STOP while this
-            # wake was reading authority. Reconstruct AFTER the atomic claim.
+            # wake was reading authority. Reconstruct AFTER the atomic claim, from
+            # one listing that serves the rest of this claimed wake.
+            base.store.begin_snapshot()
+            # One acceptance revalidation per claimed wake and record slice (gate, monitor).
+            base.stop_acceptance_scope=backend.stop_acceptance_scope=object()
             records=base.store.history(root)
             if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
     if any(r['kind']=='STOPPED' for r in records):
-        from tools.tenancy import full_leaf_recovery as FL
-        from tools.tenancy import full_cooldown_recovery as FC
-        from tools.tenancy import full_policy_bootstrap_recovery as PB
-        from tools.tenancy import full_pretransport_recovery as PT, full_first_receipt_recovery as FR
-        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
-        with gate('MANIFEST_ROOT'):
-            approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
-            failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
-            paused_bootstrap=PB.load(backend,manifest,records) if any(r['kind']==PB.KIND for r in records) else []
-            rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
-            from tools.tenancy import full_retained_pretransport_recovery as R1
-            rejected=rejected+(R1.load(backend,manifest,records) if any(r['kind']==R1.KIND for r in records) else [])
-        backend.verified_cooldown_failures=failed
-        backend.verified_pretransport_rejections=rejected
-        zero_effect=ZE.load(backend,manifest,records) if any(r['kind']==ZE.KIND for r in records) else []
-        backend.verified_fbo_zero_effect_failures=zero_effect
-        approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
-        from tools.tenancy import full_controller_closure_recovery as CR
-        approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
-        from tools.tenancy import full_pre_authority_gate_recovery as PAG
-        approved += zero_effect + quarantines + PAG.load(backend,manifest,records)
-        from tools.tenancy import current_recon_recovery as CURRENT_RECON
-        approved += CURRENT_RECON.load(backend,manifest,records)
-        from tools.tenancy import f507_recovery as EXACT_F507
-        approved += EXACT_F507.load(backend,manifest,records)
-        from tools.tenancy import full_inventory_gate_recovery as R2
-        approved += R2.load(backend,manifest,records)
+        from tools.tenancy import full_leaf_recovery as FL, full_first_receipt_recovery as FR
+        from tools.tenancy import stop_acceptance as SA
+        # The one acceptance set shared with the monitor, the FBO diagnostic and recoveries.
+        approved=SA.approved(backend,manifest,records,quarantines=quarantines,gate=gate)
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -534,6 +515,11 @@ def wake(base, root):
             if dependency:i=next(n for n,p in enumerate(manifest['programs']) if p['entity']=='catalog')
             result,backend=leaf_wake(backend,manifest,i,item,records,dependency=dependency,defer_next=True)
             if result['status']!='RECONCILED_BOUNDARY':return result,backend
+            from tools.tenancy import wake_budget as WB
+            budget=WB.of(backend)
+            if budget is not None and not budget.allows(WB.LEAF_SECONDS):
+                # The drained receipt is the proven boundary; the next tick continues.
+                return result,backend
             records=backend.store.history(root);done=completed(records,manifest)
             plans=reconstruct_plans(records,manifest,backend.clock())
             current_result=CURRENT.wake(backend,records,plans,done,quarantined)
@@ -583,7 +569,11 @@ def wake(base, root):
             return leaf_wake(backend,manifest,catalog,item,records,dependency=True)
         pending=[catalog]+[i for i in pending if i!=catalog]
     waits=[]
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(backend)
     for index in pending:
+        if budget is not None and not budget.allows(WB.LEAF_SECONDS):
+            return WB.handoff('LEAF',index=index),backend
         backend.index=index
         item=plans.get(index)
         if item is None:
@@ -675,6 +665,13 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action!='PREPARE_NEXT':raise BF.B.EvidenceError('unhandled full tick decision')
     if defer_next:
         return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(backend)
+    if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
+        # Declined BEFORE any intent/lease: nothing durable, no source call. After a
+        # reconcile in this wake, the proven RECONCILED boundary hands off the rest.
+        if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
+        return WB.handoff('DISPATCH',index=index),backend
     terminal=[r for r in history if r['kind']=='RECONCILED']
     if terminal:
         last=max(terminal,key=lambda r:r['sequence'])['payload']

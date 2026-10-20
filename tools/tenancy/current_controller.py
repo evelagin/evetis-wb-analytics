@@ -195,6 +195,11 @@ def source_tick(b,p,day,item):
     if action!='PREPARE_NEXT':fail('unknown current tick decision')
     if doc['runtime_plan'].get('observation_date')!=None and day!=b.clock().astimezone(K.MSK).date():
         return {'status':'SNAPSHOT_DAY_ROLLOVER','source_dispatches':0}
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(b)
+    if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
+        # Declined BEFORE any intent/lease: nothing durable, no source call.
+        return WB.handoff('DISPATCH',operational_entity=doc['runtime_plan']['entity'])
     prepared=[];received=[];seq=decision['sequence']
     def before(preparation):
         if prepared:fail('one intent per source wake')

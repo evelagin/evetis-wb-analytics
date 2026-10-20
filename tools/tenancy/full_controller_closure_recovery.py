@@ -21,6 +21,13 @@ PREDICATES=frozenset({'owner_scope','qualified_replacement','registered_terminal
  'schedulers_paused','bindings_pass','security_preserved','prior_recoveries_preserved',
  'original_evidence_preserved','exact_guard_reproduced','source_budget_zero'})
 RECONCILED_PREDICATES=(PREDICATES-{'current_catalog_pass'})|{'accepted_catalog_lineage_pass'}
+# v3: the holder timed out after a reconciled INTERMEDIATE page of a paged leaf (supplies).
+# The leaf is not complete and is never declared complete; the last reconciled
+# sequence, its receipt and its persisted prefix are proven instead.
+SEQUENCE_TYPE='TERMINAL_TIMEOUT_CONTROLLER_RECONCILED_SEQUENCE_CLOSURE_V3'
+SEQUENCE_PREDICATES=(PREDICATES-{'current_catalog_pass','last_source_reconciled'})|{
+ 'last_sequence_reconciled','intermediate_page_not_complete','no_later_source_election'}
+VERSIONS={(1,TYPE):PREDICATES,(2,RECONCILED_TYPE):RECONCILED_PREDICATES,(3,SEQUENCE_TYPE):SEQUENCE_PREDICATES}
 FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','claim',
  'stop_hashes','protected_root_hashes','new_source','new_image','new_implementation_hash',
  'runtime_image','owner_ack_sha256','guard_probe_hash','security_proof_hash','source_proof_hash',
@@ -32,19 +39,19 @@ def authority_name(p):return 'BFCC_AUTH_'+p['root']+'_'+p['claim']['hash']
 def certificate_name(p):return 'BFCC_'+p['hash']
 def value(p):
  description=D.encoded(p)
- if p.get('version')==2:
+ if p.get('version') in (2,3):
   # The full closed proof remains in its content-addressed durable root record.
   # Owner metadata binds that exact proof, without truncation or a second copy
   # of the growing root inventory in a 16-KiB table description.
-  description=D.encoded(dict(version=2,type='CONTROLLER_CLOSURE_CERTIFICATE_REF',root=p['root'],claim_hash=p['claim']['hash'],certificate_hash=p['hash'],source_budget=0))
+  description=D.encoded(dict(version=p['version'],type='CONTROLLER_CLOSURE_CERTIFICATE_REF',root=p['root'],claim_hash=p['claim']['hash'],certificate_hash=p['hash'],source_budget=0))
  return {'kind':'controller_recovery','root':p['root'][:16]},description
 
 def header(p,m):
- if not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or (p['version'],p['type']) not in {(1,TYPE),(2,RECONCILED_TYPE)}:fail('closed certificate required')
+ if not isinstance(p,dict) or set(p)!=FIELDS or type(p['version']) is not int or (p['version'],p['type']) not in VERSIONS:fail('closed certificate required')
  if p['hash']!=D.digest({k:v for k,v in p.items() if k!='hash'}):fail('certificate digest differs')
  if (p['tenant'],p['project'],p['root'],p['manifest_hash'])!=(m['tenant'],m['project'],m['hash'],D.digest(m)):fail('foreign frozen root')
  if type(p['source_budget']) is not int or p['source_budget']!=0:fail('source budget must be zero')
- required=PREDICATES if p['version']==1 else RECONCILED_PREDICATES
+ required=VERSIONS[(p['version'],p['type'])]
  if not isinstance(p['predicates'],dict) or set(p['predicates'])!=required or any(v is not True for v in p['predicates'].values()):fail('unknown mandatory predicate')
  if type(p['claim'].get('version')) is not int or p['claim'].get('version')!=1:fail('claim version differs')
  if set(p['claim'])!=CC.CLAIM_FIELDS or p['claim']['root']!=p['root'] or (p['claim']['tenant'],p['claim']['project'])!=(p['tenant'],p['project']):fail('claim scope differs')
@@ -91,7 +98,7 @@ def dependent_terminal(b,p,record,x,holder):
      or x.get('cancelledCount',0)):fail('dependent controller result differs')
  terminal=CC.at(holder['completionTime'])
  if CC.at(x['createTime'])>=terminal:return True
- if p['version']!=2:fail('dependent controller result differs')
+ if p['version']<2:fail('dependent controller result differs')
  if not x.get('startTime') or not x.get('completionTime'):fail('dependent STOP chronology unknown')
  created,start,end=(CC.at(x[k]) for k in ('createTime','startTime','completionTime'))
  if not created<=start<=end<=b.clock():fail('dependent STOP chronology differs')
@@ -129,6 +136,7 @@ def validate(p,b,m,records,*,final=True):
  elif parse((BF.REPO/'infra/tenant/releases/backfill'/f"{p['new_source']}.json").read_text())!=r:fail('historical replacement differs')
  s=p['last_source']
  if type(s.get('index')) is not int or not 0<=s['index']<len(m['programs']):fail('last source index unknown')
+ if p['version']==3:return validate_sequence(p,b,m,records,s)
  if set(s)!={'index','shard','receipt_hash','recon_hash','completion_hash'}:fail('closed last-source scope required')
  for k in ('shard','receipt_hash','recon_hash','completion_hash'):D.check_hash(s[k])
  done=H.completed(records,m)
@@ -138,6 +146,23 @@ def validate(p,b,m,records,*,final=True):
  sh=b.store.history(s['shard'],max_records=F.MAX_LEAF_RECORDS)
  rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and D.digest(r)==s['receipt_hash']];rc=[r for r in sh if r['kind']=='RECONCILED' and D.digest(r)==s['recon_hash']]
  if len(rr)!=1 or len(rc)!=1 or rr[0]['sequence']!=rc[0]['sequence'] or rc[0]['payload'].get('state_hash')!=done[s['index']]['state_hash'] or rc[0]['payload'].get('persisted_reconciled') is not True:fail('source reconciliation differs')
+ return p
+
+
+def validate_sequence(p,b,m,records,s):
+ """Immutable facts only (re-run on every wake): the claimed receipt and its
+ RECONCILED record of the same sequence exist in the leaf's own shard, persisted.
+ Leaf incompleteness and the absence of a later election are publication-time
+ predicates (live_freeze): later wakes legitimately continue the same leaf."""
+ from tools.tenancy import full_controller as H
+ if set(s)!={'index','shard','receipt_hash','recon_hash','sequence'} or type(s['sequence']) is not int or s['sequence']<1:fail('closed sequence scope required')
+ for k in ('shard','receipt_hash','recon_hash'):D.check_hash(s[k])
+ plans=H.reconstruct_plans(records,m,b.clock())
+ if s['index'] not in plans or plans[s['index']]['shard_root']!=s['shard']:fail('last source shard differs')
+ sh=b.store.history(s['shard'],max_records=F.MAX_LEAF_RECORDS)
+ rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and D.digest(r)==s['receipt_hash']];rc=[r for r in sh if r['kind']=='RECONCILED' and D.digest(r)==s['recon_hash']]
+ if (len(rr)!=1 or len(rc)!=1 or rr[0]['sequence']!=s['sequence'] or rc[0]['sequence']!=s['sequence']
+     or rc[0]['payload'].get('persisted_reconciled') is not True):fail('source sequence reconciliation differs')
  return p
 
 
@@ -153,17 +178,14 @@ def load(b,m,records):
 
 
 def accepted_incidents(b,m,records):
- """Revalidate every supported exact incident; quarantine is never COMPLETE."""
- from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller as H
- from tools.tenancy import full_fbo_zero_effect_recovery as ZE,full_fbo_diagnostic_closure as LQ,full_pre_authority_gate_recovery as PAG
- accepted=FL.load(b,m,records)+PB.load(b,m,records)+FR.load(b,m,records)
- failed=FC.load(b,m,records);rejected=PT.load(b,m,records)
- zero_effect=ZE.load(b,m,records);quarantines=LQ.load(b,m,records)
- b.verified_cooldown_failures=failed;b.verified_pretransport_rejections=rejected
- b.verified_fbo_zero_effect_failures=zero_effect
- accepted+=failed+rejected+zero_effect+quarantines+PAG.load(b,m,records)
- previous=load(b,m,records)
- known={x['stop_hash'] for x in accepted}|{h for x in previous for h in x['stop_hashes']}
+ """Revalidate every supported exact incident; quarantine is never COMPLETE.
+
+ The shared FULL STOP gate set (stop_acceptance): a private list here omitted
+ STOP819, f507, R1 and R2 and would have called those accepted STOPs foreign.
+ """
+ from tools.tenancy import full_controller as H, full_fbo_diagnostic_closure as LQ, stop_acceptance as SA
+ quarantines=LQ.load(b,m,records)
+ known=SA.accepted_hashes(b,m,records,quarantines=quarantines)
  return known,H.isolated_indices(m,quarantines)
 
 
@@ -248,6 +270,7 @@ def live_freeze(b,p,m,records):
  for n in (BF.CK.lease_name(prefix,receipt['lease_generation']),f"LD_{prefix}_{receipt['lease_generation']:04d}"):
   v=b.tables.get_table(ds,n)
   if not v or v[0].get('owner')!=receipt['run_id'] or parse(v[1]).get('ack_hash')!=doc['ack_hash']:fail('last source lease/LD differs')
+ if p['version']==3:return live_sequence(b,p,m,records,sh,rr,doc,state,ro)
  if not state['complete'] or D.digest(state)!=H.completed(records,m)[p['last_source']['index']]['state_hash']:fail('last source checkpoint differs')
  coverage=(BF.verify_coverage if p['version']==1 else BF.verify_persistence)(doc,doc['ack_hash'],backend=ro)
  if coverage['source_sequence']!=state['sequence'] or any(x.get('rows')!=x.get('keys') for x in coverage['readback']):fail('source persistence/key mismatch')
@@ -276,6 +299,22 @@ def live_freeze(b,p,m,records):
  return True
 
 
+def live_sequence(b,p,m,records,sh,rr,doc,state,ro):
+ """v3 publication proof: the reconciled page is the leaf's latest election, the
+ leaf is NOT complete, and the persisted prefix still reconciles key-exactly."""
+ from tools.tenancy import full_controller as H
+ s=p['last_source']
+ intents=[r['sequence'] for r in sh if r['kind']=='DISPATCH_INTENT']
+ if not intents or max(intents)!=s['sequence'] or rr['sequence']!=s['sequence']:fail('later source election exists')
+ rc=[r for r in sh if r['kind']=='RECONCILED' and D.digest(r)==s['recon_hash']]
+ if len(rc)!=1 or rc[0]['payload'].get('state_hash')!=D.digest(state):fail('reconciled page state differs')
+ if state['complete'] is not False or s['index'] in H.completed(records,m):fail('intermediate page must not complete the leaf')
+ if state['sequence']<s['sequence']:fail('durable source state precedes the reconciled page')
+ coverage=BF.verify_persistence(doc,doc['ack_hash'],backend=ro)
+ if coverage['source_sequence']!=state['sequence'] or any(x.get('rows')!=x.get('keys') for x in coverage['readback'] if 'keys' in x):fail('source persistence/key mismatch')
+ return True
+
+
 def publish(b,p,m):
  """Fresh additive owner transaction; no retry or automatic exemption path."""
  header(p,m);records=b.store.history(m['hash']);validate(p,b,m,records,final=False)
@@ -299,3 +338,55 @@ def publish(b,p,m):
  b.store.commit(p['root'],KIND,p['claim']['generation'],p,b.clock())
  if p not in load(b,m,b.store.history(m['hash'])):fail('additive recovery acceptance failed')
  return p
+
+
+def observe_sequence(b,m,generation,*,owner_ack_sha256,guard_probe_hash,security_proof_hash):
+ """Owner-only, read-only v3 certificate on ONE snapshot (the incident of 2026-10-19).
+
+ The STOP set is exactly the STOPPED records the shared acceptance set does not
+ cover on this snapshot; each must then prove itself dependent (live_freeze).
+ The last source is the single page RECONCILED after the claim was taken; the
+ leaf stays unfinished. Predicates are asserted only after validate() and
+ live_freeze() pass on the same evidence; publish() repeats the live checks.
+ """
+ from tools.tenancy import full_controller as H, stop_acceptance as SA, cloud_controller as C, orchestration_contract as O
+ if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('owner frozen observation required')
+ verified=b.clock();records=b.store.history(m['hash'])
+ if H.only_manifest(records)!=m:fail('foreign frozen root')
+ ds=b.c['datasets']['tenant_locks'];claim=CC.validate_claim(b,b.tables.get_table(ds,CC.names(m['hash'],generation)[0]),allow_closed_history=True)
+ if claim['generation']!=generation:fail('claim generation differs')
+ known=SA.accepted_hashes(b,m,records)
+ stops=sorted(D.digest(r) for r in records if r['kind']=='STOPPED' and D.digest(r) not in known)
+ if not stops:fail('no unresolved STOP to recover')
+ # The single source page reconciled by the timed-out holder: its RECONCILED fence
+ # was elected after the claim; exactly one such page, in exactly one plan shard.
+ plans=H.reconstruct_plans(records,m,b.clock())
+ by_shard={item['shard_root']:i for i,item in plans.items()}
+ found=[]
+ for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
+  match=re.fullmatch(r'BFQ_([0-9a-f]{64})_([0-9]{10})_RECONCILED',n)
+  if match and match[1] in by_shard and created is not None and created>=CC.at(claim['created_at']):found.append((match[1],int(match[2])))
+ if len(found)!=1:fail('exactly one page reconciled under the claim required')
+ shard,sequence=found[0];index=by_shard[shard]
+ sh=b.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
+ rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence];rc=[r for r in sh if r['kind']=='RECONCILED' and r['sequence']==sequence]
+ if len(rr)!=1 or len(rc)!=1:fail('reconciled page evidence ambiguous')
+ marker=b.tables.get_table(ds,C.descriptor_name(b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'],m['hash'],'PAUSED'))
+ if not marker:fail('installed PAUSED replacement descriptor absent')
+ release=parse(marker[1])['release']
+ doc=plans[index]['plan'];ro=FL_observer(b,m,index);proof=BF.verify_persistence(doc,doc['ack_hash'],backend=ro)
+ p=dict(version=3,type=SEQUENCE_TYPE,tenant=m['tenant'],project=m['project'],root=m['hash'],manifest_hash=D.digest(m),claim=claim,
+  stop_hashes=stops,protected_root_hashes=sorted(D.digest(r) for r in records),new_source=release['source_sha'],
+  new_image=release['image'],new_implementation_hash=release['controller_implementation_hash'],runtime_image=release['runtime_image'],
+  owner_ack_sha256=owner_ack_sha256,guard_probe_hash=guard_probe_hash,security_proof_hash=security_proof_hash,
+  source_proof_hash=D.digest(proof),last_source=dict(index=index,shard=shard,receipt_hash=D.digest(rr[0]),recon_hash=D.digest(rc[0]),sequence=sequence),
+  predicates=dict.fromkeys(SEQUENCE_PREDICATES,True),verified_at=verified.isoformat(),source_budget=0,
+  closure=CC.sealed(dict(version=1,claim_hash=claim['hash'],status='SOURCE_FREE_RECOVERED',source_dispatches=0,closed_at=verified.isoformat())))
+ p=sealed(p)
+ validate(p,b,m,records,final=False);live_freeze(b,p,m,records)
+ return p
+
+
+def FL_observer(b,m,index):
+ from tools.tenancy import full_leaf_recovery as FL
+ return FL.observer(b,m,index)

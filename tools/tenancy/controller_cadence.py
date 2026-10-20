@@ -24,6 +24,18 @@ WAITS = frozenset({'WAIT_ACTIVE_CONTROLLER','WAIT_ACTIVE_RUNTIME',
 
 
 def fail(reason):raise BF.B.EvidenceError('controller cadence: '+reason)
+
+
+class UnclosedTerminalHolder(BF.B.EvidenceError):
+    """The latest control claim's holder is terminal without the canonical closure.
+
+    Same message as before (closed diagnostics unchanged); the claim identity lets
+    the entrypoint recognise a repeat of an already recorded incident.
+    """
+    def __init__(self, claim, holder):
+        super().__init__('controller cadence: terminal controller missing canonical closure')
+        self.unclosed_holder={'generation':claim['generation'],'claim_hash':claim['hash'],
+                              'created_at':claim['created_at'],'holder_completion':holder.get('completionTime')}
 def sealed(value):return dict(value,hash=D.digest(value))
 
 
@@ -236,7 +248,7 @@ def acquire(backend):
         previous=validate_claim(backend,backend.tables.get_table(ds,names(root,latest)[0]),allow_closed_history=True)
         if not closed(backend,previous):
             holder=execution(backend,backend.request('GET',BF.RUN_API+'/'+previous['execution']))
-            if holder.get('completionTime'):fail('terminal controller missing canonical closure')
+            if holder.get('completionTime'):raise UnclosedTerminalHolder(previous,holder)
             if holder['name']==backend.current_execution:fail('ambiguous claim creation; never retry')
             execution(backend,holder,active=True)
             raise OverlapWait('SKIP_AUTHORITY_HELD')
