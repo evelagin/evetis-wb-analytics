@@ -24,11 +24,20 @@ describe('heartbeat: отсутствие события = сигнал', () => 
   it('создаётся выключенной: метрика не заполняется задним числом', () => {
     expect(hb).toMatch(/enabled\s+=\s+false/);
   });
-  it('окна: WB 27 ч (после резерва 09:30Z), остальные 26 ч', () => {
-    expect(tf).toMatch(/unitka_wb_lcd_committed = \{[\s\S]*?window\s+=\s+"27h"/);
+  it('окно 24 ч + duration: WB 3 ч (после резерва 09:30Z) = 27 ч, остальные 2 ч = 26 ч', () => {
+    expect(hb).toContain('[24h])) or vector(0)) < 1');
+    expect(hb).toContain('duration            = each.value.duration');
+    expect(tf).toMatch(/unitka_wb_lcd_committed = \{[\s\S]*?duration\s+=\s+"10800s"/);
     for (const k of ['unitka_ozon_lcd_committed', 'unitka_store_pnl_published', 'ozon_store_pnl_published']) {
-      expect(tf).toMatch(new RegExp(`${k} = \\{[\\s\\S]*?window\\s+=\\s+"26h"`));
+      expect(tf).toMatch(new RegExp(`${k} = \\{[\\s\\S]*?duration\\s+=\\s+"7200s"`));
     }
+  });
+  it('ни одно PromQL-окно не длиннее 25 ч: предел пользовательских лог-метрик', () => {
+    expect(tf).toContain('unitka_signal_window = "24h30m"');
+    const ranges = [...tf.matchAll(/\[(\d+)h(\d+m)?\]/g)].map((m) => Number(m[1]) + (m[2] ? parseInt(m[2], 10) / 60 : 0));
+    expect(ranges.length).toBeGreaterThan(0);
+    for (const h of ranges) expect(h).toBeLessThanOrEqual(25);
+    expect(tf).not.toMatch(/\[2[6-9]h\]/);
   });
 });
 
@@ -61,30 +70,61 @@ describe('фильтры событий = то, что пишет код', () =>
 });
 
 describe('классы: отказ / блок публикации / внимание / конфигурация', () => {
-  it('отказ: код приложения без сигналов сверки и блоков публикации ИЛИ execution failed; без error_code в метках', () => {
-    const b = block('unitka_writers_failed');
-    expect(b).toContain('NOT jsonPayload.code=${local.unitka_attention_codes} AND NOT jsonPayload.code=${local.unitka_blocked_codes}');
-    expect(b).toContain('protoPayload.methodName="/Jobs.RunJob"');
-    expect(b).not.toContain('error_code');
-    expect(b).toMatch(/enabled\s+=\s+false/);
-  });
-  it('блок публикации и внимание — метрические PromQL-политики (письмо при открытии/закрытии, без ежедневного повтора)', () => {
-    for (const n of ['unitka_publication_blocked', 'unitka_owner_attention']) {
+  const metric = (name: string): string => {
+    const i = tf.indexOf(`resource "google_logging_metric" "${name}"`);
+    expect(i).toBeGreaterThanOrEqual(0);
+    return tf.slice(i, tf.indexOf('\n}\n', i));
+  };
+  it('классы 1–4 — метрические PromQL-политики (письмо при открытии/закрытии, без повтора на каждое совпадение)', () => {
+    for (const n of ['unitka_writers_failed', 'unitka_publication_blocked', 'unitka_owner_attention']) {
       const b = block(n);
       expect(b).toContain('condition_prometheus_query_language');
-      expect(b).toContain('[26h])) > 0');
+      expect(b).toContain('[${local.unitka_signal_window}])) > 0');
       expect(b).not.toContain('condition_matched_log');
       expect(b).toMatch(/enabled\s+=\s+false/);
     }
-    expect(block('unitka_owner_attention')).toContain('sum by (job, code)');
-    expect(block('unitka_publication_blocked')).toContain('sum by (job)');
+    expect(block('unitka_writers_failed')).toContain('sum by (job_name) (');
+    expect(block('unitka_publication_blocked')).toContain('sum by (job_name) (');
+    expect(block('unitka_owner_attention')).toContain('sum by (job_name, event) (');
+    expect(tf).not.toMatch(/key\s+=\s+"job"/); // ряд по писателю — ресурсная метка job_name
   });
-  it('пауза расписания и изменение задания писателя (PUBLISH=0, образ) видны', () => {
+  it('отказ: код приложения без сигналов внимания и блоков публикации; execution failed — только у писателей Юнитки', () => {
+    const m = metric('unitka_writer_failures');
+    expect(m).toContain('NOT jsonPayload.message=${local.unitka_attention_events} AND NOT jsonPayload.code=${local.unitka_blocked_codes}');
+    expect(m).toContain('protoPayload.methodName="/Jobs.RunJob" AND NOT resource.labels.job_name=${local.unitka_pnl_jobs}');
+    expect(m).not.toContain('error_code');
+  });
+  it('отказ P&L всегда пишет запись с кодом (fatalRecord) — системное событие P&L в класс 2 не нужно', () => {
+    expect(readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8')).toContain('console.error(JSON.stringify(fatalRecord(e)));');
+  });
+  it('блок публикации: коды исключений гейта WB и Ozon совпадают с кодом и исключены из отказов', () => {
+    expect(src('storepnl/index.ts')).toContain("'STORE_PNL_PUBLISH_GATE'");
+    for (const c of ['OZON_STORE_PNL_PUBLISH_GATE', 'OZON_STORE_PNL_SOURCE_NOT_READY', 'STORE_PNL_PUBLISH_GATE']) {
+      expect(tf).toMatch(new RegExp(`unitka_blocked_codes\\s+=\\s+".*\\\\"${c}\\\\"`));
+    }
+  });
+  it('внимание: все события сверки по имени (6 кодов отказа controlled — один сигнал) и CPO Ozon', () => {
+    expect(src('index.ts')).toContain("log.error('unitka_controlled_refused'");
+    expect(src('index.ts')).toContain("log.error('unitka_recon_residual_persistent'");
+    expect(src('index.ts')).toContain("a.log.error('unitka_integrity_data_error'");
+    expect(src('ozon/loader.ts')).toContain("log.error('ozon_unitka_cpo_unresolved'");
+    for (const e of ['unitka_controlled_refused', 'unitka_recon_residual_persistent', 'unitka_integrity_data_error', 'ozon_unitka_cpo_unresolved']) {
+      expect(tf).toMatch(new RegExp(`unitka_attention_events = ".*\\\\"${e}\\\\"`));
+    }
+    expect(metric('unitka_owner_attention_events')).toContain('jsonPayload.message=${local.unitka_attention_events}');
+  });
+  it('конфигурация: пауза/изменение/удаление расписания и задания, кроме штатного выката sa-deployer', () => {
     const b = block('unitka_writer_config');
-    expect(b).toContain('CloudScheduler.PauseJob');
-    expect(b).toContain('google.cloud.run.v1.Jobs.ReplaceJob');
+    for (const m of ['CloudScheduler.PauseJob', 'CloudScheduler.UpdateJob', 'CloudScheduler.DeleteJob',
+      'google.cloud.run.v1.Jobs.ReplaceJob', 'google.cloud.run.v2.Jobs.UpdateJob', 'google.cloud.run.v1.Jobs.DeleteJob']) {
+      expect(b).toContain(m);
+    }
+    expect(b).toContain('NOT protoPayload.authenticationInfo.principalEmail="${google_service_account.deployer.email}"');
   });
   it('старые политики не трогаются этим файлом', () => {
-    expect(tf).not.toMatch(/resource "google_monitoring_alert_policy" "(unitka_engine_failed|ozon_unitka_failed)"/);
+    expect(tf).not.toMatch(/resource "google_monitoring_alert_policy" "(unitka_engine_failed|unitka_platform_failed|ozon_unitka_failed|unitka_store_pnl_failed|ozon_store_pnl_failed)"/);
+    for (const n of ['unitka_engine_failed', 'unitka_platform_failed', 'ozon_unitka_failed', 'unitka_store_pnl_failed', 'ozon_store_pnl_failed']) {
+      expect(tf).toContain(n); // перечислены в порядке включения как снимаемые последними
+    }
   });
 });

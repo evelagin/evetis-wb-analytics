@@ -1,107 +1,114 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # ЮНИТКА и P&L магазина: сигналы полезного результата (heartbeat), разделение
-# «упал» / «нужна проверка владельца», пауза расписаний.
+# «упал» / «публикация заблокирована» / «нужна проверка владельца», изменение конфигурации.
 # Приёмка 20.10.2026, подзадача F (каталог доказательств: evetis-manifests/
-# unitka-ops-acceptance-2026-10-20/F_alerts). Только описание: без apply.
+# unitka-ops-acceptance-2026-10-20/F_alerts). Всё создаётся ВЫКЛЮЧЕННЫМ.
 #
 # Зачем:
 #   1. Действующие политики ловят только ОШИБКУ. Успешный прогон без сдвига LCD
 #      (01.10.2026: LCD WB простоял на 29.09 двое суток, оба прогона COMPLETE),
 #      расписание на паузе (ozon-store-pnl-prod 15.10–20.10: ни одного запуска)
 #      и PUBLISH=0 — тишина.
-#   2. Политика unitka_engine_failed смешивает отказы с сигналами сверки:
-#      RECON_RESTRICTED_REQUIRES_ACK / RECON_RESIDUAL_PERSISTENT /
-#      INTEGRITY_DATA_ERROR приходят 4–7 раз в сутки при COMPLETE-прогоне.
-#      Настоящий INVARIANT_FAIL 20.10 пришёл в тот же поток писем.
+#   2. Действующие лог-политики смешивают отказы с сигналами сверки (RECON_*,
+#      INTEGRITY_DATA_ERROR приходят 4–7 раз в сутки при COMPLETE-прогоне) и шлют
+#      письмо на каждое совпадение: настоящий INVARIANT_FAIL 20.10 пришёл в тот же поток.
 #
 # Порядок включения (каждый шаг — OWNER ACK):
-#   a) apply этого файла: всё создаётся ВЫКЛЮЧЕННЫМ (enabled = false);
-#   b) через 27 ч после apply — проверить PromQL heartbeat в Metrics Explorer:
-#      на исправной работе выражение пусто, на окне без событий — 0;
-#      затем включить heartbeat-политики (меняется ТОЛЬКО enabled);
-#   c) включить unitka_writers_failed и unitka_owner_attention; после этого —
-#      выключить старые unitka_engine_failed и ozon_unitka_failed
-#      (ТОЛЬКО enabled: condition на месте не менять — 06.10.2026
-#      UpdateAlertPolicy с updateMask=conditions молча выключил политику).
+#   a) targeted apply этого файла: 7 лог-метрик + 8 политик, все enabled = false;
+#   b) не раньше чем через 25 ч — Metrics Explorer: PromQL каждой политики возвращает
+#      ряды с меткой job_name; heartbeat на исправном дне ≥ 1; затем enabled = true
+#      (меняется ТОЛЬКО enabled);
+#   c) только после того, как новые политики подтверждённо сработали (живой случай или
+#      проверочный), — выключить ВСЕ пять старых: unitka_engine_failed, unitka_platform_failed,
+#      ozon_unitka_failed, unitka_store_pnl_failed, ozon_store_pnl_failed
+#      (ТОЛЬКО enabled: condition на месте не менять — 06.10.2026 UpdateAlertPolicy
+#      с updateMask=conditions молча выключил политику).
 #
-# Почему PromQL, а не condition_absent: окно metric-absence ограничено 1 сутками
-# (alignment + duration ≤ 1 day, Cloud Monitoring quotas), а событие суточное —
-# 24 ч дают ложные срабатывания при сдвиге времени коммита на минуты. PromQL-
-# политики с июня 2026 читают > 25 ч данных.
-# `or vector(0)`: нет ни одного ряда (метрика ни разу не писалась, расписание на
-# паузе) = 0 событий = срабатывание. Нулевой ряд тоже даёт 0 < 1 = срабатывание.
+# Предел окна: PromQL-политика по пользовательской лог-метрике (logging.googleapis.com/user/)
+# видит только последние 25 ч данных — docs.cloud.google.com/monitoring/promql/promql-in-alerting:
+# «You can only alert on the most recent 25 hours of data for custom metrics … and user-defined
+# Log-Based metrics». Поэтому окно запроса ≤ 24h30m, а допуск heartbeat на сдвиг суточного
+# события набирается полем duration (условие должно держаться N часов подряд).
+# `or vector(0)`: нет ни одного ряда (метрика ни разу не писалась, расписание на паузе) =
+# 0 событий = срабатывание. increase() над DELTA-метрикой корректен (Monarch типизирован:
+# gauge-функции вроде sum_over_time к DELTA не применяются).
 #
 # Классы сигналов (OWNER 21.10.2026: отказы отдельно от информационных, без ежедневного
-# потока писем по одному событию):
-#   1. heartbeat (PromQL)       — нет полезного результата за окно: LCD WB/Ozon, публикация P&L WB/Ozon.
-#   2. unitka_writers_failed    — настоящий отказ прогона (код приложения или execution failed),
-#                                 в т. ч. отказ создания месяца 2-го числа (CHAIN_GAP, COGS_MISSING,
-#                                 TEMPLATE_MISMATCH, MONTH_*). Письмо на каждый отказ (не чаще 1/ч).
-#   3. unitka_publication_blocked (PromQL по лог-метрике) — новая/неразобранная операция или гейт
-#                                 публикации P&L. Одно письмо при появлении, одно при снятии.
-#   4. unitka_owner_attention   (PromQL по лог-метрике) — отклонённые/накопленные перерасчёты
-#                                 (RECON_*), расхождение источников (INTEGRITY_DATA_ERROR). Одно
-#                                 письмо при появлении по каждому коду, повтор — только после 26 ч тишины.
-#   5. unitka_writer_config     — пауза расписания писателя или изменение конфигурации задания
-#                                 (ReplaceJob: PUBLISH/WRITE_ENABLED, образ).
-# Почему 3 и 4 — PromQL, а не совпадение лога: у лог-политики каждое повторное совпадение при
-# открытом алерте шлёт ещё одно письмо (docs.cloud.google.com/logging/docs/alerting/log-based-incidents:
-# «If another log entry matches the condition of an already open alert, Monitoring sends an
-# additional notification»), т. е. постоянный сигнал сверки = письмо каждый день. Метрическая
-# политика уведомляет при открытии и закрытии алерта.
+# потока писем по одному событию). Классы 1–4 — метрические PromQL-политики: письмо при
+# открытии и при закрытии алерта, пока причина держится — тишина. Лог-политика так не умеет:
+# каждое новое совпадение при открытом алерте шлёт ещё одно письмо
+# (docs.cloud.google.com/logging/docs/alerting/log-based-incidents: «If another log entry matches
+# the condition of an already open alert, Monitoring sends an additional notification»).
+#   1. heartbeat             — нет полезного результата: LCD WB 27 ч / Ozon 26 ч, публикация P&L WB/Ozon 26 ч.
+#   2. unitka_writers_failed — настоящий отказ прогона (код приложения или execution failed), в т. ч.
+#                              отказ создания месяца 2-го числа. Одно письмо на писателя; повторный
+#                              отказ в течение 24,5 ч — без нового письма (код — в журнале прогона).
+#   3. unitka_publication_blocked — гейт публикации P&L / новая неразобранная операция.
+#   4. unitka_owner_attention — прогон завершён, нужен владелец: отклонённые/накопленные перерасчёты,
+#                              остаток сверки, расхождение источников, нераспознанный CPO Ozon.
+#   5. unitka_writer_config  — пауза / изменение / удаление расписания писателя; изменение или удаление
+#                              задания (PUBLISH, WRITE_ENABLED, образ) не через sa-deployer. Лог-политика:
+#                              каждое изменение — отдельное событие, письмо не чаще 1 в час.
+# Классы не пересекаются: гейт публикации (коды *_PUBLISH_GATE / SOURCE_NOT_READY, в бою — исключение и
+# exit 1) исключён из класса 2 по коду, а системное событие execution failed у заданий P&L в класс 2 не
+# входит вовсе (всякий отказ P&L пишет запись с кодом — fatalRecord, cli.ts; падение платформы без
+# записи ловит heartbeat публикации). Сигналы класса 4 исключены из класса 2 по имени события.
 # NEXT_MONTH_SECTION_MISSING (WARNING 27-го … 1-го) сигналом НЕ является: с Gate 10 месяц создаёт
-# суточный прогон 2-го числа сам; до этого предупреждение верно всегда и было бы ложным шумом.
+# суточный прогон 2-го числа сам; до этого предупреждение верно всегда.
 # Неготовый месяц = отказ создания 2-го (класс 2) + отсутствие LCD (класс 1).
 # ══════════════════════════════════════════════════════════════════════════════
 
 locals {
   # Четыре писателя Юнитки и P&L магазина.
   unitka_writer_jobs_filter = "resource.labels.job_name=(\"unitka-engine-prod\" OR \"ozon-unitka-prod\" OR \"unitka-store-pnl-prod\" OR \"ozon-store-pnl-prod\")"
+  unitka_pnl_jobs           = "(\"unitka-store-pnl-prod\" OR \"ozon-store-pnl-prod\")"
 
-  # Сигналы, при которых прогон COMPLETE, но нужен владелец. Не отказ.
-  unitka_attention_codes = "(\"RECON_RESTRICTED_REQUIRES_ACK\" OR \"RECON_RESIDUAL_PERSISTENT\" OR \"INTEGRITY_DATA_ERROR\")"
+  # Класс 4 — по имени события (ctx.message его не затирает, проверено на живых логах). У
+  # unitka_controlled_refused шесть кодов отказа (reconcile.ts), все — один сигнал.
+  unitka_attention_events = "(\"unitka_controlled_refused\" OR \"unitka_recon_residual_persistent\" OR \"unitka_integrity_data_error\" OR \"ozon_unitka_cpo_unresolved\")"
 
-  # Публикация P&L заблокирована (новая/неразобранная операция, гейт модели или источников).
-  # Коды отказа Ozon P&L (throw) и предупреждения, которые пишутся до решения о публикации.
-  unitka_blocked_codes  = "(\"OZON_STORE_PNL_PUBLISH_GATE\" OR \"OZON_STORE_PNL_SOURCE_NOT_READY\")"
+  # Класс 3. Коды исключения гейта (PUBLISH=1) и предупреждения, которые пишутся до решения о публикации.
+  unitka_blocked_codes  = "(\"OZON_STORE_PNL_PUBLISH_GATE\" OR \"OZON_STORE_PNL_SOURCE_NOT_READY\" OR \"STORE_PNL_PUBLISH_GATE\")"
   unitka_blocked_events = "(\"store_pnl_new_operations\" OR \"store_pnl_publish_gate\" OR \"ozon_store_pnl_publish_gate\")"
 
-  # Heartbeat: событие полезного результата → окно (ч), за которое оно обязано случиться.
-  #   WB LCD 27 ч: утро 07:00Z коммитит ~07:02Z; 26 ч сработали бы в 09:02Z, ДО резерва 09:30Z.
-  #   Ozon LCD 26 ч: один прогон 07:00Z (повторы Scheduler внутри часа).
-  #   P&L WB 10:00Z, P&L Ozon 10:20Z: 26 ч.
+  # Окно запроса классов 2–4: ≤ 25 ч (предел лог-метрик), 30 мин запаса на сдвиг суточного события.
+  unitka_signal_window = "24h30m"
+
+  # Heartbeat: событие полезного результата → окно 24 ч + duration (допуск сдвига).
+  #   WB LCD: утро 07:00Z коммитит ~07:02Z; 24 ч + 3 ч = срабатывание ~10:02Z, ПОСЛЕ резерва 09:30Z.
+  #   Ozon LCD (07:00Z), P&L WB (10:00Z), P&L Ozon (10:20Z): 24 ч + 2 ч.
   # Фильтры событий проверены на живых логах 20.09–20.10.2026: WB LCD_COMMITTED 25 (пропуск 01.10 —
   # реальный простой LCD), Ozon LCD_COMMITTED 26 (ежедневно), store_pnl_tab_published 15,
   # ozon_store_pnl_readback 3 (расписание было на паузе до 20.10).
   # `jsonPayload.message` здесь — имя события: logLifecycle и эти logger.info не передают ctx.message.
   unitka_heartbeats = {
     unitka_wb_lcd_committed = {
-      job     = "unitka-engine-prod"
-      event   = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"WB\""
-      window  = "27h"
-      title   = "UNITKA WB: LCD не сдвигался 27 ч"
-      runbook = "LCD WB (ZZ_CONFIG!B2) не закоммичен 27 ч. Смотреть unitka_lifecycle (LCD_NOT_ADVANCED: notes), wb_ops.UNITKA_ENGINE_RUNS, паузу unitka-engine-prod-morning/-reserve, UNITKA_WRITE_ENABLED. Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md"
+      job      = "unitka-engine-prod"
+      event    = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"WB\""
+      duration = "10800s"
+      title    = "UNITKA WB: LCD не сдвигался 27 ч"
+      runbook  = "LCD WB (ZZ_CONFIG!B2) не закоммичен 27 ч. Смотреть unitka_lifecycle (LCD_NOT_ADVANCED: notes), wb_ops.UNITKA_ENGINE_RUNS, паузу unitka-engine-prod-morning/-reserve, UNITKA_WRITE_ENABLED. 2-го числа — отказ создания месяца (docs/ops/UNITKA_MONTH_TRANSITION_2026-11.md). Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md"
     }
     unitka_ozon_lcd_committed = {
-      job     = "ozon-unitka-prod"
-      event   = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"OZON\""
-      window  = "26h"
-      title   = "UNITKA Ozon: LCD не сдвигался 26 ч"
-      runbook = "OZON_LAST_CLOSED_DATE (ZZ_CONFIG!B30) не закоммичен 26 ч. Смотреть unitka_lifecycle ozon-unitka-prod, LOADER_RUNS(ozon-unitka), паузу расписания, OZON_UNITKA_WRITE_ENABLED. Runbook: docs/ops/OZON_UNITKA_OPERATIONS.md"
+      job      = "ozon-unitka-prod"
+      event    = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"OZON\""
+      duration = "7200s"
+      title    = "UNITKA Ozon: LCD не сдвигался 26 ч"
+      runbook  = "OZON_LAST_CLOSED_DATE (ZZ_CONFIG!B30) не закоммичен 26 ч. Смотреть unitka_lifecycle ozon-unitka-prod, LOADER_RUNS(ozon-unitka), паузу расписания, OZON_UNITKA_WRITE_ENABLED. Runbook: docs/ops/OZON_UNITKA_OPERATIONS.md"
     }
     unitka_store_pnl_published = {
-      job     = "unitka-store-pnl-prod"
-      event   = "jsonPayload.message=\"store_pnl_tab_published\"\njsonPayload.action=(\"WRITE\" OR \"NOOP\")"
-      window  = "26h"
-      title   = "WB STORE P&L: вкладка не публиковалась 26 ч"
-      runbook = "«WB Магазин P&L» не публиковалась (WRITE/NOOP) 26 ч: пауза unitka-store-pnl-prod, UNITKA_STORE_PNL_PUBLISH=0 или отказ. Runbook: docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md"
+      job      = "unitka-store-pnl-prod"
+      event    = "jsonPayload.message=\"store_pnl_tab_published\"\njsonPayload.action=(\"WRITE\" OR \"NOOP\")"
+      duration = "7200s"
+      title    = "WB STORE P&L: вкладка не публиковалась 26 ч"
+      runbook  = "«WB Магазин P&L» не публиковалась (WRITE/NOOP) 26 ч: пауза unitka-store-pnl-prod, UNITKA_STORE_PNL_PUBLISH=0, гейт STORE_PNL_PUBLISH_GATE или отказ. Runbook: docs/finance/WB_STORE_PNL_PHASE_C_2026-10-09.md"
     }
     ozon_store_pnl_published = {
-      job     = "ozon-store-pnl-prod"
-      event   = "jsonPayload.message=\"ozon_store_pnl_readback\""
-      window  = "26h"
-      title   = "OZON STORE P&L: вкладка не подтверждена 26 ч"
-      runbook = "«Ozon Магазин P&L» без успешного перечитывания 26 ч: пауза ozon-store-pnl-prod, OZON_STORE_PNL_PUBLISH=0, гейт OZON_STORE_PNL_PUBLISH_GATE/SOURCE_NOT_READY. Runbook: docs/finance/OZON_STORE_PNL_PHASE_D4.md"
+      job      = "ozon-store-pnl-prod"
+      event    = "jsonPayload.message=\"ozon_store_pnl_readback\""
+      duration = "7200s"
+      title    = "OZON STORE P&L: вкладка не подтверждена 26 ч"
+      runbook  = "«Ozon Магазин P&L» без успешного перечитывания 26 ч: пауза ozon-store-pnl-prod, OZON_STORE_PNL_PUBLISH=0, гейт OZON_STORE_PNL_PUBLISH_GATE/SOURCE_NOT_READY. Runbook: docs/finance/OZON_STORE_PNL_PHASE_D4.md"
     }
   }
 }
@@ -121,19 +128,18 @@ resource "google_logging_metric" "unitka_heartbeat" {
   }
 }
 
+# ── Класс 1. Нет полезного результата.
 resource "google_monitoring_alert_policy" "unitka_heartbeat" {
   for_each     = { for k, v in local.unitka_heartbeats : k => v if var.unitka_alert_email != "" }
   display_name = each.value.title
   combiner     = "OR"
-  enabled      = false # включается по ACK через ≥ window после появления метрики (метрика не заполняется задним числом)
+  enabled      = false # включается по ACK не раньше чем через 25 ч после появления метрики (задним числом не заполняется)
 
   conditions {
-    display_name = "нет события ${each.key} за ${each.value.window}"
+    display_name = "нет события ${each.key} за 24 ч дольше ${each.value.duration}"
     condition_prometheus_query_language {
-      # ⚠ Проверить в Metrics Explorer до включения: для DELTA-метрики increase() может
-      #   потребоваться заменить на sum_over_time(); критерий — 1 на исправном дне.
-      query               = "(sum(increase(logging_googleapis_com:user_${google_logging_metric.unitka_heartbeat[each.key].name}{monitored_resource=\"cloud_run_job\"}[${each.value.window}])) or vector(0)) < 1"
-      duration            = "0s"
+      query               = "(sum(increase(logging_googleapis_com:user_${google_logging_metric.unitka_heartbeat[each.key].name}{monitored_resource=\"cloud_run_job\"}[24h])) or vector(0)) < 1"
+      duration            = each.value.duration
       evaluation_interval = "300s"
     }
   }
@@ -150,10 +156,24 @@ resource "google_monitoring_alert_policy" "unitka_heartbeat" {
   depends_on = [google_project_service.enabled]
 }
 
-# ── Класс 2. Отказ любого из четырёх писателей: код приложения (кроме сигналов сверки и блоков публикации) или
-#    системное событие «execution failed». Проверено на логах 20.09–20.10.2026: 9 совпадений =
-#    ровно 5 реальных отказов (22.09 LOADER_ERROR, 06.10 zbfk7 без кода, 07.10 SHEETS_API,
-#    11.10 SHEETS_API, 20.10 INVARIANT_FAIL) и их системные события; сигналов сверки — 0.
+# ── Класс 2. Отказ любого из четырёх писателей. Проверено на логах 20.09–20.10.2026: фильтр ловит ровно
+#    5 реальных отказов (22.09 LOADER_ERROR, 06.10 zbfk7 без кода, 07.10 SHEETS_API, 11.10 SHEETS_API,
+#    20.10 INVARIANT_FAIL); сигналов сверки — 0. Блоки публикации P&L исключены (класс 3).
+resource "google_logging_metric" "unitka_writer_failures" {
+  name   = "unitka_writer_failures"
+  filter = <<-EOT
+    resource.type="cloud_run_job"
+    ${local.unitka_writer_jobs_filter}
+    severity>=ERROR
+    ((jsonPayload.code!="" AND NOT jsonPayload.message=${local.unitka_attention_events} AND NOT jsonPayload.code=${local.unitka_blocked_codes}) OR (logName="projects/${var.project_id}/logs/cloudaudit.googleapis.com%2Fsystem_event" AND protoPayload.methodName="/Jobs.RunJob" AND NOT resource.labels.job_name=${local.unitka_pnl_jobs}))
+  EOT
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
 resource "google_monitoring_alert_policy" "unitka_writers_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "ЮНИТКА/P&L: прогон упал"
@@ -161,66 +181,23 @@ resource "google_monitoring_alert_policy" "unitka_writers_failed" {
   enabled      = false
 
   conditions {
-    display_name = "код отказа (без сигналов сверки) или execution failed"
-    condition_matched_log {
-      filter = <<-EOT
-        resource.type="cloud_run_job"
-        ${local.unitka_writer_jobs_filter}
-        severity>=ERROR
-        ((jsonPayload.code!="" AND NOT jsonPayload.code=${local.unitka_attention_codes} AND NOT jsonPayload.code=${local.unitka_blocked_codes}) OR (logName="projects/${var.project_id}/logs/cloudaudit.googleapis.com%2Fsystem_event" AND protoPayload.methodName="/Jobs.RunJob"))
-      EOT
-      # Без метки кода отказа: отказ пишется двумя записями (системное событие без кода и запись с кодом) —
-      # одинаковые метки (job, execution) держат их в одном алерте, второе письмо гасит лимит 1/ч.
-      label_extractors = {
-        job       = "EXTRACT(resource.labels.job_name)"
-        execution = "EXTRACT(labels.\"run.googleapis.com/execution_name\")"
-      }
+    display_name = "отказ писателя за ${local.unitka_signal_window} (по job_name)"
+    condition_prometheus_query_language {
+      query               = "sum by (job_name) (increase(logging_googleapis_com:user_${google_logging_metric.unitka_writer_failures.name}{monitored_resource=\"cloud_run_job\"}[${local.unitka_signal_window}])) > 0"
+      duration            = "0s"
+      evaluation_interval = "60s"
     }
-  }
-
-  alert_strategy {
-    notification_rate_limit {
-      period = "3600s"
-    }
-    auto_close = "86400s"
   }
 
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
-    content   = "Прогон писателя упал (метки job, execution; код отказа — в журнале прогона). WB: резерв 09:30 UTC повторит, детерминированный код (INVARIANT_FAIL, QA) резерв не лечит. 2-го числа коды CHAIN_GAP / COGS_MISSING / TEMPLATE_MISMATCH / MONTH_* — новый месяц не создан (ноябрь: docs/ops/UNITKA_MONTH_TRANSITION_2026-11.md). Детали — wb_ops.UNITKA_ENGINE_RUNS / wb_raw.LOADER_RUNS. Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md"
+    content   = "Прогон писателя упал (метка job_name; код отказа — в журнале прогона: severity>=ERROR, jsonPayload.code). Пока алерт открыт (24,5 ч после последнего отказа), повторные отказы того же писателя нового письма не дают — смотреть журнал. WB: резерв 09:30 UTC повторит, детерминированный код (INVARIANT_FAIL, QA) резерв не лечит. 2-го числа коды CHAIN_GAP / COGS_* / TEMPLATE_MISMATCH / MONTH_* / OZON_UNITKA_* — новый месяц не создан (docs/ops/UNITKA_MONTH_TRANSITION_2026-11.md). Детали — wb_ops.UNITKA_ENGINE_RUNS / wb_raw.LOADER_RUNS. Runbook: docs/UNITKA_ENGINE_V1_RUNBOOK.md"
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]
 }
 
-# ── Лог-метрики для классов 3 и 4: по одному ряду на (job, code[, event]).
-resource "google_logging_metric" "unitka_owner_attention_events" {
-  name   = "unitka_owner_attention_events"
-  filter = <<-EOT
-    resource.type="cloud_run_job"
-    ${local.unitka_writer_jobs_filter}
-    severity>=WARNING
-    jsonPayload.code=${local.unitka_attention_codes}
-  EOT
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
-    labels {
-      key        = "job"
-      value_type = "STRING"
-    }
-    labels {
-      key        = "code"
-      value_type = "STRING"
-    }
-  }
-  label_extractors = {
-    job  = "EXTRACT(resource.labels.job_name)"
-    code = "EXTRACT(jsonPayload.code)"
-  }
-}
-
+# ── Класс 3. Публикация P&L заблокирована / новая операция.
 resource "google_logging_metric" "unitka_publication_blocked_events" {
   name   = "unitka_publication_blocked_events"
   filter = <<-EOT
@@ -229,25 +206,15 @@ resource "google_logging_metric" "unitka_publication_blocked_events" {
     severity>=WARNING
     (jsonPayload.code=${local.unitka_blocked_codes} OR jsonPayload.message=${local.unitka_blocked_events})
   EOT
+  # Без меток: ряд на писателя даёт ресурсная метка job_name. У одного блока несколько записей
+  # (предупреждение гейта и код исключения) — разметка по коду открыла бы два алерта на одну причину.
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
     unit        = "1"
-    labels {
-      key        = "job"
-      value_type = "STRING"
-    }
-  }
-  # Один ряд на писателя: у Ozon одно событие блока даёт и предупреждение гейта, и код отказа —
-  # разметка по коду открыла бы два алерта на одну причину. Причина — в журнале прогона.
-  label_extractors = {
-    job = "EXTRACT(resource.labels.job_name)"
   }
 }
 
-# ── Класс 3. Публикация P&L заблокирована / новая операция: одно письмо при появлении, одно при снятии
-#    (алерт открыт, пока событие повторяется хотя бы раз за 26 ч). Сама публикация при этом не идёт —
-#    отсутствие результата параллельно ловит heartbeat класса 1.
 resource "google_monitoring_alert_policy" "unitka_publication_blocked" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "P&L: публикация заблокирована / новая операция"
@@ -255,9 +222,9 @@ resource "google_monitoring_alert_policy" "unitka_publication_blocked" {
   enabled      = false
 
   conditions {
-    display_name = "гейт публикации или неразобранная операция за 26 ч"
+    display_name = "гейт публикации или неразобранная операция за ${local.unitka_signal_window}"
     condition_prometheus_query_language {
-      query               = "sum by (job) (increase(logging_googleapis_com:user_${google_logging_metric.unitka_publication_blocked_events.name}{monitored_resource=\"cloud_run_job\"}[26h])) > 0"
+      query               = "sum by (job_name) (increase(logging_googleapis_com:user_${google_logging_metric.unitka_publication_blocked_events.name}{monitored_resource=\"cloud_run_job\"}[${local.unitka_signal_window}])) > 0"
       duration            = "0s"
       evaluation_interval = "300s"
     }
@@ -265,14 +232,36 @@ resource "google_monitoring_alert_policy" "unitka_publication_blocked" {
 
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
-    content   = "Публикация P&L магазина заблокирована. Ozon: OZON_STORE_PNL_PUBLISH_GATE — новый/неразобранный тип начисления (ozon_mart.V_OZON_FINANCE_NEW_OPERATIONS, QA Q03/Q05) или нарушение модели; OZON_STORE_PNL_SOURCE_NOT_READY — источники не свежие. WB: store_pnl_new_operations — новая операция финотчёта (V_WB_FINANCE_NEW_OPERATIONS), месяц в PENDING_CLASSIFICATION. Классификация — только решением владельца (пример: тип 125, PR #366). Пока не разобрано — лист остаётся на прошлой публикации."
+    content   = "Публикация P&L магазина заблокирована. Ozon: OZON_STORE_PNL_PUBLISH_GATE — новый/неразобранный тип начисления (ozon_mart.V_OZON_FINANCE_NEW_OPERATIONS, QA Q03/Q05) или нарушение модели; OZON_STORE_PNL_SOURCE_NOT_READY — источники не свежие. WB: STORE_PNL_PUBLISH_GATE — гейт модели; store_pnl_new_operations — новая операция финотчёта (V_WB_FINANCE_NEW_OPERATIONS), месяц в PENDING_CLASSIFICATION. Классификация — только решением владельца (пример: тип 125, PR #366). Пока не разобрано — лист остаётся на прошлой публикации; через 26 ч добавится heartbeat публикации. Алерт закроется сам через 24,5 ч без сигнала."
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]
 }
 
-# ── Класс 4. Нужна проверка владельца: отклонённые/накопленные перерасчёты и расхождение источников.
-#    Прогон COMPLETE. Одно письмо на код при появлении; пока код повторяется в каждом прогоне — тишина.
+# ── Класс 4. Прогон завершён, нужен владелец. Одно письмо на (писатель, событие) при появлении;
+#    пока событие повторяется в каждом прогоне — тишина.
+resource "google_logging_metric" "unitka_owner_attention_events" {
+  name   = "unitka_owner_attention_events"
+  filter = <<-EOT
+    resource.type="cloud_run_job"
+    ${local.unitka_writer_jobs_filter}
+    severity>=WARNING
+    jsonPayload.message=${local.unitka_attention_events}
+  EOT
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+    labels {
+      key        = "event"
+      value_type = "STRING"
+    }
+  }
+  label_extractors = {
+    event = "EXTRACT(jsonPayload.message)"
+  }
+}
+
 resource "google_monitoring_alert_policy" "unitka_owner_attention" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "ЮНИТКА: нужна проверка владельца (перерасчёты, сверка)"
@@ -280,9 +269,9 @@ resource "google_monitoring_alert_policy" "unitka_owner_attention" {
   enabled      = false
 
   conditions {
-    display_name = "сигнал сверки за 26 ч (по коду)"
+    display_name = "сигнал сверки за ${local.unitka_signal_window} (по job_name, event)"
     condition_prometheus_query_language {
-      query               = "sum by (job, code) (increase(logging_googleapis_com:user_${google_logging_metric.unitka_owner_attention_events.name}{monitored_resource=\"cloud_run_job\"}[26h])) > 0"
+      query               = "sum by (job_name, event) (increase(logging_googleapis_com:user_${google_logging_metric.unitka_owner_attention_events.name}{monitored_resource=\"cloud_run_job\"}[${local.unitka_signal_window}])) > 0"
       duration            = "0s"
       evaluation_interval = "300s"
     }
@@ -290,18 +279,17 @@ resource "google_monitoring_alert_policy" "unitka_owner_attention" {
 
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
-    content   = "Прогон завершён, но нужен владелец. RECON_RESTRICTED_REQUIRES_ACK — правка прошлого месяца отклонена политикой restricted и ждёт решения (окно сверки 35 дней: после выхода дня из окна правка не применится); RECON_RESIDUAL_PERSISTENT — остаток сверки держится; INTEGRITY_DATA_ERROR — расхождение источников (observe). Список ячеек — журнал unitka_controlled_refused. Алерт закроется сам после 26 ч без сигнала."
+    content   = "Прогон завершён, но нужен владелец. unitka_controlled_refused — правка прошлого месяца отклонена (RECON_RESTRICTED_REQUIRES_ACK, RECON_WITHDRAWAL_REQUIRES_ACK, RECON_CORRECTION_CAP_EXCEEDED, RECON_OUT_OF_SCOPE, RECON_CANCELS_*) и ждёт решения; окно сверки 35 дней — после выхода дня из окна правка не применится; список ячеек — в самом событии. unitka_recon_residual_persistent — остаток сверки держится. unitka_integrity_data_error — расхождение источников (observe). ozon_unitka_cpo_unresolved — строки CPO Ozon без SKU. Алерт закроется сам через 24,5 ч без сигнала."
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]
 }
 
-# ── Класс 5. Пауза расписания писателя или изменение конфигурации задания (ReplaceJob — в т. ч.
-#    PUBLISH=0 / UNITKA_WRITE_ENABLED=0 / смена образа). lifecycle.ignore_changes = [paused] у всех пяти
-#    расписаний: пауза вне Terraform живёт бессрочно. Проверено на журнале аудита 20.09–20.10.2026:
-#    14 записей PauseJob, все — реальные паузы, включая 15.10 ozon-store-pnl-prod; ReplaceJob 20.10
-#    (образ unitka-engine-prod 08:43Z, PUBLISH=1 ozon-store-pnl-prod 16:44Z). Плановое изменение в окне
-#    выпуска — ожидаемое письмо; незапланированное — повод проверить.
+# ── Класс 5. Пауза / изменение / удаление расписания писателя; изменение или удаление задания писателя
+#    (PUBLISH=0 / UNITKA_WRITE_ENABLED=0 / образ). lifecycle.ignore_changes = [paused] у расписаний: пауза
+#    вне Terraform живёт бессрочно. Штатные выкаты образа идут от sa-deployer по ACK — исключены
+#    (за 30 дней 46 из 64 ReplaceJob). Проверено на журнале аудита 20.09–20.10.2026: 14 PauseJob, все —
+#    реальные паузы, включая 15.10 ozon-store-pnl-prod; ReplaceJob 20.10 PUBLISH=1 ozon-store-pnl-prod.
 resource "google_monitoring_alert_policy" "unitka_writer_config" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "ЮНИТКА/P&L: пауза расписания или изменение задания писателя"
@@ -309,16 +297,17 @@ resource "google_monitoring_alert_policy" "unitka_writer_config" {
   enabled      = false
 
   conditions {
-    display_name = "PauseJob расписания или ReplaceJob задания писателя"
+    display_name = "Pause/Update/Delete расписания или Replace/Update/Delete задания писателя"
     condition_matched_log {
       filter = <<-EOT
         logName="projects/${var.project_id}/logs/cloudaudit.googleapis.com%2Factivity"
         ((protoPayload.serviceName="cloudscheduler.googleapis.com"
-          protoPayload.methodName="google.cloud.scheduler.v1.CloudScheduler.PauseJob"
+          protoPayload.methodName=("google.cloud.scheduler.v1.CloudScheduler.PauseJob" OR "google.cloud.scheduler.v1.CloudScheduler.UpdateJob" OR "google.cloud.scheduler.v1.CloudScheduler.DeleteJob")
           protoPayload.resourceName=~"/jobs/(unitka-engine-prod-(morning|reserve)|ozon-unitka-prod|unitka-store-pnl-prod|ozon-store-pnl-prod)$")
         OR (protoPayload.serviceName="run.googleapis.com"
-          protoPayload.methodName=("google.cloud.run.v1.Jobs.ReplaceJob" OR "google.cloud.run.v2.Jobs.UpdateJob")
-          protoPayload.resourceName=~"/jobs/(unitka-engine-prod|ozon-unitka-prod|unitka-store-pnl-prod|ozon-store-pnl-prod)$"))
+          protoPayload.methodName=("google.cloud.run.v1.Jobs.ReplaceJob" OR "google.cloud.run.v2.Jobs.UpdateJob" OR "google.cloud.run.v1.Jobs.DeleteJob" OR "google.cloud.run.v2.Jobs.DeleteJob")
+          protoPayload.resourceName=~"/jobs/(unitka-engine-prod|ozon-unitka-prod|unitka-store-pnl-prod|ozon-store-pnl-prod)$"
+          NOT protoPayload.authenticationInfo.principalEmail="${google_service_account.deployer.email}"))
       EOT
       label_extractors = {
         resource = "EXTRACT(protoPayload.resourceName)"
@@ -337,7 +326,7 @@ resource "google_monitoring_alert_policy" "unitka_writer_config" {
 
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
-    content   = "Расписание писателя на паузе или задание изменено (метки resource, method, actor). Если это не окно выпуска по ACK — проверить gcloud scheduler jobs describe / gcloud run jobs describe (UNITKA_STORE_PNL_PUBLISH, OZON_STORE_PNL_PUBLISH, UNITKA_WRITE_ENABLED, образ). Простой без паузы ловит heartbeat."
+    content   = "Расписание писателя на паузе / изменено / удалено или задание изменено не штатным выкатом (метки resource, method, actor). Если это не окно выпуска по ACK — проверить gcloud scheduler jobs describe / gcloud run jobs describe (UNITKA_STORE_PNL_PUBLISH, OZON_STORE_PNL_PUBLISH, UNITKA_WRITE_ENABLED, образ). Простой без паузы ловит heartbeat."
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]

@@ -4,7 +4,7 @@
 
 Доказательства и холостой план:
 - `evetis-manifests/unitka-ops-acceptance-2026-10-20/D_month`;
-- тест `cloud/test/unitka_month_transition_nov.test.ts`.
+- тест `cloud/test/unitka_month_transition_nov.test.ts` — в PR #367 (ветка `fix/unitka-return-tail`, из `test/month-transition-nov` 7bd5b94); в main появится с его слиянием.
 
 ## 1. Что произойдёт само (ручная подготовка не нужна)
 
@@ -35,6 +35,8 @@
 | `TEMPLATE_MISMATCH` | формулы октября изменены вручную | не править формулы октября |
 | `MONTH_PREP_NO_PREDECESSOR`, `MONTH_SECTION_AMBIGUOUS`, `MONTH_SECTION_CHAIN_TOO_LONG` | нет секции октября, она задвоена или LCD перескочил больше месяцев, чем допустимо | не вставлять и не копировать секции вручную |
 | `MONTH_PREP_VERIFY_FAILED` | после записи секция не прошла контракт | — (откат по манифесту, §4) |
+| прочие коды планировщика WB: `SHEET_TAIL_NOT_EMPTY`, `PREDECESSOR_SECTION_MISSING`, `PREDECESSOR_INVALID`, `DUPLICATE_SKU`, `EMPTY_POPULATION`, `STRUCTURE_UNAVAILABLE`, `TEMPLATE_FORMATS_UNAVAILABLE`, `CF_TRIM_UNSAFE`, `MONTH_SECTION_PARTIAL`, `MONTH_SECTION_INVALID`, `UNSUPPORTED_LOCALE`; общий `MONTH_PREP_FAILED` | лист ниже октября не пуст, повреждена предыдущая секция, задвоен SKU, нет доступа к структуре/форматам листа, локаль книги | не писать ниже октября, не менять локаль и структуру листа |
+| Ozon: `OZON_UNITKA_GEOMETRY`, `OZON_UNITKA_LAYOUT`, `NO_SAFE_EXPANSION_PATH`, `CAPACITY_EXPANSION_VERIFY_FAILED`, `NO_FREE_SKU_SLOT` | геометрия листа Ozon не распознана, нет места или свободного слота под новый offer | не добавлять Ozon offer и не править раскладку до 02.11 |
 
 **Последствие отказа:**
 - LCD остаётся 31.10, лист и P&L не получают ноябрь;
@@ -43,17 +45,17 @@
 
 ## 3. Как владелец узнает
 
-- **Отказ создания** — письмо «ЮНИТКА/P&L: прогон упал» (код из §2) — политика `unitka_writers_failed`.
+- **Отказ создания** — письмо «ЮНИТКА/P&L: прогон упал» (код из §2 — в журнале прогона) — политика `unitka_writers_failed`, после её включения.
 - **LCD не сдвинулся 27 ч / 26 ч** — письмо heartbeat «UNITKA WB/Ozon: LCD не сдвигался».
 - До включения новых политик действующие политики UNITKA Engine / OZON Unitka тоже ловят ERROR с кодом.
 - `NEXT_MONTH_SECTION_MISSING` (WARNING 27.10…01.11) — **не сигнал**: до 02.11 секции нет всегда, это ожидаемо.
 
 **Проверка 02.11 после 10:10 МСК (07:10Z):**
-- в журналах: `NEW_MONTH_CREATED` 2026-11 и `LCD_COMMITTED` для WB и Ozon;
+- в журналах: WB — `NEW_MONTH_CREATED` 2026-11 и `LCD_COMMITTED`; Ozon — только `LCD_COMMITTED` (свой `NEW_MONTH_CREATED` Ozon пишет ДО записи, ozon/loader.ts — доказательством создания не является; проверять B30 и A674);
 - ZZ_CONFIG: B2 = B30 = 01.11.2026;
 - WB_Юнит_2025 — ноябрь с A804, OZON_Юнит_2025 — с A674;
 - после 13:25 МСК — оба P&L опубликованы.
-- Сохранить `digest` из `unitka_month_prep_rollback_manifest` (WB) — он нужен для отката.
+- Сохранить `manifest_b64` из события `unitka_month_prep_rollback_manifest` (WB): откат `unitka-month-rollback` принимает его в `UNITKA_MONTH_ROLLBACK_MANIFEST` (docs/UNITKA_ENGINE_V1_RUNBOOK.md §5c).
 
 ## 4. Резерв при фактическом отказе
 
@@ -65,8 +67,9 @@
    gcloud run jobs execute unitka-engine-prod --region europe-west1 --args=unitka-month-prep --wait \
      --update-env-vars=UNITKA_MONTH_PREP_TARGET=2026-11,UNITKA_MONTH_PREP_WRITE=1,UNITKA_MONTH_PREP_MANIFEST_DIGEST=<digest плана>
    ```
-   - Не запускать в часе 12 МСК: это слот резерва 09:30Z, и guard его заглушит.
-3. **Ошибочно созданная секция** — откат `unitka-month-rollback` по `manifest_b64` (docs/UNITKA_ENGINE_V1_RUNBOOK.md §5c), только по ACK.
+   - Не запускать в 07:00–07:30Z и 09:30–10:00Z: запись параллельно с прогоном Engine (утро / резерв). Lease привязан к имени загрузчика, поэтому `unitka-month-prep` и `unitka` друг друга не блокируют.
+   - Guard пропускает повторный запуск того же загрузчика в том же часе МСК: если запись завершилась `guard_skip`, повторить в следующем часе (проверять по журналу, а не по коду возврата).
+3. **Ошибочно созданная секция** — откат `unitka-month-rollback` по `manifest_b64` из `unitka_month_prep_rollback_manifest` (`UNITKA_MONTH_ROLLBACK_MANIFEST`, docs/UNITKA_ENGINE_V1_RUNBOOK.md §5c), только по ACK.
 4. **Ozon:** отдельного ручного пути создания нет. Устранить причину по коду отказа `ozon-unitka-prod`; следующий плановый прогон 07:00Z создаст месяц.
 
 ## 5. Известные ограничения
