@@ -12,16 +12,18 @@ across wakes. The order and the verified_* side effects are those of the gate.
 import contextlib
 
 
-def approved(backend, manifest, records, *, quarantines=None, gate=None):
+def approved(backend, manifest, records, *, quarantines=None, gate=None, fresh=False):
     """Acceptance entries ({'stop_hash': ...}) of every exact owner recovery.
 
     Within one wake the same record slice gives the same answer: the result is
     kept on the backend keyed by the exact record and quarantine digests (any new
     record changes the key and forces a full revalidation). Never across wakes.
+    fresh=True always revalidates: a decision right before a source/Run effect
+    (diagnostic dispatch, automatic local isolation) never reuses the gate's answer.
     """
     from tools.tenancy import durable_plan as D
     scope = getattr(backend, 'stop_acceptance_scope', None)       # set only by a claimed wake (full_controller)
-    if scope is None:
+    if scope is None or fresh:
         return _revalidate(backend, manifest, records, quarantines, gate)[0]
     key = (id(scope), D.digest([sorted(D.digest(r) for r in records), D.digest(quarantines) if quarantines is not None else None]))
     memo = getattr(backend, 'stop_acceptance_memo', None)

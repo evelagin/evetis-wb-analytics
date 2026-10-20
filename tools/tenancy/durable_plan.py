@@ -112,6 +112,17 @@ class DurableRecords:
         """
         self._listing = list(self.metadata.list_tables(self.c["datasets"]["tenant_locks"]))
 
+    def refresh_snapshot(self):
+        """Re-list once: a decision that must also see other executions' STOPs.
+
+        Entries already in the snapshot (own commits included) are kept even if the
+        fresh listing does not show them yet; markers are never deleted."""
+        if self._listing is not None:
+            old = self._listing
+            self.begin_snapshot()
+            seen = {row[0] for row in self._listing}
+            self._listing.extend(row for row in old if row[0] not in seen)
+
     def _locks_listing(self):
         if self._listing is not None:
             return self._listing

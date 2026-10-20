@@ -51,7 +51,7 @@ def isolated(b,p):
     records=b.store.history(p['root'])
     # The FULL STOP gate's own acceptance set: a private list omitted STOP819, f507, R1 and R2
     # and would have turned a qualified diagnostic into a new STOP.
-    covered=SA.accepted_hashes(b,m,records,quarantines=certificates)
+    covered=SA.accepted_hashes(b,m,records,quarantines=certificates,fresh=True)   # before a Run POST: never the gate's memo
     if any(r['kind']=='STOPPED' and D.digest(r) not in covered for r in records):fail('global STOP remains')
     CC.ensure(b)
     plans=H.reconstruct_plans(records,m,b.clock());done=H.completed(records,m);quarantined=H.isolated_indices(m,certificates)

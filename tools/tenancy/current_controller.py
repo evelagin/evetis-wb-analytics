@@ -177,7 +177,11 @@ def source_tick(b,p,day,item):
     action=decision['action']
     if action=='MONITOR':return {'status':'MONITORING','source_dispatches':0,'operational_entity':doc['runtime_plan']['entity']}
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:fail('uncertain current dispatch or source authority; never repeat')
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(b)
     if action=='RECONCILE':
+        if budget is not None and not budget.allows(WB.RECONCILE_SECONDS):
+            return WB.handoff('RECONCILE',operational_entity=doc['runtime_plan']['entity'])
         seq=decision['sequence'];payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==seq)
         if payload['plan']!=doc:fail('current receipt plan differs')
         result=b.reconcile(payload)
@@ -185,6 +189,8 @@ def source_tick(b,p,day,item):
         b.store.commit(shard,'RECONCILED',seq,result,b.clock())
         history=b.store.history(shard)
     if b.state(doc)['complete']:
+        if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
+            return WB.handoff('COMPLETE',operational_entity=doc['runtime_plan']['entity'])
         cert=certificate(b,p,day,item,history)
         if cert is not None:
             b.store.commit(b.current_root,'CURRENT_CERT',P.ORDER.index(doc['runtime_plan']['entity']),cert,b.clock())
@@ -195,8 +201,6 @@ def source_tick(b,p,day,item):
     if action!='PREPARE_NEXT':fail('unknown current tick decision')
     if doc['runtime_plan'].get('observation_date')!=None and day!=b.clock().astimezone(K.MSK).date():
         return {'status':'SNAPSHOT_DAY_ROLLOVER','source_dispatches':0}
-    from tools.tenancy import wake_budget as WB
-    budget=WB.of(b)
     if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
         # Declined BEFORE any intent/lease: nothing durable, no source call.
         return WB.handoff('DISPATCH',operational_entity=doc['runtime_plan']['entity'])
@@ -212,6 +216,7 @@ def source_tick(b,p,day,item):
     return {'status':'DISPATCHED','source_dispatches':1,'operational_entity':doc['runtime_plan']['entity'],'operational_day':day.isoformat()}
 
 def wake(base,historical_records,historical_plans,done,quarantined):
+    from tools.tenancy import wake_budget as WB
     p=policy(base)
     if p is None:return None
     CC.ensure(base)
@@ -241,7 +246,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     if len(reports)>1:fail('multiple current async scopes')
     if reports:
         d,item=reports[0];result=source_tick(Backend(base,p,d),p,d,item)
-        if result['status']!='WAITING':return result
+        if result['status']!='WAITING' or WB.exhausted(result):return result
     if day.isoformat() not in known:
         root=P.cycle_root(p,day);base.store.commit(p['hash'],'CURRENT_DAY',(day-date.fromisoformat(p['first_day'])).days,{'day':day.isoformat(),'root':root,'policy_hash':p['hash']},base.clock())
     records,items=plans(base,p,day);certs={};partial=set()
@@ -262,14 +267,17 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
         result=DIAGNOSTIC.queued(base)
         if result is not None:return result
+    budget=WB.of(base)
     for entity in P.eligible(p,{e:True for e in certs}):
         if entity in partial:continue
+        if budget is not None and not budget.allows(WB.LEAF_SECONDS):
+            return WB.handoff('LEAF',operational_entity=entity)
         item=items.get(entity)
         if item is None:
             doc=P.document(p,day,entity);item={'day':day.isoformat(),'policy_hash':p['hash'],'plan':doc,'shard':P.shard(p,day,doc)}
             base.store.commit(P.cycle_root(p,day),'CURRENT_PLAN',P.ORDER.index(entity),item,base.clock())
         current=Backend(base,p,day);result=source_tick(current,p,day,item)
-        if result['status'] in {'WAITING','SNAPSHOT_DAY_ROLLOVER'}:continue
+        if result['status'] in {'WAITING','SNAPSHOT_DAY_ROLLOVER'} and not WB.exhausted(result):continue
         return result
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.

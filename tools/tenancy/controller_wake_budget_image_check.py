@@ -2,8 +2,10 @@
 
   * one tenant_locks listing per claimed wake (durable history snapshot, own commits visible);
   * one STOP acceptance set for gate, monitor, FBO diagnostic and closure recovery;
-  * a repeat of the same unclosed control claim blocks without a new STOP record;
-  * the wake budget declines new work before any intent and never mid-dispatch;
+  * a repeat of the same unclosed control claim blocks without a new STOP record,
+    also when that claim belongs to the replaced release (typed in acquire);
+  * the wake budget declines a leaf, reconcile, completion or dispatch before it
+    starts (never mid-dispatch) and a handoff ends the wake;
   * the v3 controller-closure certificate shape (intermediate page) is closed.
 Every patched seam is restored before returning.
 """
@@ -106,9 +108,11 @@ def budget_check():
     assert b.allows(WB.DISPATCH_SECONDS) and b.allows(WB.LEAF_SECONDS) and b.report_allowed()
     t[0] = WB.PLATFORM_SECONDS - WB.STARTUP_SECONDS - WB.CLOSE_RESERVE_SECONDS - WB.DISPATCH_SECONDS + 1
     assert not b.allows(WB.DISPATCH_SECONDS) and b.remaining() > WB.CLOSE_RESERVE_SECONDS
-    h = WB.handoff('DISPATCH', index=465)
-    assert h['status'] in CC.STATUSES and h['source_dispatches'] == 0 and h['basis'] == 'WAKE_BUDGET_DISPATCH'
-    assert WB.of(SimpleNamespace()) is None
+    for step in ('LEAF', 'RECONCILE', 'COMPLETE', 'DISPATCH'):
+        h = WB.handoff(step, index=465)
+        assert h['status'] in CC.STATUSES and h['source_dispatches'] == 0 and h['basis'] == 'WAKE_BUDGET_' + step and WB.exhausted(h)
+    assert not WB.exhausted({'status': 'WAITING', 'basis': 'KNOWN_READ_RETRY_COOLDOWN'})
+    assert WB.CLOSE_RESERVE_SECONDS >= 6 * 60 and WB.of(SimpleNamespace()) is None
     return 'PASS'
 
 

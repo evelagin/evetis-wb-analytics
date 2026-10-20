@@ -588,6 +588,7 @@ def wake(base, root):
                 'previous_state_hash':D.digest(backend.state(item['plan'])),'reason':'PRESERVED_PARTIAL_DAY_ROLLOVER'}
             backend.store.commit(root,'CHUNK_SUPERSEDED',index,transition,backend.clock())
             backend.store.commit(root,'CHUNK_PLAN',index,{'index':index,'plan':fresh,'shard_root':F.shard_root(manifest,index,fresh)},backend.clock())
+        if WB.exhausted(result):return result,backend
         if overlay and result['status']=='WAITING':
             # A proven temporary WAIT is not a STOP and does not consume source
             # quota. Another eligible FULL leaf may run; no async intent replay.
@@ -616,7 +617,12 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:
         backend.store.commit(root,'STOPPED',0,{'reason':'FULL_DISPATCH_OR_REPORT_EVIDENCE_UNPROVEN','index':index},backend.clock())
         return {'status':'STOPPED','source_dispatches':0,'index':index},backend
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(backend)
     if action=='RECONCILE':
+        if budget is not None and not budget.allows(WB.RECONCILE_SECONDS):
+            # Not started: the terminal receipt stays the elected authority; the next tick drains it.
+            return WB.handoff('RECONCILE',index=index),backend
         payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence)
         if payload['plan']!=doc:raise BF.B.EvidenceError('full terminal receipt scope differs')
         intent=next(r for r in history if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence)
@@ -636,6 +642,9 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if defer_next and reconciled:
         return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
     if state['complete']:
+        if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
+            if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
+            return WB.handoff('COMPLETE',index=index),backend
         if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'}:
             day=str(backend.clock().astimezone(BF.B.MSK).date())
             fresh=backend.store.history(root)
@@ -665,8 +674,6 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action!='PREPARE_NEXT':raise BF.B.EvidenceError('unhandled full tick decision')
     if defer_next:
         return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
-    from tools.tenancy import wake_budget as WB
-    budget=WB.of(backend)
     if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
         # Declined BEFORE any intent/lease: nothing durable, no source call. After a
         # reconcile in this wake, the proven RECONCILED boundary hands off the rest.

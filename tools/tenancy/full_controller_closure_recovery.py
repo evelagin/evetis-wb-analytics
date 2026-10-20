@@ -154,11 +154,12 @@ def validate_sequence(p,b,m,records,s):
  RECONCILED record of the same sequence exist in the leaf's own shard, persisted.
  Leaf incompleteness and the absence of a later election are publication-time
  predicates (live_freeze): later wakes legitimately continue the same leaf."""
- from tools.tenancy import full_controller as H
  if set(s)!={'index','shard','receipt_hash','recon_hash','sequence'} or type(s['sequence']) is not int or s['sequence']<1:fail('closed sequence scope required')
  for k in ('shard','receipt_hash','recon_hash'):D.check_hash(s[k])
- plans=H.reconstruct_plans(records,m,b.clock())
- if s['index'] not in plans or plans[s['index']]['shard_root']!=s['shard']:fail('last source shard differs')
+ # The exact committed leaf plan, not the plan current at b.clock(): a dated leaf's
+ # later rollover must not invalidate an accepted certificate on every wake.
+ owned=[r for r in records if r['kind']=='CHUNK_PLAN' and r['sequence']==s['index'] and r['payload'].get('shard_root')==s['shard']]
+ if len(owned)!=1:fail('last source shard differs')
  sh=b.store.history(s['shard'],max_records=F.MAX_LEAF_RECORDS)
  rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and D.digest(r)==s['receipt_hash']];rc=[r for r in sh if r['kind']=='RECONCILED' and D.digest(r)==s['recon_hash']]
  if (len(rr)!=1 or len(rc)!=1 or rr[0]['sequence']!=s['sequence'] or rc[0]['sequence']!=s['sequence']
@@ -353,8 +354,10 @@ def observe_sequence(b,m,generation,*,owner_ack_sha256,guard_probe_hash,security
  if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('owner frozen observation required')
  verified=b.clock();records=b.store.history(m['hash'])
  if H.only_manifest(records)!=m:fail('foreign frozen root')
- ds=b.c['datasets']['tenant_locks'];claim=CC.validate_claim(b,b.tables.get_table(ds,CC.names(m['hash'],generation)[0]),allow_closed_history=True)
- if claim['generation']!=generation:fail('claim generation differs')
+ # The holder's claim belongs to the replaced release and has no closure: exact bytes
+ # only here; terminal_timeout() (live_freeze) proves its registered deployment.
+ ds=b.c['datasets']['tenant_locks'];claim=CC.claim_fields(b,b.tables.get_table(ds,CC.names(m['hash'],generation)[0]))
+ if claim['generation']!=generation or not CC.historical(b,claim) or CC.closed(b,claim):fail('unclosed replaced-release claim required')
  known=SA.accepted_hashes(b,m,records)
  stops=sorted(D.digest(r) for r in records if r['kind']=='STOPPED' and D.digest(r) not in known)
  if not stops:fail('no unresolved STOP to recover')

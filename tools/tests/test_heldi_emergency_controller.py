@@ -259,20 +259,178 @@ def test_v3_certificate_header_is_closed():
             CR.header(bad, m)
 
 
-def test_v3_sequence_proof_requires_the_reconciled_page_in_its_own_shard(monkeypatch):
-    from tools.tenancy import full_controller_closure_recovery as CR, full_controller as H
+def plan_record(index, shard):
+    return {'version': D.VERSION, 'root_hash': ROOT, 'kind': 'CHUNK_PLAN', 'sequence': index, 'payload': {'index': index, 'shard_root': shard}}
+
+
+def test_v3_sequence_proof_requires_the_reconciled_page_in_its_own_shard():
+    from tools.tenancy import full_controller_closure_recovery as CR
     shard = '2' * 64
     receipt = {'version': D.VERSION, 'root_hash': shard, 'kind': 'DISPATCH_RECEIPT', 'sequence': 72, 'payload': {'r': 1}}
     recon = {'version': D.VERSION, 'root_hash': shard, 'kind': 'RECONCILED', 'sequence': 72, 'payload': {'persisted_reconciled': True}}
-    monkeypatch.setattr(H, 'reconstruct_plans', lambda r, m, now: {465: {'shard_root': shard}})
     b = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda root, max_records=None: [receipt, recon]))
     s = dict(index=465, shard=shard, receipt_hash=D.digest(receipt), recon_hash=D.digest(recon), sequence=72)
     m = {'programs': [None] * 466}
-    assert CR.validate_sequence({}, b, m, [], s) == {}
-    for bad in (dict(s, sequence=71), dict(s, recon_hash='5' * 64), dict(s, shard='6' * 64), dict(s, completion_hash='7' * 64)):
+    records = [plan_record(465, shard)]
+    assert CR.validate_sequence({}, b, m, records, s) == {}
+    # A later rollover plan of the same leaf does not invalidate the accepted certificate.
+    assert CR.validate_sequence({}, b, m, records + [plan_record(465, '8' * 64)], s) == {}
+    for bad in (dict(s, sequence=71), dict(s, recon_hash='5' * 64), dict(s, shard='6' * 64), dict(s, completion_hash='7' * 64), dict(s, index=464)):
         with pytest.raises(D.BF.B.EvidenceError):
-            CR.validate_sequence({}, b, m, [], bad)
+            CR.validate_sequence({}, b, m, records, bad)
+    with pytest.raises(D.BF.B.EvidenceError):
+        CR.validate_sequence({}, b, m, records + [plan_record(465, shard)], s)                   # ambiguous plan
     unpersisted = dict(recon, payload={'persisted_reconciled': False})
     b2 = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda root, max_records=None: [receipt, unpersisted]))
     with pytest.raises(D.BF.B.EvidenceError):
-        CR.validate_sequence({}, b2, m, [], dict(s, recon_hash=D.digest(unpersisted)))
+        CR.validate_sequence({}, b2, m, records, dict(s, recon_hash=D.digest(unpersisted)))
+
+
+# ── review fixes: replaced-release holder, observation, fresh decisions, budget ───
+def replaced_release_holder(monkeypatch, tmp_path, *, terminal=True):
+    from tools.tests.test_controller_cadence_release_handoff import closed_handoff
+    b, old, x, objects, commits, *_ = closed_handoff(monkeypatch, tmp_path)
+    objects.pop(CC.names(old['root'], 1)[1])                       # the old release's holder never closed
+    if not terminal:
+        x[0].pop('completionTime')
+    return b, old, x, objects, commits
+
+
+def test_unclosed_terminal_holder_of_a_replaced_release_is_the_typed_incident(monkeypatch, tmp_path):
+    b, old, x, objects, commits = replaced_release_holder(monkeypatch, tmp_path)
+    before = copy.deepcopy(objects)
+    with pytest.raises(CC.UnclosedTerminalHolder) as e:
+        CC.acquire(b)
+    assert e.value.unclosed_holder == {'generation': 1, 'claim_hash': old['hash'], 'created_at': old['created_at'],
+                                       'holder_completion': x[0]['completionTime']}
+    assert objects == before and not commits
+    with pytest.raises(CD.GateFailure) as g:                        # the entrypoint sees the same closed diagnostic
+        with CD.gate('MANIFEST_ROOT'):
+            CC.acquire(b)
+    assert CD.safe(g.value) == DIAG and g.value.unclosed_holder['generation'] == 1
+
+
+def test_active_replaced_release_holder_stays_untyped(monkeypatch, tmp_path):
+    b, old, x, objects, commits = replaced_release_holder(monkeypatch, tmp_path, terminal=False)
+    with pytest.raises(D.BF.B.EvidenceError) as e:                  # an active old-release peer is unknown: plain STOP
+        CC.acquire(b)
+    assert not isinstance(e.value, CC.UnclosedTerminalHolder) and not commits
+    # Even if the inventory did not list it, the holder read itself must be terminal to be typed.
+    x[0]['completionTime'] = None
+    original = b.request
+    b.request = lambda method, url, body=None: dict(executions=[e for e in original(method, url, body)['executions'] if e is not None and e['name'] != old['execution']]) if '/executions?' in url else original(method, url, body)
+    with pytest.raises(D.BF.B.EvidenceError, match='historical controller lacks canonical closure') as e:
+        CC.acquire(b)
+    assert not isinstance(e.value, CC.UnclosedTerminalHolder) and not commits
+
+
+def test_v3_observation_reads_the_unclosed_replaced_release_claim(monkeypatch, tmp_path):
+    from tools.tenancy import full_controller_closure_recovery as CR, full_controller as H
+    b, old, x, objects, commits = replaced_release_holder(monkeypatch, tmp_path)
+    b.current_execution = None
+    b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE'] = 'PAUSED'
+    m = {'hash': old['root']}
+    b.store = SimpleNamespace(history=lambda root, max_records=None: [])
+    monkeypatch.setattr(H, 'only_manifest', lambda records: m)
+
+    class Reached(Exception):
+        pass
+    monkeypatch.setattr(SA, 'accepted_hashes', lambda *a, **k: (_ for _ in ()).throw(Reached()))
+    with pytest.raises(Reached):                                     # past the claim checks
+        CR.observe_sequence(b, m, 1, owner_ack_sha256='e' * 64, guard_probe_hash='f' * 64, security_proof_hash='0' * 64)
+    with pytest.raises(D.BF.B.EvidenceError, match='claim unavailable'):
+        CR.observe_sequence(b, m, 2, owner_ack_sha256='e' * 64, guard_probe_hash='f' * 64, security_proof_hash='0' * 64)
+    leader_close = CC.sealed(dict(version=1, claim_hash=old['hash'], status='STOPPED', source_dispatches=0, closed_at=old['created_at']))
+    objects[CC.names(old['root'], 1)[1]] = ({'kind': 'controller_close', 'root': old['root'][:16]}, D.encoded(leader_close))
+    with pytest.raises(D.BF.B.EvidenceError, match='unclosed replaced-release claim'):
+        CR.observe_sequence(b, m, 1, owner_ack_sha256='e' * 64, guard_probe_hash='f' * 64, security_proof_hash='0' * 64)
+
+
+def test_fresh_acceptance_never_reuses_the_gate_memo(monkeypatch):
+    import importlib
+    calls = []
+    for name in MODULES:
+        module = importlib.import_module('tools.tenancy.' + name)
+        if name == 'full_controller_closure_recovery':
+            monkeypatch.setattr(module, 'load', lambda b, m, r, n=name: calls.append(n) or [])
+        else:
+            monkeypatch.setattr(module, 'load', lambda b, m, r, n=name: calls.append(n) or [{'stop_hash': 'a' * 64}])
+    records = [{'kind': 'STOPPED', 'payload': {}, 'n': 1}]
+    b = SimpleNamespace(stop_acceptance_scope=object())
+    SA.approved(b, {}, records, quarantines=[]); n = len(calls)
+    SA.approved(b, {}, records, quarantines=[], fresh=True)
+    assert len(calls) == 2 * n
+
+
+def test_automatic_isolation_and_diagnostic_decide_on_fresh_shared_acceptance():
+    import inspect
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ, fbo_diagnostic_owner as FDO
+    observe = inspect.getsource(LQ.observe)
+    assert 'SA.accepted_hashes(b,m,records,quarantines=load(b,m,records),fresh=True)' in observe
+    assert 'PAG.load' not in observe and 'refresh_snapshot' in observe
+    assert 'fresh=True' in inspect.getsource(FDO.isolated)
+
+
+def test_refresh_snapshot_sees_other_writers_and_keeps_own_commits():
+    b = Counting(); b.store.begin_snapshot()
+    mine = b.store.commit(ROOT, 'WAITING', 0, {'n': 1}, NOW)
+    other = D.DurableRecords(b.c, b.meta, b.select, b.append)
+    other.commit(ROOT, 'STOPPED', 0, {'n': 2}, NOW)                   # e.g. a peer wake's STOP
+    assert len(b.store.history(ROOT)) == 1
+    hidden = b.meta.list_tables
+    b.meta.list_tables = lambda ds: [row for row in hidden(ds) if row[0] != 'BFR_' + mine]   # eventual listing lag
+    b.store.refresh_snapshot()
+    assert sorted(r['kind'] for r in b.store.history(ROOT)) == ['STOPPED', 'WAITING']
+
+
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def late_budget(step):
+    from tools.tenancy import wake_budget as WB
+    clock = Clock(); budget = WB.Budget(clock=clock)
+    clock.t = WB.PLATFORM_SECONDS - WB.STARTUP_SECONDS - WB.CLOSE_RESERVE_SECONDS - step + 1
+    return budget
+
+
+@pytest.mark.parametrize('action,expected', [('RECONCILE', 'WAKE_BUDGET_RECONCILE'), ('PREPARE_NEXT', 'WAKE_BUDGET_COMPLETE')])
+def test_full_leaf_declines_reconcile_and_completion_before_starting(monkeypatch, action, expected):
+    from tools.tenancy import full_controller as H, wake_budget as WB
+    step = WB.RECONCILE_SECONDS if action == 'RECONCILE' else WB.COMPLETE_SECONDS
+    monkeypatch.setattr(H.D, 'decide_tick', lambda *a, **k: {'action': action, 'sequence': 3})
+    touched = []
+    b = SimpleNamespace(index=None, preflight=lambda leaf: None, quota=lambda leaf, now: {}, active_runtime_execution=lambda: None,
+                        store=SimpleNamespace(history=lambda *a, **k: [], commit=lambda *a: touched.append(a)),
+                        reconcile=lambda payload: touched.append('reconcile'), state=lambda doc: {'complete': True},
+                        clock=lambda: NOW, wake_budget=late_budget(step))
+    m = {'hash': ROOT, 'programs': [{}] * 3}
+    result, _ = H.leaf_wake(b, m, 2, {'plan': {'runtime_plan': {'entity': 'supplies'}}, 'shard_root': '2' * 64}, [])
+    assert result['basis'] == expected and result['source_dispatches'] == 0 and not touched and WB.exhausted(result)
+
+
+def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
+    from datetime import date
+    from tools.tenancy import current_controller as CUR, recent_priority as RP, wake_budget as WB
+    p = {'hash': 'p' * 64, 'first_day': '2026-10-01'}
+    monkeypatch.setattr(CUR, 'policy', lambda base: p)
+    monkeypatch.setattr(CUR.CC, 'ensure', lambda base: None)
+    monkeypatch.setattr(RP, 'pending_receipts', lambda *a: [])
+    day = NOW.astimezone(CUR.K.MSK).date()
+    monkeypatch.setattr(CUR, 'cycles', lambda base, p: {day.isoformat(): {}})
+    items = {e: {'plan': {'runtime_plan': {'entity': e}}, 'shard': e * 64} for e in ('a', 'b', 'c')}
+    monkeypatch.setattr(CUR, 'plans', lambda base, p, d: ([], items))
+    monkeypatch.setattr(CUR.P, 'eligible', lambda p, certs: ['a', 'b', 'c'])
+    monkeypatch.setattr(CUR, 'Backend', lambda base, p, d: base)
+    ticks = []
+    monkeypatch.setattr(CUR, 'source_tick', lambda b, p, d, item: ticks.append(item) or WB.handoff('DISPATCH'))
+    base = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda *a, **k: []), state=lambda doc: {'progress': {}})
+    result = CUR.wake(base, [], {}, {}, set())
+    assert result['basis'] == 'WAKE_BUDGET_DISPATCH' and len(ticks) == 1
+    base.wake_budget = late_budget(WB.LEAF_SECONDS)
+    ticks.clear()
+    assert CUR.wake(base, [], {}, {}, set())['basis'] == 'WAKE_BUDGET_LEAF' and not ticks
