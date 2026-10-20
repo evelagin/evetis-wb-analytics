@@ -33,6 +33,9 @@ describe('V_UNITKA_LOGISTICS_RATES: хвост доказанного возвр
     expect(flat).toContain('ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt), 0)), 4)');
     expect(flat).toContain('ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4)');
   });
+  it('у SKU return_tail = число хвостов (порог своей ставки в Engine — shipments − return_tail)', () => {
+    expect(flat).toContain('CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail FROM a UNION ALL');
+  });
   it('shipments и refusals сохраняют смысл (все srid с плечом; два и более плеч) — инвариант V1 не меняется', () => {
     expect(flat).toContain('COUNT(*) AS n,');
     expect(flat).toContain('COUNTIF(legs >= 2) AS ref');

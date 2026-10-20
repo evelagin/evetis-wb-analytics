@@ -162,7 +162,7 @@ describe('buildPlan', () => {
     it('продажа без возврата и отказ без продажи — пересечение 0, проходит', () => {
       expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, pass: true });
     });
-    it('продажа и последующий возврат одного srid — проходит; ставки не меняются', () => {
+    it('продажа и последующий возврат одного srid — проходит; план не берёт счётчики в ставки', () => {
       const p = buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: 1 }) }));
       expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, returnTail: 0, pass: true });
       expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs())));
@@ -199,10 +199,19 @@ describe('buildPlan', () => {
     const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
     // Срез LCD 03.11–17.11.2026 для srid ebM…3.1: продажа 04.10 вне окна, «Возврат» и его плечо 19.10 в окне —
     // srid в shipments (одно плечо), но ни в sales, ни в refusals; вью отдаёт return_tail = 1.
-    it('хвост одного srid — проходит; ставки не меняются', () => {
+    it('хвост одного srid — проходит; план не берёт счётчики в ставки', () => {
       const p = buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 1 }) }));
       expect(p.invariant).toEqual({ shipments: 598, sales: 545, refusals: 52, overlap: 0, returnTail: 1, pass: true });
       expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 0, sales: 546 }) }))));
+    });
+    it('порог своей ставки SKU — по прямым отправкам: хвост SKU в порог не входит', () => {
+      const base = logistics();
+      const sku = base.find((r) => r.nmId !== 0 && r.shipments >= 10)!;
+      const n = sku.shipments;
+      const at = (tail: number | null) => buildPlan(inputs({ minN: n, logistics: base.map((r) => (r.nmId === sku.nmId ? { ...r, returnTail: tail } : r)) })).rates.find((x) => x.nmId === sku.nmId)!;
+      expect(at(null)).toMatchObject({ directSource: 'own', n });
+      expect(at(0)).toMatchObject({ directSource: 'own', n });
+      expect(at(1)).toMatchObject({ directSource: 'store', n: n - 1 });
     });
     it('августовский бэктест LCD 05.08: хвост eAL…0.0 учтён, но одиночное плечо 25.07 без «Возврата» по-прежнему отклоняет', () => {
       // Реальный срез: 552 отправления, 494 продажи, 56 отказов, хвост 1 (eAL…0.0: продажа 06.07 вне окна, «Возврат» 21.07)

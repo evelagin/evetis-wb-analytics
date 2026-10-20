@@ -320,7 +320,8 @@ p AS (
 -- Хвост доказанного возврата: единственное плечо srid в окне — ОБРАТНОЕ (прямое ушло за начало окна вместе с
 -- «Продажей»). Чтобы граница окна не превращала обратное плечо в прямое, хвост не входит в популяцию прямых
 -- (числитель и знаменатель direct_rate), а его плечо идёт в пул обратных (reverse_sum, знаменатель reverse_rate =
--- refusals + хвосты) — так же, как это плечо учитывалось, пока продажа была в окне. Без хвостов (обычное состояние)
+-- refusals + хвосты) — так же, как это плечо учитывалось, пока продажа была в окне. У SKU return_tail = число хвостов
+-- (Engine считает порог своей ставки по прямым: shipments − return_tail). Без хвостов (обычное состояние)
 -- результат совпадает с прежним определением побайтно. shipments и refusals не меняют смысла (инвариант V1).
 pt AS (
   SELECT p.*, (legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
@@ -358,7 +359,7 @@ SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt, 0)), 4
        ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
        nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
        CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to,
-       CAST(NULL AS INT64) AS sale_refusal_overlap, CAST(NULL AS INT64) AS return_tail
+       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail
 FROM a
 UNION ALL
 SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt), 0)), 4),

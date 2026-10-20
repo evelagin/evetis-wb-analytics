@@ -439,12 +439,14 @@ export function buildPlan(inp: PlanInputs): Plan {
     expected.push(...expectedFactCells(g, b, monthStart, Array.from({ length: closedDays }, (_, i) => i), (nm, d) => byKey.get(`${nm}|${d}`), gaps));
     // Ставки — константа на все строки дней секции (как s8brates/s8rates), сколько бы дней ни было.
     const p = logByNm.get(b.nmId);
-    const ownD = !!(p && p.shipments >= minN && p.directRate !== null && p.directRate > 0);
+    // Порог своей ставки — по популяции прямых: хвост доказанного возврата (return_tail SKU) прямой отправки в окне не имеет.
+    const fwdN = p ? p.shipments - (p.returnTail ?? 0) : 0;
+    const ownD = !!(p && fwdN >= minN && p.directRate !== null && p.directRate > 0);
     const direct = round2(ownD ? (p!.directRate as number) : store.directRate);
     const c = comByNm.get(b.nmId);
     const ownC = !!(c && c.sales >= minN && c.logisticsPerUnit !== null && c.logisticsPerUnit > 0 && c.commissionRate !== null && c.commissionRate > 0);
     const comm = round6(ownC ? (c!.commissionRate as number) : cstore.commissionRate);
-    rates.push({ nmId: b.nmId, n: p?.shipments ?? 0, direct, directSource: ownD ? 'own' : 'store', commission: comm, commissionSource: ownC ? 'own' : 'store' });
+    rates.push({ nmId: b.nmId, n: fwdN, direct, directSource: ownD ? 'own' : 'store', commission: comm, commissionSource: ownC ? 'own' : 'store' });
     for (let i = 0; i < g.daysInMonth; i++) {
       expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET.logistics, want: direct, kind: 'logistics', nmId: b.nmId, key: 'logistics', source: `V_UNITKA_LOGISTICS_RATES ${store.windowFrom}..${store.windowTo} (${ownD ? 'своя' : 'магазин'})` });
       expected.push({ row: dayRowOf(g, i), col: b.start + OFFSET.commission, want: comm, kind: 'commission', nmId: b.nmId, key: 'commission', source: `V_UNITKA_COMMISSION_RATES ${cstore.windowFrom}..${cstore.windowTo} (${ownC ? 'своя' : 'магазин'})` });
