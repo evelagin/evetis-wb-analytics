@@ -48,7 +48,7 @@ class FakeRunner implements QueryRunner {
   spp: Array<{ nm_id: number; date_msk: string; effective_spp_pct: number | null; spp_status: string }> = [];
   sppQueries = 0;
   sppThrows = false;
-  constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number; logisticsOver?: Partial<LogisticsRateRow>; overlapColumnAbsent?: boolean } = {}) {}
+  constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number; logisticsOver?: Partial<LogisticsRateRow>; overlapColumnAbsent?: boolean; returnTailColumnAbsent?: boolean } = {}) {}
   async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>, _types?: Record<string, string>, options?: { jobTimeoutMs?: number }): Promise<T[]> {
     if (sql.includes('V_UNITKA_COGS_CANONICAL')) {
       this.integrityQueries++;
@@ -105,6 +105,7 @@ class FakeRunner implements QueryRunner {
         n_logistics: r.nLogistics, n_delivery: r.nDelivery, delivery_component_sum: String(r.deliveryComponentSum), sales: r.sales,
         window_from: { value: r.windowFrom }, window_to: { value: r.windowTo },
         ...(this.o.overlapColumnAbsent ? {} : { sale_refusal_overlap: r.saleRefusalOverlap }),
+        ...(this.o.returnTailColumnAbsent ? {} : { return_tail: r.returnTail }),
       })) as T[];
     }
     if (sql.includes('V_UNITKA_COMMISSION_RATES')) {
@@ -273,6 +274,20 @@ describe('unitkaLoader — SHADOW', () => {
   });
   it('колонки sale_refusal_overlap нет в ответе вью — INVARIANT_FAIL, пустое поле не подменяется нулём', async () => {
     const runner = new FakeRunner({ overlapColumnAbsent: true });
+    const sheets = new FakeSheets(snapshot(), true);
+    await expect(unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'INVARIANT_FAIL' });
+    expect(sheets.writes).toEqual([]);
+  });
+  it('хвост доказанного возврата (продажа за началом окна): return_tail из вью → инвариант проходит, SHADOW-план строится', async () => {
+    // 598 отправлений = 545 продаж + 52 отказа − 0 + 1 srid с «Возвратом» и одним плечом в окне
+    const runner = new FakeRunner({ logisticsOver: { shipments: 598, returnTail: 1 } });
+    const sheets = new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: '2026-09-01' }));
+    await unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets));
+    expect(runner.journal[0]!.mode).toBe('SHADOW');
+    expect(sheets.writes).toEqual([]);
+  });
+  it('колонки return_tail нет в ответе вью — INVARIANT_FAIL, пустое поле не подменяется нулём', async () => {
+    const runner = new FakeRunner({ returnTailColumnAbsent: true });
     const sheets = new FakeSheets(snapshot(), true);
     await expect(unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'INVARIANT_FAIL' });
     expect(sheets.writes).toEqual([]);
