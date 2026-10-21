@@ -114,7 +114,7 @@ Live = repo v1 подтверждено сравнением нормализо�
 > **3. Readback сразу после применения:**
 > - новые sha256 обоих тел; `V_ADV_COSTS` sha256 прежний;
 > - `V_ADV_COSTS_SNAPSHOT` — те же колонки, что у v1;
-> - `V_ADV_COSTS_DAY_COVERAGE` — 25 прежних колонок + `read_basis`, `edge_reads_ignored`;
+> - `V_ADV_COSTS_DAY_COVERAGE` — 24 прежние колонки + `read_basis`, `edge_reads_ignored`;
 > - post Q1–Q8 = ожиданиям.
 >
 > **4. FACT — через штатный прогон `wb-mart-prod` 09:00, без ручного запуска.** После него:

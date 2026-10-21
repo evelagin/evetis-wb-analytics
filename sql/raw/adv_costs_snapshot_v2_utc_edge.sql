@@ -107,7 +107,7 @@ WHERE c.is_full AND c.prev_window_index != c.window_index
 
 
 -- ───────────────────────────────────────────────────────────────
--- §4 v2. wb_raw.V_ADV_COSTS_DAY_COVERAGE — прежние 25 колонок + read_basis, edge_reads_ignored
+-- §4 v2. wb_raw.V_ADV_COSTS_DAY_COVERAGE — прежние 24 колонки + read_basis, edge_reads_ignored
 -- ───────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_ADV_COSTS_DAY_COVERAGE` AS
 WITH k AS (
@@ -363,7 +363,7 @@ SELECT
                                                    AS needs_recheck,
   settle_days                                      AS contract_settle_days,
   n_stable                                         AS contract_n_stable,
-  -- v2: новые колонки — строго в конце, прежние 25 колонок не меняют имён и порядка
+  -- v2: новые колонки — строго в конце, прежние 24 колонки не меняют имён и порядка
   read_basis,
   edge_reads_ignored
 FROM base;
