@@ -361,6 +361,12 @@ def bounded_wake(root, backend, *, decision_complete=None):
             # Read-only reporting can outlive the platform deadline; retain the
             # canonical control closure before starting that observation.
             if decision_complete is not None:decision_complete(result)
+            from tools.tenancy import wake_budget as WB
+            budget=WB.of(backend)
+            if budget is not None and not budget.report_allowed():
+                # Reporting is diagnostic only: never let it reach the platform kill.
+                result['progress']={'omitted':'WAKE_BUDGET'}
+                return result
             with gate('MONITORING_WATERMARK'):result['progress']=FH.monitoring(full_backend,root,result)
             return result
     started=backend.clock()
@@ -382,6 +388,32 @@ def close_decision(backend,result):
     with gate('MANIFEST_ROOT'):CC.close(backend,closure)
 
 
+def known_unclosed_incident(backend,root,error,payload):
+    """Digest of the STOP already recorded for this exact unclosed control claim, or None.
+
+    Only the typed UnclosedTerminalHolder cause qualifies, and only when a STOPPED
+    record with the identical closed payload class was committed after that holder
+    became terminal. Any other failure, or any doubt reading the evidence, records
+    a new STOP as before.
+    """
+    cause=getattr(error,'unclosed_holder',None)
+    diagnostic=payload.get('diagnostic')
+    if not isinstance(cause,dict) or diagnostic!={'version':1,'stage':'MANIFEST_ROOT','category':'EVIDENCE'}:return None
+    try:
+        from tools.tenancy import controller_cadence as CC
+        terminal=CC.at(cause['holder_completion'])
+        created={n:at for n,_labels,at in backend.tables.list_tables(backend.c['datasets']['tenant_locks'])}
+        for r in reversed(backend.store.history(root)):
+            if r['kind']!='STOPPED':continue
+            v=r['payload']
+            if (v.get('reason'),v.get('diagnostic'))!=('CONTROLLER_GATE_OR_EVIDENCE_FAILURE',diagnostic):continue
+            at=created.get('BFR_'+D.digest(r))
+            if at is not None and at>=terminal:return D.digest(r)
+    except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):
+        return None
+    return None
+
+
 def main(argv=None):
     argv=argv or []
     if argv:
@@ -390,14 +422,16 @@ def main(argv=None):
         from tools.tenancy.fbo_diagnostic_owner import main as diagnostic
         return diagnostic(argv[1],os.environ)
     backend=None;root=None
-    from tools.tenancy import controller_cadence as CC
+    from tools.tenancy import controller_cadence as CC, wake_budget as WB
+    budget=WB.Budget()
     try:
         rc=None
         try:
             with gate('MANIFEST_ROOT'):backend,root=bootstrap(os.environ)
+            backend.wake_budget=budget
             backend.decision_complete=lambda result:close_decision(backend,result)
             result=bounded_wake(root,backend)
-            if 'progress' not in result:
+            if 'progress' not in result and budget.report_allowed():
                 with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
         except SourceDispatchPaused:
             result={'status':'QUIESCENT_PAUSED','source_dispatches':0};rc=0
@@ -423,6 +457,14 @@ def main(argv=None):
         diagnostic=safe(error)
         payload={'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':backend.current_execution if backend else None}
         if diagnostic:payload['diagnostic']=diagnostic
+        repeat=known_unclosed_incident(backend,root,error,payload) if backend is not None and root is not None else None
+        if repeat is not None:
+            # The same unclosed claim already has its durable STOP: keep blocking source
+            # work and keep the observation in the log, without a new STOP per tick.
+            print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE',
+                              **({'diagnostic':diagnostic} if diagnostic else {}),
+                              'incident':'KNOWN_UNCLOSED_TERMINAL_HOLDER','recorded_stop':repeat},sort_keys=True))
+            return 2
         if backend is not None and root is not None:
             try:
                 backend.store.commit(root,'STOPPED',0,payload,backend.clock())
