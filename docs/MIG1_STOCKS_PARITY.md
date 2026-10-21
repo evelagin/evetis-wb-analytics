@@ -222,35 +222,55 @@ T5 даёт `NO_BASELINE` в shadow (базы ещё нет) — он засчи
 
 ## Ранбук shadow-выпуска Mig1c (OWNER ACK MIG1C-SHADOW)
 
-Ожидаемый состав плана (вход `expected_changes` в `infra.yml`):
+### Проверено до выпуска (21.10.2026, ветка `mig/stocks-t5-shadow`, локальный `terraform plan -lock=false`)
+Цель: `-target=google_cloud_run_v2_job.wb_stocks_shadow`. Итог — 2 add, 2 change, 0 destroy, prod-адресов 0.
+Поатрибутная дельта `terraform show -json`:
+- `google_bigquery_table.raw_wb_stocks_t5_cr` — **create**: `wb_raw.RAW_WB_STOCKS_T5__CR`, 15 колонок (зеркало
+  `RAW_WB_STOCKS_T5`), партиция `_snapshot_date`/DAY, кластер `nm_id, warehouse_name`, `deletion_protection=false`.
+- `google_bigquery_table.wb_stocks_snapshots_cr` — **update in place** (`replace_paths` пусто): только `schema`;
+  первые 21 колонка совпадают с живой таблицей по имени, типу и режиму (state хранит `INTEGER`, конфигурация
+  `INT64` — синонимы), +11 NULLABLE в конце; прочих изменений атрибутов нет.
+- `google_bigquery_table_iam_member.shadow_write_raw_t5_cr` — **create**: `roles/bigquery.dataEditor`,
+  `serviceAccount:sa-loaders-shadow@…`, таблица `RAW_WB_STOCKS_T5__CR` (ссылки на ресурс таблицы и shadow-SA).
+- `google_cloud_run_v2_job.wb_stocks_shadow` — **update**: env +`STOCKS_T5_MODE=on`, +`STOCKS_T5_TABLE=RAW_WB_STOCKS_T5__CR`;
+  удалённых/изменённых переменных нет, прочих изменений атрибутов нет, образ под `ignore_changes`.
+  `depends_on`: `google_project_service.enabled`, таблица T5, manifest, IAM-член — env с T5 применяется последним.
+- no-op: `google_service_account.loaders_shadow`, 12 × `google_project_service.enabled[*]`.
+
+Факт GCP до выпуска: `wb-stocks-shadow` Scheduler **ENABLED** `30 6 * * *` Europe/Moscow;
+`wb-stocks-prod` Scheduler **PAUSED**, Job `args=["noop"]`; образ shadow до merge —
+`wb-loader@sha256:45c5054ec6735a972862b64de76fbd823d0482ac3601fcdb9695ec2e8676fcf3` (без кода Mig1c).
+
+### Порядок выпуска
+Первый T5-снимок shadow — **штатный запуск 06:30 МСК**, не ручной. Ручной запуск в тот же день создал бы
+суточный `snapshot_id` раньше боевого Apps Script (06:23), а плановый 06:30 после него — no-op guard.
+
+0. Перед merge — подтвердить у сессии Heldi отсутствие активного окна фиксации новой выкатки.
+1. **Merge #369** на HEAD с зелёным обязательным CI. `deploy-shadow.yml` соберёт образ и обновит
+   `wb-stocks-shadow`; env `STOCKS_T5_*` нет → T5 off. Записать digest из сводки deploy-shadow (**D**).
+   Readback: `gcloud run jobs describe wb-stocks-shadow --region europe-west1 --format=json` — образ = D, env без `STOCKS_T5_*`.
+2. **Проверка Scheduler в GCP** (не по Terraform): `gcloud scheduler jobs describe wb-stocks-shadow --location europe-west1`
+   → `ENABLED`, `30 6 * * *`, Europe/Moscow; `wb-stocks-prod` → `PAUSED`.
+3. **`infra.yml` → plan**, ref `main`: `targets=google_cloud_run_v2_job.wb_stocks_shadow`,
+   `expected_changes` (ниже). Ожидается `PLAN GUARD: OK — 4` и та же поатрибутная дельта, что выше.
+4. **`infra.yml` → apply**, те же входы, approval `infra`; не позднее 06:00 МСК, чтобы readback успел до 06:30.
+   Guard проверяет пересчитанный план и применяет тот же планфайл.
+5. **Readback** (только чтение): таблица T5 — 15 колонок, партиция/кластер; manifest — 32 колонки, первые 21 в
+   прежнем порядке, число строк прежнее; IAM таблицы T5 — `sa-loaders-shadow` dataEditor, prod-SA нет;
+   `wb-stocks-shadow` — env `STOCKS_T5_MODE=on`, `STOCKS_T5_TABLE=RAW_WB_STOCKS_T5__CR`, образ = D;
+   `wb-stocks-prod` — `noop`, Scheduler `PAUSED`.
+6. **Ближайший ещё не наступивший штатный запуск 06:30 МСК** — без ручного запуска. После завершения:
+   `LOADER_RUNS` shadow/stocks COMPLETE; `WB_STOCKS_SNAPSHOTS__CR` COMPLETE, `control_status` ∈ {OK, MISMATCH,
+   T5_UNAVAILABLE} (не `NOT_RUN`), `availability_status = NO_BASELINE`, `t5_rows_written > 0`;
+   `RAW_WB_STOCKS_T5__CR` = `t5_rows_written` строк, дублей грейна 0; QUERY 1/3 `sql/mig1c_stocks_t5_parity.sql`
+   против прод-снимка 06:23 того же дня. Это день 1 (NO_BASELINE, в EXACT не засчитывается).
+7. **Дни 2–6** — пять последовательных дней паритета по критериям выше. Ручных запусков и повторных снимков
+   нет; если запуск понадобится (например, сорвался 06:30), сначала — отдельное решение с оценкой влияния на
+   суточный `snapshot_id`.
+8. **Откат**: `STOCKS_T5_MODE = "off"` в `cloud_run_jobs.tf` → plan/apply тем же порядком
+   (`expected_changes=google_cloud_run_v2_job.wb_stocks_shadow=update`). Таблица и колонки остаются, безвредны.
+
+`expected_changes`:
 ```
 google_bigquery_table.raw_wb_stocks_t5_cr=create,google_bigquery_table.wb_stocks_snapshots_cr=update,google_bigquery_table_iam_member.shadow_write_raw_t5_cr=create,google_cloud_run_v2_job.wb_stocks_shadow=update
 ```
-`targets`: `google_cloud_run_v2_job.wb_stocks_shadow` — `depends_on` втягивает таблицу T5, manifest и IAM
-(проверено локальным `terraform plan -lock=false` 21.10.2026: 2 add, 2 change, 0 destroy; no-op — только
-`google_service_account.loaders_shadow` и 12 `google_project_service.enabled[*]`).
-
-1. **Merge #369** — после освобождения main сессией Heldi (#364). `deploy-shadow.yml` сам обновит образ
-   `wb-stocks-shadow`; env `STOCKS_T5_MODE` ещё нет → T5 off, поведение прежнее.
-   Readback: `gcloud run jobs describe wb-stocks-shadow --region europe-west1 --format=json` — образ = digest
-   из сводки deploy-shadow, env без `STOCKS_T5_*`.
-2. **Окно 05:30–06:15 МСК** того же или следующего дня (почему — п. 5).
-3. **`infra.yml` → plan** (ref `main`): `targets` и `expected_changes` как выше. Ожидается `PLAN GUARD: OK — 4`.
-4. **`infra.yml` → apply** (ref `main`, approval environment `infra`): те же входы. Apply заново считает
-   план, guard проверяет ИМЕННО его и применяет тот же планфайл; при любом отличии — падение до apply.
-5. **Readback** (только чтение):
-   - `RAW_WB_STOCKS_T5__CR`: 15 колонок, партиция `_snapshot_date`, кластер `nm_id, warehouse_name`;
-   - `WB_STOCKS_SNAPSHOTS__CR`: 32 колонки, первые 21 — в прежнем порядке, число строк не изменилось;
-   - IAM таблицы `RAW_WB_STOCKS_T5__CR`: `roles/bigquery.dataEditor` у `sa-loaders-shadow`, prod-SA нет;
-   - `wb-stocks-shadow`: env `STOCKS_T5_MODE=on`, `STOCKS_T5_TABLE=RAW_WB_STOCKS_T5__CR`, образ — тот же digest, что в п. 1;
-   - `wb-stocks-prod`: `args=["noop"]`, Scheduler `PAUSED` — без изменений.
-6. **Один ручной запуск — до 06:30 МСК**: `gcloud run jobs execute wb-stocks-shadow --region europe-west1 --wait`.
-   ⚠️ Снимок shadow — один на сутки, а execution guard после COMPLETE завершает повтор как no-op:
-   ручной запуск ПОСЛЕ планового 06:30 ничего не проверит. Плановый 06:30 в день ручного запуска
-   завершится как no-op — это ожидаемо. Ожидания: `LOADER_RUNS` shadow/stocks COMPLETE;
-   `WB_STOCKS_SNAPSHOTS__CR` COMPLETE, `control_status` ∈ {OK, MISMATCH, T5_UNAVAILABLE} (не `NOT_RUN`),
-   `availability_status = NO_BASELINE`, `t5_rows_written > 0`; `RAW_WB_STOCKS_T5__CR` = `t5_rows_written` строк.
-7. **Откат**: `STOCKS_T5_MODE = "off"` в `cloud_run_jobs.tf` → plan/apply тем же порядком (одно изменение:
-   `google_cloud_run_v2_job.wb_stocks_shadow=update`). Таблица и колонки безвредны и остаются.
-
-День ручного запуска — день 1 окна (NO_BASELINE, в EXACT не засчитывается); дни 2–6 — пять дней паритета.
