@@ -98,7 +98,12 @@ JOIN chosen c ON r.run_id = c.run_id AND r._wi = c.prev_window_index AND r._d = 
 WHERE c.is_full AND c.prev_window_index != c.window_index
   AND NOT EXISTS (SELECT 1 FROM raw x
                   WHERE x.run_id = c.run_id AND x._wi = c.window_index AND x._d = c.d
-                    AND x.advertId = r.advertId AND x.updTime = r.updTime);
+                    -- идентичность записи — нормализованная (WB сериализует updTime с 0/4/5/6 знаками
+                    -- долей секунды): иначе один момент в двух сериализациях посчитался бы дважды
+                    AND COALESCE(CAST(SAFE_CAST(x.advertId AS INT64) AS STRING), x.advertId)
+                      = COALESCE(CAST(SAFE_CAST(r.advertId AS INT64) AS STRING), r.advertId)
+                    AND COALESCE(CAST(SAFE_CAST(x.updTime AS TIMESTAMP) AS STRING), x.updTime)
+                      = COALESCE(CAST(SAFE_CAST(r.updTime AS TIMESTAMP) AS STRING), r.updTime));
 
 
 -- ───────────────────────────────────────────────────────────────
@@ -109,6 +114,7 @@ WITH k AS (
   -- КОНСТАНТЫ КОНТРАКТА. Пересматриваются по журналу (инвариант I7), а не по памяти.
   --   SETTLE_DAYS = 15 — на сутки дальше operational-окна D−14: день объявляется
   --     закрытым только после того, как все 14 ежедневных чтений состоялись.
+  --     v2: из них в ряд стабильности входят 13 полных (D−1…D−13); чтение D−14 краевое.
   --   N_STABLE = 3 — три независимых совпавших чтения. 🔴 Два было бы самообманом:
   --     перед ревизией 02.08 совпало СЕМЬ чтений подряд.
   SELECT 15 AS settle_days, 3 AS n_stable
@@ -189,24 +195,30 @@ reads AS (
   LEFT JOIN cov p ON p.run_id = c.run_id AND p.d = DATE_SUB(c.d, INTERVAL 1 DAY)
 ),
 basis AS (
-  SELECT d, LOGICAL_OR(is_full) AS has_full, COUNTIF(NOT is_full) AS edge_reads
+  SELECT d, LOGICAL_OR(is_full) AS has_full, COUNTIF(NOT is_full) AS edge_reads,
+         -- requested_ok — как в v1, по ЛЮБОМУ успешному прочтению: краевое прочтение тоже доказывает,
+         -- что дату запрашивали (иначе полное прочтение возраста 0 при старом краевом дало бы not_loaded)
+         MAX(DATE_DIFF(DATE(jts, 'Europe/Moscow'), d, DAY)) AS max_age_any_read
   FROM reads GROUP BY d
 ),
 read_rows AS (
   -- строки прочтения: окно самой даты + хвост даты из окна d−1 ТОГО ЖЕ рана.
   -- Запись хвоста берётся, только если её (advertId, updTime) нет в окне даты:
   -- дубли между окнами не возникают, а дубли ВНУТРИ окна, как и в v1, не схлопываются.
-  SELECT rd.d, rd.run_id, r.advertId, r.updTime, r.v, r.norm_record
+  SELECT rd.d, rd.run_id, rd.window_index, r.advertId, r.updTime, r.v, r.norm_record
   FROM reads rd
   JOIN raw_d r ON r.run_id = rd.run_id AND r.wi = rd.window_index AND r.d = rd.d
   UNION ALL
-  SELECT rd.d, rd.run_id, r.advertId, r.updTime, r.v, r.norm_record
+  SELECT rd.d, rd.run_id, rd.window_index, r.advertId, r.updTime, r.v, r.norm_record
   FROM reads rd
   JOIN raw_d r ON r.run_id = rd.run_id AND r.wi = rd.prev_window_index AND r.d = rd.d
   WHERE rd.is_full AND rd.prev_window_index != rd.window_index
     AND NOT EXISTS (SELECT 1 FROM raw_d x
                     WHERE x.run_id = rd.run_id AND x.wi = rd.window_index AND x.d = rd.d
-                      AND x.advertId = r.advertId AND x.updTime = r.updTime)
+                      AND COALESCE(CAST(SAFE_CAST(x.advertId AS INT64) AS STRING), x.advertId)
+                        = COALESCE(CAST(SAFE_CAST(r.advertId AS INT64) AS STRING), r.advertId)
+                      AND COALESCE(CAST(SAFE_CAST(x.updTime AS TIMESTAMP) AS STRING), x.updTime)
+                        = COALESCE(CAST(SAFE_CAST(r.updTime AS TIMESTAMP) AS STRING), r.updTime))
 ),
 days_covered AS (
   SELECT d FROM cov GROUP BY d
@@ -229,7 +241,9 @@ snap AS (
   FROM reads rd
   JOIN basis b ON b.d = rd.d
   -- LEFT JOIN обязателен: пустой успешный ответ — полноценное наблюдение (answer_rows = 0).
-  LEFT JOIN read_rows rr ON rr.d = rd.d AND rr.run_id = rd.run_id
+  -- ключ прочтения полный (дата × ран × окно даты): даже при перекрытии окон внутри рана
+  -- (сейчас 0, проверка Q8) строки разных прочтений не смешаются
+  LEFT JOIN read_rows rr ON rr.d = rd.d AND rr.run_id = rd.run_id AND rr.window_index = rd.window_index
   WHERE rd.is_full OR NOT b.has_full
   GROUP BY rd.d, rd.run_id, rd.window_index, rd.jts
 ),
@@ -307,7 +321,7 @@ base AS (
     DATE_DIFF(CURRENT_DATE('Europe/Moscow'), da.d, DAY) AS age_days,
     -- requested_ok — ПО ЖУРНАЛУ, а не по наличию строк: успешный ответ с 0 строк
     -- обязан считаться наблюдением, иначе нулевой день навсегда неотличим от пропуска.
-    IFNULL(a.max_age_at_read >= 1, FALSE)          AS requested_ok,
+    IFNULL(bb.max_age_any_read >= 1, FALSE)        AS requested_ok,
     k.settle_days, k.n_stable,
     -- v2: какие прочтения легли в ряд стабильности (NULL — дата не запрошена ни одним раном)
     CASE WHEN bb.d IS NULL THEN CAST(NULL AS STRING) WHEN bb.has_full THEN 'FULL' ELSE 'EDGE_ONLY' END AS read_basis,
