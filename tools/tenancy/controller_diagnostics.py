@@ -23,7 +23,11 @@ def gate(stage):
     except BF.B.EvidenceError as error:
         from tools.tenancy.cloud_tick import SourceDispatchPaused,OverlapWait
         if isinstance(error,(SourceDispatchPaused,OverlapWait)) or str(error)=='pilot lease held; reconcile terminal execution before continuation':raise
-        raise GateFailure(stage,'EVIDENCE') from None
+        failure=GateFailure(stage,'EVIDENCE')
+        # The diagnostic stays the closed {version,stage,category}; only the
+        # recognised cause travels with it (never payloads or identifiers).
+        failure.unclosed_holder=getattr(error,'unclosed_holder',None)
+        raise failure from None
     except BF.TT.TableError as error:
         from tools.tenancy.cloud_access import TransientReadError
         # Normal bounded read retry remains distinct from a durable hard STOP.

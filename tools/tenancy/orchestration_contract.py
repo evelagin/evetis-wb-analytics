@@ -27,6 +27,7 @@ SOURCE_FILES = (
     'f507_recovery.py','f507_recovery_image_check.py','fixtures/f507_boundary.json','fixtures/f507_records.json','fixtures/f507_fresh.json',
     'full_retained_pretransport_recovery.py','full_inventory_gate_recovery.py','heldi_r1r2_image_check.py',
     'fixtures/heldi_r1_boundary.json','fixtures/heldi_r2_boundary.json','fixtures/heldi_leaf465_seq68_intent.json',
+    'stop_acceptance.py','wake_budget.py','controller_wake_budget_image_check.py',
 )
 
 
@@ -98,6 +99,10 @@ def block(c, settings, repo, release=None):
     current_data='current_data_version' in release
     exact_f507='exact_f507_recovery_version' in release
     exact_r1r2='exact_r1r2_recovery_version' in release
+    wake_budget='controller_wake_budget_version' in release
+    if wake_budget:
+        expected.add('controller_wake_budget_version')
+        if release.get('schema_version')!=4 or not exact_r1r2 or not extended or type(release['controller_wake_budget_version']) is not int or release['controller_wake_budget_version']!=1:raise ValueError('unqualified controller wake budget')
     if exact_r1r2:
         expected.add('exact_r1r2_recovery_version')
         if release.get('schema_version')!=4 or not exact_f507 or type(release['exact_r1r2_recovery_version']) is not int or release['exact_r1r2_recovery_version']!=1:raise ValueError('unqualified exact R1/R2 recovery')
@@ -134,6 +139,7 @@ def block(c, settings, repo, release=None):
     if current_data:required.add('current_data_adapter')
     if exact_f507:required.add('exact_f507_recovery')
     if exact_r1r2:required.add('exact_r1r2_recovery')
+    if wake_budget:required.add('controller_wake_budget_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

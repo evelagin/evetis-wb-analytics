@@ -47,12 +47,11 @@ def isolated(b,p):
     if (cert['root'],cert['index'],cert['shard'],cert['plan_id'],cert['run_id'],cert['generation'],cert['receipt_hash'])!=(p['root'],p['leaf'],p['shard'],p['plan_id'],p['failed_run'],p['failed_generation'],p['failed_receipt_hash']):fail('diagnostic failed scope differs from accepted closure')
     priority=RP.load(b,m)
     if len(priority['selection'])!=69 or len(priority['parents'])!=64:fail('frozen priority differs')
-    from tools.tenancy import full_leaf_recovery as FL,full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR,full_fbo_zero_effect_recovery as ZE,full_pre_authority_gate_recovery as PAG,controller_cadence as CC
+    from tools.tenancy import controller_cadence as CC, stop_acceptance as SA
     records=b.store.history(p['root'])
-    failed=FC.load(b,m,records);rejected=PT.load(b,m,records);zero=ZE.load(b,m,records)
-    b.verified_cooldown_failures=failed;b.verified_pretransport_rejections=rejected;b.verified_fbo_zero_effect_failures=zero
-    accepted=FL.load(b,m,records)+failed+PB.load(b,m,records)+rejected+FR.load(b,m,records)+zero+certificates+PAG.load(b,m,records)
-    covered={x['stop_hash'] for x in accepted}|{h for x in CR.load(b,m,records) for h in x['stop_hashes']}
+    # The FULL STOP gate's own acceptance set: a private list omitted STOP819, f507, R1 and R2
+    # and would have turned a qualified diagnostic into a new STOP.
+    covered=SA.accepted_hashes(b,m,records,quarantines=certificates,fresh=True)   # before a Run POST: never the gate's memo
     if any(r['kind']=='STOPPED' and D.digest(r) not in covered for r in records):fail('global STOP remains')
     CC.ensure(b)
     plans=H.reconstruct_plans(records,m,b.clock());done=H.completed(records,m);quarantined=H.isolated_indices(m,certificates)

@@ -15,6 +15,7 @@ from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy import pre_source_recovery as R
 from tools.tenancy.controller_diagnostics import gate, GateFailure
 from tools.tenancy import recent_priority as RP
+PERFORMANCE = frozenset({'ads_campaigns','ads_expense_daily','ads_sku_daily'})
 
 KINDS = frozenset({'FULL_MANIFEST', 'CHUNK_PLAN', 'CHUNK_COMPLETE', 'FULL_COMPLETE', 'T5_PARENT_COMPLETE'})
 # Matches the last existing Seller transport BACKOFF interval. Controller wakes
@@ -252,41 +253,11 @@ class Backend(C.Backend):
         if q['status']!='STOPPED':
             # One Performance source class across frozen leaves. Moving the
             # priority queue must not escape a different leaf's active cooldown.
-            records=self.store.history(self.manifest['hash'])
-            plans=reconstruct_plans(records,self.manifest,now)
-            # A replaced snapshot retains its cooldown after Moscow midnight.
-            # reconstruct_plans validates every version and rollover link first.
-            versions=list(plans.values())+[r['payload'] for r in records if r['kind']=='CHUNK_PLAN']
-            docs={}
-            for v in versions:
-                d=v['plan'];pid=d['runtime_plan']['plan_id']
-                if d['runtime_plan']['entity'] not in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}:continue
-                if pid in docs and docs[pid]!=d:raise BF.B.EvidenceError('Performance class plan conflicts')
-                docs[pid]=d
-            if docs:
-                rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity IN ('ads_campaigns','ads_expense_daily','ads_sku_daily') AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
-                if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')
-                states={}
-                for r in rows:
-                    proof=parse_tenant_json(r['evidence_json']);rp=docs[r['plan_id']]['runtime_plan']
-                    if proof.get('plan')!=rp:raise BF.B.EvidenceError('Performance class source scope differs')
-                    s=BF.B.validate(rp,proof['state'])
-                    if s['sequence']!=r['backfill_sequence'] or (r['plan_id'] in states and states[r['plan_id']]!=s):raise BF.B.EvidenceError('Performance class source checkpoint conflicts')
-                    states[r['plan_id']]=s
-                rates=[];reports=[]
-                for pid,s in states.items():
-                    report=s['progress'].get('report') if docs[pid]['runtime_plan']['entity']=='ads_sku_daily' else None
-                    if report:
-                        if report.get('phase')=='INTENT':raise BF.B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS')
-                        if report.get('phase')!='POLL':raise BF.B.EvidenceError('unknown Performance async state')
-                        reports.append(pid)
-                    eligible=s['progress'].get('rate_limit',{}).get('eligible_at')
-                    if eligible and C.timestamp(eligible)>now:rates.append(eligible)
-                if len(reports)>1:raise BF.B.EvidenceError('multiple Performance async scopes')
-                if doc['runtime_plan']['entity'].startswith('ads_'):
-                    if rates:return {'status':'WAITING','allowance':0,'eligible_at':max(rates,key=C.timestamp),'basis':'SOURCE_COOLDOWN'}
-                    if reports and reports!=[doc['runtime_plan']['plan_id']]:
-                        return {'status':'WAITING','allowance':0,'eligible_at':(now+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
+            rates,reports=self.performance_class(now)
+            if doc['runtime_plan']['entity'].startswith('ads_'):
+                if rates:return {'status':'WAITING','allowance':0,'eligible_at':max(rates,key=C.timestamp),'basis':'SOURCE_COOLDOWN'}
+                if reports and reports!=[doc['runtime_plan']['plan_id']]:
+                    return {'status':'WAITING','allowance':0,'eligible_at':(now+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
         if q['status']!='STOPPED':
             from tools.tenancy import current_controller as CURRENT
             current_fence=CURRENT.performance_fence(self,doc)
@@ -295,6 +266,52 @@ class Backend(C.Backend):
             return {'status':'ELIGIBLE','allowance':0,'performance_quota':q,
                     'basis':'NO_NEW_PERFORMANCE_REPORT_IN_THIS_SOURCE_SCOPE'}
         return q
+
+    def performance_class(self, now):
+        """Active cooldowns and async report scopes of the frozen Performance class (every leaf version)."""
+        records=self.store.history(self.manifest['hash'])
+        plans=reconstruct_plans(records,self.manifest,now)
+        # A replaced snapshot retains its cooldown after Moscow midnight.
+        # reconstruct_plans validates every version and rollover link first.
+        versions=list(plans.values())+[r['payload'] for r in records if r['kind']=='CHUNK_PLAN']
+        docs={}
+        for v in versions:
+            d=v['plan'];pid=d['runtime_plan']['plan_id']
+            if d['runtime_plan']['entity'] not in PERFORMANCE:continue
+            if pid in docs and docs[pid]!=d:raise BF.B.EvidenceError('Performance class plan conflicts')
+            docs[pid]=d
+        rates=[];reports=[]
+        if docs:
+            rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity IN ('ads_campaigns','ads_expense_daily','ads_sku_daily') AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
+            if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')
+            states={}
+            for r in rows:
+                proof=parse_tenant_json(r['evidence_json']);rp=docs[r['plan_id']]['runtime_plan']
+                if proof.get('plan')!=rp:raise BF.B.EvidenceError('Performance class source scope differs')
+                s=BF.B.validate(rp,proof['state'])
+                if s['sequence']!=r['backfill_sequence'] or (r['plan_id'] in states and states[r['plan_id']]!=s):raise BF.B.EvidenceError('Performance class source checkpoint conflicts')
+                states[r['plan_id']]=s
+            rates=[];reports=[]
+            for pid,s in states.items():
+                report=s['progress'].get('report') if docs[pid]['runtime_plan']['entity']=='ads_sku_daily' else None
+                if report:
+                    if report.get('phase')=='INTENT':raise BF.B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS')
+                    if report.get('phase')!='POLL':raise BF.B.EvidenceError('unknown Performance async state')
+                    reports.append(pid)
+                eligible=s['progress'].get('rate_limit',{}).get('eligible_at')
+                if eligible and C.timestamp(eligible)>now:rates.append(eligible)
+            if len(reports)>1:raise BF.B.EvidenceError('multiple Performance async scopes')
+        return rates,reports
+
+    def performance_cooldown(self, now):
+        """Latest active Performance cooldown (historical class + current cycle), fresh reads, or None.
+
+        Read once per wake by the leaf loop: while it holds, every Performance leaf's quota is WAITING
+        SOURCE_COOLDOWN anyway; nothing here permits a dispatch."""
+        from tools.tenancy import current_controller as CURRENT
+        rates,_=self.performance_class(now)
+        rates=rates+CURRENT.current_cooldowns(self)
+        return max(rates,key=C.timestamp) if rates else None
 
     def reconcile(self, payload):
         doc = payload['plan']; receipt = payload['receipt']
@@ -470,37 +487,19 @@ def wake(base, root):
         if claim is not None:
             base.wake_claim=claim
             # A preceding holder may have committed completion/STOP while this
-            # wake was reading authority. Reconstruct AFTER the atomic claim.
+            # wake was reading authority. Reconstruct AFTER the atomic claim, from
+            # one listing that serves the rest of this claimed wake.
+            base.store.begin_snapshot()
+            # One acceptance revalidation per claimed wake and record slice (gate, monitor).
+            from tools.tenancy import stop_acceptance as SA
+            base.stop_acceptance_scope=backend.stop_acceptance_scope=SA.Scope()
             records=base.store.history(root)
             if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
     if any(r['kind']=='STOPPED' for r in records):
-        from tools.tenancy import full_leaf_recovery as FL
-        from tools.tenancy import full_cooldown_recovery as FC
-        from tools.tenancy import full_policy_bootstrap_recovery as PB
-        from tools.tenancy import full_pretransport_recovery as PT, full_first_receipt_recovery as FR
-        from tools.tenancy import full_fbo_zero_effect_recovery as ZE
-        with gate('MANIFEST_ROOT'):
-            approved=FL.load(backend,manifest,records) if any(r['kind']==FL.KIND for r in records) else []
-            failed=FC.load(backend,manifest,records) if any(r['kind']==FC.KIND for r in records) else []
-            paused_bootstrap=PB.load(backend,manifest,records) if any(r['kind']==PB.KIND for r in records) else []
-            rejected=PT.load(backend,manifest,records) if any(r['kind']==PT.KIND for r in records) else []
-            from tools.tenancy import full_retained_pretransport_recovery as R1
-            rejected=rejected+(R1.load(backend,manifest,records) if any(r['kind']==R1.KIND for r in records) else [])
-        backend.verified_cooldown_failures=failed
-        backend.verified_pretransport_rejections=rejected
-        zero_effect=ZE.load(backend,manifest,records) if any(r['kind']==ZE.KIND for r in records) else []
-        backend.verified_fbo_zero_effect_failures=zero_effect
-        approved=approved+failed+paused_bootstrap+rejected+(FR.load(backend,manifest,records) if any(r['kind']==FR.KIND for r in records) else [])
-        from tools.tenancy import full_controller_closure_recovery as CR
-        approved += [dict(stop_hash=h) for p in CR.load(backend,manifest,records) for h in p['stop_hashes']]
-        from tools.tenancy import full_pre_authority_gate_recovery as PAG
-        approved += zero_effect + quarantines + PAG.load(backend,manifest,records)
-        from tools.tenancy import current_recon_recovery as CURRENT_RECON
-        approved += CURRENT_RECON.load(backend,manifest,records)
-        from tools.tenancy import f507_recovery as EXACT_F507
-        approved += EXACT_F507.load(backend,manifest,records)
-        from tools.tenancy import full_inventory_gate_recovery as R2
-        approved += R2.load(backend,manifest,records)
+        from tools.tenancy import full_leaf_recovery as FL, full_first_receipt_recovery as FR
+        from tools.tenancy import stop_acceptance as SA
+        # The one acceptance set shared with the monitor, the FBO diagnostic and recoveries.
+        approved=SA.approved(backend,manifest,records,quarantines=quarantines,gate=gate)
         unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
         if unresolved:
             # No source in a recovery wake; a later independent wake resumes.
@@ -534,6 +533,11 @@ def wake(base, root):
             if dependency:i=next(n for n,p in enumerate(manifest['programs']) if p['entity']=='catalog')
             result,backend=leaf_wake(backend,manifest,i,item,records,dependency=dependency,defer_next=True)
             if result['status']!='RECONCILED_BOUNDARY':return result,backend
+            from tools.tenancy import wake_budget as WB
+            budget=WB.of(backend)
+            if budget is not None and not budget.allows(WB.LEAF_SECONDS):
+                # The drained receipt is the proven boundary; the next tick continues.
+                return result,backend
             records=backend.store.history(root);done=completed(records,manifest)
             plans=reconstruct_plans(records,manifest,backend.clock())
             current_result=CURRENT.wake(backend,records,plans,done,quarantined)
@@ -583,7 +587,17 @@ def wake(base, root):
             return leaf_wake(backend,manifest,catalog,item,records,dependency=True)
         pending=[catalog]+[i for i in pending if i!=catalog]
     waits=[]
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(backend)
+    # The Performance class shares one cooldown: read it once per wake, not in every Performance leaf's
+    # preflight+quota (2026-10-21 rehearsal: ~55 s per such leaf, 15 of them before Supplies).
+    cooldown=backend.performance_cooldown(backend.clock()) if overlay and any(manifest['programs'][i]['entity'] in PERFORMANCE for i in pending) else None
     for index in pending:
+        if cooldown and manifest['programs'][index]['entity'] in PERFORMANCE:
+            waits.append({'status':'WAITING','source_dispatches':0,'eligible_at':cooldown,'index':index,'basis':'SOURCE_COOLDOWN'})
+            continue
+        if budget is not None and not budget.allows(WB.LEAF_SECONDS):
+            return WB.handoff('LEAF',budget,index=index),backend
         backend.index=index
         item=plans.get(index)
         if item is None:
@@ -598,6 +612,7 @@ def wake(base, root):
                 'previous_state_hash':D.digest(backend.state(item['plan'])),'reason':'PRESERVED_PARTIAL_DAY_ROLLOVER'}
             backend.store.commit(root,'CHUNK_SUPERSEDED',index,transition,backend.clock())
             backend.store.commit(root,'CHUNK_PLAN',index,{'index':index,'plan':fresh,'shard_root':F.shard_root(manifest,index,fresh)},backend.clock())
+        if WB.exhausted(result):return result,backend
         if overlay and result['status']=='WAITING':
             # A proven temporary WAIT is not a STOP and does not consume source
             # quota. Another eligible FULL leaf may run; no async intent replay.
@@ -626,7 +641,12 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action in {'STOPPED','RECOVER_RECEIPT_OR_STOP'}:
         backend.store.commit(root,'STOPPED',0,{'reason':'FULL_DISPATCH_OR_REPORT_EVIDENCE_UNPROVEN','index':index},backend.clock())
         return {'status':'STOPPED','source_dispatches':0,'index':index},backend
+    from tools.tenancy import wake_budget as WB
+    budget=WB.of(backend)
     if action=='RECONCILE':
+        if budget is not None and not budget.allows(WB.RECONCILE_SECONDS):
+            # Not started: the terminal receipt stays the elected authority; the next tick drains it.
+            return WB.handoff('RECONCILE',budget,index=index),backend
         payload=next(r['payload'] for r in history if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence)
         if payload['plan']!=doc:raise BF.B.EvidenceError('full terminal receipt scope differs')
         intent=next(r for r in history if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence)
@@ -646,6 +666,9 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if defer_next and reconciled:
         return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
     if state['complete']:
+        if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
+            if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
+            return WB.handoff('COMPLETE',budget,index=index),backend
         if doc['runtime_plan']['entity'] in {'finance_accrual','fbo_postings','ads_sku_daily'}:
             day=str(backend.clock().astimezone(BF.B.MSK).date())
             fresh=backend.store.history(root)
@@ -675,6 +698,11 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
     if action!='PREPARE_NEXT':raise BF.B.EvidenceError('unhandled full tick decision')
     if defer_next:
         return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index},backend
+    if budget is not None and not budget.allows(WB.DISPATCH_SECONDS):
+        # Declined BEFORE any intent/lease: nothing durable, no source call. After a
+        # reconcile in this wake, the proven RECONCILED boundary hands off the rest.
+        if reconciled:return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAKE_BUDGET'},backend
+        return WB.handoff('DISPATCH',budget,index=index),backend
     terminal=[r for r in history if r['kind']=='RECONCILED']
     if terminal:
         last=max(terminal,key=lambda r:r['sequence'])['payload']

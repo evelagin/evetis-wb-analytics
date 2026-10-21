@@ -99,6 +99,38 @@ class DurableRecords:
     """
     def __init__(self, contract, metadata, select, write_record):
         self.c, self.metadata, self.select, self.write_record = contract, metadata, select, write_record
+        self._listing = None
+
+    def begin_snapshot(self):
+        """One consistent tenant_locks listing for the rest of this wake.
+
+        Taken only AFTER the controller won its claim: while it holds the claim no
+        other actor commits root records, and this store adds its own commits to the
+        snapshot. History discovery then filters the snapshot instead of listing the
+        whole dataset (thousands of control/fence tables) on every history() call.
+        Exact-name fences, CAS markers and record reads stay live, uncached reads.
+        """
+        self._listing = list(self.metadata.list_tables(self.c["datasets"]["tenant_locks"]))
+
+    def refresh_snapshot(self):
+        """Re-list once: a decision that must also see other executions' STOPs.
+
+        Entries already in the snapshot (own commits included) are kept even if the
+        fresh listing does not show them yet; markers are never deleted."""
+        if self._listing is not None:
+            old = self._listing
+            self.begin_snapshot()
+            seen = {row[0] for row in self._listing}
+            self._listing.extend(row for row in old if row[0] not in seen)
+
+    def _locks_listing(self):
+        if self._listing is not None:
+            return self._listing
+        return self.metadata.list_tables(self.c["datasets"]["tenant_locks"])
+
+    def _snapshot_add(self, name, labels, now):
+        if self._listing is not None and all(row[0] != name for row in self._listing):
+            self._listing.append((name, labels, now))
 
     def _marker(self, record_hash):
         return "BFR_" + check_hash(record_hash)
@@ -154,6 +186,7 @@ class DurableRecords:
             if existing != ({"root": root_hash[:16], "kind": kind.lower()}, description):
                 raise BF.B.EvidenceError("durable commit marker conflict")
             self.read(root_hash, record_hash)
+            self._snapshot_add(marker, existing[0], now)
             return record_hash
         # Existing schema, separate namespace. This is not a T5 date-plan PENDING row.
         row = {f["name"]: None for f in parse_tenant_json((BF.REPO / "tools/tenancy/schema/tenant_ops/BACKFILL_CHECKPOINTS.json").read_text())["schema"]}
@@ -168,6 +201,7 @@ class DurableRecords:
             got = self.metadata.get_table(locks, marker)
             if got != (labels, description):
                 raise BF.B.EvidenceError("concurrent durable marker conflict")
+        self._snapshot_add(marker, labels, now)
         return record_hash
 
     def history(self, root_hash, max_records=10000):
@@ -182,7 +216,7 @@ class DurableRecords:
         if type(max_records) is not int or not 1 <= max_records <= 10000:
             raise BF.B.EvidenceError("bounded history inventory required")
         markers = {}
-        for name, labels, created in self.metadata.list_tables(self.c["datasets"]["tenant_locks"]):
+        for name, labels, created in self._locks_listing():
             if not name.startswith("BFR_") or labels.get("root") != root_hash[:16]:
                 continue
             marker = self.metadata.get_table(self.c["datasets"]["tenant_locks"], name)
