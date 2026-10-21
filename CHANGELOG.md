@@ -1,5 +1,17 @@
 # CHANGELOG.md
 
+## 2026-10-21 — UNITKA мониторинг: имена политики конфигурации ≤ 100 байт (достройка #368, НЕ применено)
+
+Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 heartbeat-политики (выключены), но не создал 4 политики:
+- `unitka_writer_config` — `display_name must not be more than 100 characters`: предел считается в байтах UTF-8, имя
+  политики было 107 байт, условия — 101;
+- `unitka_writers_failed`, `unitka_publication_blocked`, `unitka_owner_attention` — `PromQL metric(s) are invalid`:
+  политика создавалась в ту же секунду, что и её метрика; запросы корректны (PromQL API — success), не меняются.
+
+Изменение — только имена политики и условия `unitka_writer_config`. Новый тест: display_name всех политик и условий
+во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
+и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
+
 ## 2026-10-21 — UNITKA / STORE P&L: мониторинг полезного результата (НЕ применено, политики выключены)
 
 По приёмке 20.10.2026 (F). `infra/terraform/unitka_monitoring.tf`: 7 лог-метрик и 8 политик, все с `enabled = false`:
