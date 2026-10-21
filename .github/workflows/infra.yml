@@ -12,6 +12,10 @@ on:
         description: "UNITKA ENGINE E2: адреса ресурсов через запятую для targeted plan/apply (-target=…). Пусто — вся конфигурация. См. docs/UNITKA_ENGINE_V1_RUNBOOK.md §2."
         required: false
         default: ""
+      expected_changes:
+        description: "PR-Mig1c: точный состав плана «адрес=действие,…» (create|update|delete|replace). Задан — apply применяет ТОТ ЖЕ сохранённый план и только если состав совпал (tools/tf_plan_guard.py). Пусто — прежнее поведение."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -66,11 +70,16 @@ jobs:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.TERRAFORM_PLAN_SA }} # read-only
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          # Обёртка setup-terraform примешивает служебные строки в stdout и ломает
+          # `terraform show -json > tfplan.json` для tf_plan_guard. Её выходы здесь не используются.
+          terraform_wrapper: false
       - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
       # targets: ограничивает plan ресурсами Engine, чтобы чужой дрейф (ops_health.tf) не смешивался
       # с включением Engine. Terraform сам предупредит, что targeted plan — не полная конфигурация.
       - env:
           TARGETS: ${{ inputs.targets }}
+          EXPECTED: ${{ inputs.expected_changes }}
         run: |
           ARGS=()
           IFS=',' read -ra T <<< "$TARGETS"
@@ -79,7 +88,13 @@ jobs:
             [ -n "$t" ] && ARGS+=("-target=$t")
           done
           printf 'TARGET: <%s>\n' "${ARGS[@]}"
-          terraform plan -input=false "${ARGS[@]}"
+          if [ -n "$EXPECTED" ]; then
+            terraform plan -input=false -out=tfplan "${ARGS[@]}"
+            terraform show -json tfplan > tfplan.json
+            python3 ../../tools/tf_plan_guard.py tfplan.json "$EXPECTED"
+          else
+            terraform plan -input=false "${ARGS[@]}"
+          fi
 
   apply:
     needs: preflight
@@ -98,9 +113,14 @@ jobs:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.TERRAFORM_APPLY_SA }} # privileged, main-only (WIF ref-условие)
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          # Обёртка setup-terraform примешивает служебные строки в stdout и ломает
+          # `terraform show -json > tfplan.json` для tf_plan_guard. Её выходы здесь не используются.
+          terraform_wrapper: false
       - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="prefix=evetis/wb-cloud"
       - env:
           TARGETS: ${{ inputs.targets }}
+          EXPECTED: ${{ inputs.expected_changes }}
         run: |
           ARGS=()
           IFS=',' read -ra T <<< "$TARGETS"
@@ -109,4 +129,13 @@ jobs:
             [ -n "$t" ] && ARGS+=("-target=$t")
           done
           printf 'TARGET: <%s>\n' "${ARGS[@]}"
-          terraform apply -input=false -auto-approve "${ARGS[@]}"
+          if [ -n "$EXPECTED" ]; then
+            # apply пересчитывает план — поэтому проверяем и применяем ОДИН сохранённый планфайл:
+            # между проверкой состава и применением нового расчёта нет.
+            terraform plan -input=false -out=tfplan "${ARGS[@]}"
+            terraform show -json tfplan > tfplan.json
+            python3 ../../tools/tf_plan_guard.py tfplan.json "$EXPECTED"
+            terraform apply -input=false tfplan
+          else
+            terraform apply -input=false -auto-approve "${ARGS[@]}"
+          fi

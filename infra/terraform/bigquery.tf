@@ -100,15 +100,19 @@ resource "google_bigquery_table" "wb_stocks_snapshots_cr" {
     { name = "duplicate_keys", type = "INT64" },
     { name = "unique_nm_ids", type = "INT64" },
     { name = "warehouses_count", type = "INT64" },
+    # PR-Mig1c: порядок колонок 1–21 приведён к ЖИВОЙ таблице (state/INFORMATION_SCHEMA, 21.10.2026):
+    # control_status/control_delta/error_message были добавлены раньше qty_*. Provider сравнивает
+    # схему без учёта порядка (поэтому прежний plan был пуст), но при UPDATE отправляет её в порядке
+    # конфигурации — новые колонки обязаны лечь В КОНЕЦ существующего порядка, без перестановок.
+    { name = "control_status", type = "STRING" },
+    { name = "control_delta", type = "INT64" },
+    { name = "error_message", type = "STRING" },
     { name = "qty_positive_rows", type = "INT64" },
     { name = "qty_zero_rows", type = "INT64" },
     { name = "aggregate_warehouse_rows", type = "INT64" },
     { name = "sum_quantity_all_t6", type = "INT64" },
     { name = "sum_quantity_physical_t6", type = "INT64" },
     { name = "unmatched_nm_ids", type = "STRING" },
-    { name = "control_status", type = "STRING" },
-    { name = "control_delta", type = "INT64" },
-    { name = "error_message", type = "STRING" },
     # PR-Mig1c: контроль T5/T6 и детектор доступности — зеркало прод-колонок WB_STOCKS_SNAPSHOTS
     # (wbStocksManifestFields_, WbStocksBigQuery.gs:95-131). Только добавление NULLABLE-колонок
     # в конец → in-place update, без пересоздания и без потери истории shadow.

@@ -12,6 +12,14 @@
 - `source_api` T6 в Cloud Run = `WB_API_STOCKS` (как в прод-RAW). `warehouses_count` — по ключу склада, как в Apps Script.
 - Повтор COMPLETE-снимка больше не затирает `control_status` на `REUSED`.
 - `sql/mig1c_stocks_t5_parity.sql` — построчная сверка T5/T6 и поколоночная сверка manifest shadow↔prod.
+- Terraform: `wb-stocks-shadow` зависит от таблицы T5, расширенного manifest и IAM (`depends_on` + ссылка
+  `STOCKS_T5_TABLE` на ресурс); порядок колонок `WB_STOCKS_SNAPSHOTS__CR` приведён к живой таблице, новые колонки
+  строго в конце. `-target=google_cloud_run_v2_job.wb_stocks_shadow` втягивает ровно 4 изменения (2 add, 2 change).
+- `infra.yml`: необязательный вход `expected_changes` — plan сохраняется в файл, `tools/tf_plan_guard.py` сверяет
+  точный состав «адрес=действие», apply применяет ТОТ ЖЕ планфайл. Пустой вход — прежнее поведение.
+  Обёртка `setup-terraform` в infra-джобах выключена (ломала `terraform show -json`).
+- Сверка паритета: односторонние ключи T5 раскрываются (QUERY 3) и засчитываются как дрейф только при
+  независимом движении того же товара; необъяснённый ключ — FAIL.
 
 ## 2026-10-21 — UNITKA / STORE P&L: мониторинг полезного результата (НЕ применено, политики выключены)
 

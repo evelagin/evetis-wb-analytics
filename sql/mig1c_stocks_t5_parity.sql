@@ -10,12 +10,13 @@
 --   EXACT       — все строки T6/T5 и все метрики manifest совпали;
 --   DATA_DRIFT  — у совпавших ключей совпали тип строки, SKU и склад, разошлись только
 --                 количества (и производные суммы/статусы), либо ключ T5 есть лишь на одной
---                 стороне: WB не отдаёт в T5 строки с нулевым остатком (0 из 204 строк 21.10),
---                 поэтому товар, проданный/поступивший между 06:23 и 06:30, меняет состав ключей;
+--                 стороне И это ОБЪЯСНЕНО независимым движением того же товара (см. j5);
+--                 число, количество и объяснение каждого такого ключа — в QUERY 3;
 --   SOURCE_GAP  — хотя бы на одной стороне T5_UNAVAILABLE: T5 не сравнивается, день не
 --                 засчитывается ни как EXACT, ни как FAIL (разбирается вручную);
 --   FAIL        — структурное расхождение: ключи T6, атрибуты совпавших ключей T6/T5
---                 (row_type, SKU, source_api, склад), дубли грейна, структурные метрики manifest.
+--                 (row_type, SKU, source_api, склад), дубли грейна, структурные метрики manifest,
+--                 НЕОБЪЯСНЁННЫЙ односторонний ключ T5.
 -- Приёмка: 5 последовательных дней без FAIL, из них не меньше 3 EXACT (см.
 -- docs/MIG1_STOCKS_PARITY.md, раздел Mig1c).
 --
@@ -73,13 +74,56 @@ t6 AS (
 -- T5 построчно
 p5 AS (
   SELECT ps.period_to, CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size, '|', r.warehouse_name) AS k,
+         CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size) AS item,
          r.* EXCEPT (load_id, snapshot_id, snapshot_ts, _snapshot_date)
   FROM `wb_raw.RAW_WB_STOCKS_T5` r JOIN ps USING (snapshot_id)
 ),
 c5 AS (
   SELECT cs.period_to, CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size, '|', r.warehouse_name) AS k,
+         CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size) AS item,
          r.* EXCEPT (load_id, snapshot_id, snapshot_ts, _snapshot_date)
   FROM `wb_raw.RAW_WB_STOCKS_T5__CR` r JOIN cs USING (snapshot_id)
+),
+-- T6: nm, у которых между снимками что-то изменилось (количество, потоки или состав ключей).
+t6_moved AS (
+  SELECT DISTINCT period_to, IFNULL(p.nm_id, c.nm_id) AS nm_id
+  FROM p6 p FULL OUTER JOIN c6 c USING (period_to, k)
+  WHERE p.k IS NULL OR c.k IS NULL
+     OR p.quantity IS DISTINCT FROM c.quantity OR p.in_way_to_client IS DISTINCT FROM c.in_way_to_client
+     OR p.in_way_from_client IS DISTINCT FROM c.in_way_from_client
+),
+-- T5 построчно, с объяснением односторонних ключей.
+-- Односторонний ключ T5 — товар × склад, который есть только на одной стороне. WB не отдаёт
+-- строки с нулевым остатком, поэтому продажа/поступление между снимками МОЖЕТ так выглядеть,
+-- но само по себе это не доказательство. Ключ считается ОБЪЯСНЁННЫМ, только если движение
+-- того же товара видно независимо от него самого:
+--   (a) у того же товара (nm|barcode|techSize) изменилось количество на СОВПАВШЕМ ключе
+--       (обычно PSEUDO_TOTAL / AGGREGATE при продаже), или
+--   (b) в T6 по тому же nm_id между снимками изменились остатки/потоки.
+-- Необъяснённый односторонний ключ — FAIL: структурный пропуск под видом дрейфа не принимаем.
+j5 AS (
+  SELECT period_to, k, IFNULL(p.item, c.item) AS item, IFNULL(p.nm_id, c.nm_id) AS nm_id,
+         IFNULL(p.row_type, c.row_type) AS row_type,
+         CASE WHEN c.k IS NULL THEN 'prod_only' WHEN p.k IS NULL THEN 'cr_only' ELSE 'matched' END AS side,
+         p.quantity AS prod_qty, c.quantity AS cr_qty,
+         (p.k IS NOT NULL AND c.k IS NOT NULL AND p.quantity IS DISTINCT FROM c.quantity) AS qty_changed
+  FROM p5 p FULL OUTER JOIN c5 c USING (period_to, k)
+),
+t5_item_moved AS (SELECT DISTINCT period_to, item FROM j5 WHERE qty_changed),
+t5_one_sided AS (
+  SELECT j.*, (im.item IS NOT NULL) AS item_moved, (tm.nm_id IS NOT NULL) AS t6_moved,
+         (im.item IS NOT NULL OR tm.nm_id IS NOT NULL) AS explained
+  FROM j5 j
+  LEFT JOIN t5_item_moved im USING (period_to, item)
+  LEFT JOIN t6_moved tm USING (period_to, nm_id)
+  WHERE j.side != 'matched'
+),
+t5_os AS (
+  SELECT period_to,
+    COUNT(*) AS t5_one_sided,
+    SUM(ABS(IFNULL(prod_qty, 0) - IFNULL(cr_qty, 0))) AS t5_one_sided_qty,
+    COUNTIF(NOT explained) AS t5_one_sided_unexplained
+  FROM t5_one_sided GROUP BY period_to
 ),
 t5 AS (
   SELECT period_to,
@@ -146,6 +190,8 @@ SELECT
   d.period_to, man.gap_min,
   t6.t6_matched, t6.t6_prod_only, t6.t6_cr_only, t6.t6_qty_diff, t6.t6_attr_diff,
   t5.t5_matched, t5.t5_prod_only, t5.t5_cr_only, t5.t5_qty_diff, t5.t5_attr_diff,
+  IFNULL(os.t5_one_sided, 0) AS t5_one_sided, IFNULL(os.t5_one_sided_qty, 0) AS t5_one_sided_qty,
+  IFNULL(os.t5_one_sided_unexplained, 0) AS t5_one_sided_unexplained,
   dup5.t5_dup_prod, dup5.t5_dup_cr,
   man.prod_control, man.cr_control, man.prod_avail, man.cr_avail,
   NULLIF(man.struct_diff, '') AS manifest_struct_diff,
@@ -159,7 +205,8 @@ SELECT
     -- Проверяется ДО сравнения строк T5: иначе пустая детализация одной стороны дала бы FAIL.
     WHEN man.prod_control = 'T5_UNAVAILABLE' OR man.cr_control = 'T5_UNAVAILABLE' THEN 'SOURCE_GAP'
     WHEN IFNULL(t5.t5_attr_diff, 0) > 0
-      OR IFNULL(dup5.t5_dup_prod, 0) + IFNULL(dup5.t5_dup_cr, 0) > 0 THEN 'FAIL'
+      OR IFNULL(dup5.t5_dup_prod, 0) + IFNULL(dup5.t5_dup_cr, 0) > 0
+      OR IFNULL(os.t5_one_sided_unexplained, 0) > 0 THEN 'FAIL'
     WHEN IFNULL(t6.t6_qty_diff, 0) + IFNULL(t5.t5_qty_diff, 0) > 0
       OR IFNULL(t5.t5_prod_only, 0) + IFNULL(t5.t5_cr_only, 0) > 0
       OR man.qty_diff != '' THEN 'DATA_DRIFT'
@@ -170,6 +217,7 @@ LEFT JOIN ps USING (period_to)
 LEFT JOIN cs USING (period_to)
 LEFT JOIN t6 USING (period_to)
 LEFT JOIN t5 USING (period_to)
+LEFT JOIN t5_os os USING (period_to)
 LEFT JOIN dup5 USING (period_to)
 LEFT JOIN man USING (period_to)
 ORDER BY d.period_to DESC;
@@ -197,3 +245,61 @@ WHERE p.k IS NULL OR c.k IS NULL
    OR p.row_type IS DISTINCT FROM c.row_type OR p.quantity IS DISTINCT FROM c.quantity
    OR p.internal_sku IS DISTINCT FROM c.internal_sku OR p.sku_match_status IS DISTINCT FROM c.sku_match_status
 ORDER BY k;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- QUERY 3 — ОДНОСТОРОННИЕ КЛЮЧИ T5 ЗА ОКНО: что, сколько, чем объяснено
+-- Обязательное приложение к отчёту каждого DATA_DRIFT-дня. explained=false → день FAIL.
+-- ─────────────────────────────────────────────────────────────────────────
+WITH params AS (SELECT 7 AS lookback_days),
+ps AS (
+  SELECT period_to, snapshot_id FROM `wb_raw.WB_STOCKS_SNAPSHOTS`
+  WHERE status = 'COMPLETE' AND SAFE.PARSE_DATE('%Y-%m-%d', period_to)
+        >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL (SELECT lookback_days FROM params) DAY)
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC) = 1
+),
+cs AS (
+  SELECT period_to, snapshot_id FROM `wb_raw.WB_STOCKS_SNAPSHOTS__CR`
+  WHERE status = 'COMPLETE' AND SAFE.PARSE_DATE('%Y-%m-%d', period_to)
+        >= DATE_SUB(CURRENT_DATE('Europe/Moscow'), INTERVAL (SELECT lookback_days FROM params) DAY)
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY period_to ORDER BY started_at DESC) = 1
+),
+p6 AS (SELECT ps.period_to, CONCAT(CAST(r.nm_id AS STRING), '|', CAST(r.chrt_id AS STRING), '|',
+              COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING), r.warehouse_name, '')) AS k, r.*
+       FROM `wb_raw.RAW_WB_STOCKS` r JOIN ps USING (snapshot_id)),
+c6 AS (SELECT cs.period_to, CONCAT(CAST(r.nm_id AS STRING), '|', CAST(r.chrt_id AS STRING), '|',
+              COALESCE(NULLIF(r.warehouse_code, ''), CAST(r.warehouse_id AS STRING), r.warehouse_name, '')) AS k, r.*
+       FROM `wb_raw.RAW_WB_STOCKS__CR` r JOIN cs USING (snapshot_id)),
+t6_moved AS (
+  SELECT DISTINCT period_to, IFNULL(p.nm_id, c.nm_id) AS nm_id
+  FROM p6 p FULL OUTER JOIN c6 c USING (period_to, k)
+  WHERE p.k IS NULL OR c.k IS NULL
+     OR p.quantity IS DISTINCT FROM c.quantity OR p.in_way_to_client IS DISTINCT FROM c.in_way_to_client
+     OR p.in_way_from_client IS DISTINCT FROM c.in_way_from_client
+),
+p5 AS (SELECT ps.period_to, CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size, '|', r.warehouse_name) AS k,
+              CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size) AS item, r.*
+       FROM `wb_raw.RAW_WB_STOCKS_T5` r JOIN ps USING (snapshot_id)),
+c5 AS (SELECT cs.period_to, CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size, '|', r.warehouse_name) AS k,
+              CONCAT(IFNULL(CAST(r.nm_id AS STRING), '-'), '|', r.barcode, '|', r.tech_size) AS item, r.*
+       FROM `wb_raw.RAW_WB_STOCKS_T5__CR` r JOIN cs USING (snapshot_id)),
+j5 AS (
+  SELECT period_to, k, IFNULL(p.item, c.item) AS item, IFNULL(p.nm_id, c.nm_id) AS nm_id,
+         IFNULL(p.row_type, c.row_type) AS row_type, IFNULL(p.internal_sku, c.internal_sku) AS internal_sku,
+         CASE WHEN c.k IS NULL THEN 'prod_only' WHEN p.k IS NULL THEN 'cr_only' ELSE 'matched' END AS side,
+         p.quantity AS prod_qty, c.quantity AS cr_qty,
+         (p.k IS NOT NULL AND c.k IS NOT NULL AND p.quantity IS DISTINCT FROM c.quantity) AS qty_changed
+  FROM p5 p FULL OUTER JOIN c5 c USING (period_to, k)
+),
+t5_item_moved AS (
+  SELECT period_to, item, STRING_AGG(FORMAT('%s %d→%d', row_type, prod_qty, cr_qty), '; ') AS item_changes
+  FROM j5 WHERE qty_changed GROUP BY period_to, item
+)
+SELECT j.period_to, j.side, j.k, j.row_type, j.internal_sku, j.prod_qty, j.cr_qty,
+       im.item_changes,                               -- (a) движение того же товара на совпавших ключах
+       (tm.nm_id IS NOT NULL) AS t6_moved,            -- (b) движение того же nm в T6
+       (im.item IS NOT NULL OR tm.nm_id IS NOT NULL) AS explained
+FROM j5 j
+LEFT JOIN t5_item_moved im USING (period_to, item)
+LEFT JOIN t6_moved tm USING (period_to, nm_id)
+WHERE j.side != 'matched'
+ORDER BY j.period_to DESC, explained, j.k;
