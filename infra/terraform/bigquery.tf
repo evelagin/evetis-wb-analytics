@@ -109,6 +109,52 @@ resource "google_bigquery_table" "wb_stocks_snapshots_cr" {
     { name = "control_status", type = "STRING" },
     { name = "control_delta", type = "INT64" },
     { name = "error_message", type = "STRING" },
+    # PR-Mig1c: контроль T5/T6 и детектор доступности — зеркало прод-колонок WB_STOCKS_SNAPSHOTS
+    # (wbStocksManifestFields_, WbStocksBigQuery.gs:95-131). Только добавление NULLABLE-колонок
+    # в конец → in-place update, без пересоздания и без потери истории shadow.
+    # Пишет их Cloud Run ТОЛЬКО при STOCKS_T5_MODE=on (cloud_run_jobs.tf), поэтому образ и
+    # схема выкатываются в любом порядке.
+    { name = "anonymized_warehouse_rows", type = "INT64" },
+    { name = "t5_control_sum", type = "INT64" },
+    { name = "t5_wb_rf_sum", type = "INT64" },
+    { name = "t5_named_sum", type = "INT64" },
+    { name = "t5_rows_written", type = "INT64" },
+    { name = "t6_comparable", type = "INT64" },
+    { name = "availability_gap", type = "INT64" },
+    { name = "availability_gap_prev", type = "INT64" },
+    { name = "availability_gap_delta", type = "INT64" },
+    { name = "availability_ratio", type = "FLOAT64" },
+    { name = "availability_status", type = "STRING" },
+  ])
+}
+
+# PR-Mig1c: теневая детализация T5 warehouse_remains. Схема, партиция и кластер — зеркало
+# живого RAW_WB_STOCKS_T5 (DDL из INFORMATION_SCHEMA.TABLES, 21.10.2026). Пишет только shadow SA.
+resource "google_bigquery_table" "raw_wb_stocks_t5_cr" {
+  dataset_id          = var.raw_dataset
+  table_id            = "RAW_WB_STOCKS_T5__CR"
+  deletion_protection = false
+  time_partitioning {
+    type  = "DAY"
+    field = "_snapshot_date"
+  }
+  clustering = ["nm_id", "warehouse_name"]
+  schema = jsonencode([
+    { name = "load_id", type = "STRING" },
+    { name = "snapshot_id", type = "STRING" },
+    { name = "snapshot_ts", type = "TIMESTAMP" },
+    { name = "source_api", type = "STRING" },
+    { name = "nm_id", type = "INT64" },
+    { name = "barcode", type = "STRING" },
+    { name = "tech_size", type = "STRING" },
+    { name = "vendor_code", type = "STRING" },
+    { name = "volume", type = "FLOAT64" },
+    { name = "warehouse_name", type = "STRING" },
+    { name = "row_type", type = "STRING" },
+    { name = "quantity", type = "INT64" },
+    { name = "internal_sku", type = "STRING" },
+    { name = "sku_match_status", type = "STRING" },
+    { name = "_snapshot_date", type = "DATE" },
   ])
 }
 
@@ -123,6 +169,14 @@ resource "google_bigquery_table_iam_member" "shadow_write_raw_cr" {
 resource "google_bigquery_table_iam_member" "shadow_write_manifest_cr" {
   dataset_id = var.raw_dataset
   table_id   = google_bigquery_table.wb_stocks_snapshots_cr.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
+}
+
+# PR-Mig1c: запись детализации T5 — только в теневую таблицу.
+resource "google_bigquery_table_iam_member" "shadow_write_raw_t5_cr" {
+  dataset_id = var.raw_dataset
+  table_id   = google_bigquery_table.raw_wb_stocks_t5_cr.table_id
   role       = "roles/bigquery.dataEditor"
   member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
 }

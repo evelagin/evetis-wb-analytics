@@ -16,6 +16,11 @@ locals {
     STOCKS_SNAPSHOT_TABLE = "WB_STOCKS_SNAPSHOTS__CR"
     REF_SKU_TABLE         = "REF_SKU_MASTER"
     WB_ANALYTICS_SECRET   = "WB_TOKEN_ANALYTICS"
+    # PR-Mig1c: T5 + контроль T5/T6 + детектор доступности. Включается ТЕМ ЖЕ apply, что создаёт
+    # RAW_WB_STOCKS_T5__CR и колонки manifest (bigquery.tf): до этого образ работает как раньше.
+    # Откат без пересборки образа — STOCKS_T5_MODE = "off".
+    STOCKS_T5_MODE  = "on"
+    STOCKS_T5_TABLE = "RAW_WB_STOCKS_T5__CR"
   }
   # PR-Mart3b-2: env оркестратора витрины. mart НЕ ходит в WB API/секрет и не пишет __CR;
   # LOADER_NAME=mart переопределяет stocks-дефолт (ключ LOADER_RUNS/логи должны быть 'mart').

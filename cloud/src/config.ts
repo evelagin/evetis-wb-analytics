@@ -62,6 +62,16 @@ export interface Config {
   wbAnalyticsSecret: string;
   stocksRawTable: string;
   stocksSnapshotTable: string;
+  /**
+   * PR-Mig1c: T5 warehouse_remains + контроль T5/T6 + детектор доступности.
+   * 'off' (по умолчанию) — поведение до Mig1c: manifest пишет прежний набор колонок.
+   * 'on' включает Terraform ВМЕСТЕ с таблицей T5 и новыми колонками manifest, поэтому
+   * образ можно выкатывать раньше схемы (deploy-shadow срабатывает на каждый merge в cloud/**).
+   */
+  stocksT5Mode: 'on' | 'off';
+  stocksT5Table: string;
+  /** Пауза перед каждым опросом задачи T5, мс (боевое значение 9000, как в Apps Script). */
+  stocksT5PollIntervalMs: number;
   refSkuTable: string;
   // ── prices observer (PR-1) ────────────────────────────────────────────────
   /** Хост категории «Цены и скидки». Отличается от аналитического — не переиспользовать. */
@@ -256,6 +266,14 @@ function intOpt(env: Env, name: string, fallback: number): number {
   return n;
 }
 
+/** Строгий переключатель on/off: опечатка не должна молча выключить или включить контур. */
+function onOff(env: Env, name: string, fallback: 'on' | 'off'): 'on' | 'off' {
+  const raw = (env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === 'on' || raw === 'off') return raw;
+  throw new ConfigError(`${name} должно быть 'on' или 'off', получено '${raw}'`);
+}
+
 /** Integrity Guard: мягкий разбор. Никогда не бросает ConfigError. */
 function integrityConfig(env: Env): Pick<Config, 'unitkaIntegrityMode' | 'unitkaIntegrityModeInvalid' | 'unitkaStorageDueMsk' | 'unitkaIntegrityBudgetMs' | 'unitkaReconcileMode' | 'unitkaReconcileModeInvalid' | 'unitkaControlledScope' | 'unitkaControlledScopeInvalid' | 'unitkaSppMode' | 'unitkaSppModeInvalid' | 'unitkaSppRollbackManifest' | 'unitkaSppRollbackDigest' | 'unitkaSppRollbackWrite'> {
   const sppRaw = (env.UNITKA_SPP_MODE ?? '').trim().toLowerCase();
@@ -324,6 +342,9 @@ export function loadConfig(env: Env = process.env): Config {
     wbAnalyticsSecret: opt(env, 'WB_ANALYTICS_SECRET', 'WB_TOKEN_ANALYTICS'),
     stocksRawTable: opt(env, 'STOCKS_RAW_TABLE', 'RAW_WB_STOCKS__CR'),
     stocksSnapshotTable: opt(env, 'STOCKS_SNAPSHOT_TABLE', 'WB_STOCKS_SNAPSHOTS__CR'),
+    stocksT5Mode: onOff(env, 'STOCKS_T5_MODE', 'off'),
+    stocksT5Table: opt(env, 'STOCKS_T5_TABLE', 'RAW_WB_STOCKS_T5__CR'),
+    stocksT5PollIntervalMs: intOpt(env, 'STOCKS_T5_POLL_INTERVAL_MS', 9000),
     refSkuTable: opt(env, 'REF_SKU_TABLE', 'REF_SKU_MASTER'),
     wbPricesHost: opt(env, 'WB_PRICES_HOST', 'https://discounts-prices-api.wildberries.ru'),
     wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
