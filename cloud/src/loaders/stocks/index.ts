@@ -35,6 +35,9 @@ import {
   WB_STOCKS_SOURCE_API,
   WB_STOCKS_T5_SOURCE_API,
   WB_STOCKS_T5_MAX_POLLS,
+  WB_STOCKS_T5_HTTP_TIMEOUT_MS,
+  WB_STOCKS_T5_RETRY_PAUSE_MS,
+  WB_STOCKS_T5_BUDGET_MS,
 } from './constants.js';
 
 export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
@@ -51,6 +54,7 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
   const token = await new SecretsClient(config.projectId).access(config.wbAnalyticsSecret);
 
   await bq.manifestStart(config.stocksSnapshotTable, dataSnapshotId, nowIso, snapshotDate, snapshotDate);
+  let t5Ext: ManifestT5Ext | undefined;
 
   try {
     const arr = await fetchStocksT6(
@@ -68,7 +72,7 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
     metrics.distinct_keys = v.distinctKeys ?? metrics.distinct_keys;
 
     // PR-Mig1c: T5 + контроль — ДО записи T6, как в Apps Script; результат идёт в manifest.
-    const t5Ext = config.stocksT5Mode === 'on'
+    t5Ext = config.stocksT5Mode === 'on'
       ? await runT5Control({
           bq, logger, token, host: config.wbAnalyticsHost, timeoutMs: config.wbHttpTimeoutMs,
           pollIntervalMs: config.stocksT5PollIntervalMs,
@@ -104,7 +108,9 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
   } catch (e) {
     const err = e instanceof LoaderError ? e : new LoaderError(e instanceof Error ? e.message : String(e), 'STOCKS_ERROR');
     try {
-      await bq.manifestFinalize(config.stocksSnapshotTable, dataSnapshotId, 'ERROR', null, 0, 'NOT_RUN', err.message);
+      // Как в Apps Script: если T5 уже посчитан, его метрики остаются и в ERROR-строке.
+      await bq.manifestFinalize(config.stocksSnapshotTable, dataSnapshotId, 'ERROR', null, 0,
+        t5Ext?.control.control_status ?? 'NOT_RUN', err.message, t5Ext);
     } catch (e2) {
       logger.error('stocks_manifest_error_finalize_failed', { attemptId, message: e2 instanceof Error ? e2.message : String(e2) });
     }
@@ -128,13 +134,19 @@ interface T5RunInput {
 }
 
 /**
- * T5 → контроль → детализация. НИКОГДА не бросает: любой сбой T5 деградирует в
- * T5_UNAVAILABLE / t5_rows_written=0, а снимок T6 идёт дальше (WbStocksSnapshot.gs:443-511).
+ * T5 → контроль → детализация (WbStocksSnapshot.gs:443-511). Сбой запроса T5 деградирует в
+ * T5_UNAVAILABLE, сбой записи детализации — в t5_rows_written=0; снимок T6 идёт дальше.
+ * Как и в Apps Script, НЕ защищён разбор самого отчёта: битый элемент (null) в ответе download
+ * роняет снимок целиком — это сбой источника, а не повод писать неполные суммы.
  */
 async function runT5Control(i: T5RunInput): Promise<ManifestT5Ext> {
   const t5 = await fetchStocksT5(
-    i.host, i.token, { timeoutMs: i.timeoutMs, maxRetries: 3 },
-    { intervalMs: i.pollIntervalMs, maxPolls: WB_STOCKS_T5_MAX_POLLS }, i.logger,
+    i.host, i.token,
+    {
+      timeoutMs: Math.min(i.timeoutMs, WB_STOCKS_T5_HTTP_TIMEOUT_MS), maxRetries: 3,
+      backoffBaseMs: WB_STOCKS_T5_RETRY_PAUSE_MS, backoffCapMs: WB_STOCKS_T5_RETRY_PAUSE_MS,
+    },
+    { intervalMs: i.pollIntervalMs, maxPolls: WB_STOCKS_T5_MAX_POLLS, budgetMs: WB_STOCKS_T5_BUDGET_MS }, i.logger,
   );
   if (!t5.ok) {
     i.logger.warn('stocks_t5_unavailable', { error: t5.error });
@@ -153,8 +165,13 @@ async function runT5Control(i: T5RunInput): Promise<ManifestT5Ext> {
   try {
     const rows = normalizeT5(t5.data, i.ctx);
     if (rows.length > 0) {
-      await i.bq.appendRaw(i.t5Table, rows, i.ctx.snapshotId, i.t5LoadJobId);
+      const appended = await i.bq.appendRaw(i.t5Table, rows, i.ctx.snapshotId, i.t5LoadJobId);
       t5RowsWritten = await i.bq.countRows(i.t5Table, i.ctx.snapshotId);
+      if (appended === 'ALREADY_LOADED') {
+        // Повтор в те же сутки: детализация осталась от прошлой попытки (load job дня уже успешен),
+        // а контроль посчитан по свежему T5. Видно в логе; строки T5 при этом не дублируются.
+        i.logger.warn('stocks_t5_detail_reused', { snapshotId: i.ctx.snapshotId, stored: t5RowsWritten, fetched: rows.length });
+      }
     }
   } catch (e) {
     i.logger.error('stocks_t5_detail_failed', { message: e instanceof Error ? e.message : String(e) });

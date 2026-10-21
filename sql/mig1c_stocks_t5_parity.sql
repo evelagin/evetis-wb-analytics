@@ -8,10 +8,14 @@
 -- что WB изменил остатки между снимками (prod ~06:23, shadow ~06:30 МСК), поэтому
 -- вердикт дня различает:
 --   EXACT       — все строки T6/T5 и все метрики manifest совпали;
---   DATA_DRIFT  — состав ключей, типы строк, SKU и склады совпали, разошлись только
---                 количества (и производные от них суммы/статусы) — объясняется временем;
---   FAIL        — структурное расхождение (ключи, row_type, SKU, source_api, склад)
---                 или нарушен инвариант любой стороны.
+--   DATA_DRIFT  — у совпавших ключей совпали тип строки, SKU и склад, разошлись только
+--                 количества (и производные суммы/статусы), либо ключ T5 есть лишь на одной
+--                 стороне: WB не отдаёт в T5 строки с нулевым остатком (0 из 204 строк 21.10),
+--                 поэтому товар, проданный/поступивший между 06:23 и 06:30, меняет состав ключей;
+--   SOURCE_GAP  — хотя бы на одной стороне T5_UNAVAILABLE: T5 не сравнивается, день не
+--                 засчитывается ни как EXACT, ни как FAIL (разбирается вручную);
+--   FAIL        — структурное расхождение: ключи T6, атрибуты совпавших ключей T6/T5
+--                 (row_type, SKU, source_api, склад), дубли грейна, структурные метрики manifest.
 -- Приёмка: 5 последовательных дней без FAIL, из них не меньше 3 EXACT (см.
 -- docs/MIG1_STOCKS_PARITY.md, раздел Mig1c).
 --
@@ -114,12 +118,13 @@ man AS (
       IF(p.warehouses_count IS DISTINCT FROM c.warehouses_count, 'warehouses_count', NULL),
       IF(p.aggregate_warehouse_rows IS DISTINCT FROM c.aggregate_warehouse_rows, 'aggregate_warehouse_rows', NULL),
       IF(p.anonymized_warehouse_rows IS DISTINCT FROM c.anonymized_warehouse_rows, 'anonymized_warehouse_rows', NULL),
-      IF(p.t5_rows_written IS DISTINCT FROM c.t5_rows_written, 't5_rows_written', NULL),
       IF(p.unmatched_nm_ids IS DISTINCT FROM c.unmatched_nm_ids, 'unmatched_nm_ids', NULL)
     ]) AS x WHERE x IS NOT NULL), ',') AS struct_diff,
     -- количественные метрики и производные статусы: расходятся только вместе с количествами
     ARRAY_TO_STRING(ARRAY(SELECT x FROM UNNEST([
       IF(p.qty_positive_rows IS DISTINCT FROM c.qty_positive_rows, 'qty_positive_rows', NULL),
+      -- число строк T5 зависит от состава ненулевых остатков → дрейф, а не структура
+      IF(p.t5_rows_written IS DISTINCT FROM c.t5_rows_written, 't5_rows_written', NULL),
       IF(p.qty_zero_rows IS DISTINCT FROM c.qty_zero_rows, 'qty_zero_rows', NULL),
       IF(p.sum_quantity_all_t6 IS DISTINCT FROM c.sum_quantity_all_t6, 'sum_quantity_all_t6', NULL),
       IF(p.sum_quantity_physical_t6 IS DISTINCT FROM c.sum_quantity_physical_t6, 'sum_quantity_physical_t6', NULL),
@@ -147,14 +152,17 @@ SELECT
   NULLIF(man.qty_diff, '') AS manifest_qty_diff,
   CASE
     WHEN ps.snapshot_id IS NULL OR cs.snapshot_id IS NULL THEN 'MISSING'
+    -- T6 и структура manifest проверяются всегда: они не зависят от судьбы T5.
     WHEN IFNULL(t6.t6_prod_only, 0) + IFNULL(t6.t6_cr_only, 0) + IFNULL(t6.t6_attr_diff, 0) > 0
-      OR IFNULL(t5.t5_prod_only, 0) + IFNULL(t5.t5_cr_only, 0) + IFNULL(t5.t5_attr_diff, 0) > 0
-      OR IFNULL(dup5.t5_dup_prod, 0) + IFNULL(dup5.t5_dup_cr, 0) > 0
       OR man.struct_diff != '' THEN 'FAIL'
-    -- 'T5_UNAVAILABLE' на одной стороне — сбой источника в момент снимка, а не алгоритма:
-    -- такой день не засчитывается в EXACT и разбирается вручную.
-    WHEN (man.prod_control = 'T5_UNAVAILABLE') != (man.cr_control = 'T5_UNAVAILABLE') THEN 'SOURCE_GAP'
-    WHEN IFNULL(t6.t6_qty_diff, 0) + IFNULL(t5.t5_qty_diff, 0) > 0 OR man.qty_diff != '' THEN 'DATA_DRIFT'
+    -- T5_UNAVAILABLE хотя бы на одной стороне — сбой источника в момент снимка, а не алгоритма.
+    -- Проверяется ДО сравнения строк T5: иначе пустая детализация одной стороны дала бы FAIL.
+    WHEN man.prod_control = 'T5_UNAVAILABLE' OR man.cr_control = 'T5_UNAVAILABLE' THEN 'SOURCE_GAP'
+    WHEN IFNULL(t5.t5_attr_diff, 0) > 0
+      OR IFNULL(dup5.t5_dup_prod, 0) + IFNULL(dup5.t5_dup_cr, 0) > 0 THEN 'FAIL'
+    WHEN IFNULL(t6.t6_qty_diff, 0) + IFNULL(t5.t5_qty_diff, 0) > 0
+      OR IFNULL(t5.t5_prod_only, 0) + IFNULL(t5.t5_cr_only, 0) > 0
+      OR man.qty_diff != '' THEN 'DATA_DRIFT'
     ELSE 'EXACT'
   END AS verdict
 FROM (SELECT period_to FROM ps UNION DISTINCT SELECT period_to FROM cs) d

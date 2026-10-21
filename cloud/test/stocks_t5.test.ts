@@ -152,7 +152,7 @@ describe('fetchStocksT5 (транспорт задачи)', () => {
     return { calls, restore: () => { globalThis.fetch = orig; } };
   }
   const opts = { timeoutMs: 1000, maxRetries: 0 };
-  const noSleep = { intervalMs: 0, maxPolls: 3, sleep: async () => {} };
+  const noSleep = { intervalMs: 0, maxPolls: 3, budgetMs: 60_000, sleep: async () => {} };
 
   it('create → status(processing→done) → download: данные и порядок вызовов', async () => {
     let polls = 0;
@@ -181,6 +181,18 @@ describe('fetchStocksT5 (транспорт задачи)', () => {
       expect(r).toEqual({ ok: false, error: 'T5: таймаут ожидания задачи' });
       expect(s.calls.filter((c) => c.endsWith('/status'))).toHaveLength(3);
       expect(s.calls.some((c) => c.endsWith('/download'))).toBe(false);
+    } finally { s.restore(); }
+  });
+
+  it('общий бюджет исчерпан → T5_UNAVAILABLE-ошибка до следующего опроса, без download', async () => {
+    let t = 0;
+    const s = stub((u) => (u.endsWith('/status') ? { status: 200, body: { data: { status: 'processing' } } } : { status: 200, body: fx.create }));
+    try {
+      const r = await fetchStocksT5('https://h', 't', opts, {
+        intervalMs: 9000, maxPolls: 20, budgetMs: 20_000, now: () => t, sleep: async (ms) => { t += ms; },
+      });
+      expect(r).toEqual({ ok: false, error: 'T5: исчерпан бюджет времени' });
+      expect(s.calls.filter((c) => c.endsWith('/status'))).toHaveLength(2); // 9 с + 9 с; третий не влезает в 20 с
     } finally { s.restore(); }
   });
 

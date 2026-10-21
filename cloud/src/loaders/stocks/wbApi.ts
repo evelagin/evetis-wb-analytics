@@ -40,6 +40,10 @@ export type T5FetchResult = { ok: true; data: unknown[] } | { ok: false; error: 
 export interface T5PollOptions {
   intervalMs: number;
   maxPolls: number;
+  /** Общий бюджет T5, мс: по исчерпании — T5_UNAVAILABLE, а не убитый по таймауту Job. */
+  budgetMs: number;
+  /** Инъекция часов для тестов. */
+  now?: () => number;
   /** Инъекция для тестов; по умолчанию — настоящий таймер. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -51,7 +55,8 @@ export interface T5PollOptions {
  * НЕ бросает: T5 — неблокирующий контроль. Любой сбой возвращается как {ok:false} и
  * превращается вызывающим в control_status='T5_UNAVAILABLE'; снимок T6 при этом пишется.
  * Неуспешный ответ status-опроса не прерывает ожидание (как в Apps Script) — решает только
- * явный статус задачи или исчерпание опросов.
+ * явный статус задачи, исчерпание опросов или общий бюджет времени (poll.budgetMs).
+ * Повторы 429 — как в Apps Script: пауза 21 с, до 3 раз (передаётся вызывающим через opts).
  */
 export async function fetchStocksT5(
   host: string,
@@ -61,6 +66,8 @@ export async function fetchStocksT5(
   logger?: Logger,
 ): Promise<T5FetchResult> {
   const sleep = poll.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = poll.now ?? (() => Date.now());
+  const deadline = now() + poll.budgetMs;
   const base = host + WB_STOCKS_T5_PATH;
   const get = (url: string) => wbFetch(url, { method: 'GET', headers: { Authorization: token } }, opts, logger);
   const parse = (body: string): unknown => {
@@ -79,6 +86,7 @@ export async function fetchStocksT5(
 
     let ready = false;
     for (let p = 0; p < poll.maxPolls; p++) {
+      if (now() + poll.intervalMs > deadline) return { ok: false, error: 'T5: исчерпан бюджет времени' };
       await sleep(poll.intervalMs);
       const sr = await get(`${base}/tasks/${encodeURIComponent(taskId)}/status`);
       const st = t5TaskState(sr.ok ? parse(sr.body) : null);

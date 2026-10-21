@@ -244,12 +244,15 @@ export class StocksBq {
    * PR-Mig1c. availability_gap предыдущего COMPLETE-снимка с непустым gap — база детектора.
    * Читается из ТОЙ ЖЕ manifest-таблицы, куда пишет загрузчик (shadow → __CR): контуры
    * не смешиваются. Текущий снимок в выборку не попадает — он ещё STARTED.
+   * Сначала period_to, затем completed_at: ручной повтор прошлого дня (markReused обновляет
+   * completed_at) не должен стать базой для следующих суток. При одном снимке в день порядок
+   * совпадает с Apps Script (ORDER BY completed_at DESC).
    */
   async prevAvailabilityGap(table: string): Promise<number | null> {
     const [rows] = await this.bq.query({
       query: `SELECT availability_gap FROM ${this.fqn(table)}
               WHERE status='COMPLETE' AND availability_gap IS NOT NULL
-              ORDER BY completed_at DESC, snapshot_id DESC LIMIT 1`,
+              ORDER BY period_to DESC, completed_at DESC, snapshot_id DESC LIMIT 1`,
       location: this.location,
     });
     const r = (rows as Array<{ availability_gap: unknown }>)[0];

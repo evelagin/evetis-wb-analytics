@@ -34,6 +34,11 @@ export const WB_STOCKS_T5_PSEUDO: Readonly<Record<string, string>> = {
  * config.stocksT5PollIntervalMs (STOCKS_T5_POLL_INTERVAL_MS, по умолчанию 9000).
  */
 export const WB_STOCKS_T5_MAX_POLLS = 20;
+/** 429 на T5 — пауза 21 с (как wbStocksHttp_, WbStocksSnapshot.gs:131-134), до 3 повторов. */
+export const WB_STOCKS_T5_RETRY_PAUSE_MS = 21000;
+/** Таймаут одного HTTP-запроса T5 и общий бюджет T5 (20 × 9 с опросов + повторы с запасом). */
+export const WB_STOCKS_T5_HTTP_TIMEOUT_MS = 30000;
+export const WB_STOCKS_T5_BUDGET_MS = 8 * 60 * 1000;
 
 // ── Контроль T5/T6 и детектор доступности (WbStocksSnapshot.gs:30, 46-48) ──────
 /** Допуск T5/T6, ед.: снимки сняты с разницей в секунды. */

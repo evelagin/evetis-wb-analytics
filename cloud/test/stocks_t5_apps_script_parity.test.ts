@@ -43,6 +43,7 @@ function wbRouter() {
 function runAppsScript(prevGap: number | null, t5Broken = false) {
   const snapshotSrc = readFileSync(join(repo, 'apps-script', 'ingestion', 'WbStocksSnapshot.gs'), 'utf8');
   const financeSrc = readFileSync(join(repo, 'apps-script', 'ingestion', 'Wbfinance.gs'), 'utf8');
+  const bqSrc = readFileSync(join(repo, 'apps-script', 'ingestion', 'WbStocksBigQuery.gs'), 'utf8');
   const nmFn = financeSrc.match(/function normalizeNmIdFinance_\(val\) \{[\s\S]*?\n\}/);
   if (!nmFn) throw new Error('normalizeNmIdFinance_ не найдена в Wbfinance.gs');
 
@@ -53,7 +54,8 @@ function runAppsScript(prevGap: number | null, t5Broken = false) {
 
   const sandbox: Obj = {
     console: { log: () => {}, error: () => {} },
-    WB_STOCKS_SOURCE_API_: 'WB_API_STOCKS', // WbStocksBigQuery.gs:40
+    // Константа берётся из боевого файла, а не копируется: её смена в Apps Script обязана уронить тест.
+    WB_STOCKS_SOURCE_API_: bqSrc.match(/var WB_STOCKS_SOURCE_API_\s*=\s*'([^']+)'/)![1],
     SpreadsheetApp: { getActiveSpreadsheet: () => ({}) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'not-a-real-token' }) },
     Utilities: {
@@ -94,6 +96,8 @@ const cr = vi.hoisted(() => ({
   finalize: null as null | { status: string; metrics: Record<string, unknown> | null; written: number; control: string; t5?: Record<string, unknown> },
   prevGap: null as number | null,
   urls: [] as string[],
+  failT5Append: false,
+  t6CountOverride: null as number | null,
 }));
 
 vi.mock('../src/secrets.js', () => ({
@@ -104,10 +108,14 @@ vi.mock('../src/loaders/stocks/bq.js', () => ({
     async loadSkuIndex() { return new Map<number, string>([[101, 'SKU-A'], [202, 'SKU-B']]); }
     async manifestStart() {}
     async prevAvailabilityGap() { return cr.prevGap; }
-    async appendRaw(table: string, rows: Record<string, unknown>[]) { cr.appends.push({ table, rows }); return 'LOADED'; }
+    async appendRaw(table: string, rows: Record<string, unknown>[]) {
+      if (cr.failT5Append && table.includes('T5')) throw new Error('load job failed');
+      cr.appends.push({ table, rows });
+      return 'LOADED';
+    }
     async countRows(table: string) { return cr.appends.find((a) => a.table === table)?.rows.length ?? 0; }
     async snapshotCounts(table: string) {
-      const n = cr.appends.find((a) => a.table === table)?.rows.length ?? 0;
+      const n = cr.t6CountOverride ?? cr.appends.find((a) => a.table === table)?.rows.length ?? 0;
       return { count: n, distinct: n };
     }
     async manifestFinalize(_t: string, _id: string, status: string, metrics: Record<string, unknown> | null, written: number, control: string, _err: string, t5?: Record<string, unknown>) {
@@ -119,10 +127,15 @@ vi.mock('../src/loaders/stocks/bq.js', () => ({
 
 const { stocksLoader } = await import('../src/loaders/stocks/index.js');
 
-async function runCloudRun(prevGap: number | null, t5Broken = false, t5Mode: 'on' | 'off' = 'on') {
+async function runCloudRun(
+  prevGap: number | null, t5Broken = false, t5Mode: 'on' | 'off' = 'on',
+  opts: { failT5Append?: boolean; t6CountOverride?: number } = {},
+) {
   cr.appends = [];
   cr.finalize = null;
   cr.prevGap = prevGap;
+  cr.failT5Append = opts.failT5Append ?? false;
+  cr.t6CountOverride = opts.t6CountOverride ?? null;
   const route = wbRouter();
   const orig = globalThis.fetch;
   cr.urls = [];
@@ -140,7 +153,7 @@ async function runCloudRun(prevGap: number | null, t5Broken = false, t5Mode: 'on
     const ctx: LoaderContext = {
       config, logger: new Logger({}, 'error'), logicalPeriod: '2026-10-21', runId: 'r', targetDate: '2026-10-21',
     };
-    await stocksLoader(ctx);
+    await stocksLoader(ctx).catch((e) => { if (!opts.t6CountOverride) throw e; });
   } finally {
     globalThis.fetch = orig;
   }
@@ -231,5 +244,20 @@ describe('replay-parity 1:1: Apps Script WbStocksSnapshot.gs ↔ Cloud Run stock
     expect(b.finalize.t5).toBeUndefined();
     expect(b.finalize.control).toBe('NOT_RUN');
     expect(b.finalize.status).toBe('COMPLETE');
+  });
+
+  it('сбой записи детализации T5 не валит снимок: COMPLETE, контроль посчитан, t5_rows_written=0', async () => {
+    const b = await runCloudRun(1, false, 'on', { failT5Append: true });
+    expect(b.finalize.status).toBe('COMPLETE');
+    expect(b.t5).toEqual([]);
+    expect(b.finalize.t5).toMatchObject({ t5RowsWritten: 0 });
+    expect((b.finalize.t5 as { control: Obj }).control).toMatchObject({ control_status: 'OK', t5_wb_rf_sum: 15 });
+  });
+
+  it('ERROR пост-проверки T6 сохраняет посчитанный T5-контроль в manifest (как Apps Script)', async () => {
+    const b = await runCloudRun(1, false, 'on', { t6CountOverride: 2 });
+    expect(b.finalize.status).toBe('ERROR');
+    expect(b.finalize.control).toBe('OK');
+    expect((b.finalize.t5 as { control: Obj }).control).toMatchObject({ t5_control_sum: 48, availability_status: 'OK' });
   });
 });

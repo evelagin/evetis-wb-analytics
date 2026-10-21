@@ -186,7 +186,10 @@ export function normalizeT6(data: unknown[], ctx: NormalizeCtx): { rows: RawStoc
       qty_positive_rows: qtyPos, qty_zero_rows: qtyZero, aggregate_warehouse_rows: agg,
       anonymized_warehouse_rows: anon,
       sum_quantity_all_t6: sumAll, sum_quantity_physical_t6: sumPhys,
-      distinct_keys: seen.size, duplicate_keys: dup, unmatched_nm_ids: [...unmatched],
+      distinct_keys: seen.size, duplicate_keys: dup,
+      // PR-Mig1c: порядок как у Apps Script `Object.keys(unmatched)` — целочисленные ключи
+      // идут по возрастанию, а не в порядке вставки; иначе точная сверка manifest даёт FAIL.
+      unmatched_nm_ids: [...unmatched].sort((a, b) => Number(a) - Number(b)),
     },
   };
 }
