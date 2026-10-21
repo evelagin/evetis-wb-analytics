@@ -63,10 +63,13 @@ def plans(b,p,day):
         out[entity]=v
     return records,out
 
-def performance_fence(b,doc):
-    if not doc['runtime_plan']['entity'].startswith('ads_'):return None
+def current_cooldowns(b):
+    """Active cooldowns of the current-cycle Performance plans (the fence's own reading, any leaf)."""
+    return _current_ads(b)[1]
+
+def _current_ads(b):
     p=policy(b)
-    if p is None:return None
+    if p is None:return [],[]
     reports=[];cooldowns=[]
     for text in cycles(b,p):
         _,items=plans(b,p,date.fromisoformat(text))
@@ -81,6 +84,12 @@ def performance_fence(b,doc):
             eligible=pr.get('rate_limit',{}).get('eligible_at')
             if eligible and K.at(eligible)>b.clock():cooldowns.append(eligible)
     if len(reports)>1:fail('multiple current async report scopes')
+    return reports,cooldowns
+
+def performance_fence(b,doc):
+    if not doc['runtime_plan']['entity'].startswith('ads_'):return None
+    if policy(b) is None:return None
+    reports,cooldowns=_current_ads(b)
     if cooldowns:return {'status':'WAITING','allowance':0,'eligible_at':max(cooldowns,key=K.at),'basis':'SOURCE_COOLDOWN'}
     if reports and reports!=[doc['runtime_plan']['plan_id']]:return {'status':'WAITING','allowance':0,'eligible_at':(b.clock()+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
     return None

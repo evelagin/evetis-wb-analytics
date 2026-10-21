@@ -435,3 +435,33 @@ def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
     base.wake_budget = late_budget(WB.LEAF_SECONDS)
     ticks.clear()
     assert CUR.wake(base, [], {}, {}, set())['basis'] == 'WAKE_BUDGET_LEAF' and not ticks
+
+
+def test_acceptance_memo_is_shared_by_every_backend_of_one_wake(monkeypatch):
+    """The gate (full backend) and the post-closure monitor (another backend object) read the same slice once."""
+    import importlib
+    calls = []
+    for name in MODULES:
+        module = importlib.import_module('tools.tenancy.' + name)
+        if name == 'full_controller_closure_recovery':
+            monkeypatch.setattr(module, 'load', lambda b, m, r, n=name: calls.append(n) or [])
+        else:
+            monkeypatch.setattr(module, 'load', lambda b, m, r, n=name: calls.append(n) or [{'stop_hash': 'a' * 64}])
+    records = [{'kind': 'STOPPED', 'payload': {}, 'n': 1}]
+    scope = SA.Scope()
+    gate_backend, monitor_backend = SimpleNamespace(stop_acceptance_scope=scope), SimpleNamespace(stop_acceptance_scope=scope)
+    first = SA.approved(gate_backend, {}, records, quarantines=[]); n = len(calls)
+    assert SA.approved(monitor_backend, {}, records, quarantines=[]) == first and len(calls) == n
+    assert monitor_backend.verified_pretransport_rejections == gate_backend.verified_pretransport_rejections
+    SA.approved(SimpleNamespace(stop_acceptance_scope=SA.Scope()), {}, records, quarantines=[])
+    assert len(calls) == 2 * n                                                                     # another wake: revalidated
+
+
+def test_performance_fence_and_class_cooldown_read_the_same_current_plans(monkeypatch):
+    from tools.tenancy import current_controller as CUR
+    monkeypatch.setattr(CUR, '_current_ads', lambda b: ([], ['2026-10-21T01:00:00+00:00']))
+    monkeypatch.setattr(CUR, 'policy', lambda b: {'hash': 'p'})
+    assert CUR.current_cooldowns(object()) == ['2026-10-21T01:00:00+00:00']
+    fence = CUR.performance_fence(SimpleNamespace(clock=lambda: NOW), {'runtime_plan': {'entity': 'ads_sku_daily', 'plan_id': 'x'}})
+    assert fence['status'] == 'WAITING' and fence['basis'] == 'SOURCE_COOLDOWN' and fence['eligible_at'] == '2026-10-21T01:00:00+00:00'
+    assert CUR.performance_fence(SimpleNamespace(clock=lambda: NOW), {'runtime_plan': {'entity': 'catalog', 'plan_id': 'x'}}) is None

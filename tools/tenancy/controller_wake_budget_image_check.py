@@ -6,6 +6,7 @@
     also when that claim belongs to the replaced release (typed in acquire);
   * the wake budget declines a leaf, reconcile, completion or dispatch before it
     starts (never mid-dispatch) and a handoff ends the wake;
+  * the shared Performance cooldown is read once per wake (leaf loop), its readers are one code path;
   * the v3 controller-closure certificate shape (intermediate page) is closed.
 Every patched seam is restored before returning.
 """
@@ -65,12 +66,17 @@ def acceptance_check():
             else:
                 module.load = lambda b, m, r, h=h: calls.append(h) or [{'stop_hash': h}]
             records.append({'kind': getattr(module, 'KIND', 'NONE_' + name)})
-        b = SimpleNamespace(stop_acceptance_scope=object())
+        scope = SA.Scope()
+        b = SimpleNamespace(stop_acceptance_scope=scope)
         expected = {('%02d' % n) * 32 for n in range(len(MODULES))}
         assert SA.accepted_hashes(b, {}, records) == expected
         n = len(calls)
         assert SA.accepted_hashes(b, {}, list(records)) == expected and len(calls) == n      # same slice: once per wake
-        assert SA.accepted_hashes(SimpleNamespace(stop_acceptance_scope=object()), {}, records) == expected and len(calls) > n
+        other = SimpleNamespace(stop_acceptance_scope=scope)                                # the monitor's backend object
+        assert SA.accepted_hashes(other, {}, list(records)) == expected and len(calls) == n
+        assert SA.accepted_hashes(b, {}, records, fresh=True) == expected and len(calls) > n  # before a source effect
+        n = len(calls)
+        assert SA.accepted_hashes(SimpleNamespace(stop_acceptance_scope=SA.Scope()), {}, records) == expected and len(calls) > n
     finally:
         for module, load in saved.items():
             module.load = load
@@ -116,6 +122,13 @@ def budget_check():
     return 'PASS'
 
 
+def cooldown_check():
+    from tools.tenancy import full_controller as H, current_controller as CUR
+    assert H.PERFORMANCE == frozenset({'ads_campaigns', 'ads_expense_daily', 'ads_sku_daily'})
+    assert callable(H.Backend.performance_class) and callable(H.Backend.performance_cooldown) and callable(CUR.current_cooldowns)
+    return 'PASS'
+
+
 def closure_v3_check():
     from tools.tenancy import full_controller_closure_recovery as CR
     assert (3, CR.SEQUENCE_TYPE) in CR.VERSIONS and 'intermediate_page_not_complete' in CR.SEQUENCE_PREDICATES
@@ -131,7 +144,7 @@ def closure_v3_check():
 
 def check():
     for name, fn in (('snapshot', snapshot_check), ('acceptance', acceptance_check), ('repeat_stop', repeat_stop_check),
-                     ('budget', budget_check), ('closure_v3', closure_v3_check)):
+                     ('budget', budget_check), ('cooldown', cooldown_check), ('closure_v3', closure_v3_check)):
         assert fn() == 'PASS', name
     return {'controller_wake_budget_adapter': 'PASS'}
 

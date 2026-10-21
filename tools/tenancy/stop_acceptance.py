@@ -12,6 +12,11 @@ across wakes. The order and the verified_* side effects are those of the gate.
 import contextlib
 
 
+class Scope:
+    """One claimed wake's acceptance scope, shared by every backend object of that wake (gate, monitor)."""
+    memo = None
+
+
 def approved(backend, manifest, records, *, quarantines=None, gate=None, fresh=False):
     """Acceptance entries ({'stop_hash': ...}) of every exact owner recovery.
 
@@ -26,7 +31,8 @@ def approved(backend, manifest, records, *, quarantines=None, gate=None, fresh=F
     if scope is None or fresh:
         return _revalidate(backend, manifest, records, quarantines, gate)[0]
     key = (id(scope), D.digest([sorted(D.digest(r) for r in records), D.digest(quarantines) if quarantines is not None else None]))
-    memo = getattr(backend, 'stop_acceptance_memo', None)
+    holder = scope if isinstance(scope, Scope) else backend
+    memo = getattr(holder, 'memo' if holder is scope else 'stop_acceptance_memo', None)
     if memo is not None and memo[0] == key:
         _, accepted, failed, rejected, zero_effect = memo
         backend.verified_cooldown_failures = failed
@@ -34,7 +40,7 @@ def approved(backend, manifest, records, *, quarantines=None, gate=None, fresh=F
         backend.verified_fbo_zero_effect_failures = zero_effect
         return list(accepted)
     accepted, failed, rejected, zero_effect = _revalidate(backend, manifest, records, quarantines, gate)
-    backend.stop_acceptance_memo = (key, list(accepted), failed, rejected, zero_effect)
+    setattr(holder, 'memo' if holder is scope else 'stop_acceptance_memo', (key, list(accepted), failed, rejected, zero_effect))
     return accepted
 
 

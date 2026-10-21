@@ -15,6 +15,7 @@ from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy import pre_source_recovery as R
 from tools.tenancy.controller_diagnostics import gate, GateFailure
 from tools.tenancy import recent_priority as RP
+PERFORMANCE = frozenset({'ads_campaigns','ads_expense_daily','ads_sku_daily'})
 
 KINDS = frozenset({'FULL_MANIFEST', 'CHUNK_PLAN', 'CHUNK_COMPLETE', 'FULL_COMPLETE', 'T5_PARENT_COMPLETE'})
 # Matches the last existing Seller transport BACKOFF interval. Controller wakes
@@ -252,41 +253,11 @@ class Backend(C.Backend):
         if q['status']!='STOPPED':
             # One Performance source class across frozen leaves. Moving the
             # priority queue must not escape a different leaf's active cooldown.
-            records=self.store.history(self.manifest['hash'])
-            plans=reconstruct_plans(records,self.manifest,now)
-            # A replaced snapshot retains its cooldown after Moscow midnight.
-            # reconstruct_plans validates every version and rollover link first.
-            versions=list(plans.values())+[r['payload'] for r in records if r['kind']=='CHUNK_PLAN']
-            docs={}
-            for v in versions:
-                d=v['plan'];pid=d['runtime_plan']['plan_id']
-                if d['runtime_plan']['entity'] not in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}:continue
-                if pid in docs and docs[pid]!=d:raise BF.B.EvidenceError('Performance class plan conflicts')
-                docs[pid]=d
-            if docs:
-                rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity IN ('ads_campaigns','ads_expense_daily','ads_sku_daily') AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
-                if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')
-                states={}
-                for r in rows:
-                    proof=parse_tenant_json(r['evidence_json']);rp=docs[r['plan_id']]['runtime_plan']
-                    if proof.get('plan')!=rp:raise BF.B.EvidenceError('Performance class source scope differs')
-                    s=BF.B.validate(rp,proof['state'])
-                    if s['sequence']!=r['backfill_sequence'] or (r['plan_id'] in states and states[r['plan_id']]!=s):raise BF.B.EvidenceError('Performance class source checkpoint conflicts')
-                    states[r['plan_id']]=s
-                rates=[];reports=[]
-                for pid,s in states.items():
-                    report=s['progress'].get('report') if docs[pid]['runtime_plan']['entity']=='ads_sku_daily' else None
-                    if report:
-                        if report.get('phase')=='INTENT':raise BF.B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS')
-                        if report.get('phase')!='POLL':raise BF.B.EvidenceError('unknown Performance async state')
-                        reports.append(pid)
-                    eligible=s['progress'].get('rate_limit',{}).get('eligible_at')
-                    if eligible and C.timestamp(eligible)>now:rates.append(eligible)
-                if len(reports)>1:raise BF.B.EvidenceError('multiple Performance async scopes')
-                if doc['runtime_plan']['entity'].startswith('ads_'):
-                    if rates:return {'status':'WAITING','allowance':0,'eligible_at':max(rates,key=C.timestamp),'basis':'SOURCE_COOLDOWN'}
-                    if reports and reports!=[doc['runtime_plan']['plan_id']]:
-                        return {'status':'WAITING','allowance':0,'eligible_at':(now+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
+            rates,reports=self.performance_class(now)
+            if doc['runtime_plan']['entity'].startswith('ads_'):
+                if rates:return {'status':'WAITING','allowance':0,'eligible_at':max(rates,key=C.timestamp),'basis':'SOURCE_COOLDOWN'}
+                if reports and reports!=[doc['runtime_plan']['plan_id']]:
+                    return {'status':'WAITING','allowance':0,'eligible_at':(now+timedelta(minutes=3)).isoformat(),'basis':'EXISTING_ASYNC_SCOPE'}
         if q['status']!='STOPPED':
             from tools.tenancy import current_controller as CURRENT
             current_fence=CURRENT.performance_fence(self,doc)
@@ -295,6 +266,52 @@ class Backend(C.Backend):
             return {'status':'ELIGIBLE','allowance':0,'performance_quota':q,
                     'basis':'NO_NEW_PERFORMANCE_REPORT_IN_THIS_SOURCE_SCOPE'}
         return q
+
+    def performance_class(self, now):
+        """Active cooldowns and async report scopes of the frozen Performance class (every leaf version)."""
+        records=self.store.history(self.manifest['hash'])
+        plans=reconstruct_plans(records,self.manifest,now)
+        # A replaced snapshot retains its cooldown after Moscow midnight.
+        # reconstruct_plans validates every version and rollover link first.
+        versions=list(plans.values())+[r['payload'] for r in records if r['kind']=='CHUNK_PLAN']
+        docs={}
+        for v in versions:
+            d=v['plan'];pid=d['runtime_plan']['plan_id']
+            if d['runtime_plan']['entity'] not in PERFORMANCE:continue
+            if pid in docs and docs[pid]!=d:raise BF.B.EvidenceError('Performance class plan conflicts')
+            docs[pid]=d
+        rates=[];reports=[]
+        if docs:
+            rows=self.select(f"SELECT backfill_plan_id AS plan_id,backfill_sequence,evidence_json FROM `{self.journal}` WHERE entity IN ('ads_campaigns','ads_expense_daily','ads_sku_daily') AND status='OK' AND backfill_plan_id IN UNNEST(JSON_VALUE_ARRAY(@plans)) AND backfill_sequence IS NOT NULL QUALIFY backfill_sequence=MAX(backfill_sequence) OVER(PARTITION BY backfill_plan_id) LIMIT 1000",{'plans':('STRING',D.encoded(sorted(docs)))})
+            if len(rows)>=1000:raise BF.B.EvidenceError('Performance source state inventory exceeded')
+            states={}
+            for r in rows:
+                proof=parse_tenant_json(r['evidence_json']);rp=docs[r['plan_id']]['runtime_plan']
+                if proof.get('plan')!=rp:raise BF.B.EvidenceError('Performance class source scope differs')
+                s=BF.B.validate(rp,proof['state'])
+                if s['sequence']!=r['backfill_sequence'] or (r['plan_id'] in states and states[r['plan_id']]!=s):raise BF.B.EvidenceError('Performance class source checkpoint conflicts')
+                states[r['plan_id']]=s
+            rates=[];reports=[]
+            for pid,s in states.items():
+                report=s['progress'].get('report') if docs[pid]['runtime_plan']['entity']=='ads_sku_daily' else None
+                if report:
+                    if report.get('phase')=='INTENT':raise BF.B.EvidenceError('REPORT_SUBMISSION_AMBIGUOUS')
+                    if report.get('phase')!='POLL':raise BF.B.EvidenceError('unknown Performance async state')
+                    reports.append(pid)
+                eligible=s['progress'].get('rate_limit',{}).get('eligible_at')
+                if eligible and C.timestamp(eligible)>now:rates.append(eligible)
+            if len(reports)>1:raise BF.B.EvidenceError('multiple Performance async scopes')
+        return rates,reports
+
+    def performance_cooldown(self, now):
+        """Latest active Performance cooldown (historical class + current cycle), fresh reads, or None.
+
+        Read once per wake by the leaf loop: while it holds, every Performance leaf's quota is WAITING
+        SOURCE_COOLDOWN anyway; nothing here permits a dispatch."""
+        from tools.tenancy import current_controller as CURRENT
+        rates,_=self.performance_class(now)
+        rates=rates+CURRENT.current_cooldowns(self)
+        return max(rates,key=C.timestamp) if rates else None
 
     def reconcile(self, payload):
         doc = payload['plan']; receipt = payload['receipt']
@@ -474,7 +491,8 @@ def wake(base, root):
             # one listing that serves the rest of this claimed wake.
             base.store.begin_snapshot()
             # One acceptance revalidation per claimed wake and record slice (gate, monitor).
-            base.stop_acceptance_scope=backend.stop_acceptance_scope=object()
+            from tools.tenancy import stop_acceptance as SA
+            base.stop_acceptance_scope=backend.stop_acceptance_scope=SA.Scope()
             records=base.store.history(root)
             if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
     if any(r['kind']=='STOPPED' for r in records):
@@ -571,7 +589,13 @@ def wake(base, root):
     waits=[]
     from tools.tenancy import wake_budget as WB
     budget=WB.of(backend)
+    # The Performance class shares one cooldown: read it once per wake, not in every Performance leaf's
+    # preflight+quota (2026-10-21 rehearsal: ~55 s per such leaf, 15 of them before Supplies).
+    cooldown=backend.performance_cooldown(backend.clock()) if overlay and any(manifest['programs'][i]['entity'] in PERFORMANCE for i in pending) else None
     for index in pending:
+        if cooldown and manifest['programs'][index]['entity'] in PERFORMANCE:
+            waits.append({'status':'WAITING','source_dispatches':0,'eligible_at':cooldown,'index':index,'basis':'SOURCE_COOLDOWN'})
+            continue
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
             return WB.handoff('LEAF',budget,index=index),backend
         backend.index=index
