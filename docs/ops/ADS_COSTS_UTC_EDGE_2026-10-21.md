@@ -47,6 +47,22 @@
 - `evetis_health.V_PIPELINE_CONTRACT` — читает покрытие по именам колонок; новые колонки
   (`read_basis`, `edge_reads_ignored`) только в конце.
 
+## Гейт-наборы — базовая линия ДО изменения (21.10.2026, живые вью v1, только чтение)
+`tools/run_data_checks.py --suite …` (обязательны по `tools/impact_analysis.py`):
+
+| Набор | Итог до v2 |
+|---|---|
+| wb_fin_contract_v2 | PASS (19/0, BLOCKED 1 — не ASSERT) |
+| wb_finance_corrected | **FAIL** — `FINCORR__C_17_FAIL_VIEW` (уже до v2) |
+| wb_executive_economics | PASS (15/0) |
+| wb_deductions_direct_labels | PASS (вне ворот 3) |
+| control_tower_owner_screens | PASS (вне ворот 2, BLOCKED 2) |
+| inventory_context | **FAIL** — `I33_CONTROL_TOWER_CONTRACT_UNCHANGED` (уже до v2) |
+| ads_intel | PASS (43/0) |
+
+После применения v2 эти наборы прогоняются повторно; критерий — не появилось НОВЫХ FAIL
+относительно этой таблицы. Два красных до v2 к этому PR не относятся и разбираются отдельно.
+
 ## Откат
 Выполнить §3 и §4 из `sql/raw/adv_costs_snapshot_v1.sql` без изменений. Эталон живых тел до
 применения (sha256 `view_definition`, 21.10.2026):
@@ -58,8 +74,8 @@ Live = repo v1 подтверждено сравнением нормализо�
 ## OWNER ACK (проект, не выполнять без подтверждения)
 > ACK ADS-UTC-EDGE: применить `sql/raw/adv_costs_snapshot_v2_utc_edge.sql` (§3 v2, §4 v2) за 10–20 мин
 > до окна `wb-mart-prod`; до применения — `pre` Q1–Q7 и sha256 живых тел совпадают с документом;
-> после ближайшего прогона витрины — `post` Q1–Q7 и `ad_spend_financial_rub` за 07.2026 +108 ₽,
-> за 09.2026 +29 ₽; при любом расхождении — откат §3–§4 v1. Перезапрос WB и аудит не запускаются.
+> после ближайшего прогона витрины — `post` Q1–Q7, `ad_spend_financial_rub` за 07.2026 +108 ₽,
+> за 09.2026 +29 ₽, гейт-наборы без новых FAIL против базовой линии; при любом расхождении — откат §3–§4 v1. Перезапрос WB и аудит не запускаются.
 
 ## Не входит (отдельная задача)
 Регулярный аудит `loadWbAdsCostsAudit` (D−45…D−8) по расписанию — **только после** v2: с v2 его
