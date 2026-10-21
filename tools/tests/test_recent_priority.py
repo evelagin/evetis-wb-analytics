@@ -237,6 +237,7 @@ def test_no_eligible_recent_leaf_returns_cooldown_wait_without_stop_or_dispatch(
     overlay,_=policy(p.m);monkeypatch.setattr(P,'load',lambda *a,**k:overlay)
     eligible='2026-10-09T09:00:00+00:00'
     monkeypatch.setattr(H.Backend,'quota',lambda *a:dict(status='WAITING',allowance=0,eligible_at=eligible,basis='SOURCE_COOLDOWN'))
+    monkeypatch.setattr(H.Backend,'performance_cooldown',lambda *a:None)     # the once-per-wake read: no class cooldown
     out,_=H.wake(p.b,p.m['hash'])
     assert out['status']=='WAITING' and out['eligible_at']==eligible and not p.dispatches
     assert not any(r['kind']=='STOPPED' for r in p.b.store.history(p.m['hash']))
@@ -254,3 +255,30 @@ def test_monitoring_counts_the_same_exact_acceptances_as_the_stop_gate(monkeypat
     assert P.monitoring(b,m,records,{},p,NOW)['windows']['RECENT_180']['unresolved_STOP']==1
     monkeypatch.setattr(importlib.import_module('tools.tenancy.'+module),'load',lambda *a:[dict(stop_hash=D.digest(stop))])
     assert P.monitoring(b,m,records,{},p,NOW)['windows']['RECENT_180']['unresolved_STOP']==0
+
+
+def test_class_cooldown_is_read_once_and_skips_only_performance_leaves(pilot,monkeypatch):
+    """Heldi 21.10 rehearsal: with the shared Performance cooldown active, every ads leaf cost a full
+    preflight+quota (~55 s) only to return WAITING; 15 of them preceded Supplies and exhausted the wake."""
+    p=pilot;catalog(p)
+    i=next(i for i,x in enumerate(p.m['programs']) if x.get('accepted_qualification_plan'))
+    _,it=item(p,i);proof=completion(p,i,it['plan'],attempts=0)
+    proof['reused_qualification']=dict(root=BF.QF.ROOT,plan_id=BF.QF.SKU,terminal_reconciliation_hash='8'*64)
+    p.b.store.commit(p.m['hash'],'CHUNK_PLAN',i,it,p.b.clock())
+    p.b.store.commit(p.m['hash'],'CHUNK_COMPLETE',i,proof,p.b.clock())
+    overlay,_=policy(p.m);monkeypatch.setattr(P,'load',lambda *a,**k:overlay)
+    eligible='2026-10-09T09:00:00+00:00';reads=[];evaluated=[]
+    monkeypatch.setattr(H.Backend,'performance_cooldown',lambda *a:reads.append(1) or eligible)
+    real=H.leaf_wake
+    def leaf(backend,manifest,index,*a,**k):
+        evaluated.append(manifest['programs'][index]['entity']);return real(backend,manifest,index,*a,**k)
+    monkeypatch.setattr(H,'leaf_wake',leaf)
+    monkeypatch.setattr(H.Backend,'quota',lambda *a:dict(status='WAITING',allowance=0,eligible_at=eligible,basis='SOURCE_COOLDOWN'))
+    out,_=H.wake(p.b,p.m['hash'])
+    assert reads==[1] and out['status']=='WAITING' and not p.dispatches
+    assert evaluated and not any(e in H.PERFORMANCE for e in evaluated)
+    assert not any(r['kind']=='STOPPED' for r in p.b.store.history(p.m['hash']))
+    reads.clear();evaluated.clear()
+    monkeypatch.setattr(H.Backend,'performance_cooldown',lambda *a:reads.append(1) or None)
+    H.wake(p.b,p.m['hash'])
+    assert reads==[1] and any(e in H.PERFORMANCE for e in evaluated)          # no class cooldown: evaluated as before

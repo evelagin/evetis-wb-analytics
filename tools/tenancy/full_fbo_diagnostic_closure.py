@@ -129,6 +129,7 @@ def load(b,m,records):
 
 def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,security_hash,cloud=False):
     from tools.tenancy import full_controller as H,full_leaf_recovery as FL,orchestration_contract as O,recent_priority as RP,full_runtime_handoff as FH
+    if cloud:getattr(b.store,'refresh_snapshot',lambda:None)()   # see STOPs of other executions too
     records=b.store.history(m['hash']);plan=next(z['payload'] for z in records if z['kind']=='CHUNK_PLAN' and z['sequence']==index)
     sh=b.store.history(plan['shard_root'],max_records=F.MAX_LEAF_RECORDS)
     i=next(z for z in sh if z['kind']=='DISPATCH_INTENT' and z['sequence']==sequence);r=next(z for z in sh if z['kind']=='DISPATCH_RECEIPT' and z['sequence']==sequence);doc=i['payload']['plan'];rc=r['payload']['receipt'];rp=doc['runtime_plan'];run=rc['run_id'];gen=rc['lease_generation']
@@ -186,8 +187,10 @@ def observe(b,m,index,sequence,*,owner_decision_sha256,qualification_hash,securi
     from tools.tenancy import full_cooldown_recovery as FC,full_policy_bootstrap_recovery as PB,full_pretransport_recovery as PT,full_first_receipt_recovery as FR,full_controller_closure_recovery as CR,full_fbo_zero_effect_recovery as ZE
     accepted=load(b,m,records)+FL.load(b,m,records)+FC.load(b,m,records)+PB.load(b,m,records)+PT.load(b,m,records)+FR.load(b,m,records)+CR.load(b,m,records)+ZE.load(b,m,records)
     if cloud:
-        from tools.tenancy import full_pre_authority_gate_recovery as PAG
-        covered={z['stop_hash'] for z in accepted if 'stop_hash' in z}|{h for z in accepted if 'stop_hashes' in z for h in z['stop_hashes']}|{z['stop_hash'] for z in PAG.load(b,m,records)}
+        # The one shared acceptance set (a private list here omitted STOP819, f507,
+        # R1 and R2), revalidated fresh: this decision replaces a global STOP.
+        from tools.tenancy import stop_acceptance as SA
+        covered=SA.accepted_hashes(b,m,records,quarantines=load(b,m,records),fresh=True)
         if {D.digest(z) for z in records if z['kind']=='STOPPED'}-covered!={D.digest(stop[0])}:fail('another global STOP blocks automatic local isolation')
     source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];r=qualified_release(b,m,source)
     if r.get('fbo_source_isolation_version')!=1 or r['verification'].get('fbo_source_isolation_adapter')!='PASS':fail('local-isolation/diagnostic image unqualified')
