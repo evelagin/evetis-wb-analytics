@@ -124,8 +124,9 @@ def observe(b,m,stop_hash,*,index,owner_decision_sha256,qualification_hash,secur
     if not isinstance(run_id,str) or not run_id.startswith('bf-') or type(lease_generation) is not int:fail('page receipt identity malformed')
     for k in PAGE_KINDS:
         if f'BFQ_{shard}_{page:010d}_{k}' not in listing:fail('page fence absent')
-    if any(n.startswith(f'BFQ_{shard}_{page+1:010d}_') for n in listing):fail('next page authority exists')
-    if not when(listing[f'BFQ_{shard}_{page:010d}_RECONCILED'][1])<stopped_at:fail('page reconciled after terminal stop')
+    fences=[int(n[len(shard)+5:len(shard)+15]) for n in listing if n.startswith('BFQ_'+shard+'_') and n[len(shard)+5:len(shard)+15].isdigit()]
+    if not fences or max(fences)!=page:fail('next page authority exists')
+    if not started<=when(listing[f'BFQ_{shard}_{page:010d}_RECONCILED'][1])<stopped_at:fail('page not reconciled inside the terminal wake')
     cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',b.c['project_id']])[:16]
     leases={int(z.group(2)):n for n in listing if (z:=BF.CK.LEASE_RE.match(n)) and z.group(1)==cid}
     releases={int(n[len('LD_'+cid+'_'):]):n for n in listing if n.startswith('LD_'+cid+'_') and n[len('LD_'+cid+'_'):].isdigit()}
@@ -143,11 +144,17 @@ def observe(b,m,stop_hash,*,index,owner_decision_sha256,qualification_hash,secur
             at=F.stamp(z['createTime'])
             if at>=stopped_at:fail('source execution after terminal gate')
             if at>=started:
-                zenv={e['name']:e.get('value') for e in z.get('template',{}).get('containers',[{}])[0].get('env',[])}
+                zenv={e['name']:e.get('value') for e in ((z.get('template') or {}).get('containers') or [{}])[0].get('env',[])}
                 if zenv.get('INGESTION_RUN_ID')!=run_id:fail('foreign source execution during terminal wake')
     rows=b.select(f"SELECT ingestion_run_id FROM `{b.journal}` WHERE started_at>=@start LIMIT 1000",{'start':('TIMESTAMP',x['createTime'])})
+    if len(rows)>=1000:fail('journal window unbounded')
     if any(not isinstance(r.get('ingestion_run_id'),str) or not (r['ingestion_run_id']==run_id or r['ingestion_run_id'].startswith(run_id+'-u')) for r in rows):fail('foreign source journal during terminal wake')
     if b.select(f"SELECT ingestion_run_id FROM `{b.journal}` WHERE started_at>=@stop LIMIT 1",{'stop':('TIMESTAMP',stopped_at.isoformat())}):fail('source journal after terminal gate')
+    # The pilot ledger itself (independent of lease-table expiry): no checkpoint of a later lease or a foreign run since the wake.
+    ledger=f"`{b.c['project_id']}.{b.c['datasets']['tenant_ops']}.BACKFILL_CHECKPOINTS`"
+    foreign=b.select(f"SELECT COUNT(*) AS n FROM {ledger} WHERE updated_at>=@start AND entity!='orchestration' AND (lease_generation>@lease OR run_id!=@run)",
+                     {'start':('TIMESTAMP',x['createTime']),'lease':('INT64',lease_generation),'run':('STRING',run_id)})
+    if len(foreign)!=1 or foreign[0].get('n') not in (0,'0'):fail('pilot checkpoint beyond reconciled page')
     if D.digest(b.state(doc))!=recon['payload'].get('state_hash'):fail('reconciled page state changed')
     ss=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
     if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(z['state']!='PAUSED' for z in ss['jobs']):fail('owner freeze required')

@@ -77,7 +77,7 @@ def fixture():
         put(CC.names(m['hash'],gen)[1],{'kind':'controller_close','root':m['hash'][:16]},D.encoded(close),created+timedelta(minutes=10))
     put(C.descriptor_name(new['source_sha'],m['hash'],'PAUSED'),{},D.encoded(dict(settings=settings,release=new)),NOW-timedelta(hours=1))
     base,_=BF.resources(c)
-    ctx=dict(sched='PAUSED',journal_during=[{'ingestion_run_id':RUN},{'ingestion_run_id':RUN+'-u1616'}],journal_after=[],state=state,
+    ctx=dict(sched='PAUSED',journal_during=[{'ingestion_run_id':RUN},{'ingestion_run_id':RUN+'-u1616'}],journal_after=[],ledger_foreign=0,state=state,
         executions={JOB:[x,dict(name=JOB+'/executions/next',createTime=(started+timedelta(minutes=15)).isoformat(),completionTime=(started+timedelta(minutes=18)).isoformat(),succeededCount=1,taskCount=1)],
                     base+'/jobs/ozon-runtime-daily':[dict(name=base+'/jobs/ozon-runtime-daily/executions/page',createTime=(started-timedelta(seconds=13)).isoformat(),completionTime=(started+timedelta(seconds=85)).isoformat(),succeededCount=1,
                         template=dict(containers=[dict(env=[dict(name='INGESTION_RUN_ID',value=RUN),dict(name='ENTITIES',value='supplies')])]))]},
@@ -92,6 +92,7 @@ def fixture():
     def select(sql,params):
         if '@start' in sql and set(params)=={'start'}:return deepcopy(ctx['journal_during'])
         if '@stop' in sql and set(params)=={'stop'}:return deepcopy(ctx['journal_after'])
+        if 'BACKFILL_CHECKPOINTS' in sql and set(params)=={'start','lease','run'} and params['lease']==('INT64',LEASE) and params['run']==('STRING',RUN):return [{'n':ctx['ledger_foreign']}]
         raise AssertionError('unmocked query')
     def create(ds,n,labels,description):
         if n in objects:return False
@@ -145,6 +146,10 @@ def negatives():
     def runtime_active(f):f.ctx['executions'][JOB][1].pop('completionTime')
     def journal_after(f):f.ctx['journal_after']=[{'ingestion_run_id':RUN}]
     def journal_foreign(f):f.ctx['journal_during'].append({'ingestion_run_id':'bf-other-run'})
+    def journal_saturated(f):f.ctx['journal_during']=[{'ingestion_run_id':RUN}]*1000
+    def ledger_foreign(f):f.ctx['ledger_foreign']=1
+    def page_before_wake(f):f.objects[f'BFQ_{f.shard}_{PAGE:010d}_RECONCILED']=({},'',f.started-timedelta(seconds=1))
+    def later_fence_only(f):f.objects[f'BFQ_{f.shard}_{PAGE+7:010d}_RECONCILED']=({},'',f.started)
     def state_changed(f):f.ctx['state']=dict(f.ctx['state'],sequence=f.ctx['state'].get('sequence',0)+1)
     def scheduler_enabled(f):f.ctx['sched']='ENABLED'
     def unqualified_replacement(f):f.new.pop('terminal_gate_recovery_version');f.new['verification'].pop('terminal_gate_recovery_adapter')
@@ -153,7 +158,7 @@ def negatives():
     def other_stop(f):f.root.append(rec(f.m['hash'],'STOPPED',0,dict(reason='X')))
     def controller_succeeded(f):f.x.update(failedCount=0,succeededCount=1)
     return [next_page,next_fence,lease_beyond,lease_unreleased,lease_foreign_owner,claim_dispatched,claim_unclosed,runtime_after,runtime_foreign_during,
-            runtime_active,journal_after,journal_foreign,state_changed,scheduler_enabled,unqualified_replacement,page_not_persisted,stop_before_page,other_stop,controller_succeeded]
+            runtime_active,journal_after,journal_foreign,journal_saturated,ledger_foreign,page_before_wake,later_fence_only,state_changed,scheduler_enabled,unqualified_replacement,page_not_persisted,stop_before_page,other_stop,controller_succeeded]
 
 def negative_check():
     for fault in negatives():
@@ -216,7 +221,8 @@ def write_path_check():
         (dict(run_post=BF.TT.TableError('lost response')),'SOURCE_DISPATCH_BOUNDARY','CLOUD_METADATA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='UNKNOWN'),1),
         (dict(run_post=TransientReadError('read')),'SOURCE_DISPATCH_BOUNDARY','CLOUD_METADATA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='UNKNOWN'),1),
         (dict(receipt=TransientReadError('read')),'SOURCE_DISPATCH_BOUNDARY','CLOUD_METADATA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='PRESENT',receipt='UNKNOWN'),1),
-        (dict(receipt=KeyError('x')),'SOURCE_DISPATCH_BOUNDARY','SCHEMA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='PRESENT',receipt='UNKNOWN'),1)]
+        (dict(receipt=KeyError('x')),'SOURCE_DISPATCH_BOUNDARY','SCHEMA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='PRESENT',receipt='UNKNOWN'),1),
+        (dict(run_post=RuntimeError('unlisted')),'SOURCE_DISPATCH_BOUNDARY','SCHEMA',L(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='UNKNOWN'),1)]
     for kw,stage,category,ledger,posts in cases:
         run,counts,backend=dispatch_harness(**kw)
         try:run()
@@ -273,6 +279,12 @@ def main_check():
     diag=dict(version=1,stage='CONTROL_CLOSURE',category='CLOUD_METADATA')
     assert rc==2 and printed[-1]['diagnostic']==diag and commits[0][1]['diagnostic']==diag
     assert 'CONTROL_CLOSURE' in CD.STAGES
+    # A typed write-path STOP without RECONCILE context never enters automatic class-C recovery (no second STOP).
+    from tools.tenancy import full_leaf_recovery as FL
+    stop=rec('1'*64,'STOPPED',0,dict(reason='CONTROLLER_GATE_OR_EVIDENCE_FAILURE',controller_execution=EXEC,diagnostic=dict(version=1,stage='LEASE',category='EVIDENCE')))
+    probe=SimpleNamespace(store=SimpleNamespace(history=lambda *a,**k:(_ for _ in ()).throw(AssertionError('candidate search for a context-free STOP'))))
+    with patched(FL,'accepted_recoveries',lambda b,m,r:[]):
+        assert FL._recover_pending(probe,{'hash':'1'*64},[stop]) is None
     return 'PASS'
 
 def acceptance_check():

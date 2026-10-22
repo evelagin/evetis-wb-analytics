@@ -57,6 +57,10 @@ def write_boundary(effects):
         raise GateFailure('SOURCE_DISPATCH_BOUNDARY','CLOUD_METADATA',effects) from None
     except (ValueError,KeyError,TypeError,IndexError):raise GateFailure('SOURCE_DISPATCH_BOUNDARY','SCHEMA',effects) from None
     except OSError:raise GateFailure('SOURCE_DISPATCH_BOUNDARY','LOCAL_IO',effects) from None
+    except Exception:
+        # Any other failure after a sent write is still a typed STOP (never a traceback that leaves the claim open).
+        if not written(effects):raise
+        raise GateFailure('SOURCE_DISPATCH_BOUNDARY','SCHEMA',effects) from None
 
 
 @contextmanager
