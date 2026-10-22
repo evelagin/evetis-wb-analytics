@@ -33,6 +33,8 @@ export interface StockMetrics {
   qty_positive_rows: number;
   qty_zero_rows: number;
   aggregate_warehouse_rows: number;
+  /** Строк со складом-сентинелом (-999999 «Склад WB») — индикатор обезличивания (с 16.08.2026). */
+  anonymized_warehouse_rows: number;
   sum_quantity_all_t6: number;
   sum_quantity_physical_t6: number;
   distinct_keys: number;
@@ -134,7 +136,7 @@ export function normalizeT6(data: unknown[], ctx: NormalizeCtx): { rows: RawStoc
   const whSet = new Set<string>();
   const unmatched = new Set<string>();
   const seen = new Set<string>();
-  let qtyPos = 0, qtyZero = 0, agg = 0, sumAll = 0, sumPhys = 0, dup = 0;
+  let qtyPos = 0, qtyZero = 0, agg = 0, sumAll = 0, sumPhys = 0, dup = 0, anon = 0;
 
   for (const oo of data) {
     const o = oo as Rec;
@@ -165,7 +167,11 @@ export function normalizeT6(data: unknown[], ctx: NormalizeCtx): { rows: RawStoc
     });
 
     nmSet.add(nm);
-    if (whName) whSet.add(whName);
+    // PR-Mig1c: ключ склада — как в Apps Script (wh.key = код, иначе имя; WbStocksSnapshot.gs:94,318).
+    // Раньше считали по имени: до обезличивания разные склады с одним именем дали бы другой счёт.
+    const whKey = wh.code !== '' ? wh.code : whName;
+    if (whKey) whSet.add(whKey);
+    if (wh.anonymized) anon++;
     if (q > 0) qtyPos++; else qtyZero++;
     sumAll += q;
     if (!isAgg) sumPhys += q; else agg++;
@@ -178,8 +184,12 @@ export function normalizeT6(data: unknown[], ctx: NormalizeCtx): { rows: RawStoc
     metrics: {
       expected_rows: rows.length, unique_nm_ids: nmSet.size, warehouses_count: whSet.size,
       qty_positive_rows: qtyPos, qty_zero_rows: qtyZero, aggregate_warehouse_rows: agg,
+      anonymized_warehouse_rows: anon,
       sum_quantity_all_t6: sumAll, sum_quantity_physical_t6: sumPhys,
-      distinct_keys: seen.size, duplicate_keys: dup, unmatched_nm_ids: [...unmatched],
+      distinct_keys: seen.size, duplicate_keys: dup,
+      // PR-Mig1c: порядок как у Apps Script `Object.keys(unmatched)` — целочисленные ключи
+      // идут по возрастанию, а не в порядке вставки; иначе точная сверка manifest даёт FAIL.
+      unmatched_nm_ids: [...unmatched].sort((a, b) => Number(a) - Number(b)),
     },
   };
 }

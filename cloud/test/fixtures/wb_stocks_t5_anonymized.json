@@ -1,0 +1,42 @@
+{
+  "_comment": "Синтетический ответ T5 warehouse_remains /tasks/{id}/download в форме после обезличивания 16.08.2026: агрегат «Склад WB РФ», поимённые склады, три псевдо-строки. Значения выдуманы. Края: несопоставленный nm (999), дробное quantity (Тула 2.5), имя склада в поле warehouse с пробелами, строковые nmId/quantity/volume, товар без складов, товар без nmId.",
+  "create": { "data": { "taskId": "t5-task-0001" } },
+  "status": [
+    { "data": { "id": "t5-task-0001", "status": "processing" } },
+    { "data": { "id": "t5-task-0001", "status": "done" } }
+  ],
+  "download": [
+    {
+      "brand": "EVETIS", "subjectName": "Кремы", "vendorCode": "EVT-A", "nmId": 101,
+      "barcode": "2000000000011", "techSize": "0", "volume": 0.3,
+      "warehouses": [
+        { "warehouseName": "В пути до получателей", "quantity": 1 },
+        { "warehouseName": "В пути возвраты на склад WB", "quantity": 2 },
+        { "warehouseName": "Всего находится на складах", "quantity": 42 },
+        { "warehouseName": "Склад WB РФ", "quantity": 12 },
+        { "warehouseName": "Электросталь", "quantity": 30 }
+      ]
+    },
+    {
+      "brand": "EVETIS", "subjectName": "Кремы", "vendorCode": "EVT-Z", "nmId": 999,
+      "barcode": "2000000000028", "techSize": "0", "volume": "0.15",
+      "warehouses": [
+        { "warehouseName": "Всего находится на складах", "quantity": 5 },
+        { "warehouseName": "Склад WB РФ", "quantity": 3 },
+        { "warehouse": " Тула ", "quantity": 2.5 }
+      ]
+    },
+    {
+      "brand": "EVETIS", "subjectName": "Наборы", "vendorCode": "EVT-B", "nmId": "202",
+      "barcode": "2000000000035", "techSize": "0", "volume": 1,
+      "warehouses": []
+    },
+    {
+      "brand": "EVETIS", "subjectName": "Наборы", "vendorCode": "",
+      "barcode": "", "techSize": "",
+      "warehouses": [
+        { "warehouseName": "Склад WB РФ", "quantity": "0" }
+      ]
+    }
+  ]
+}

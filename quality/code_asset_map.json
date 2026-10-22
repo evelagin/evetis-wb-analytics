@@ -2,7 +2,7 @@
   "registry_version": 1,
   "comment": "Соответствие путей кода объектам данных, которые этот код производит. Для SQL соответствие выводится из текста (CREATE ... <ds>.<OBJ>) и здесь не дублируется. Для кода загрузчиков вывести его из текста нельзя — производитель объявлен в wb_ops.OPS_PIPELINE_REGISTRY.target_object и в cloud/src/loaders/registry.ts; значения ниже перенесены оттуда, а не назначены.",
   "prefixes": [
-    {"path": "cloud/src/loaders/stocks/", "pipeline": "stocks_cloudrun", "produces": ["wb_raw.RAW_WB_STOCKS__CR", "wb_raw.WB_STOCKS_SNAPSHOTS__CR"], "note": "shadow-контур; production-остатки грузит Apps Script"},
+    {"path": "cloud/src/loaders/stocks/", "pipeline": "stocks_cloudrun", "produces": ["wb_raw.RAW_WB_STOCKS__CR", "wb_raw.RAW_WB_STOCKS_T5__CR", "wb_raw.WB_STOCKS_SNAPSHOTS__CR"], "note": "shadow-контур (T6 + T5 при STOCKS_T5_MODE=on); production-остатки грузит Apps Script"},
     {"path": "cloud/src/loaders/mart/", "pipeline": "mart", "produces": ["wb_mart.MART_SKU_DAILY", "wb_mart.FACT_ORDERS", "wb_mart.FACT_SALES", "wb_mart.FACT_FINANCE", "wb_mart.FACT_ADS_SKU_DAILY", "wb_mart.FACT_ADS_COSTS_DAILY", "wb_mart.FACT_STOCKS_SNAPSHOT"]},
     {"path": "cloud/src/loaders/prices/", "pipeline": "wb_prices_observer", "produces": ["wb_raw.RAW_WB_PRICES", "wb_raw.WB_PRICES_OBSERVATIONS"]},
     {"path": "cloud/src/loaders/tariffs/", "pipeline": "wb_tariffs_loader", "produces": ["wb_raw.RAW_WB_TARIFFS", "wb_raw.WB_TARIFF_OBSERVATIONS"]},
