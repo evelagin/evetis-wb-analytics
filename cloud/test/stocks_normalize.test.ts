@@ -29,6 +29,20 @@ describe('extractT6Array', () => {
   });
 });
 
+describe('PR-Mig1c: порядок unmatched_nm_ids = Apps Script Object.keys', () => {
+  it('целочисленные nm — по возрастанию, а не в порядке строк T6', () => {
+    const data = [900002, 900001, 12].map((nm, i) => ({
+      nmId: nm, chrtId: i + 1, warehouseId: -999999, warehouseName: 'Склад WB', regionName: 'Склад WB',
+      quantity: 1, inWayToClient: 0, inWayFromClient: 0,
+    }));
+    const { metrics } = normalizeT6(data, { ...ctx, skuByNm: new Map() });
+    const asOrder: Record<string, boolean> = {};
+    for (const o of data) asOrder[String(o.nmId)] = true;
+    expect(metrics.unmatched_nm_ids).toEqual(Object.keys(asOrder));
+    expect(metrics.unmatched_nm_ids).toEqual(['12', '900001', '900002']);
+  });
+});
+
 describe('validateT6', () => {
   it('валидный пакет → ok, distinct=rows', () => {
     const v = validateT6(extractT6Array(fixture));
