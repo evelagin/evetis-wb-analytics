@@ -91,6 +91,38 @@ resource "google_bigquery_dataset" "this" {
     }
   }
 
+  # T6: клиент — READER только на analytics_share (user:/group: из реестра bi_access.principals).
+  dynamic "access" {
+    for_each = var.contract.client_access == null || each.key != var.contract.client_access.dataset_key ? [] : [for p in var.contract.client_access.principals : p if p.kind == "user"]
+    content {
+      role          = "READER"
+      user_by_email = access.value.email
+    }
+  }
+  dynamic "access" {
+    for_each = var.contract.client_access == null || each.key != var.contract.client_access.dataset_key ? [] : [for p in var.contract.client_access.principals : p if p.kind == "group"]
+    content {
+      role           = "READER"
+      group_by_email = access.value.email
+    }
+  }
+  # T6: авторизованные датасеты (только VIEWS) по реальным зависимостям вью пакета sql/tenant/ozon:
+  # вью датасета viewer_key читают источники source_key от имени самих вью, клиент к источникам прав
+  # не получает. Все датасеты уже существуют у действующего арендатора (первый apply нового арендатора
+  # с client_access — после создания датасетов, т.е. вторым прогоном).
+  dynamic "access" {
+    for_each = var.contract.client_access == null ? [] : [for e in var.contract.client_access.authorized_views : e if e.source_key == each.key]
+    content {
+      dataset {
+        dataset {
+          project_id = var.contract.project_id
+          dataset_id = var.contract.datasets[access.value.viewer_key]
+        }
+        target_types = ["VIEWS"]
+      }
+    }
+  }
+
   depends_on = [google_project_service.this, google_service_account.sql_deployer, google_service_account.control,
   google_service_account.backfill, google_project_iam_custom_role.backfill]
 }
