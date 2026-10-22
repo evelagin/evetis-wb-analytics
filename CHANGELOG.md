@@ -12,6 +12,27 @@ Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 he
 во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
 и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
 
+## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
+
+Дальше Mig1 (T6) к полному повтору боевого `wbStocksSnapshotCore_`. Подробно — `docs/MIG1_STOCKS_PARITY.md`, раздел Mig1c.
+- `cloud/src/loaders/stocks`: T5 warehouse_remains (create → status → download), детализация в `RAW_WB_STOCKS_T5__CR`,
+  контроль T5↔T6 и детектор доступности; семантика 1:1 с Apps Script. Включается `STOCKS_T5_MODE=on`
+  (по умолчанию `off` = поведение до Mig1c), чтобы образ можно было выкатить раньше схемы.
+- Колонки: `WB_STOCKS_SNAPSHOTS__CR` + 11 NULLABLE-колонок в конец (`anonymized_warehouse_rows`, `t5_*`, `t6_comparable`,
+  `availability_*`) — зеркало прод-manifest. Новая таблица `RAW_WB_STOCKS_T5__CR` (зеркало `RAW_WB_STOCKS_T5`).
+  Прод-таблицы и Apps Script не меняются.
+- `source_api` T6 в Cloud Run = `WB_API_STOCKS` (как в прод-RAW). `warehouses_count` — по ключу склада, как в Apps Script.
+- Повтор COMPLETE-снимка больше не затирает `control_status` на `REUSED`.
+- `sql/mig1c_stocks_t5_parity.sql` — построчная сверка T5/T6 и поколоночная сверка manifest shadow↔prod.
+- Terraform: `wb-stocks-shadow` зависит от таблицы T5, расширенного manifest и IAM (`depends_on` + ссылка
+  `STOCKS_T5_TABLE` на ресурс); порядок колонок `WB_STOCKS_SNAPSHOTS__CR` приведён к живой таблице, новые колонки
+  строго в конце. `-target=google_cloud_run_v2_job.wb_stocks_shadow` втягивает ровно 4 изменения (2 add, 2 change).
+- `infra.yml`: необязательный вход `expected_changes` — plan сохраняется в файл, `tools/tf_plan_guard.py` сверяет
+  точный состав «адрес=действие», apply применяет ТОТ ЖЕ планфайл. Пустой вход — прежнее поведение.
+  Обёртка `setup-terraform` в infra-джобах выключена (ломала `terraform show -json`).
+- Сверка паритета: односторонние ключи T5 раскрываются (QUERY 3) и засчитываются как дрейф только при
+  независимом движении того же товара; необъяснённый ключ — FAIL.
+
 ## 2026-10-21 — UNITKA / STORE P&L: мониторинг полезного результата (НЕ применено, политики выключены)
 
 По приёмке 20.10.2026 (F). `infra/terraform/unitka_monitoring.tf`: 7 лог-метрик и 8 политик, все с `enabled = false`:

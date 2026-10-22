@@ -243,6 +243,7 @@
   "wb_raw.RAW_WB_SALES_RETURNS": "TIER3",
   "wb_raw.RAW_WB_STOCKS": "TIER3",
   "wb_raw.RAW_WB_STOCKS_T5": "TIER3",
+  "wb_raw.RAW_WB_STOCKS_T5__CR": "TIER3",
   "wb_raw.RAW_WB_STOCKS__CR": "TIER3",
   "wb_raw.RAW_WB_SUPPLIES": "TIER3",
   "wb_raw.RAW_WB_SUPPLIES_GOODS": "TIER3",

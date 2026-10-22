@@ -16,6 +16,12 @@ locals {
     STOCKS_SNAPSHOT_TABLE = "WB_STOCKS_SNAPSHOTS__CR"
     REF_SKU_TABLE         = "REF_SKU_MASTER"
     WB_ANALYTICS_SECRET   = "WB_TOKEN_ANALYTICS"
+    # PR-Mig1c: T5 + контроль T5/T6 + детектор доступности. Включается ТЕМ ЖЕ apply, что создаёт
+    # RAW_WB_STOCKS_T5__CR и колонки manifest (bigquery.tf): до этого образ работает как раньше.
+    # Откат без пересборки образа — STOCKS_T5_MODE = "off".
+    STOCKS_T5_MODE = "on"
+    # Ссылка на ресурс (а не строка) — неявная зависимость: env не изменится раньше создания таблицы.
+    STOCKS_T5_TABLE = google_bigquery_table.raw_wb_stocks_t5_cr.table_id
   }
   # PR-Mart3b-2: env оркестратора витрины. mart НЕ ходит в WB API/секрет и не пишет __CR;
   # LOADER_NAME=mart переопределяет stocks-дефолт (ключ LOADER_RUNS/логи должны быть 'mart').
@@ -87,7 +93,15 @@ resource "google_cloud_run_v2_job" "wb_stocks_shadow" {
       client_version,
     ]
   }
-  depends_on = [google_project_service.enabled]
+  # PR-Mig1c: STOCKS_T5_MODE=on обязан появиться в Job только ПОСЛЕ готовности всего, что пишет T5:
+  # таблицы детализации, расширенного manifest и права записи shadow-SA. depends_on упорядочивает
+  # apply и при -target=этот Job втягивает эти ресурсы в план (prod-ресурсов среди них нет).
+  depends_on = [
+    google_project_service.enabled,
+    google_bigquery_table.raw_wb_stocks_t5_cr,
+    google_bigquery_table.wb_stocks_snapshots_cr,
+    google_bigquery_table_iam_member.shadow_write_raw_t5_cr,
+  ]
 }
 
 resource "google_cloud_run_v2_job" "wb_stocks_prod" {
