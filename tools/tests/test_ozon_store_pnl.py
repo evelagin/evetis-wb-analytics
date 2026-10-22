@@ -42,11 +42,11 @@ def bare(name: str) -> str:
 MAP_ROW = re.compile(r"\(\s*(?:STRUCT\()?\s*(-?\d+)(?: AS type_id)?,\s*'([^']*)'(?: AS operation_name)?,\s*'([A-Z_]+)'(?: AS pnl_class)?,"
                      r"\s*(NULL|'[A-Z_]+')(?: AS pnl_column)?,\s*'([A-Z_]+)'(?: AS date_basis)?,\s*'([A-Z_]+)'")
 OZON_TYPES = {1, 6, 9, 10, 12, 15, 25, 28, 29, 30, 32, 33, 38, 39, 41, 45, 46, 47, 48, 52, 54, 57, 59, 71, 74, 75,
-              76, 77, 78, 79, 96, 98, 116}
+              76, 77, 78, 79, 96, 98, 116, 125}
 COLUMN_TYPES = {  # чертёж D3 B.2: колонка → типы
     "E": {32}, "F": {29, 28, 98, 30}, "G": {59, 45, 9, 6, 78}, "H": {1}, "I": {79}, "J": {116, 74, 48},
     "K": {39, 38, 10, 15, 71}, "L": {41, 75, 33}, "L_OR_M": {54}, "N": {47, 96}, "O": {12}, "P": {77}, "Q": {46},
-    "R": {76}, "S": {57}, "T": {52}, "U": {25}, "ECON_ONLY": {-1},
+    "R": {76}, "S": {57, 125}, "T": {52}, "U": {25}, "ECON_ONLY": {-1},
 }
 
 
@@ -54,9 +54,9 @@ def map_rows():
     return [m.groups() for m in MAP_ROW.finditer(body("V_OZON_FINANCE_OPERATION_MAP"))]
 
 
-def test_map_covers_all_33_ozon_types_and_synthetic_rows_once():
+def test_map_covers_all_34_ozon_types_and_synthetic_rows_once():
     ids = [int(r[0]) for r in map_rows()]
-    assert len(ids) == len(set(ids)) == 35
+    assert len(ids) == len(set(ids)) == 36
     assert set(ids) == OZON_TYPES | {-1, -2}
 
 
@@ -70,7 +70,7 @@ def test_each_type_lands_in_exactly_one_blueprint_column():
 
 def test_classes_and_date_bases():
     rows = {int(r[0]): r for r in map_rows()}
-    account = {12, 77, 46, 76, 57, 52, 25}
+    account = {12, 77, 46, 76, 57, 125, 52, 25}
     ads = {41, 75, 33, 54, 47, 96}
     for tid, (_, _, cls, _, basis, sign) in rows.items():
         if tid in account:
@@ -327,3 +327,16 @@ def test_type29_sign_any_only_sign_changed():
     assert row and row.groups() == ("Доставка до места выдачи", "DIRECT_SKU", "F", "ORDER_MONTH", "ANY")
     for t in (28, 98, 30):
         assert re.search(rf"\({t}, '[^']*', 'DIRECT_SKU', 'F', 'ORDER_MONTH', 'NEG',", b), t
+
+
+def test_type125_analytics_lite_is_account_level_other_cost():
+    """OWNER ACK 2026-10-20: «Аналитика Lite» — прочие расходы кабинета (колонка S, без Premium), месяц начисления.
+    Имя — точное из RAW (контроль NAME_CHANGED), знак NEG (положительная строка — сигнал), сумма в карте не задана;
+    Premium (52, SERVICE_PERIOD) и корректировка 57 не меняются."""
+    b = body("V_OZON_FINANCE_OPERATION_MAP")
+    rows = {int(r[0]): r for r in map_rows()}
+    assert rows[125] == ("125", "Аналитика Lite", "ACCOUNT_LEVEL", "'S'", "BOOKING_MONTH", "NEG")
+    assert rows[52] == ("52", "Подписка Premium", "ACCOUNT_LEVEL", "'T'", "SERVICE_PERIOD", "NEG")
+    assert rows[57] == ("57", "Корректировка стоимости услуг", "ACCOUNT_LEVEL", "'S'", "BOOKING_MONTH", "ANY")
+    row = re.search(r"\(125, [^\n]*\),\n", b).group(0)
+    assert "4990" not in row and "4 990" not in row

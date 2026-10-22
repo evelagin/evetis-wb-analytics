@@ -24,6 +24,18 @@ WAITS = frozenset({'WAIT_ACTIVE_CONTROLLER','WAIT_ACTIVE_RUNTIME',
 
 
 def fail(reason):raise BF.B.EvidenceError('controller cadence: '+reason)
+
+
+class UnclosedTerminalHolder(BF.B.EvidenceError):
+    """The latest control claim's holder is terminal without the canonical closure.
+
+    Same message as before (closed diagnostics unchanged); the claim identity lets
+    the entrypoint recognise a repeat of an already recorded incident.
+    """
+    def __init__(self, claim, holder):
+        super().__init__('controller cadence: terminal controller missing canonical closure')
+        self.unclosed_holder={'generation':claim['generation'],'claim_hash':claim['hash'],
+                              'created_at':claim['created_at'],'holder_completion':holder.get('completionTime')}
 def sealed(value):return dict(value,hash=D.digest(value))
 
 
@@ -147,8 +159,9 @@ def claim_value(claim):
     return {'kind':'controller_wake','root':claim['root'][:16]},D.encoded(claim)
 
 
-def validate_claim(backend,value,*,allow_closed_history=False):
-    p=backend.c['orchestration']['cadence'];env=backend.c['orchestration']['job']['env']
+def claim_fields(backend,value):
+    """Exact claim bytes, digest, scope and metadata; release-independent."""
+    p=backend.c['orchestration']['cadence']
     claim=parse(value[1] or '{}') if value else {}
     if set(claim)!=CLAIM_FIELDS or type(claim['version']) is not int or claim['version']!=1:
         fail('controller claim unavailable/unknown')
@@ -157,7 +170,17 @@ def validate_claim(backend,value,*,allow_closed_history=False):
         fail('claim scope/release differs')
     names(claim['root'],claim['generation'])
     if value!=claim_value(claim) or at(claim['created_at'])>backend.clock():fail('claim metadata differs')
-    if (claim['source'],claim['image'])!=(env['CONTROLLER_SOURCE_SHA'],env['CONTROLLER_IMAGE']):
+    return claim
+
+
+def historical(backend,claim):
+    env=backend.c['orchestration']['job']['env']
+    return (claim['source'],claim['image'])!=(env['CONTROLLER_SOURCE_SHA'],env['CONTROLLER_IMAGE'])
+
+
+def validate_claim(backend,value,*,allow_closed_history=False):
+    claim=claim_fields(backend,value)
+    if historical(backend,claim):
         if not allow_closed_history:fail('claim scope/release differs')
         historical_closed_claim(backend,claim)
     return claim
@@ -233,10 +256,19 @@ def acquire(backend):
     if sorted(found)!=list(range(1,max(found,default=0)+1)):fail('controller authority generation gap')
     latest=max(found,default=0)
     if latest:
-        previous=validate_claim(backend,backend.tables.get_table(ds,names(root,latest)[0]),allow_closed_history=True)
+        value=backend.tables.get_table(ds,names(root,latest)[0])
+        previous=claim_fields(backend,value)
+        if historical(backend,previous) and not closed(backend,previous):
+            # A prior release's holder without its closure stays STOP. A terminal one is
+            # the same typed incident as within a release (2026-10-19: claim 1344 of
+            # 4012f58 under the replacement), so its repeat is recognised, not re-recorded.
+            holder=backend.request('GET',BF.RUN_API+'/'+previous['execution'])
+            if holder.get('name')==previous['execution'] and holder.get('completionTime'):raise UnclosedTerminalHolder(previous,holder)
+            fail('historical controller lacks canonical closure')
+        previous=validate_claim(backend,value,allow_closed_history=True)
         if not closed(backend,previous):
             holder=execution(backend,backend.request('GET',BF.RUN_API+'/'+previous['execution']))
-            if holder.get('completionTime'):fail('terminal controller missing canonical closure')
+            if holder.get('completionTime'):raise UnclosedTerminalHolder(previous,holder)
             if holder['name']==backend.current_execution:fail('ambiguous claim creation; never retry')
             execution(backend,holder,active=True)
             raise OverlapWait('SKIP_AUTHORITY_HELD')

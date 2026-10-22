@@ -130,6 +130,10 @@ export interface LogisticsRateRow {
   sales: number | null; // только у магазина: уникальные srid с «Продажа»
   windowFrom: string;
   windowTo: string;
+  /** Только у магазина: уникальные srid, входящие и в sales, и в refusals (продажа с последующим возвратом). null у SKU и при отсутствии поля. */
+  saleRefusalOverlap: number | null;
+  /** Только у магазина: уникальные srid с одним плечом в окне, без «Продажи» и с «Возвратом» (хвост доказанного возврата: продажа ушла за начало окна). null у SKU и при отсутствии поля. */
+  returnTail: number | null;
 }
 
 export interface CommissionRateRow {
@@ -409,7 +413,7 @@ export class UnitkaBq {
   async logisticsRates(): Promise<LogisticsRateRow[]> {
     const rows = await this.runner.query(
       `SELECT nm_id, shipments, direct_rate, refusals, reverse_rate, forward_sum, reverse_sum, n_logistics, n_delivery,
-              delivery_component_sum, sales, window_from, window_to
+              delivery_component_sum, sales, window_from, window_to, sale_refusal_overlap, return_tail
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_LOGISTICS_RATES')} ORDER BY nm_id`,
     );
     return rows.map((r) => ({
@@ -426,6 +430,8 @@ export class UnitkaBq {
       sales: num(r.sales),
       windowFrom: date(r.window_from) ?? '',
       windowTo: date(r.window_to) ?? '',
+      saleRefusalOverlap: num(r.sale_refusal_overlap),
+      returnTail: num(r.return_tail),
     }));
   }
 

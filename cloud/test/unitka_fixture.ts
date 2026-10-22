@@ -49,11 +49,11 @@ export function facts(lcd = LCD): FactRow[] {
 export function logistics(over: Partial<LogisticsRateRow> = {}): LogisticsRateRow[] {
   const rows: LogisticsRateRow[] = [{
     nmId: 0, shipments: 597, directRate: 60.5487, refusals: 52, reverseRate: 32.5256, forwardSum: 36147.59, reverseSum: 1691.33,
-    nLogistics: 444, nDelivery: 153, deliveryComponentSum: 9408.77, sales: 545, windowFrom: '2026-08-12', windowTo: LCD, ...over,
+    nLogistics: 444, nDelivery: 153, deliveryComponentSum: 9408.77, sales: 545, windowFrom: '2026-08-12', windowTo: LCD, saleRefusalOverlap: 0, returnTail: 0, ...over,
   }];
   // SKU #1 — своя ставка (n=226), SKU #2 — ниже порога (n=7)
-  rows.push({ nmId: NM_IDS[0]!, shipments: 226, directRate: 65.9829, refusals: 14, reverseRate: 32, forwardSum: 14912.13, reverseSum: 448, nLogistics: 163, nDelivery: 63, deliveryComponentSum: 0, sales: null, windowFrom: '2026-08-12', windowTo: LCD });
-  rows.push({ nmId: NM_IDS[1]!, shipments: 7, directRate: 82.74, refusals: 2, reverseRate: 30, forwardSum: 579.21, reverseSum: 60, nLogistics: 4, nDelivery: 3, deliveryComponentSum: 0, sales: null, windowFrom: '2026-08-12', windowTo: LCD });
+  rows.push({ nmId: NM_IDS[0]!, shipments: 226, directRate: 65.9829, refusals: 14, reverseRate: 32, forwardSum: 14912.13, reverseSum: 448, nLogistics: 163, nDelivery: 63, deliveryComponentSum: 0, sales: null, windowFrom: '2026-08-12', windowTo: LCD, saleRefusalOverlap: null, returnTail: null });
+  rows.push({ nmId: NM_IDS[1]!, shipments: 7, directRate: 82.74, refusals: 2, reverseRate: 30, forwardSum: 579.21, reverseSum: 60, nLogistics: 4, nDelivery: 3, deliveryComponentSum: 0, sales: null, windowFrom: '2026-08-12', windowTo: LCD, saleRefusalOverlap: null, returnTail: null });
   return rows;
 }
 

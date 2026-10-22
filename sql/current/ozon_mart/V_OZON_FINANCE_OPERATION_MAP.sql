@@ -48,6 +48,7 @@ SELECT * FROM UNNEST([
   (46, 'Размещение товаров на складах Ozon', 'ACCOUNT_LEVEL', 'Q', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'D0: кабинет'),
   (76, 'Страхование товара от массовых повреждений', 'ACCOUNT_LEVEL', 'R', 'BOOKING_MONTH', 'ANY', NULL, NULL, 'D0: кабинет; положительные строки - корректировка'),
   (57, 'Корректировка стоимости услуг', 'ACCOUNT_LEVEL', 'S', 'BOOKING_MONTH', 'ANY', NULL, NULL, 'D0: 2025-10, нетто 0'),
+  (125, 'Аналитика Lite', 'ACCOUNT_LEVEL', 'S', 'BOOKING_MONTH', 'NEG', NULL, NULL, 'OWNER ACK 2026-10-20: подписка «Аналитика Lite» - прочие расходы кабинета без Premium, месяц начисления; первый случай 2026-10-19, период подписки в unit_number'),
   (52, 'Подписка Premium', 'ACCOUNT_LEVEL', 'T', 'SERVICE_PERIOD', 'NEG', NULL, NULL, 'D0: период подписки в unit_number dd.mm.yy-dd.mm.yy'),
   (25, 'Товарная компенсация', 'ACCOUNT_LEVEL', 'U', 'BOOKING_MONTH', 'POS', NULL, NULL, 'D0: доход кабинета'),
   (-1, 'Возврат покупателя: сторно реализации (экономический блок без услуг)', 'DIRECT_SKU', 'ECON_ONLY', 'ORDER_MONTH', 'ZERO', NULL, NULL, 'D1 PR #339: amount_rub = 0, деньги в seller_base/commission'),
