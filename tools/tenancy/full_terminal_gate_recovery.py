@@ -28,6 +28,17 @@ FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','st
     'owner_decision_sha256','qualification_hash','security_hash','effect_hash','source_probe_hash',
     'protected_root_hashes','predicates','verified_at','source_budget','historical_cause','hash'})
 PAGE_KINDS=('DISPATCH_INTENT','DISPATCH_RECEIPT','RECONCILED')
+FRESH_SECONDS=900
+# The publication is three logical operations: two create-only markers and one root record. The root
+# record (DurableRecords.commit) is itself two HTTP writes — the checkpoint row, then its BFR_ commit
+# marker — so an exact owner writer admits four HTTP writes, each once (see publication_writes()).
+PUBLICATION=('authority_marker','certificate_marker','root_record')
+def publication_writes(b,p,m):
+    """The four HTTP writes of publish(), in order: (dataset, table) — the executor's exact write set."""
+    from tools.tenancy import durable_plan as D
+    record=dict(version=D.VERSION,root_hash=m['hash'],kind=KIND,sequence=0,payload=p)
+    return [(b.c['datasets']['ref'],authority(p)),(b.c['datasets']['tenant_locks'],certificate(p)),
+            (b.c['datasets']['tenant_ops'],'BACKFILL_CHECKPOINTS'),(b.c['datasets']['tenant_locks'],'BFR_'+D.digest(record))]
 def fail(s):raise BF.B.EvidenceError('terminal gate recovery: '+s)
 def sealed(p):return dict(p,hash=D.digest(p))
 def authority(p):return 'BFTG_AUTH_'+p['root']+'_'+p['stop_hash']
@@ -172,11 +183,13 @@ def observe(b,m,stop_hash,*,index,owner_decision_sha256,qualification_hash,secur
         owner_decision_sha256=owner_decision_sha256,qualification_hash=qualification_hash,security_hash=security_hash,effect_hash=D.digest(facts),source_probe_hash=source_probe_hash,
         protected_root_hashes=sorted(D.digest(z) for z in records),predicates=dict.fromkeys(PREDICATES,True),verified_at=b.clock().isoformat(),source_budget=0,historical_cause=CAUSE)
     p=sealed(p);validate(p,b,m,records);return p,facts
+def fresh(b,p):
+    if not 0<=(b.clock()-F.stamp(p['verified_at'])).total_seconds()<=FRESH_SECONDS:fail('fresh proof required')
 def publish(b,p,m):
-    header(p,m)
-    if not 0<=(b.clock()-F.stamp(p['verified_at'])).total_seconds()<=900:fail('fresh proof required')
-    fresh,_=observe(b,m,p['stop_hash'],index=p['index'],**{k:p[k] for k in ('owner_decision_sha256','qualification_hash','security_hash','source_probe_hash')})
-    if any(p[k]!=fresh[k] for k in FIELDS-{'hash','verified_at'}):fail('fresh predicates changed')
+    header(p,m);fresh(b,p)
+    again,_=observe(b,m,p['stop_hash'],index=p['index'],**{k:p[k] for k in ('owner_decision_sha256','qualification_hash','security_hash','source_probe_hash')})
+    if any(p[k]!=again[k] for k in FIELDS-{'hash','verified_at'}):fail('fresh predicates changed')
+    fresh(b,p)   # the bound is re-checked right before the first write: a slow re-observation publishes nothing
     for ds,n in ((b.c['datasets']['ref'],authority(p)),(b.c['datasets']['tenant_locks'],certificate(p))):
         if b.tables.get_table(ds,n) is None:b.tables.create_marker(ds,n,*value(p))
         if b.tables.get_table(ds,n)!=value(p):fail('publication conflict')

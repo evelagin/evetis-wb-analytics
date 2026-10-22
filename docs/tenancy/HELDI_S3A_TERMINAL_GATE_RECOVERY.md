@@ -74,8 +74,30 @@ FBO V2 и T6 в выпуск не входят.
 `lease generation beyond reconciled page`). Наблюдение на production: ~100 с после прогрева,
 прогрев claims (2×1415 GET) — в пакете параллельный.
 
-## Порядок в production (по отдельному OWNER ACK)
+## Порядок в production (по отдельному OWNER ACK, исполнитель `package_s3a.py`)
 
-Preflight → сертификат (observe, read-only) → readback → деплой PAUSED-дескриптора →
-`publish` (2 маркера + 1 запись корня) → ENABLED → resume только `tenant-backfill-tick`.
-Успех — реальная отправка и сверка страницы 104 без нового STOP и сущности текущего дня.
+Предусловия `observe`/`publish` нового типа: замена уже **развёрнута PAUSED** (PAUSED-дескриптор
+`BF_SPEC_<new>_<root>_PAUSED`, `BFCURHANDOFF_<new>` и 6 ассоциаций установлены, Job переведён на новый
+образ с `HISTORICAL_SCHEDULER_STATE=PAUSED`), релиз замены зарегистрирован в репо (`terminal_gate_recovery_version`
++ адаптер PASS), 4/4 Scheduler PAUSED, ни одного активного исполнения, исполнение `qhv6d` сохранено
+в Cloud Run, рабочее дерево владельца = квалифицированный source. Поэтому сертификат не может быть
+выписан до PAUSED-деплоя.
+
+1. `merge` — слияние PR на квалифицированном head (образ собран из него).
+2. `preflight` (чтение) — живой Job = gen 54/`39bc343`, маркеры S‴-a отсутствуют, замороженный срез
+   корня и шарда листа 465 совпадает с `inputs/FROZEN_BOUNDARY.json`, `qhv6d` сохранён.
+3. `markers` — 8 маркеров PAUSED-стадии (create-only).
+4. `validate` → `deploy` — `validateOnly`, затем UpdateJob на образ S‴-a с PAUSED.
+5. `readback` (чтение) — Job gen 55 на новом образе, маркеры точны, ENABLED-дескриптора нет.
+6. `recovery` — одна стадия: `TG.observe` (read-only, ≤15 мин) → проверка свежести → `TG.publish`
+   (повторное наблюдение, повторная проверка свежести перед первой записью, 4 HTTP-записи: маркер
+   полномочия в `ref`, сертификат в `tenant_locks`, строка `BACKFILL_CHECKPOINTS`, маркер `BFR_`).
+   Closure claim 1414 не переписывается.
+7. `recovery-readback` (чтение) — сертификат принят единым `stop_acceptance`, нерешённых STOP нет,
+   claim 1414 по-прежнему `STOPPED/0`.
+8. `bootstrap` → `bootstrap-readback` — одно исполнение PAUSED-контроллера, ожидается
+   `QUIESCENT_PAUSED` без отправок.
+9. `enabled-marker` → `enable-validate` → `enable` → `enabled-readback` — ENABLED-дескриптор и Job gen 56.
+10. `resume` — только `tenant-backfill-tick`; `ozon-daily/fast/weekly` остаются PAUSED.
+11. `observe` — реальные циклы: успех = отправка и сверка страницы 104 без нового STOP и сущности
+    текущего дня; любое нарушение журналируется как `PAUSE_CONDITION` → `emergency-pause`.

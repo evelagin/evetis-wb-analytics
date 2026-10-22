@@ -66,8 +66,12 @@ def fixture():
         rec(shard,'RECONCILED',PAGE,dict(sequence=1626,state_hash=D.digest(state),persisted_reconciled=True,source_complete=False))]
     cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',c['project_id']])[:16];objects={}
     def put(n,labels,desc,created):objects[n]=(labels,desc,created)
-    put('BFR_'+D.digest(stop),{'kind':'stopped','root':m['hash'][:16]},'',stopped)
-    for k,minutes in (('DISPATCH_INTENT',1),('DISPATCH_RECEIPT',2),('RECONCILED',7)):put(f'BFQ_{shard}_{PAGE:010d}_{k}',{'kind':k.lower(),'root':shard[:16]},'',started+timedelta(minutes=minutes))
+    # Exact durable-store markers (as DurableRecords.commit writes them): a BFR_ commit marker per record, a BFQ_ fence per page record.
+    minutes={'DISPATCH_INTENT':1,'DISPATCH_RECEIPT':2,'RECONCILED':7}
+    for r in root+sh:
+        h=D.digest(r);at=stopped if r is stop else started+timedelta(minutes=minutes.get(r['kind'],-30))
+        put('BFR_'+h,{'root':r['root_hash'][:16],'kind':r['kind'].lower()},D.encoded({'root_hash':r['root_hash'],'record_hash':h,'kind':r['kind'],'sequence':r['sequence']}),at)
+        if r in sh:put(f"BFQ_{shard}_{PAGE:010d}_{r['kind']}",{'root':shard[:16],'kind':r['kind'].lower()},D.encoded({'record_hash':h}),at)
     put(f'L_{cid}_{LEASE:04d}',{'owner':RUN,'until':str(int((started+timedelta(hours=2)).timestamp()))},json.dumps({'mode':'BOUNDED_PILOT','ack_hash':doc['ack_hash']}),started)
     put(f'LD_{cid}_{LEASE:04d}',{'owner':RUN},json.dumps({'operation':receipt['operation'],'ack_hash':doc['ack_hash']}),started+timedelta(minutes=7))
     for gen,(exe,status,dispatches,created) in enumerate(((JOB+'/executions/prev','MONITORING',1,started-timedelta(minutes=6)),(EXEC,'STOPPED',0,started+timedelta(minutes=2)),(JOB+'/executions/next','MONITORING',0,started+timedelta(minutes=17))),1):
@@ -173,6 +177,28 @@ def publish_check():
     f=fixture();p=observe(f);before=deepcopy(f.root)
     with observing(f):q=R.publish(f.b,p,f.m)
     assert q==p and f.effects==[('marker',R.authority(p)),('marker',R.certificate(p)),('record',R.KIND)]
+    # Freshness expiring between the re-observation and the first write publishes nothing (0 writes).
+    g=fixture();p2=observe(g);ticks=[NOW,NOW+timedelta(seconds=R.FRESH_SECONDS+1)];g.b.clock=lambda:ticks[0] if len(ticks)>1 and ticks.pop(0) else ticks[0]
+    try:
+        with observing(g):R.publish(g.b,p2,g.m)
+    except BF.B.EvidenceError as e:assert 'fresh proof required' in str(e) and not g.effects
+    else:raise AssertionError('expired proof published')
+    # Exact HTTP write set of a publication through the real durable store: 2 markers + commit (BFR_ marker + checkpoint row) = 4.
+    h=fixture();p3=observe(h);writes=[]
+    class Meta:
+        def list_tables(self,ds,**kw):return [(n,v[0],v[2]) for n,v in h.objects.items()]
+        def get_table(self,ds,n):return h.objects[n][:2] if n in h.objects else None
+        def create_marker(self,ds,n,labels,description):
+            writes.append((ds,n))
+            if n in h.objects:return False
+            h.objects[n]=(labels,description,NOW);return True
+    rows=[dict(plan_hash=r['root_hash'],backfill_id=D.digest(r)[:16],evidence_json=D.encoded(r)) for r in h.root+h.sh]   # committed rows behind the exact markers
+    def write_record(row):writes.append(('tenant_ops','BACKFILL_CHECKPOINTS'));rows.append(row)
+    def select(c_,sql,params):return [{'evidence_json':r['evidence_json']} for r in rows if r['plan_hash']==params['root'][1] and ('record' not in params or r['backfill_id']==params['record'][1])]
+    h.b.tables=Meta();h.b.store=D.DurableRecords(h.b.c,Meta(),select,write_record)
+    assert h.b.store.history(h.m['hash'])==sorted(h.root,key=lambda r:(r['sequence'],r['kind'],D.digest(r)))
+    with observing(h):R.publish(h.b,p3,h.m)
+    assert writes==R.publication_writes(h.b,p3,h.m) and len(writes)==4,writes
     assert f.root[:len(before)]==before and len(f.root)==len(before)+1 and f.root[-1]['kind']==R.KIND and f.root[-1]['sequence']==0
     with repo_with(f.new):assert R.load(f.b,f.m,f.root)==[p]
     from tools.tenancy import stop_acceptance as SA
