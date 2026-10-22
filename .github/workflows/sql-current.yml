@@ -20,7 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     # Integrated full tools regression reached 96% at the measured 30-minute limit.
     # Preserve every test and final SQL validation; allow the complete run to finish.
-    timeout-minutes: 40
+    # 2026-10-22: after #364 the full run again stopped at 96% at 40 minutes (main 065d687,
+    # PR #369/#370). Limit raised to 60; no test is excluded or shortened.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
