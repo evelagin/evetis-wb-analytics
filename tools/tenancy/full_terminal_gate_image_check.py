@@ -156,13 +156,20 @@ def negatives():
     def later_fence_only(f):f.objects[f'BFQ_{f.shard}_{PAGE+7:010d}_RECONCILED']=({},'',f.started)
     def state_changed(f):f.ctx['state']=dict(f.ctx['state'],sequence=f.ctx['state'].get('sequence',0)+1)
     def scheduler_enabled(f):f.ctx['sched']='ENABLED'
-    def unqualified_replacement(f):f.new.pop('terminal_gate_recovery_version');f.new['verification'].pop('terminal_gate_recovery_adapter')
+    def unqualified_replacement(f):
+        f.new.pop('terminal_gate_recovery_version');f.new['verification'].pop('terminal_gate_recovery_adapter')
+        name=C.descriptor_name(f.new['source_sha'],f.m['hash'],'PAUSED');settings=dict(release=f.new['source_sha'],root_hash=f.m['hash'],scheduler_state='PAUSED')
+        f.objects[name]=({},D.encoded(dict(settings=settings,release=f.new)),f.objects[name][2])
+    def descriptor_absent(f):del f.objects[C.descriptor_name(f.new['source_sha'],f.m['hash'],'PAUSED')]
+    def descriptor_foreign_source(f):
+        name=C.descriptor_name(f.new['source_sha'],f.m['hash'],'PAUSED');settings=dict(release=f.new['source_sha'],root_hash=f.m['hash'],scheduler_state='PAUSED')
+        f.objects[name]=({},D.encoded(dict(settings=settings,release=dict(f.new,source_sha='e'*40))),f.objects[name][2])
     def page_not_persisted(f):f.sh[-1]['payload']['persisted_reconciled']=False
     def stop_before_page(f):f.objects[f'BFQ_{f.shard}_{PAGE:010d}_RECONCILED']=({},'',f.stopped+timedelta(seconds=1))
     def other_stop(f):f.root.append(rec(f.m['hash'],'STOPPED',0,dict(reason='X')))
     def controller_succeeded(f):f.x.update(failedCount=0,succeededCount=1)
     return [next_page,next_fence,lease_beyond,lease_unreleased,lease_foreign_owner,claim_dispatched,claim_unclosed,runtime_after,runtime_foreign_during,
-            runtime_active,journal_after,journal_foreign,journal_saturated,ledger_foreign,page_before_wake,later_fence_only,state_changed,scheduler_enabled,unqualified_replacement,page_not_persisted,stop_before_page,other_stop,controller_succeeded]
+            runtime_active,journal_after,journal_foreign,journal_saturated,ledger_foreign,page_before_wake,later_fence_only,descriptor_absent,descriptor_foreign_source,state_changed,scheduler_enabled,unqualified_replacement,page_not_persisted,stop_before_page,other_stop,controller_succeeded]
 
 def negative_check():
     for fault in negatives():

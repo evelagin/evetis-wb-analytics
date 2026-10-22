@@ -173,7 +173,10 @@ def observe(b,m,stop_hash,*,index,owner_decision_sha256,qualification_hash,secur
     accepted=sorted(SA.accepted_hashes(b,m,records,fresh=True))
     rp=RP.load(b,m)
     if rp is None:fail('owner priority authority absent')
-    source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];new=parse((BF.REPO/'infra/tenant/releases/backfill'/f'{source}.json').read_text());O.verify_artifact_source(new,BF.REPO)
+    # The replacement is read from its exact installed PAUSED/ENABLED descriptor (a candidate's own registration
+    # file cannot precede its build); qualified_release verifies it against the packaged implementation.
+    from tools.tenancy import full_fbo_diagnostic_closure as LQ
+    source=b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'];new=LQ.qualified_release(b,m,source)
     if new.get('terminal_gate_recovery_version')!=1 or new.get('verification',{}).get('terminal_gate_recovery_adapter')!='PASS':fail('replacement not qualified')
     facts=dict(controller=x,claims=sorted(claims),page=dict(index=index,shard=shard,sequence=page,receipt=D.digest(receipt),reconciliation=D.digest(recon),lease_generation=lease_generation),
         journal_rows=len(rows),accepted=accepted,recent=D.digest(rp),stopped_at=stopped_at.isoformat())
