@@ -28,6 +28,7 @@ SOURCE_FILES = (
     'full_retained_pretransport_recovery.py','full_inventory_gate_recovery.py','heldi_r1r2_image_check.py',
     'fixtures/heldi_r1_boundary.json','fixtures/heldi_r2_boundary.json','fixtures/heldi_leaf465_seq68_intent.json',
     'stop_acceptance.py','wake_budget.py','controller_wake_budget_image_check.py',
+    'full_terminal_gate_recovery.py','full_terminal_gate_image_check.py',
 )
 
 
@@ -100,6 +101,10 @@ def block(c, settings, repo, release=None):
     exact_f507='exact_f507_recovery_version' in release
     exact_r1r2='exact_r1r2_recovery_version' in release
     wake_budget='controller_wake_budget_version' in release
+    terminal_gate='terminal_gate_recovery_version' in release
+    if terminal_gate:
+        expected.add('terminal_gate_recovery_version')
+        if not wake_budget or type(release['terminal_gate_recovery_version']) is not int or release['terminal_gate_recovery_version']!=1:raise ValueError('unqualified terminal gate recovery')
     if wake_budget:
         expected.add('controller_wake_budget_version')
         if release.get('schema_version')!=4 or not exact_r1r2 or not extended or type(release['controller_wake_budget_version']) is not int or release['controller_wake_budget_version']!=1:raise ValueError('unqualified controller wake budget')
@@ -140,6 +145,7 @@ def block(c, settings, repo, release=None):
     if exact_f507:required.add('exact_f507_recovery')
     if exact_r1r2:required.add('exact_r1r2_recovery')
     if wake_budget:required.add('controller_wake_budget_adapter')
+    if terminal_gate:required.add('terminal_gate_recovery_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

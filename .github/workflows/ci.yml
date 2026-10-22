@@ -130,6 +130,10 @@ jobs:
         run: python -m pytest -q tools/tests/test_heldi_r1r2_recovery.py
       - name: exact Heldi R1/R2 recovery image check (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.heldi_r1r2_image_check
+      - name: Heldi S‴-a terminal-gate recovery and typed write path (offline)
+        run: python -m pytest -q tools/tests/test_full_terminal_gate_recovery.py
+      - name: Heldi S‴-a recovery image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.full_terminal_gate_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 

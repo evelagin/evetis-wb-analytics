@@ -52,6 +52,7 @@ def _revalidate(backend, manifest, records, quarantines, gate):
     from tools.tenancy import full_controller_closure_recovery as CR, full_pre_authority_gate_recovery as PAG
     from tools.tenancy import full_fbo_diagnostic_closure as LQ
     from tools.tenancy import current_recon_recovery as CURRENT_RECON, f507_recovery as EXACT_F507
+    from tools.tenancy import full_terminal_gate_recovery as TG
     has = lambda module: any(r['kind'] == module.KIND for r in records)
     with (gate('MANIFEST_ROOT') if gate else contextlib.nullcontext()):
         accepted = FL.load(backend, manifest, records) if has(FL) else []
@@ -71,6 +72,7 @@ def _revalidate(backend, manifest, records, quarantines, gate):
     accepted += CURRENT_RECON.load(backend, manifest, records)
     accepted += EXACT_F507.load(backend, manifest, records)
     accepted += R2.load(backend, manifest, records)
+    accepted += TG.load(backend, manifest, records)
     return accepted, failed, rejected, zero_effect
 
 
