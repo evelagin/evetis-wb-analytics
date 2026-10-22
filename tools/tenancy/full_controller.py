@@ -231,7 +231,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_','BFTG_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -425,7 +425,10 @@ def _dispatch(backend, manifest, index, doc, root, sequence):
         received.append(receipt)
     with gate('SOURCE_DISPATCH_BOUNDARY'):backend.start(doc,before,after)
     if len(prepared)!=1 or len(received)!=1:
-        raise BF.B.EvidenceError('full dispatch receipt unproven; never repeat Run POST')
+        from tools.tenancy.controller_diagnostics import GateFailure,WRITES
+        effects=getattr(backend,'dispatch_effects',None) or dict.fromkeys(WRITES,'UNKNOWN')
+        effects=dict(effects,intent='PRESENT' if prepared else effects['intent'],receipt='PRESENT' if received else effects['receipt'])
+        raise GateFailure('SOURCE_DISPATCH_BOUNDARY','EVIDENCE',effects)   # never repeat Run POST
     return {'status':'DISPATCHED','index':index,'sequence':sequence,'source_dispatches':1,
             'current_entity':doc['runtime_plan']['entity'],'from':doc['runtime_plan']['from'],'to':doc['runtime_plan']['to']}
 
