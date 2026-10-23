@@ -54,22 +54,30 @@ def context(plans,i):return {'index':i,'shard':plans[i]['shard_root'],'sequence'
 
 def classify_check():
     m,plans=leaves()
-    assert CI.classify(leaf_stop(m,465),m,plans)==('LOCAL',465)
-    assert CI.classify(typed_stop(m,'RUNTIME_TERMINAL',context(plans,465)),m,plans)==('LOCAL',465)
-    assert CI.classify(typed_stop(m,'RECONCILIATION_APPEND',context(plans,10),dict.fromkeys(('lease','checkpoint','intent','run','receipt'),'ABSENT')),m,plans)==('LOCAL',10)
+    assert CI.classify(leaf_stop(m,465),m)==('CANDIDATE',465)
+    assert CI.classify(typed_stop(m,'RUNTIME_TERMINAL',context(plans,465)),m)==('CANDIDATE',465)
+    assert CI.classify(typed_stop(m,'RECONCILIATION_APPEND',context(plans,10),dict.fromkeys(('lease','checkpoint','intent','run','receipt'),'ABSENT')),m)==('CANDIDATE',10)
     untyped=rec(m['hash'],'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':'projects/x/executions/qhv6d'})
-    globals_=[untyped,leaf_stop(m,999),leaf_stop(m,11),typed_stop(m,'RUNTIME_TERMINAL'),
+    bool_version=typed_stop(m,'RUNTIME_TERMINAL',context(plans,465));bool_version['payload']['diagnostic']['version']=True
+    globals_=[untyped,leaf_stop(m,999),typed_stop(m,'RUNTIME_TERMINAL'),bool_version,
               typed_stop(m,'RUNTIME_TERMINAL',context(plans,465),dict(lease='PRESENT',checkpoint='PRESENT',intent='PRESENT',run='UNKNOWN',receipt='ABSENT')),
-              typed_stop(m,'PERSISTED_SOURCE_RECONCILIATION',dict(context(plans,465),shard='e'*64)),
               rec('f'*64,'STOPPED',0,{'reason':'FULL_DISPATCH_OR_REPORT_EVIDENCE_UNPROVEN','index':465}),
               rec(m['hash'],'STOPPED',0,{'reason':'DISPATCH_RECEIPT_UNPROVEN'})]
-    globals_+=[typed_stop(m,s,context(plans,465)) for s in SHARED_STAGES]
+    globals_+=[typed_stop(m,s_,context(plans,465)) for s_ in SHARED_STAGES]
     for stop in globals_:
-        assert CI.classify(stop,m,plans)[0]=='GLOBAL',stop['payload']
+        assert CI.classify(stop,m)[0]=='GLOBAL',stop['payload']
     return 'PASS'
 
 
-def fake(m,*,ledger_rows,lease_tables,releases,schedulers=None,hold=False,pending=(),current=False):
+def shard_series(shard,n,*,reconciled=True,extra=()):
+    out=[]
+    for q in range(1,n+1):
+        out.append(rec(shard,'DISPATCH_INTENT',q,{}));out.append(rec(shard,'DISPATCH_RECEIPT',q,{}))
+        if reconciled or q<n:out.append(rec(shard,'RECONCILED',q,{}))
+    return out+[rec(shard,k,0,{}) for k in extra]
+
+
+def fake(m,*,ledger_rows,lease_tables,releases,schedulers=None,hold=False,pending=(),current=False,shards=None,report=None):
     c=BF.target('client_001');cid=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',c['project_id']])[:16]
     objects={f'L_{cid}_{g:04d}':({'owner':o,'until':'1'},'{}') for g,o in lease_tables.items()}
     objects.update({f'LD_{cid}_{g:04d}':({'owner':o},'{}') for g,o in releases.items()})
@@ -78,27 +86,40 @@ def fake(m,*,ledger_rows,lease_tables,releases,schedulers=None,hold=False,pendin
     def request(method,url,body=None):
         assert method=='GET' and url==BF.SCHED_API+'/'+base+'/jobs?pageSize=100','only the Scheduler list is read'
         return {'jobs':[{'name':base+'/jobs/'+n,'state':s} for n,s in sched.items()]}
-    b=SimpleNamespace(c=c,clock=lambda:NOW,request=request,tables=SimpleNamespace(list_tables=lambda ds,**kw:[(n,v[0],NOW) for n,v in objects.items()],get_table=lambda ds,n:objects.get(n)))
+    shards=shards or {}
+    b=SimpleNamespace(c=c,clock=lambda:NOW,request=request,tables=SimpleNamespace(list_tables=lambda ds,**kw:[(n,v[0],NOW) for n,v in objects.items()],get_table=lambda ds,n:objects.get(n)),
+        store=SimpleNamespace(history=lambda shard,**kw:deepcopy(shards.get(shard,[]))),state=lambda doc:{'progress':({'report':report} if report else {})})
     rows=[{'evidence_json':'{"mode": "BOUNDED_PILOT"}','lease_generation':g,'run_id':o} for g,o in ledger_rows]+[{'evidence_json':'{"kind": "STOPPED"}','lease_generation':None,'run_id':None}]
     return b,rows,hold,list(pending),current
 
 
-def admit(m,plans,unresolved,setup):
-    from tools.tenancy import recent_priority as RP
+def admit(m,plans,unresolved,setup,records=None):
+    from tools.tenancy import recent_priority as RP,full_controller as H
     b,rows,hold,pending,current=setup
-    with patched(CI,'ledger',lambda _b:(rows,hold)),patched(RP,'pending_receipts',lambda _b,_c:pending),patched(CI,'current_receipt',lambda _b,run,g:current):
-        return CI.admit(b,m,[],unresolved,plans,{},set())
+    with patched(CI,'ledger',lambda _b:(rows,hold)),patched(RP,'pending_receipts',lambda _b,_c:pending),patched(CI,'current_receipt',lambda _b,run,g:current),\
+         patched(H,'reconstruct_plans',lambda *a:plans),patched(H,'completed',lambda *a:{}):
+        return CI.admit(b,m,records or [],unresolved,set())
 
 
 def admission_check():
-    m,plans=leaves();local=[leaf_stop(m,465)]
-    settled=dict(ledger_rows=[(344,'bf-a'),(345,'bf-b'),(345,'bf-b')],lease_tables={345:'bf-b'},releases={344:'bf-a',345:'bf-b'})
+    m,plans=leaves();local=[leaf_stop(m,465)];sh=plans[465]['shard_root']
+    settled=dict(ledger_rows=[(344,'bf-a'),(345,'bf-b'),(345,'bf-b')],lease_tables={345:'bf-b'},releases={344:'bf-a',345:'bf-b'},shards={sh:shard_series(sh,3)})
     ok=admit(m,plans,local,fake(m,**settled))
     assert ok['admitted'] is True and ok['local_full_leaves']==[465] and ok['lease']=='RELEASED',ok
     # lease tables expire after 7 days: the durable ledger + release marker still prove release
     assert admit(m,plans,local,fake(m,**dict(settled,lease_tables={})))['admitted'] is True
+    assert admit(m,plans,local,fake(m,**dict(settled,report={'phase':'POLL'})))['admitted'] is True
+    typed=[typed_stop(m,'RECONCILIATION_APPEND',context(plans,465))]
+    assert admit(m,plans,typed,fake(m,**settled))['admitted'] is True
     cases={
-        'global STOP among locals':(local+[rec(m['hash'],'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':'x'})],dict(settled),'GLOBAL_STOP'),
+        'global STOP among locals':(local+[rec(m['hash'],'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':'x'})],dict(settled),'GLOBAL_STOP: untyped'),
+        'leaf intent without receipt (unknown Run POST)':(local,dict(settled,shards={sh:shard_series(sh,3)[:-2]}),'GLOBAL_STOP: leaf intent/receipt not reconciled'),
+        'leaf receipt not reconciled':(local,dict(settled,shards={sh:shard_series(sh,3,reconciled=False)}),'GLOBAL_STOP: leaf intent/receipt not reconciled'),
+        'leaf shard STOP':(local,dict(settled,shards={sh:shard_series(sh,2,extra=('STOPPED',))}),'GLOBAL_STOP: leaf shard holds'),
+        'leaf closure record':(local,dict(settled,shards={sh:shard_series(sh,2,extra=('DISPATCH_ZERO_EFFECT_FAILED_CLOSED',))}),'GLOBAL_STOP: leaf shard holds'),
+        'ambiguous async report':(local,dict(settled,report={'phase':'INTENT'}),'GLOBAL_STOP: leaf asynchronous report'),
+        'diagnostic of another shard':([typed_stop(m,'RECONCILIATION_APPEND',dict(context(plans,465),shard='e'*64))],dict(settled),'GLOBAL_STOP: diagnostic shard'),
+        'leaf without plan':([leaf_stop(m,11)],dict(settled),'GLOBAL_STOP: leaf plan absent'),
         'open historical intent':(local,dict(settled,pending=[(465,{})]),'HISTORICAL_AUTHORITY_OPEN'),
         'operator hold':(local,dict(settled,hold=True),'OPERATOR_HOLD'),
         'unreleased newest lease (unknown POST)':(local,dict(settled,lease_tables={345:'bf-b',346:'bf-c'}),'LEASE_HELD_WITHOUT_CURRENT_RECEIPT'),
@@ -113,6 +134,37 @@ def admission_check():
         assert got['admitted'] is False and got['blocker'].startswith(blocker),(name,got)
     held=dict(settled,lease_tables={345:'bf-b',346:'bf-cur'},current=True)
     assert admit(m,plans,local,fake(m,**held))['lease']=='HELD'                       # drained by this wake first
+    # an untyped STOP is decided from the records alone: no read at all
+    def no_read(*a,**k):raise AssertionError('read before classification')
+    b=SimpleNamespace(store=SimpleNamespace(history=no_read),tables=SimpleNamespace(list_tables=no_read,get_table=no_read),request=no_read,clock=lambda:NOW)
+    from tools.tenancy import full_controller as H
+    with patched(H,'reconstruct_plans',no_read),patched(CI,'ledger',no_read):
+        got=CI.admit(b,m,[],[rec(m['hash'],'STOPPED',0,{'reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE','controller_execution':'x'})],set())
+    assert got=={'admitted':False,'blocker':'GLOBAL_STOP: untyped or non-leaf controller STOP'}
+    return 'PASS'
+
+
+def evidence_readers_check():
+    """The real ledger reader and CURRENT receipt reader (not patched)."""
+    from tools.tenancy import current_controller as CUR
+    rows=[{'lease_generation':1}];seen=[]
+    with patched(CI.TL,'read_state',lambda c,t:seen.append(1) or ('chain','decisions',rows,'ops',False)):
+        assert CI.ledger(SimpleNamespace(c={},tables=None))==(rows,False) and seen
+    day='2026-10-23';p={'hash':'a'*64}
+    def items(*specs):return {e:{'shard':'s-'+e} for e,_ in specs}
+    def run(specs):
+        hist={'s-'+e:h for e,h in specs}
+        b=SimpleNamespace(store=SimpleNamespace(history=lambda shard,**k:hist[shard]))
+        with patched(CUR,'policy',lambda _b:p),patched(CUR,'cycles',lambda _b,_p:{day:{}}),patched(CUR,'plans',lambda _b,_p,_d:([],items(*specs))):
+            return CI.current_receipt(b,'bf-cur',346)
+    def series(run_id='bf-cur',g=346,reconciled=False):
+        h=[rec('s','DISPATCH_INTENT',1,{}),rec('s','DISPATCH_RECEIPT',1,{'receipt':{'run_id':run_id,'lease_generation':g}})]
+        return h+([rec('s','RECONCILED',1,{})] if reconciled else [])
+    assert run([('catalog',series())]) is True
+    assert run([('catalog',series()),('stocks',series())]) is False                 # two shards claim the lease
+    assert run([('catalog',series(reconciled=True))]) is False                      # reconciled: lease should be released
+    assert run([('catalog',series(g=345))]) is False and run([('catalog',series(run_id='bf-x'))]) is False
+    assert run([('catalog',[rec('s','DISPATCH_INTENT',1,{})])]) is False             # intent without receipt
     return 'PASS'
 
 
@@ -134,6 +186,26 @@ def gate_check():
     calls.clear();typed=typed_stop(m,'RUNTIME_TERMINAL',context(plans,465))
     run([typed],{'admitted':True,'local_full_leaves':[465]})
     assert calls[:2]==['FR','FL'] and calls[-1]=='admit'                                        # automatic recovery still first
+    return 'PASS'
+
+
+def wake_check():
+    """Admitted mode: CURRENT only; no FULL drain, leaf or dispatch, no T5 repair; result names the local STOP."""
+    from tools.tenancy import full_controller as H,full_fbo_diagnostic_closure as LQ,controller_cadence as CC,current_controller as CUR,recent_priority as RP
+    m,plans=leaves();calls=[]
+    base=SimpleNamespace(store=SimpleNamespace(history=lambda root:[rec(m['hash'],'FULL_MANIFEST',0,m),leaf_stop(m,465)]))
+    def forbidden(name):
+        def f(*a,**k):raise AssertionError(name+' in admitted mode')
+        return f
+    def run(admission,current):
+        with patched(H,'only_manifest',lambda r:m),patched(H,'Backend',lambda b,mm:SimpleNamespace(clock=lambda:NOW,store=base.store)),\
+             patched(H,'verify_authority',lambda *a:None),patched(CC,'acquire',lambda b:None),patched(H,'historical_gate',lambda *a:(None,admission)),\
+             patched(H,'completed',lambda *a:{}),patched(H,'reconstruct_plans',lambda *a:plans),patched(H,'repair_t5_completions',lambda *a:calls.append('repair')),\
+             patched(CUR,'wake',lambda *a:current),patched(RP,'load',forbidden('FULL queue')),patched(H,'leaf_wake',forbidden('leaf_wake')),patched(H,'_dispatch',forbidden('dispatch')):
+            return H.wake(base,m['hash'])[0]
+    adm={'admitted':True,'local_full_leaves':[465]}
+    assert run(adm,None)=={'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP','local_full_leaves':[465]} and not calls
+    assert run(adm,{'status':'DISPATCHED','source_dispatches':1})=={'status':'DISPATCHED','source_dispatches':1} and not calls
     return 'PASS'
 
 
@@ -167,7 +239,7 @@ def selection_check():
 
 
 def check():
-    for name,fn in (('classify',classify_check),('admission',admission_check),('gate',gate_check),('selection',selection_check)):
+    for name,fn in (('classify',classify_check),('admission',admission_check),('evidence',evidence_readers_check),('gate',gate_check),('wake',wake_check),('selection',selection_check)):
         assert fn()=='PASS',name
     return {'current_independence_adapter':'PASS'}
 

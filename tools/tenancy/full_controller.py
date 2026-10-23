@@ -495,7 +495,7 @@ def historical_gate(backend,manifest,records,quarantines,quarantined):
     recovered=(FR.recover_pending(backend,manifest,records) or FL.recover_pending(backend,manifest,records)) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
     if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},None
     from tools.tenancy import current_independence as CI
-    admission=CI.admit(backend,manifest,records,unresolved,reconstruct_plans(records,manifest,backend.clock()),completed(records,manifest),quarantined)
+    admission=CI.admit(backend,manifest,records,unresolved,quarantined)
     backend.current_independence=admission
     if admission['admitted'] is not True:return {'status':'STOPPED','source_dispatches':0},None
     return None,admission
