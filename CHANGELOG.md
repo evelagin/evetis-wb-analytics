@@ -209,6 +209,25 @@ OWNER ACK 2026-10-14 (branch/PR only). Док: `docs/finance/OZON_STORE_PNL_PHAS
 - Экономика витрины, FIN CONTRACT V2, SQL P&L магазина и классификация удержаний не меняются: меняется только КОГДА
   пересобирается витрина (полный REPLACE, как и раньше).
 
+## 2026-10-11 — Ozon D1: сторно реализации без services больше не теряется при загрузке начислений (НЕ развёрнуто)
+
+- `pipelines/ozon/runtime/entities.py::_finance_rows` (единственный сборщик `RAW_OZON_FINANCE_ACCRUAL`): блок
+  `commission` продукта без `services` (null или `[]`) пишется своей строкой с синтетическим `type_id` −1 (сторно
+  реализации) или −2 (реализация без услуг). Структура колонок RAW не меняется; новое — значения `type_id < 0` и
+  заполненный `quantity` у этих строк. Строки с услугами — байт в байт как раньше. Описание —
+  `docs/ozon/OZON_FINANCE_TAXONOMY_V1.md` §3b.
+- Контроль денег суток в `finance_accrual`: Σ `total_amount` = Σ разобранного. Обычный режим EVETIS: расхождение —
+  ERROR `OZON_FINANCE_CONTROL_MISMATCH`, начисление с несогласованными знаками — карантин только его строк и ERROR
+  `OZON_FINANCE_ACCRUAL_QUARANTINED`; прогон остаётся OK с кодом в `OZON_INGESTION_RUNS.error_message` (Юнитка не
+  замерзает). Строгий режим арендатора — отказ, как раньше. Тестовый эмулятор compat отдаёт `total_amount`.
+- `infra/terraform/ozon_ingestion.tf`: лог-политика `ozon_runtime_finance_control` — ERROR с кодом `OZON_FINANCE_*`
+  в заданиях `ozon-runtime-*` → письмо в канал Юнитки (DRO-1 читает только статус прогона). Не применена.
+- `tools/ozon_d1_finance_repair.py`: PLAN (только чтение; область — сутки ≤ сегодня МСК − 31, вне окна загрузки) /
+  APPLY (по отпечатку, только добавление, перечитывание содержимого) / ROLLBACK (ASSERT числа строк до удаления);
+  поштучный план — только вне Git. Ремонт не применён.
+- Влияние на `FCT_OZON_PNL_MONTHLY` после ремонта: выручка и комиссия возвращённых отправлений обнуляются в месяце
+  заказа; `realized_qty` и себестоимость не меняются (отдельное решение, см. PR).
+
 ## 2026-10-11 — WB FIRE / LOST INVENTORY: списание утраченного товара и компенсация WB в P&L магазина (НЕ развёрнуто)
 
 Док: `docs/finance/WB_FIRE_LOSS_2026-10-11.md`.
