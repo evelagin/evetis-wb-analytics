@@ -167,24 +167,29 @@ def test_ads_silent_skips(entities, captured_merges, monkeypatch, scenario, kwar
     assert captured_merges == []
 
 
-def test_single_campaign_csv_is_still_lost_without_flag(entities, captured_merges, monkeypatch,
-                                                        lenient):
-    """P2-6 без флага — прежнее поведение EVETIS: CSV одной кампании не разбирается (пусто)."""
+def test_single_campaign_csv_is_loaded_without_flag(entities, captured_merges, monkeypatch, lenient):
+    """P2-6 закрыт и для EVETIS (D2): CSV одной кампании разбирается, строки не теряются."""
     _perf(monkeypatch, entities, report=(200, REPORT_CSV))
     entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
-    assert captured_merges[-1][1] == []
+    rows = captured_merges[-1][1]
+    assert [(r["date"], r["campaign_id"], r["sku"], r["attributed_spend_rub"]) for r in rows] == [
+        ("2026-09-01", "111", "500", 1.0)]
 
 
 # Строгий режим T5 больше не отвергает длинное окно и CSV одной кампании, а исправляет их:
 # tests pipelines/ozon/tests/test_t5_runtime_blockers.py (окна по датам МСК, P2-5/P2-6).
 
 
-def test_ads_long_window_without_flag_keeps_old_single_request(entities, captured_merges,
-                                                               monkeypatch, lenient):
-    """Без флага окно не дробится и не проверяется: запрос один, как раньше."""
-    calls = _perf(monkeypatch, entities)
-    entities.ads_sku_daily("rt-x", "ts", "2026-01-01", "2026-03-05")
-    assert calls.count("/api/client/statistics") == 1
+def test_ads_long_window_without_flag_is_split_by_moscow_days(entities, captured_merges,
+                                                              monkeypatch, lenient):
+    """D2: и без флага окно > 60 суток режется по суткам МСК (раньше — один запрос, ноль строк)."""
+    header_only = REPORT_CSV.split("01.09.2026")[0]          # строки — в test_ads_sku_msk_day.py
+    calls = _perf(monkeypatch, entities, report=(200, _zip({"111_report.csv": header_only})))
+    entities.ads_sku_daily("rt-x", "ts", "2026-01-01", "2026-03-05")      # 64 суток
+    assert calls.count("/api/client/statistics") == 2
+    assert [c for c in calls if c.startswith("/api/client/statistics/expense")] == [
+        "/api/client/statistics/expense?dateFrom=2026-01-01&dateTo=2026-03-01",
+        "/api/client/statistics/expense?dateFrom=2026-03-02&dateTo=2026-03-05"]
 
 
 def test_strict_messages_carry_no_credentials(entities, monkeypatch, strict):

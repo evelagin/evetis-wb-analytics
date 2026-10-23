@@ -20,6 +20,13 @@ SQL, загружаемые данные, строки журнала, stdout, s
       поднимает JournalWriteError с очищенной сводкой обеих ошибок (L3). Поток
       управления, stdout, операции BigQuery и код выхода обязаны совпасть; последняя
       строка stderr обязана назвать сущность и обе ошибки.
+  D3  Окно отчёта SKU Performance — сутки МСК (D2, 2026-10-11, TECH_DEBT P2-5). Эталон заказывал
+      POST /api/client/statistics моментами UTC {"from": "d0T00:00:00Z", "to": "d1T00:00:00Z"} —
+      это [d0 03:00, d1 03:00) МСК; текущий runtime — датами {"dateFrom": "d0", "dateTo": "d1"},
+      сутки МСК d0..d1 целиком. Нормализация: в следе ЭТАЛОНА в теле именно этого запроса пара
+      from/to вида ГГГГ-ММ-ДДT00:00:00Z заменяется на месте парой dateFrom/dateTo тех же дат;
+      после этого следы обязаны совпасть побайтно. Остальные запросы, данные и журнал — без
+      разниц (в сценариях окно короче 60 суток: один отрезок, как и прежде).
 
 Всё остальное — побайтное равенство. Строгий режим (07) у эталона отсутствует и
 проверяется только на текущем runtime.
@@ -29,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -44,7 +52,8 @@ CURRENT = TESTS.parent / "runtime"
 sys.path.insert(0, str(COMPAT))
 import scenarios as S  # noqa: E402
 
-ALLOWED_DIFFERENCES = ("D1_secret_redaction", "D2_journal_failure_rendering")
+ALLOWED_DIFFERENCES = ("D1_secret_redaction", "D2_journal_failure_rendering",
+                       "D3_ads_sku_moscow_day_window")
 
 
 def _run(runtime: Path, name: str) -> dict:
@@ -122,6 +131,40 @@ def _d1_normalize(trace: dict, scenario: dict) -> dict:
     return _map_strings(trace, fn)
 
 
+_UTC_MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})T00:00:00Z$")
+
+
+def _d3_body(body):
+    """Тело эталонного POST /api/client/statistics → тело с сутками МСК (D3), или None."""
+    try:
+        doc = json.loads(body)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(doc, dict) or set(doc) != {"campaigns", "from", "to", "groupBy"}:
+        return None
+    m0, m1 = _UTC_MIDNIGHT.match(doc["from"] or ""), _UTC_MIDNIGHT.match(doc["to"] or "")
+    if not (m0 and m1):
+        return None
+    out = {}
+    for k, v in doc.items():          # порядок ключей сохраняется: замена на месте
+        if k == "from":
+            out["dateFrom"] = m0.group(1)
+        elif k == "to":
+            out["dateTo"] = m1.group(1)
+        else:
+            out[k] = v
+    return json.dumps(out)
+
+
+def _d3_normalize(trace: dict) -> dict:
+    http = []
+    for method, url, headers, body in trace["http"]:
+        if method == "POST" and url.endswith("/api/client/statistics"):
+            body = _d3_body(body) or body
+        http.append([method, url, headers, body])
+    return {**trace, "http": http}
+
+
 def _leaks(trace: dict, scenario: dict) -> list[str]:
     forms = _secret_forms(scenario)
     return sorted({marker for s in _strings(trace) for f, marker in forms.items() if f in s})
@@ -134,7 +177,7 @@ COMPARED = [n for n, sc in S.SCENARIOS.items() if sc.get("compare") != "current_
 @pytest.mark.parametrize("name", COMPARED)
 def test_functional_behavior_is_identical(traces, name):
     sc = S.SCENARIOS[name]
-    base = _d1_normalize(traces[("baseline", name)], sc)
+    base = _d3_normalize(_d1_normalize(traces[("baseline", name)], sc))
     cur = traces[("current", name)]
     for part in ("http", "secrets", "bq", "stdout", "exit"):
         assert cur[part] == base[part], f"{name}: расхождение в {part}"
@@ -166,6 +209,21 @@ def test_current_runtime_never_emits_secret_material(traces, name):
 def test_harness_sees_the_baseline_leak(traces, name):
     """Нормализация D1 не пустая: эталон в этих сценариях действительно выводил секрет."""
     assert _leaks(traces[("baseline", name)], S.SCENARIOS[name]) == ["<redacted:seller_api_key>"]
+
+
+def test_d3_is_exactly_the_report_window_and_is_exercised(traces):
+    """D3 не пустая и не шире заявленного: отличаются ровно тела POST /api/client/statistics."""
+    base = _d1_normalize(traces[("baseline", "02_performance_success")], S.SCENARIOS["02_performance_success"])
+    cur = traces[("current", "02_performance_success")]
+    assert len(base["http"]) == len(cur["http"])
+    changed = [(b, c) for b, c in zip(base["http"], cur["http"]) if b != c]
+    assert changed, "сценарий не заказывает отчёт SKU — D3 не проверяется"
+    for b, c in changed:
+        assert b[:3] == c[:3] and b[0] == "POST" and b[1].endswith("/api/client/statistics")
+        old, new = json.loads(b[3]), json.loads(c[3])
+        assert (old["from"], old["to"]) == ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z")
+        assert new == {"campaigns": old["campaigns"], "dateFrom": "2026-09-01", "dateTo": "2026-09-02",
+                       "groupBy": "DATE"}
 
 
 def test_l3_journal_failure_keeps_both_categories(traces):
@@ -269,4 +327,5 @@ def test_every_required_scenario_is_present():
                 "10_api_and_journal_failure_with_echo", "11_credential_echo",
                 "12_escaped_secret_echo", "13_client_id_as_data"}
     assert required <= set(S.SCENARIOS)
-    assert ALLOWED_DIFFERENCES == ("D1_secret_redaction", "D2_journal_failure_rendering")
+    assert ALLOWED_DIFFERENCES == ("D1_secret_redaction", "D2_journal_failure_rendering",
+                                   "D3_ads_sku_moscow_day_window")
