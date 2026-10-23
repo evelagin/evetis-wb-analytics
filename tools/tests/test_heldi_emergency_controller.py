@@ -423,9 +423,9 @@ def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
     monkeypatch.setattr(RP, 'pending_receipts', lambda *a: [])
     day = NOW.astimezone(CUR.K.MSK).date()
     monkeypatch.setattr(CUR, 'cycles', lambda base, p: {day.isoformat(): {}})
-    items = {e: {'plan': {'runtime_plan': {'entity': e}}, 'shard': e * 64} for e in ('a', 'b', 'c')}
+    items = {e: {'plan': {'runtime_plan': {'entity': e}}, 'shard': e[0] * 64} for e in ('catalog', 'stocks', 'prices')}   # S4: real v1 entities
     monkeypatch.setattr(CUR, 'plans', lambda base, p, d: ([], items))
-    monkeypatch.setattr(CUR.P, 'eligible', lambda p, certs: ['a', 'b', 'c'])
+    monkeypatch.setattr(CUR.P, 'eligible', lambda p, certs: ['catalog', 'stocks', 'prices'])
     monkeypatch.setattr(CUR, 'Backend', lambda base, p, d: base)
     ticks = []
     monkeypatch.setattr(CUR, 'source_tick', lambda b, p, d, item: ticks.append(item) or WB.handoff('DISPATCH'))
