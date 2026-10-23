@@ -29,6 +29,7 @@ SOURCE_FILES = (
     'fixtures/heldi_r1_boundary.json','fixtures/heldi_r2_boundary.json','fixtures/heldi_leaf465_seq68_intent.json',
     'stop_acceptance.py','wake_budget.py','controller_wake_budget_image_check.py',
     'full_terminal_gate_recovery.py','full_terminal_gate_image_check.py',
+    'current_independence.py','current_independence_image_check.py',
 )
 
 
@@ -102,6 +103,10 @@ def block(c, settings, repo, release=None):
     exact_r1r2='exact_r1r2_recovery_version' in release
     wake_budget='controller_wake_budget_version' in release
     terminal_gate='terminal_gate_recovery_version' in release
+    independence='current_independence_version' in release
+    if independence:
+        expected.add('current_independence_version')
+        if not terminal_gate or type(release['current_independence_version']) is not int or release['current_independence_version']!=1:raise ValueError('unqualified current independence')
     if terminal_gate:
         expected.add('terminal_gate_recovery_version')
         if not wake_budget or type(release['terminal_gate_recovery_version']) is not int or release['terminal_gate_recovery_version']!=1:raise ValueError('unqualified terminal gate recovery')
@@ -146,6 +151,7 @@ def block(c, settings, repo, release=None):
     if exact_r1r2:required.add('exact_r1r2_recovery')
     if wake_budget:required.add('controller_wake_budget_adapter')
     if terminal_gate:required.add('terminal_gate_recovery_adapter')
+    if independence:required.add('current_independence_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
