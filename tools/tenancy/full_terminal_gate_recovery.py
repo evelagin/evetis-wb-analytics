@@ -43,7 +43,13 @@ def fail(s):raise BF.B.EvidenceError('terminal gate recovery: '+s)
 def sealed(p):return dict(p,hash=D.digest(p))
 def authority(p):return 'BFTG_AUTH_'+p['root']+'_'+p['stop_hash']
 def certificate(p):return 'BFTG_'+p['hash']
-def value(p):return {'kind':'terminal_gate','root':p['root'][:16]},D.encoded(p)
+def value(p):
+    # The full closed proof (with the growing root inventory) lives in its content-addressed durable root
+    # record; the owner markers bind that exact proof by digest, within the 16-KiB table-description limit
+    # (as the controller-closure and CURRENT recoveries do). 2026-10-23: the full certificate (34.5 KB) was
+    # rejected with HTTP 400 before any effect.
+    return {'kind':'terminal_gate','root':p['root'][:16]},D.encoded(dict(version=1,type='TERMINAL_GATE_CERTIFICATE_REF',
+        root=p['root'],stop_hash=p['stop_hash'],certificate_hash=p['hash'],source_budget=0))
 def when(v):
     if isinstance(v,datetime):
         if v.utcoffset() is None:fail('marker timestamp unzoned')
