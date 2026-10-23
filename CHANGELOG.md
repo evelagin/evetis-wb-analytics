@@ -1,5 +1,17 @@
 # CHANGELOG.md
 
+## 2026-10-21 — UNITKA мониторинг: имена политики конфигурации ≤ 100 байт (достройка #368, НЕ применено)
+
+Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 heartbeat-политики (выключены), но не создал 4 политики:
+- `unitka_writer_config` — `display_name must not be more than 100 characters`: предел считается в байтах UTF-8, имя
+  политики было 107 байт, условия — 101;
+- `unitka_writers_failed`, `unitka_publication_blocked`, `unitka_owner_attention` — `PromQL metric(s) are invalid`:
+  политика создавалась в ту же секунду, что и её метрика; запросы корректны (PromQL API — success), не меняются.
+
+Изменение — только имена политики и условия `unitka_writer_config`. Новый тест: display_name всех политик и условий
+во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
+и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
+
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 
 Дальше Mig1 (T6) к полному повтору боевого `wbStocksSnapshotCore_`. Подробно — `docs/MIG1_STOCKS_PARITY.md`, раздел Mig1c.
