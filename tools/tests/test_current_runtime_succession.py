@@ -11,10 +11,9 @@ def test_packaged_check_passes():
 
 
 @pytest.fixture
-def succession(monkeypatch):
-    monkeypatch.setattr(A, 'registered_runtime', CHECK.registered)
-    monkeypatch.setattr(O, 'verify_artifact_source', lambda r, repo: None)
-    return CHECK.fixture()
+def succession():
+    with CHECK.scenario() as values:
+        yield values
 
 
 def test_every_entity_reads_back_its_pre_succession_plan_but_never_dispatches_it(succession):

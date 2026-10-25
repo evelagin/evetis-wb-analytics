@@ -12,6 +12,7 @@ from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy.validation import parse_tenant_json as parse
 
 DAY = date(2026, 10, 14)
+REAL_REGISTERED = A.registered_runtime
 
 
 @contextmanager
@@ -40,7 +41,7 @@ def fixture():
         historical_root=b.manifest['hash'], owner_decision_sha256='1' * 64, created_at='2026-10-14T04:00:00+00:00',
         first_day='2026-10-14', entities=list(P.ORDER), snapshot_sla_seconds=86400, fbo_sla_seconds=86400,
         controller_source=OLD, controller_image=old['image'], runtime_image=old['runtime_image'],
-        runtime_implementation_hash=old['runtime_implementation_hash'] if old['runtime_implementation_hash'] != BF.B.implementation_hash() else '9' * 64,
+        runtime_implementation_hash=old['runtime_implementation_hash'],
         fbo_contract_hash=None, source_concurrency=1, finance_finality='PROVISIONAL'))
     ds = b.c['datasets']['ref']
     b.tables.values[(ds, P.name(OLD))] = ({'kind': 'current_policy', 'root': policy['hash'][:16]}, D.encoded(policy))
@@ -57,6 +58,21 @@ def fixture():
     return b, policy, handoff, release
 
 
+@contextmanager
+def scenario():
+    """Fixture plus the two cloud facts a CI tree cannot hold: the replacement runtime
+    registration and the packaged-artifact match. If this tree still packages the original
+    runtime, a synthetic replacement implementation stands in for it (plans are rebuilt
+    from it consistently)."""
+    from tools.tenancy import orchestration_contract as O
+    old = parse((BF.REPO / 'infra/tenant/releases/backfill' / ('ba9d3d0430e598290ef71e321f235e27941170f5.json')).read_text())
+    live = BF.B.implementation_hash()
+    synthetic = live if live != old['runtime_implementation_hash'] else 'c' * 64
+    with patched(BF.B, 'implementation_hash', lambda: synthetic), patched(A, 'registered_runtime', registered), \
+            patched(O, 'verify_artifact_source', lambda r, repo: None):
+        yield fixture()
+
+
 def registered(image, implementation):
     return {'image': image, 'verification': {'built_artifact': {'backfill_implementation_hash': implementation,
                                                                  'backfill_window_v1': 'PASS'}}}
@@ -64,8 +80,7 @@ def registered(image, implementation):
 
 def check():
     from tools.tenancy import orchestration_contract as O
-    b, policy, handoff, release = fixture()
-    with patched(A, 'registered_runtime', registered), patched(O, 'verify_artifact_source', lambda r, repo: None):
+    with scenario() as (b, policy, handoff, release):
         # 1. The original policy is returned byte-exact (f507/recon pins); live runtime accepted.
         assert C.policy(b) == policy and D.encoded(C.policy(b)) == D.encoded(policy)
         assert A.resolve(b, handoff['new_source'], A.value(handoff), release) == policy
@@ -93,8 +108,8 @@ def check():
         v1 = {k: v for k, v in handoff.items() if k not in ('hash', 'original_runtime_image', 'original_runtime_implementation_hash')}
         v1.update(version=1, type=A.TYPE); v1['hash'] = D.digest(v1)
         expect_fail(lambda: A.resolve(b, v1['new_source'], A.value(v1), release), 'original registered pair')
-    # 5. The replacement runtime must be exactly registered (no stub).
-    with patched(O, 'verify_artifact_source', lambda r, repo: None):
+    # 5. The replacement runtime must be exactly registered (no registration stub).
+    with scenario() as (b, policy, handoff, release), patched(A, 'registered_runtime', REAL_REGISTERED):
         expect_fail(lambda: A.resolve(b, handoff['new_source'], A.value(handoff), release), 'registration missing')
     # 6. Release contract: succession requires S4 independence and its own adapter.
     s4 = parse((BF.REPO / 'infra/tenant/releases/backfill' / '73b3e3c255acd3207c6a25b9238f4b49835d3264.json').read_text())
