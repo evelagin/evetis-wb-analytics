@@ -56,11 +56,31 @@ run "client_access_renders_reader_and_authorized_views_only" {
     condition     = alltrue([for a in flatten([for k, d in google_bigquery_dataset.this : d.access]) : one(a.dataset).target_types == tolist(["VIEWS"]) if length(a.dataset) > 0])
     error_message = "T6: authorized datasets must target VIEWS only"
   }
-  # Проект: только bigquery.jobUser, ровно двум principals; ничего больше на проекте клиенту.
+  # Проект: только пользовательская роль запуска запросов, ровно двум principals; не jobUser.
   assert {
-    condition     = toset([for m in google_project_iam_member.client_access : "${m.role}|${m.member}"]) == toset(["roles/bigquery.jobUser|user:analyst@example-client.test", "roles/bigquery.jobUser|group:bi-readers@example-client.test"])
-    error_message = "T6: exactly jobUser for the two client principals on the tenant project"
+    condition     = toset([for m in google_project_iam_member.client_access : "${m.role}|${m.member}"]) == toset(["projects/mpa-t-client-001/roles/vtsClientQueryRunner|user:analyst@example-client.test", "projects/mpa-t-client-001/roles/vtsClientQueryRunner|group:bi-readers@example-client.test"])
+    error_message = "T6: exactly the client query role for the two client principals on the tenant project"
   }
+  assert {
+    condition     = length(google_project_iam_custom_role.client_query) == 1 && google_project_iam_custom_role.client_query[0].role_id == "vtsClientQueryRunner" && toset(google_project_iam_custom_role.client_query[0].permissions) == toset(["bigquery.config.get", "bigquery.jobs.create", "resourcemanager.projects.get"])
+    error_message = "T6: the client query role holds exactly jobs.create, config.get, projects.get"
+  }
+}
+
+run "client_access_rejects_job_user" {
+  command = plan
+  variables {
+    contract = merge(jsondecode(file("tests/fixtures/client_access.synthetic.contract.json")), {
+      client_access = merge(jsondecode(file("tests/fixtures/client_access.synthetic.contract.json")).client_access, {
+        query_role = { role_id = "vtsClientQueryRunner", permissions = ["bigquery.jobs.create", "dataform.repositories.create", "resourcemanager.projects.get"] }
+      })
+    })
+  }
+  override_data {
+    target = data.google_projects.tenant_active
+    values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
+  }
+  expect_failures = [var.contract]
 }
 
 run "client_001_without_client_access_renders_nothing_for_a_client" {
@@ -73,7 +93,7 @@ run "client_001_without_client_access_renders_nothing_for_a_client" {
     values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   assert {
-    condition     = length(google_project_iam_member.client_access) == 0 && length(flatten([for k, d in google_bigquery_dataset.this : [for a in d.access : a if length(a.dataset) > 0]])) == 0
+    condition     = length(google_project_iam_member.client_access) == 0 && length(google_project_iam_custom_role.client_query) == 0 && length(flatten([for k, d in google_bigquery_dataset.this : [for a in d.access : a if length(a.dataset) > 0]])) == 0
     error_message = "T6: with bi_access.mode NONE the contract must not change any ACL or project IAM"
   }
 }

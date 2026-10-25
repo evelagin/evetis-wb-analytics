@@ -72,6 +72,7 @@ from tools.tenancy import control_identity as CI  # noqa: E402
 from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import sql_identity as SI  # noqa: E402
 from tools.tenancy import orchestration_plan as BP  # noqa: E402
+from tools.tenancy import client_access as CA  # noqa: E402
 
 # ── S. Структура ─────────────────────────────────────────────────────────────
 ALLOWED_MANAGED_TYPES = frozenset({
@@ -260,6 +261,9 @@ def expected_iam(contract: dict) -> set[tuple[str, str, str, str]]:
     for row in RI.matrix(contract):
         allowed.add(('google_bigquery_table_iam_member', row['resource'], row['role'], 'serviceAccount:'+row['principal']))
     allowed |= BP.iam(BP.verified(contract),contract)
+    # T6: клиент — только пользовательская роль запуска запросов на проекте (не jobUser).
+    for member in CA.members(contract.get("client_access")):
+        allowed.add(("google_project_iam_member", p, CA.query_role_name(p), member))
     return allowed
 
 
@@ -293,7 +297,39 @@ def expected_dataset_access(contract: dict) -> dict[str, set[AclEntry]]:
     if block:
         for g in block['dataset_grants']:
             acl[contract['datasets'][g['dataset_key']]].add((g['role'],'user_by_email',g['email'],None))
+    ca = contract.get("client_access")
+    if ca:
+        # T6: READER клиента на analytics_share и авторизованные датасеты (только VIEWS) по рёбрам контракта.
+        for pr in ca["principals"]:
+            acl[contract["datasets"][ca["dataset_key"]]].add(("READER", f"{pr['kind']}_by_email", pr["email"], None))
+        for e in ca["authorized_views"]:
+            acl[contract["datasets"][e["source_key"]]].add(
+                (AUTHORIZED_VIEWS, "dataset", f"{p}.{contract['datasets'][e['viewer_key']]}", None))
     return acl
+
+
+def client_access_findings(contract: dict) -> list[str]:
+    """T6: блок client_access — ровно форма tools/tenancy/client_access.py (рёбра, роль, principals)."""
+    ca = contract.get("client_access")
+    if ca is None:
+        return []
+    out = []
+    try:
+        principals = [CA.principal(f"{x['kind']}:{x['email']}") for x in ca["principals"]]
+    except (CA.ClientAccessError, KeyError, TypeError) as e:
+        return [f"контракт: client_access.principals не проходит правила T6 ({e})"]
+    if not principals or principals != ca["principals"]:
+        out.append("контракт: client_access.principals не нормализованы")
+    if ca.get("mode") != CA.MODE or ca.get("dataset_key") != CA.CLIENT_DATASET_KEY:
+        out.append("контракт: client_access — неизвестный режим или датасет")
+    if {(e.get("viewer_key"), e.get("source_key")) for e in ca.get("authorized_views", [])} != set(CA.AUTHORIZED_VIEW_EDGES) \
+            or len(ca.get("authorized_views", [])) != len(CA.AUTHORIZED_VIEW_EDGES):
+        out.append("контракт: client_access.authorized_views не равны реальным зависимостям вью пакета")
+    if ca.get("query_role") != {"role_id": CA.QUERY_ROLE_ID, "permissions": list(CA.QUERY_ROLE_PERMISSIONS)}:
+        out.append("контракт: client_access.query_role не равна vtsClientQueryRunner")
+    if set(ca) != {"mode", "dataset_key", "principals", "authorized_views", "query_role"}:
+        out.append("контракт: client_access — лишние или недостающие поля")
+    return out
 
 
 def expected_control(contract: dict) -> dict | None:
@@ -382,7 +418,8 @@ def sql_deployer_findings(contract: dict) -> list[str]:
 
 
 _ACCESS_PRINCIPAL_KEYS = ("user_by_email", "group_by_email", "domain", "special_group", "iam_member")
-_ACCESS_NESTED_KEYS = ("view", "dataset", "routine")      # authorized view/dataset/routine — запрещены
+_ACCESS_NESTED_KEYS = ("view", "dataset", "routine")      # authorized view/routine — запрещены; dataset — только T6
+AUTHORIZED_VIEWS = "AUTHORIZED_DATASET_VIEWS"            # «роль» нормализованной записи авторизованного датасета
 _CONDITION_KEYS = frozenset({"title", "description", "expression", "location"})
 
 
@@ -404,6 +441,16 @@ def _access_entries(access) -> tuple[set[AclEntry], list[str]]:
                 not isinstance(c, dict) or set(k for k, v in c.items() if v) - _CONDITION_KEYS or c.get("location")
                 for c in cond):
             bad.append(f"access[{i}] condition не нормализуется")
+            continue
+        if nested == ["dataset"] and not who and not a.get("role") and not cond:
+            # T6: авторизованный датасет — только целиком датасет и только для VIEWS.
+            d = a["dataset"]
+            inner = d[0].get("dataset") if isinstance(d, list) and len(d) == 1 and isinstance(d[0], dict) else None
+            if (isinstance(inner, list) and len(inner) == 1 and isinstance(inner[0], dict)
+                    and d[0].get("target_types") == ["VIEWS"] and inner[0].get("project_id") and inner[0].get("dataset_id")):
+                entries.add((AUTHORIZED_VIEWS, "dataset", f"{inner[0]['project_id']}.{inner[0]['dataset_id']}", None))
+            else:
+                bad.append(f"access[{i}] dataset не нормализуется (только один датасет, target_types = VIEWS)")
             continue
         if nested or len(who) != 1:
             bad.append(f"access[{i}] {sorted(k for k, _v in who) + nested}")
@@ -546,6 +593,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     contract_sa_ids = {e.split("@", 1)[0] for e in contract_sa_emails}
     findings += sql_deployer_findings(contract)
     findings += control_findings(contract)
+    findings += client_access_findings(contract)
     contract_tables = {(contract["datasets"][x["dataset_key"]], x["table_id"]) for x in contract.get("tables", [])}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
@@ -671,6 +719,8 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
 
         if rtype=='google_project_iam_custom_role':
             want=RI.PERMISSIONS if ozon and after.get('role_id')==RI.ROLE and addr=='google_project_iam_custom_role.runtime_capability_read[0]' else (block or {}).get('roles',{}).get(after.get('role_id'))
+            if contract.get('client_access') and after.get('role_id')==CA.QUERY_ROLE_ID and addr=='google_project_iam_custom_role.client_query[0]':
+                want=list(CA.QUERY_ROLE_PERMISSIONS)
             if want is None or sorted(after.get('permissions') or [])!=sorted(want) or after.get('stage')!='GA' or after.get('deleted'):
                 findings.append(f'{addr}: custom role permission/stage drift')
 

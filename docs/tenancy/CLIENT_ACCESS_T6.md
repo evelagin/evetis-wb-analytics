@@ -8,7 +8,14 @@
 | Объект | Право | Зачем |
 |---|---|---|
 | датасет `analytics_share` проекта арендатора | `READER` (ACL датасета) | единственный интерфейс данных (ADR-08) |
-| проект арендатора `mpa-t-client-001` | `roles/bigquery.jobUser` | запускать собственные запросы из BI/консоли; прав на данные не даёт |
+| проект арендатора `mpa-t-client-001` | пользовательская роль `vtsClientQueryRunner`: `bigquery.jobs.create`, `bigquery.config.get`, `resourcemanager.projects.get` | запускать собственные запросы из BI/консоли; прав на данные и на создание ресурсов не даёт |
+
+**Почему не `roles/bigquery.jobUser`.** Живой состав роли на 2026-10-25 (`gcloud iam roles describe
+roles/bigquery.jobUser`): кроме `bigquery.jobs.create` в ней `dataform.repositories.create`,
+`dataform.folders.create`, `cloudaicompanion.topics.create`, `geminidataanalytics.locations.chat`.
+Dataform API в `mpa-t-client-001` включён, значит клиент с jobUser мог бы создавать ресурсы в
+проекте арендатора. Тот же дефект откатили у EVETIS 2026-09-24 (M3). Тест
+`test_client_query_role_creates_nothing_and_reads_no_data` сверяет роль со снимком jobUser.
 
 Ничего больше: ни `ozon_raw`, `ref`, `ozon_mart`, `tenant_ops`, `tenant_locks`, ни Secret Manager,
 Cloud Run, Cloud Scheduler, ни проекта платформы или EVETIS. Principals — только `user:`/`group:`
@@ -35,8 +42,11 @@ tenant_ops      → ref, ozon_mart
 1. Реестр: `tenants/client_001/tenant.json` → `bi_access = {"mode": "ANALYTICS_SHARE_VIEWER",
    "principals": ["user:<email>"]}` (или `group:`), PR в main.
 2. `python tools/tenancy/registry.py terraform-inputs client_001` даёт блок `client_access`
-   (READER, jobUser, 6 рёбер авторизации); `terraform plan` — только добавления: 2 записи ACL
-   `analytics_share` на principal, 6 записей `access.dataset` на источниках, 1 `google_project_iam_member`.
+   (READER, роль `vtsClientQueryRunner`, 6 рёбер авторизации); `terraform plan` — только добавления:
+   запись READER в ACL `analytics_share` на каждого principal, 6 записей `access.dataset` (VIEWS) на
+   источниках, 1 `google_project_iam_custom_role.client_query`, по 1 `google_project_iam_member` на principal.
+   Сканер плана релиза (`tools/tenancy/plan_scan.py`) принимает ровно эту форму и отвергает любое
+   расширение (jobUser, READER на внутреннем датасете, TABLES в авторизации, лишнее ребро, authorized view).
 3. `terraform apply` — только по ACK владельца с показом плана.
 4. Проверка изоляции в бою: от имени клиентской идентичности `SELECT` из каждой из 9 вью
    проходит; `SELECT` из `ozon_raw.*`, `ref.*`, `ozon_mart.*`, `tenant_ops.*` — `Access Denied`.

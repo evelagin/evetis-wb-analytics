@@ -98,7 +98,7 @@ variable "contract" {
       dataset_key      = string
       principals       = list(object({ kind = string, email = string }))
       authorized_views = list(object({ viewer_key = string, source_key = string }))
-      project_roles    = list(string)
+      query_role       = object({ role_id = string, permissions = list(string) })
     }))
   })
 
@@ -109,11 +109,13 @@ variable "contract" {
       && length(var.contract.client_access.principals) > 0
       && alltrue([for p in var.contract.client_access.principals : contains(["user", "group"], p.kind)])
       && alltrue([for p in var.contract.client_access.principals : !endswith(p.email, "gserviceaccount.com")])
-      && alltrue([for r in var.contract.client_access.project_roles : r == "roles/bigquery.jobUser"])
+      && var.contract.client_access.query_role.role_id == "vtsClientQueryRunner"
+      && toset(var.contract.client_access.query_role.permissions) == toset(["bigquery.config.get", "bigquery.jobs.create", "resourcemanager.projects.get"])
+      && length(var.contract.client_access.query_role.permissions) == 3
       && alltrue([for e in var.contract.client_access.authorized_views : contains(keys(var.contract.datasets), e.viewer_key) && contains(keys(var.contract.datasets), e.source_key) && e.viewer_key != e.source_key])
       && alltrue([for e in var.contract.client_access.authorized_views : e.source_key != "analytics_share" && e.source_key != "tenant_locks"])
     )
-    error_message = "T6: клиентский доступ — только user:/group: с READER на analytics_share и jobUser; авторизованные вью только из внутренних датасетов-источников (не tenant_locks)."
+    error_message = "T6: клиентский доступ — только user:/group: с READER на analytics_share и ролью vtsClientQueryRunner (jobs.create, config.get, projects.get); авторизованные вью только из внутренних датасетов-источников (не tenant_locks)."
   }
 
   validation {

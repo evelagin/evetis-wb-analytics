@@ -52,9 +52,14 @@
         "kind": "user"
       }
     ],
-    "project_roles": [
-      "roles/bigquery.jobUser"
-    ]
+    "query_role": {
+      "permissions": [
+        "bigquery.config.get",
+        "bigquery.jobs.create",
+        "resourcemanager.projects.get"
+      ],
+      "role_id": "vtsClientQueryRunner"
+    }
   },
   "contract_version": 1,
   "control": {

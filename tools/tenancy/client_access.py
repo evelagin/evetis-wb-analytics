@@ -7,8 +7,12 @@ tenant_locks, Secret Manager, Cloud Run, Scheduler, проект платфор�
 Как это выражено в Terraform (infra/tenant/client-access.tf и ACL датасетов в main.tf):
   * READER на `analytics_share` каждому principal из реестра (`bi_access.principals`,
     только user:/group:, никогда serviceAccount/domain/allUsers);
-  * roles/bigquery.jobUser на проекте арендатора тем же principals — иначе запрос не
-    запустить ни в BI, ни в консоли (jobUser не даёт ни одного права на данные);
+  * пользовательская роль проекта `vtsClientQueryRunner` тем же principals — только запуск
+    собственных запросов (bigquery.jobs.create) и чтение метаданных проекта, иначе запрос не
+    запустить ни в BI, ни в консоли. НЕ roles/bigquery.jobUser: на 2026-10-25 он содержит
+    dataform.repositories.create, dataform.folders.create, cloudaicompanion.topics.create и
+    geminidataanalytics.locations.chat, а Dataform API в проекте арендатора включён — клиент
+    смог бы создавать ресурсы в проекте (тот же откат M3 2026-09-24 у EVETIS);
   * авторизованные датасеты (target VIEWS) по РЕАЛЬНЫМ зависимостям вью пакета
     sql/tenant/ozon: analytics_share → ozon_mart, tenant_ops; ozon_mart → ozon_raw, ref;
     tenant_ops → ref, ozon_mart. Без них вью analytics_share для клиента не читаются:
@@ -26,7 +30,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 MODE = "ANALYTICS_SHARE_VIEWER"
 CLIENT_DATASET_KEY = "analytics_share"
-PROJECT_ROLES = ("roles/bigquery.jobUser",)
+# Пользовательская роль проекта для клиента: ровно запуск своих запросов. Ни одного права на данные,
+# датасеты, таблицы и создание ресурсов (сверяется тестом с живым составом jobUser).
+QUERY_ROLE_ID = "vtsClientQueryRunner"
+QUERY_ROLE_PERMISSIONS = ("bigquery.config.get", "bigquery.jobs.create", "resourcemanager.projects.get")
 PRINCIPAL_RE = re.compile(r"^(user|group):([A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,63})$")
 # (кому авторизовано: датасет ВЬЮ, на чём: датасет-источник). Сверяется тестом с SQL пакета.
 AUTHORIZED_VIEW_EDGES = (
@@ -74,8 +81,16 @@ def contract_block(doc: dict, datasets: dict) -> dict | None:
         "dataset_key": CLIENT_DATASET_KEY,
         "principals": sorted(principals, key=lambda p: (p["kind"], p["email"])),
         "authorized_views": [{"viewer_key": v, "source_key": s} for v, s in AUTHORIZED_VIEW_EDGES],
-        "project_roles": list(PROJECT_ROLES),
+        "query_role": {"role_id": QUERY_ROLE_ID, "permissions": list(QUERY_ROLE_PERMISSIONS)},
     }
+
+
+def query_role_name(project_id: str) -> str:
+    return f"projects/{project_id}/roles/{QUERY_ROLE_ID}"
+
+
+def members(block: dict | None) -> list[str]:
+    return [] if not block else [f"{p['kind']}:{p['email']}" for p in block["principals"]]
 
 
 def dependency_edges(package: Path = SQL_PACKAGE) -> set[tuple[str, str]]:
