@@ -12,6 +12,11 @@ from tools.tenancy.controller_diagnostics import gate
 
 def fail(s):raise BF.B.EvidenceError('operational current: '+s)
 
+# S4 v1 (owner decision 2026-10-23): new CURRENT work is selected only for the four independent Seller
+# entities. Advertising and FBO stay off until their own fixes; the owner policy is not rewritten and
+# every previously elected CURRENT intent/receipt of any entity is still drained (reconciled) first.
+INDEPENDENT_ENTITIES=('catalog','stocks','prices','finance_accrual')
+
 def policy(b):
     env=b.c['orchestration']['job']['env']
     if env.get('CURRENT_DATA_MODE') is None:return None
@@ -278,7 +283,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         if result is not None:return result
     budget=WB.of(base)
     for entity in P.eligible(p,{e:True for e in certs}):
-        if entity in partial:continue
+        if entity in partial or entity not in INDEPENDENT_ENTITIES:continue
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
             return WB.handoff('LEAF',budget,operational_entity=entity)
         item=items.get(entity)

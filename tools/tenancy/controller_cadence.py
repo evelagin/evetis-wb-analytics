@@ -4,7 +4,7 @@ This supplementary orchestration fence never replaces a SOURCE lease, intent,
 receipt or reconciliation. Known overlapping wakes wait successfully; unknown
 ownership stays closed. There is no marketplace transport or source retry here.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import median, mean
 import re
 from tools.tenancy import tenant_backfill as BF, durable_plan as D
@@ -186,6 +186,18 @@ def validate_claim(backend,value,*,allow_closed_history=False):
     return claim
 
 
+# Cloud Run keeps completed executions for a bounded time (observed: ~7 days). A historical claim
+# older than that may lose its execution object although its canonical closure, the accepted
+# certificates and the durable records remain. Only such platform-pruned executions are tolerated.
+EXECUTION_RETENTION=timedelta(days=7)
+def pruned(error):
+    return isinstance(error,BF.TT.TableError) and 'HTTP 404' in str(error)
+def execution_or_pruned(backend,name,created_at):
+    """The execution JSON, or None when Cloud Run no longer retains it and it is past retention."""
+    try:return backend.request('GET',BF.RUN_API+'/'+name)
+    except BF.TT.TableError as error:
+        if not pruned(error) or at(created_at)+EXECUTION_RETENTION>backend.clock():raise
+        return None
 def historical_closed_claim(backend,claim):
     """A release handoff never erases or reclaims a prior wake's authority.
 
@@ -197,7 +209,8 @@ def historical_closed_claim(backend,claim):
     if not re.fullmatch('[0-9a-f]{40}',claim['source']) or not closed(backend,claim):
         fail('historical controller lacks canonical closure')
     release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{claim['source']}.json").read_text())
-    x=backend.request('GET',BF.RUN_API+'/'+claim['execution'])
+    x=execution_or_pruned(backend,claim['execution'],claim['created_at'])
+    if x is None:return   # platform-pruned: the canonical closure above is the terminal evidence
     if (x.get('name')!=claim['execution'] or not x.get('completionTime')
             or x.get('retriedCount',0) or x.get('cancelledCount',0) or x.get('runningCount',0)
             or x.get('taskCount',1)!=1

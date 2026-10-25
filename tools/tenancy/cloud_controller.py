@@ -13,7 +13,7 @@ from decimal import Decimal
 from tools.tenancy import tenant_backfill as BF, durable_plan as D
 from tools.tenancy import cloud_access as A, cloud_tick as T, orchestration_contract as O
 from tools.tenancy.validation import parse_tenant_json
-from tools.tenancy.controller_diagnostics import gate, safe
+from tools.tenancy.controller_diagnostics import gate, safe, GateFailure, PILOT_HELD
 
 
 SourceDispatchPaused = T.SourceDispatchPaused
@@ -385,7 +385,7 @@ def close_decision(backend,result):
     if getattr(backend,'wake_activity',{}).get('diagnostic_active'):return
     closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else dict(result)
     closure['source_dispatches']=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0))
-    with gate('MANIFEST_ROOT'):CC.close(backend,closure)
+    with gate('CONTROL_CLOSURE'):CC.close(backend,closure)
 
 
 def known_unclosed_incident(backend,root,error,payload):
@@ -444,14 +444,22 @@ def main(argv=None):
         # exception in a special waiting handler or an assumed authority release.
         # A diagnostic child owns the shared source slot until independently
         # terminal. A read/submission error must retain this control fence.
-        close_decision(backend,result)
+        try:close_decision(backend,result)
+        except A.TransientReadError:
+            # A lost closure read after a bounded result is a typed terminal
+            # STOP, never an untyped one (Heldi STOP 8ad33cc6, 2026-10-22).
+            raise GateFailure('CONTROL_CLOSURE','CLOUD_METADATA') from None
         print(json.dumps(result,sort_keys=True))
         return rc if rc is not None else (0 if result['status']!='STOPPED' else 2)
     except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:
         cadence_present=bool(getattr(backend,'c',{}).get('orchestration',{}).get('cadence'))
-        if not cadence_present and isinstance(error,BF.B.EvidenceError) and str(error)=='pilot lease held; reconcile terminal execution before continuation':
-            print(json.dumps({'status':'WAITING_LEASE','reason':'CANONICAL_LEASE_NOT_YET_RECLAIMABLE'}))
-            return 1
+        if isinstance(error,BF.B.EvidenceError) and str(error)==PILOT_HELD:
+            if not cadence_present:
+                print(json.dumps({'status':'WAITING_LEASE','reason':'CANONICAL_LEASE_NOT_YET_RECLAIMABLE'}))
+                return 1
+            # A claimed wake reaching a held pilot lease is an evidence STOP at
+            # the LEASE stage; the closed diagnostic replaces the untyped STOP.
+            error=GateFailure('LEASE','EVIDENCE')
         # No exception repr/response/header/env dumps: even a malformed upstream
         # diagnostic might contain identifiers or credential material.
         diagnostic=safe(error)

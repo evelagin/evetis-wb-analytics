@@ -231,7 +231,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_','BFTG_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
@@ -425,7 +425,10 @@ def _dispatch(backend, manifest, index, doc, root, sequence):
         received.append(receipt)
     with gate('SOURCE_DISPATCH_BOUNDARY'):backend.start(doc,before,after)
     if len(prepared)!=1 or len(received)!=1:
-        raise BF.B.EvidenceError('full dispatch receipt unproven; never repeat Run POST')
+        from tools.tenancy.controller_diagnostics import GateFailure,WRITES
+        effects=getattr(backend,'dispatch_effects',None) or dict.fromkeys(WRITES,'UNKNOWN')
+        effects=dict(effects,intent='PRESENT' if prepared else effects['intent'],receipt='PRESENT' if received else effects['receipt'])
+        raise GateFailure('SOURCE_DISPATCH_BOUNDARY','EVIDENCE',effects)   # never repeat Run POST
     return {'status':'DISPATCHED','index':index,'sequence':sequence,'source_dispatches':1,
             'current_entity':doc['runtime_plan']['entity'],'from':doc['runtime_plan']['from'],'to':doc['runtime_plan']['to']}
 
@@ -469,6 +472,35 @@ def isolated_indices(manifest,certificates):
     return indices
 
 
+def historical_gate(backend,manifest,records,quarantines,quarantined):
+    """(ended, admission). ended: the wake's result (recovery or STOP). admission: S4 CURRENT-only facts.
+
+    The acceptance revalidation and automatic recoveries are unchanged. An unresolved STOP still ends
+    the wake unless current_independence proves it FULL-local with every shared authority settled;
+    then only CURRENT may run and the FULL queue stays closed. Errors are never swallowed here.
+    """
+    if not any(r['kind']=='STOPPED' for r in records):return None,None
+    from tools.tenancy import full_leaf_recovery as FL, full_first_receipt_recovery as FR
+    from tools.tenancy import stop_acceptance as SA, controller_cadence as CC
+    # The one acceptance set shared with the monitor, the FBO diagnostic and recoveries.
+    approved=SA.approved(backend,manifest,records,quarantines=quarantines,gate=gate)
+    unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
+    if not unresolved:return None,None
+    # No source in a recovery wake; a later independent wake resumes.
+    if CC.enabled(backend) and len(CC.inventory(backend))>1:
+        # Defer the existing recovery rather than falsifying its strict
+        # no-conflicting-execution predicate while a known peer waits.
+        from tools.tenancy.cloud_tick import OverlapWait
+        raise OverlapWait('WAIT_ACTIVE_CONTROLLER')
+    recovered=(FR.recover_pending(backend,manifest,records) or FL.recover_pending(backend,manifest,records)) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
+    if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},None
+    from tools.tenancy import current_independence as CI
+    admission=CI.admit(backend,manifest,records,unresolved,quarantined)
+    backend.current_independence=admission
+    if admission['admitted'] is not True:return {'status':'STOPPED','source_dispatches':0},None
+    return None,admission
+
+
 def wake(base, root):
     with gate('MANIFEST_ROOT'):
         records = base.store.history(root)
@@ -495,27 +527,17 @@ def wake(base, root):
             base.stop_acceptance_scope=backend.stop_acceptance_scope=SA.Scope()
             records=base.store.history(root)
             if only_manifest(records)!=manifest:raise BF.B.EvidenceError('fenced root changed')
-    if any(r['kind']=='STOPPED' for r in records):
-        from tools.tenancy import full_leaf_recovery as FL, full_first_receipt_recovery as FR
-        from tools.tenancy import stop_acceptance as SA
-        # The one acceptance set shared with the monitor, the FBO diagnostic and recoveries.
-        approved=SA.approved(backend,manifest,records,quarantines=quarantines,gate=gate)
-        unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {p['stop_hash'] for p in approved}]
-        if unresolved:
-            # No source in a recovery wake; a later independent wake resumes.
-            if CC.enabled(backend) and len(CC.inventory(backend))>1:
-                # Defer the existing recovery rather than falsifying its strict
-                # no-conflicting-execution predicate while a known peer waits.
-                from tools.tenancy.cloud_tick import OverlapWait
-                raise OverlapWait('WAIT_ACTIVE_CONTROLLER')
-            recovered=(FR.recover_pending(backend,manifest,records) or FL.recover_pending(backend,manifest,records)) if any(r['payload'].get('diagnostic',{}).get('stage') in FL.AUTO_STAGES for r in unresolved) else None
-            if recovered:return {'status':'SOURCE_FREE_RECOVERED','source_dispatches':0,'recovery':recovered},backend
-            return {'status':'STOPPED','source_dispatches':0}, backend
+    ended,admission=historical_gate(backend,manifest,records,quarantines,quarantined)
+    if ended is not None:return ended,backend
     done = completed(records,manifest)
-    repair_t5_completions(backend, manifest, records, done)
+    if admission is None:repair_t5_completions(backend, manifest, records, done)
     from tools.tenancy import current_controller as CURRENT
     current_result=CURRENT.wake(backend,records,reconstruct_plans(records,manifest,backend.clock()),done,quarantined)
     if current_result is not None:return current_result,backend
+    if admission is not None:
+        # S4: a FULL-local historical STOP keeps the FULL queue closed; CURRENT has nothing left today.
+        return {'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP',
+                'local_full_leaves':admission['local_full_leaves']},backend
     if len(done)==len(manifest['programs']):
         backend.store.commit(root,'FULL_COMPLETE',0,{'source_complete':True,'persisted_reconciled':True,
             'completed_chunks':len(done),'total_chunks':len(manifest['programs']),'ready':'UNPROVEN_FINAL_DQ_REQUIRED'},backend.clock())
