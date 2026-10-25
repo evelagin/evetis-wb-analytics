@@ -30,12 +30,17 @@ def policy(b):
     spec=b.tables.get_table(b.c['datasets']['tenant_locks'],C.descriptor_name(source,b.manifest['hash'],env['HISTORICAL_SCHEDULER_STATE']))
     release=parse(spec[1])['release'] if spec else {}
     O.verify_artifact_source(release,BF.REPO)
-    if association is not None:p=HANDOFF.resolve(b,source,association,release)
+    if association is not None:
+        p=HANDOFF.resolve(b,source,association,release)
+        # V2 runtime succession: the original policy is returned unchanged; the live runtime is
+        # the owner-associated replacement (V1: identical to the policy's own runtime).
+        runtime=HANDOFF.runtime_hash(association)
     else:
         p=parse(marker[1]);P.validate(p,b.c,b.manifest['hash'],b.clock())
         if marker!=({'kind':'current_policy','root':p['hash'][:16]},D.encoded(p)):fail('owner marker differs')
+        runtime=p['runtime_implementation_hash']
     if (release.get('current_data_version')!=1 or release.get('verification',{}).get('current_data_adapter')!='PASS'
-        or p['runtime_implementation_hash']!=BF.B.implementation_hash()):fail('exact current adapter is not qualified')
+        or runtime!=BF.B.implementation_hash()):fail('exact current adapter is not qualified')
     if p['fbo_contract_hash'] is not None:
         from tools.tenancy import platform as PL
         runtime=[parse(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
@@ -133,7 +138,8 @@ class Backend(H.Backend):
 
     def authorize_full_leaf(self,doc):
         if policy(self)!=self.current_policy:fail('current policy changed')
-        P.validate_document(self.current_policy,self.current_day,doc)
+        # Dispatch/preflight only for a live-runtime plan; a pre-succession plan is read-back only.
+        P.validate_document(self.current_policy,self.current_day,doc,historical=False)
         _,source_plans=plans(self,self.current_policy,self.current_day)
         if source_plans.get(doc['runtime_plan']['entity'],{}).get('plan')!=doc:fail('current plan is not durably elected')
         return True
