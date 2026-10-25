@@ -166,12 +166,19 @@ PERF_ALLOWED_POST = frozenset({"/api/client/statistics"})
 class ApiPathDenied(RuntimeError):
     """Путь не входит в белый список «только чтение»: запрос не отправляется."""
 BACKOFF = [3, 6, 12, 24, 48]
-# Страницы списка кампаний (идемпотентный GET) — единственное чтение Performance, которое
-# повторяется на HTTP 429: Ozon отказывает странице, запрошенной в ту же секунду, что и
-# предыдущая (09–19.10: страница 1 → 200, страница 2 → 429, 38 раз подряд; 05.10 те же
-# 7 страниц прошли с 5 повторами за 32 с). Заказ отчётов и статистика на 429 не повторяются;
-# Retry-After длиннее последней паузы возвращает отказ в долгий кулдаун контура.
-PERF_429_RETRY_GET = re.compile(r"^/api/client/campaign\?page=[1-9][0-9]{0,4}&pageSize=100$")
+# Идемпотентные чтения Performance, которые повторяются на HTTP 429: страницы списка кампаний,
+# суточная статистика (expense/daily за один день), статус и выгрузка уже заказанного отчёта.
+# Ozon отказывает запросу, пришедшему в ту же секунду, что и предыдущий (09–19.10: страница 1 →
+# 200, страница 2 → 429, 38 раз подряд; 05.10 те же 7 страниц прошли с 5 повторами за 32 с).
+# Заказ отчёта (POST /api/client/statistics) не повторяется никогда: исход неизвестен, повтор
+# мог бы заказать второй отчёт. Прочие чтения (без пагинации, товары кампании, диапазоны дат
+# lifecycle) — как раньше. Retry-After длиннее последней паузы возвращает отказ в долгий кулдаун.
+PERF_429_RETRY_GET = (
+    re.compile(r"^/api/client/campaign\?page=[1-9][0-9]{0,4}&pageSize=100$"),
+    re.compile(r"^/api/client/statistics/(expense|daily)\?dateFrom=(\d{4}-\d{2}-\d{2})&dateTo=\2$"),
+    re.compile(r"^/api/client/statistics/[0-9A-Za-z-]{1,64}\?$"),
+    re.compile(r"^/api/client/statistics/report\?UUID=[0-9A-Za-z-]{1,64}$"),
+)
 PERF_429_RETRIES = 4
 
 class _CredentialCache:
@@ -525,7 +532,7 @@ def _perf_diagnostic(status, headers):
 def _perf_429_retryable(req):
     parsed = urllib.parse.urlsplit(req.full_url)
     return (req.get_method() == "GET" and parsed.hostname == "api-performance.ozon.ru"
-            and bool(PERF_429_RETRY_GET.fullmatch(parsed.path + "?" + parsed.query)))
+            and any(rx.fullmatch(parsed.path + "?" + parsed.query) for rx in PERF_429_RETRY_GET))
 
 
 def _request(req, attempt=0, raw_text=False, *, allow_retries=True):
