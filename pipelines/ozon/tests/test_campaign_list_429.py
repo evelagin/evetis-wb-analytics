@@ -237,3 +237,19 @@ def test_seller_429_backoff_is_unchanged(wire, monkeypatch):
     install, sleeps = wire
     assert C.PERF_429_RETRIES < len(C.BACKOFF) and C.BACKOFF == [3, 6, 12, 24, 48]
     assert not C._perf_429_retryable(urllib.request.Request(C.SELLER + '/v3/posting/fbo/list', method='POST'))
+
+
+def test_installed_image_driver_runs_network_free():
+    """The exact-image qualification step (ozon-runtime.v15) executes this driver."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    tests = Path(__file__).resolve().parent
+    env = dict(os.environ, PYTHONPATH=str(tests.parent / 'runtime'),
+               GCP_PROJECT_ID='offline-qualification-project', BQ_REF_DATASET='ref')
+    out = subprocess.run([sys.executable, str(tests / '_perf_429_image_driver.py')], env=env,
+                         capture_output=True, text=True, timeout=120, check=True)
+    facts = json.loads(out.stdout.strip().splitlines()[-1])
+    assert facts == {'performance_429_bounded_get_retry': 'PASS', 'performance_429_retry_paths': 4,
+                     'performance_429_sku_day': 'PASS', 'report_order_never_repeated': 'PASS'}
