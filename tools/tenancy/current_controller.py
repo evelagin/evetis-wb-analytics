@@ -240,7 +240,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     if RP.pending_receipts(base,historical_candidates(historical_records,historical_plans,done,quarantined)):return None
     day=base.clock().astimezone(K.MSK).date();known=cycles(base,p)
     # Drain every committed current receipt before making a new day's plan.
-    pending=[];reports=[];sku_plans=[]
+    pending=[];reports=[];sku_plans=[];finance_days=set()
     for text,v in sorted(known.items()):
         d=date.fromisoformat(text);records,items=plans(base,p,d)
         for entity,item in items.items():
@@ -248,9 +248,15 @@ def wake(base,historical_records,historical_plans,done,quarantined):
             intents=[r for r in hs if r['kind']=='DISPATCH_INTENT']
             if intents and not any(r['kind']=='RECONCILED' and r['sequence']==max(z['sequence'] for z in intents) for r in hs):pending.append((d,item))
             if entity=='ads_sku_daily':sku_plans.append((d,item))
-    if len(pending)>1:fail('multiple current source authorities')
+            if entity=='finance_accrual':finance_days.add(item['plan']['runtime_plan']['from'])
+    # Owner finance catch-up (its own durable scope): an open catch-up receipt is one more source
+    # authority and is drained before any new CURRENT work; new catch-up days only at the very end.
+    from tools.tenancy import finance_catchup as FC
+    catchup=FC.scan(base,p,finance_days)
+    if len(pending)+len(catchup['pending'])>1:fail('multiple current source authorities')
     if pending:
         d,item=pending[0];return source_tick(Backend(base,p,d),p,d,item)
+    if catchup['pending']:return FC.drain(base,catchup)
     for d,item in sku_plans:
         report=base.state(item['plan'])['progress'].get('report')
         if report:
@@ -295,7 +301,8 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         return result
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
-    return None
+    # Today's CURRENT has nothing left: an owner-authorised missed finance day may run (or None).
+    return FC.wake(base,catchup,certs,partial)
 
 def historical_candidates(records,plans,done,quarantined):
     """Catalog dependencies carry the same immutable dispatch authority as leaves."""

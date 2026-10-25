@@ -152,10 +152,12 @@ def evidence_readers_check():
         assert CI.ledger(SimpleNamespace(c={},tables=None))==(rows,False) and seen
     day='2026-10-23';p={'hash':'a'*64}
     def items(*specs):return {e:{'shard':'s-'+e} for e,_ in specs}
-    def run(specs):
+    from tools.tenancy import finance_catchup as FC
+    def run(specs,catchup=()):
         hist={'s-'+e:h for e,h in specs}
         b=SimpleNamespace(store=SimpleNamespace(history=lambda shard,**k:hist[shard]))
-        with patched(CUR,'policy',lambda _b:p),patched(CUR,'cycles',lambda _b,_p:{day:{}}),patched(CUR,'plans',lambda _b,_p,_d:([],items(*specs))):
+        with patched(CUR,'policy',lambda _b:p),patched(CUR,'cycles',lambda _b,_p:{day:{}}),patched(CUR,'plans',lambda _b,_p,_d:([],items(*specs))),\
+             patched(FC,'receipts',lambda _b,_p:list(catchup)):
             return CI.current_receipt(b,'bf-cur',346)
     def series(run_id='bf-cur',g=346,reconciled=False):
         h=[rec('s','DISPATCH_INTENT',1,{}),rec('s','DISPATCH_RECEIPT',1,{'receipt':{'run_id':run_id,'lease_generation':g}})]
@@ -165,6 +167,10 @@ def evidence_readers_check():
     assert run([('catalog',series(reconciled=True))]) is False                      # reconciled: lease should be released
     assert run([('catalog',series(g=345))]) is False and run([('catalog',series(run_id='bf-x'))]) is False
     assert run([('catalog',[rec('s','DISPATCH_INTENT',1,{})])]) is False             # intent without receipt
+    held={'run_id':'bf-cur','lease_generation':346}
+    assert run([],catchup=[held]) is True                                            # open finance catch-up day holds it
+    assert run([('catalog',series())],catchup=[held]) is False                       # never two holders
+    assert run([],catchup=[dict(held,lease_generation=345)]) is False
     return 'PASS'
 
 
@@ -210,9 +216,9 @@ def wake_check():
 
 
 def selection_check():
-    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG
+    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
     day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
-    def item(e):return {'day':day.isoformat(),'policy_hash':p['hash'],'plan':{'ack_hash':e,'runtime_plan':{'entity':e}},'shard':'s-'+e}
+    def item(e):return {'day':day.isoformat(),'policy_hash':p['hash'],'plan':{'ack_hash':e,'runtime_plan':{'entity':e,'from':'2026-10-22'}},'shard':'s-'+e}
     def run(certified=(),partial=(),pending=None):
         ticks=[];items={e:item(e) for e in P.ORDER if e!='fbo_postings'}
         records=[{'kind':'CURRENT_CERT','payload':{'fact':{'entity':e}}} for e in certified]
@@ -226,7 +232,7 @@ def selection_check():
         with patched(CUR,'policy',lambda b:p),patched(CC,'ensure',lambda b:None),patched(RP,'pending_receipts',lambda *a:[]),\
              patched(CUR,'cycles',lambda b,pp:{day.isoformat():{}}),patched(CUR,'plans',lambda b,pp,d:(records,items)),\
              patched(CUR,'validate_certificate',lambda *a:a[3]),patched(CUR,'Backend',lambda *a:None),patched(CUR,'source_tick',tick),\
-             patched(DIAG,'queued',lambda b:None):
+             patched(DIAG,'queued',lambda b:None),patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
             result=CUR.wake(base,[],{},{},set())
         assert result is None if not pending else result['status']=='WAITING'
         return ticks
