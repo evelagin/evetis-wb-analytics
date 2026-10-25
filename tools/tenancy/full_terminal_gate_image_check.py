@@ -206,6 +206,10 @@ def publish_check():
     assert h.b.store.history(h.m['hash'])==sorted(h.root,key=lambda r:(r['sequence'],r['kind'],D.digest(r)))
     with observing(h):R.publish(h.b,p3,h.m)
     assert writes==R.publication_writes(h.b,p3,h.m) and len(writes)==4,writes
+    # Owner markers fit a BigQuery table description even with a production-size root inventory (473+ records).
+    big=R.sealed(dict({k:v for k,v in p3.items() if k!='hash'},protected_root_hashes=sorted(D.digest({'n':i}) for i in range(1000))))
+    assert len(D.encoded(big).encode())>16384 and all(len(R.value(q)[1].encode())<1024 for q in (p3,big))
+    assert D.parse_tenant_json(R.value(big)[1])['certificate_hash']==big['hash']
     assert f.root[:len(before)]==before and len(f.root)==len(before)+1 and f.root[-1]['kind']==R.KIND and f.root[-1]['sequence']==0
     with repo_with(f.new):assert R.load(f.b,f.m,f.root)==[p]
     from tools.tenancy import stop_acceptance as SA
