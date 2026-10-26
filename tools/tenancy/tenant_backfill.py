@@ -374,7 +374,14 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     tables, ledger = preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
     request = backend.append_request if backend is not None else TT._req
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
-    from tools.tenancy.controller_diagnostics import gate
+    from tools.tenancy.controller_diagnostics import gate,write_boundary,WRITES
+    effects=dict.fromkeys(WRITES,'ABSENT')
+    if backend is not None:backend.dispatch_effects=effects
+    with write_boundary(effects):
+        return _start(c,doc,ack_hash,now,tables,ledger,request,backend,on_prepared,on_receipt,p,cid,effects,gate)
+
+
+def _start(c,doc,ack_hash,now,tables,ledger,request,backend,on_prepared,on_receipt,p,cid,effects,gate):
     with gate('LEASE'):
         leases=[(n,lb) for n,lb,created in tables.list_tables(c["datasets"]["tenant_locks"])]
         generation=pilot_lease_generation(ledger,leases,cid,now,
@@ -387,12 +394,14 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
           "labels":{"until":str(int((now+CK.LEASE_TTL).timestamp())),"owner":run_id},
           "description":json.dumps({"mode":"BOUNDED_PILOT","ack_hash":ack_hash}),
           "expirationTime":str(int((now+CK.LEASE_TTL+CK.LEASE_TABLE_KEEP).timestamp()*1000))}
-    from tools.tenancy.controller_diagnostics import gate
+    effects['lease']='UNKNOWN'
     with gate('LEASE'):
         request("POST",f"{TT.BQ}/projects/{c['project_id']}/datasets/{c['datasets']['tenant_locks']}/tables",body)
-    from tools.tenancy.controller_diagnostics import gate
+    effects['lease']='PRESENT'
+    effects['checkpoint']='UNKNOWN'
     with gate('CHECKPOINT'):
         tables.append(c["datasets"]["tenant_ops"],"BACKFILL_CHECKPOINTS",[checkpoint(doc,run_id,"RUNNING",generation,now)])
+    effects['checkpoint']='PRESENT'
     base,jobs=resources(c)
     name=next(n for n,cfg in jobs.items() if p["entity"] in cfg["entities"])
     overrides={"ENTITIES":p["entity"],"SINCE":p["from"],"UNTIL":p["to"],"INGESTION_RUN_ID":run_id,
@@ -412,14 +421,20 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     # Durable intent publication is synchronous and happens before the only POST.
     # A publication/response/receipt failure never retries that POST in this call.
     if on_prepared is not None:
+        effects['intent']='UNKNOWN'
         on_prepared(prepared)
+        effects['intent']='PRESENT'
+    effects['run']='UNKNOWN'
     out=backend.dispatch(doc,name,body) if backend is not None else TT._req("POST",f"{RUN_API}/{base}/jobs/{name}:run",body)
+    effects['run']='PRESENT'
     operation=out.get("name", "")
     if not operation.startswith(base+"/operations/"):
         raise B.EvidenceError("dispatch operation receipt missing/foreign; never repeat POST")
     receipt={"operation":operation,"run_id":run_id,"lease_generation":generation,"ack_hash":ack_hash}
     if on_receipt is not None:
+        effects['receipt']='UNKNOWN'
         on_receipt(receipt)
+        effects['receipt']='PRESENT'
     return receipt
 
 

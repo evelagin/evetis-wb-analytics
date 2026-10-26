@@ -429,7 +429,9 @@ def _recover_pending(backend,manifest,records,*,first=False):
     unresolved=[r for r in records if r['kind']=='STOPPED' and D.digest(r) not in {x['stop_hash'] for x in approved}]
     if len(unresolved)!=1:return None
     stop=unresolved[0];diag=stop['payload'].get('diagnostic',{})
-    if diag.get('stage') not in AUTO_STAGES:return None
+    # A write-path STOP without the RECONCILE context (held lease, lost write) has no candidate
+    # page to prove: it stays an owner STOP instead of failing here as a second untyped STOP.
+    if diag.get('stage') not in AUTO_STAGES or not isinstance(diag.get('context'),dict):return None
     candidates=[]
     for r in records:
         if r['kind']!='CHUNK_PLAN':continue

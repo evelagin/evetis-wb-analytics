@@ -83,10 +83,11 @@ def validate(p,b,m,records):
     if accepted_doc.get('proof')!=retained[0]:fail('FAILED4 acceptance changed')
     ds=b.c['datasets']['tenant_locks'];claim_value=b.tables.get_table(ds,CC.names(p['root'],1)[0])
     claim=CC.validate_claim(b,claim_value,allow_closed_history=True)
-    x=b.request('GET',BF.RUN_API+'/'+p['execution'])
-    env={e['name']:e.get('value') for e in x['template']['containers'][0]['env']}
-    if x.get('failedCount')!=1 or x.get('succeededCount',0) or env.get('HISTORICAL_SCHEDULER_STATE')!='PAUSED':
-        fail('exact failed paused bootstrap required')
+    x=CC.execution_or_pruned(b,p['execution'],p['verified_at'])
+    if x is not None:   # platform-pruned after retention: the terminal facts were proven at publication (effect_hash)
+        env={e['name']:e.get('value') for e in x['template']['containers'][0]['env']}
+        if x.get('failedCount')!=1 or x.get('succeededCount',0) or env.get('HISTORICAL_SCHEDULER_STATE')!='PAUSED':
+            fail('exact failed paused bootstrap required')
     close_value=b.tables.get_table(ds,CC.names(p['root'],1)[1]);close=parse(close_value[1]) if close_value else {}
     if ((claim['hash'],claim['source'],claim['image'],claim['execution'])
             !=(p['wake_claim_hash'],p['original_source'],p['original_image'],p['execution'])
