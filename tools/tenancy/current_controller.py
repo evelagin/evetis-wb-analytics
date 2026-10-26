@@ -309,3 +309,6 @@ def historical_candidates(records,plans,done,quarantined):
     selected={i:v for i,v in plans.items() if i not in done and i not in quarantined}
     selected.update({('dependency',n):r['payload'] for n,r in enumerate(records) if r['kind']=='DEPENDENCY_PLAN'})
     return selected
+
+# Loaded once with the real adapter class: the catch-up adapter subclasses Backend at import time.
+from tools.tenancy import finance_catchup as _finance_catchup  # noqa: E402,F401
