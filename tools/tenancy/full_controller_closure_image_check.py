@@ -80,7 +80,40 @@ def check():
  except BF.B.EvidenceError:pass
  else:raise AssertionError('legacy recovery changed')
  assert objects==original
- return dict(terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS',bounded_control_certificate_reference='PASS',legacy_certificate_bytes_preserved='PASS',retained_control_predicates_closed='PASS',overlapping_stop_event_provenance='PASS',unknown_stop_event_blocks='PASS')
+ pending=deepcopy(p);sh=pending['last_source']['shard']
+ pending.update(version=4,type=R.PENDING_TYPE,predicates=dict.fromkeys(R.PENDING_PREDICATES,True),
+  last_source=dict(index=pending['last_source']['index'],shard=sh,intent_hash='c'*64,receipt_hash='d'*64,sequence=1))
+ pending=R.sealed({k:v for k,v in pending.items() if k!='hash'});R.header(pending,m)
+ assert __import__('json').loads(R.value(pending)[1])['certificate_hash']==pending['hash']
+ for field in R.PENDING_PREDICATES:
+  bad=deepcopy(pending);bad['predicates'][field]=None;bad=R.sealed({k:v for k,v in bad.items() if k!='hash'})
+  try:R.header(bad,m)
+  except BF.B.EvidenceError:pass
+  else:raise AssertionError('unknown pending-receipt recovery predicate accepted')
+ assert objects==original
+ return dict(pending_receipt_control_closure='PASS',broken_http_response_typed=broken_http_response_typed(),terminal_controller_recovery='PASS',unknown_controller_predicate_blocks='PASS',original_control_claim_preserved='PASS',certified_additive_close='PASS',qualified_controller_timeout='PASS',source_replay_zero='PASS',bounded_control_certificate_reference='PASS',legacy_certificate_bytes_preserved='PASS',retained_control_predicates_closed='PASS',overlapping_stop_event_provenance='PASS',unknown_stop_event_blocks='PASS')
+
+
+def broken_http_response_typed():
+ """A truncated HTTP body is a typed transport failure: a read retries on a later wake,
+ a write is an unknown result; never an untyped crash that leaves the claim open."""
+ import http.client,urllib.request
+ from tools.tenancy import cloud_access as A
+ class Response:
+  def __enter__(self):return self
+  def __exit__(self,*a):return False
+  def read(self,n):raise http.client.IncompleteRead(b'',1)
+ class Opener:
+  def open(self,request,timeout):return Response()
+ original=urllib.request.build_opener;urllib.request.build_opener=lambda *a:Opener()
+ try:
+  for method,typed in (('GET',A.TransientReadError),('POST',A.TT.TableError)):
+   try:A.wire(method,A.TT.BQ+'/projects/mpa-t-client-001/datasets/tenant_locks/tables',{} if method=='POST' else None)
+   except A.TT.TableError as e:
+    if type(e) is not typed:raise AssertionError('broken HTTP response mistyped')
+   else:raise AssertionError('broken HTTP response accepted')
+ finally:urllib.request.build_opener=original
+ return 'PASS'
 
 
 if __name__=='__main__':

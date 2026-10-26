@@ -27,7 +27,17 @@ RECONCILED_PREDICATES=(PREDICATES-{'current_catalog_pass'})|{'accepted_catalog_l
 SEQUENCE_TYPE='TERMINAL_TIMEOUT_CONTROLLER_RECONCILED_SEQUENCE_CLOSURE_V3'
 SEQUENCE_PREDICATES=(PREDICATES-{'current_catalog_pass','last_source_reconciled'})|{
  'last_sequence_reconciled','intermediate_page_not_complete','no_later_source_election'}
-VERSIONS={(1,TYPE):PREDICATES,(2,RECONCILED_TYPE):RECONCILED_PREDICATES,(3,SEQUENCE_TYPE):SEQUENCE_PREDICATES}
+# v4: the holder FAILED (not a timeout) before its decision closure while a page elected
+# and receipted under the PREVIOUS, closed claim awaited reconciliation (Heldi STOP
+# aaf68ede, 2026-10-25: an untyped transport exception). The holder wrote nothing but its
+# claim; the pending receipt is preserved for the ordinary reconcile and never settled here.
+PENDING_TYPE='TERMINAL_FAILED_CONTROLLER_PENDING_RECEIPT_CLOSURE_V4'
+PENDING_PREDICATES=(PREDICATES-{'registered_terminal_timeout','current_catalog_pass','last_source_reconciled','no_pending_source_authority'})|{
+ 'registered_terminal_failure','no_holder_effect_after_claim','pending_receipt_before_claim','pending_runtime_succeeded','pending_receipt_preserved'}
+VERSIONS={(1,TYPE):PREDICATES,(2,RECONCILED_TYPE):RECONCILED_PREDICATES,(3,SEQUENCE_TYPE):SEQUENCE_PREDICATES,(4,PENDING_TYPE):PENDING_PREDICATES}
+# Lock namespaces only the controller writes; owner release markers never use them.
+CONTROLLER_LOCK=re.compile(r'(BFQ_[0-9a-f]{64}_[0-9]{10}_[A-Z_]+|BFR_[0-9a-f]{64}|LD?_[0-9a-f]{16}_[0-9]{4}|BFC[WX]_[0-9a-f]{64}_[0-9]{10})')
+FAILED_MESSAGE=re.compile(r'Task tenant-backfill-controller-[a-z0-9]{5}-task0 failed with exit code: 1 and message: The container exited with an error\.')
 FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','claim',
  'stop_hashes','protected_root_hashes','new_source','new_image','new_implementation_hash',
  'runtime_image','owner_ack_sha256','guard_probe_hash','security_proof_hash','source_proof_hash',
@@ -39,7 +49,7 @@ def authority_name(p):return 'BFCC_AUTH_'+p['root']+'_'+p['claim']['hash']
 def certificate_name(p):return 'BFCC_'+p['hash']
 def value(p):
  description=D.encoded(p)
- if p.get('version') in (2,3):
+ if p.get('version') in (2,3,4):
   # The full closed proof remains in its content-addressed durable root record.
   # Owner metadata binds that exact proof, without truncation or a second copy
   # of the growing root inventory in a 16-KiB table description.
@@ -69,8 +79,14 @@ def header(p,m):
  CC.at(p['verified_at']);return p
 
 
-def terminal_timeout(b,claim):
- """Read exact historical deployment; never accept arbitrary FAILED runtimes."""
+def terminal_timeout(b,claim):return terminal_holder(b,claim,timeout=True)
+
+
+def terminal_holder(b,claim,*,timeout):
+ """Read exact historical deployment; never accept arbitrary FAILED runtimes.
+
+ timeout=False (v4) accepts only the platform's exit-code-1 container failure of the
+ exact holder task; a timeout, signal, OOM or any other result stays unsupported."""
  from tools.tenancy import orchestration_contract as O, cloud_controller as C
  release=parse((BF.REPO/'infra/tenant/releases/backfill'/f"{claim['source']}.json").read_text())
  x=b.request('GET',BF.RUN_API+'/'+claim['execution']);env={e['name']:e.get('value') for e in x['template']['containers'][0]['env']}
@@ -82,7 +98,9 @@ def terminal_timeout(b,claim):
  if (x.get('name')!=claim['execution'] or x.get('failedCount')!=1 or x.get('succeededCount',0)
      or x.get('cancelledCount',0) or x.get('retriedCount',0) or x.get('runningCount',0) or x.get('reconciling',False)
      or not x.get('completionTime') or len(completed)!=1 or completed[0].get('state')!='CONDITION_FAILED'
-     or 'The configured timeout was reached.' not in completed[0].get('message','')):fail('unsupported terminal controller result')
+     or (timeout and 'The configured timeout was reached.' not in completed[0].get('message',''))
+     or (not timeout and (not FAILED_MESSAGE.fullmatch(completed[0].get('message',''))
+                          or not completed[0]['message'].startswith('Task '+claim['execution'].rsplit('/',1)[1]+'-task0 ')))):fail('unsupported terminal controller result')
  if not CC.at(x['createTime'])<=CC.at(claim['created_at'])<=CC.at(x['completionTime'])<=b.clock():fail('terminal claim interval differs')
  return x
 
@@ -137,6 +155,7 @@ def validate(p,b,m,records,*,final=True):
  s=p['last_source']
  if type(s.get('index')) is not int or not 0<=s['index']<len(m['programs']):fail('last source index unknown')
  if p['version']==3:return validate_sequence(p,b,m,records,s)
+ if p['version']==4:return validate_pending(p,b,m,records,s)
  if set(s)!={'index','shard','receipt_hash','recon_hash','completion_hash'}:fail('closed last-source scope required')
  for k in ('shard','receipt_hash','recon_hash','completion_hash'):D.check_hash(s[k])
  done=H.completed(records,m)
@@ -164,6 +183,21 @@ def validate_sequence(p,b,m,records,s):
  rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and D.digest(r)==s['receipt_hash']];rc=[r for r in sh if r['kind']=='RECONCILED' and D.digest(r)==s['recon_hash']]
  if (len(rr)!=1 or len(rc)!=1 or rr[0]['sequence']!=s['sequence'] or rc[0]['sequence']!=s['sequence']
      or rc[0]['payload'].get('persisted_reconciled') is not True):fail('source sequence reconciliation differs')
+ return p
+
+
+def validate_pending(p,b,m,records,s):
+ """Immutable v4 facts only (re-run on every wake): the pending page's intent and
+ receipt of one sequence exist in the leaf's own committed shard. Its later ordinary
+ RECONCILED record, a later page or the leaf's completion never invalidate them;
+ that the page was pending and preceded the claim is a publication predicate."""
+ if set(s)!={'index','shard','intent_hash','receipt_hash','sequence'} or type(s['sequence']) is not int or s['sequence']<1:fail('closed pending scope required')
+ for k in ('shard','intent_hash','receipt_hash'):D.check_hash(s[k])
+ owned=[r for r in records if r['kind']=='CHUNK_PLAN' and r['sequence']==s['index'] and r['payload'].get('shard_root')==s['shard']]
+ if len(owned)!=1:fail('pending source shard differs')
+ sh=b.store.history(s['shard'],max_records=F.MAX_LEAF_RECORDS)
+ ri=[r for r in sh if r['kind']=='DISPATCH_INTENT' and D.digest(r)==s['intent_hash']];rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and D.digest(r)==s['receipt_hash']]
+ if len(ri)!=1 or len(rr)!=1 or ri[0]['sequence']!=s['sequence'] or rr[0]['sequence']!=s['sequence']:fail('pending source intent/receipt differs')
  return p
 
 
@@ -225,7 +259,8 @@ def live_freeze(b,p,m,records):
  existing=b.tables.get_table(ds,CC.names(p['root'],generation)[1])
  expected=({'kind':'controller_close','root':p['root'][:16]},D.encoded(p['closure']))
  if existing is not None and (existing!=expected or b.tables.get_table(ds,certificate_name(p))!=value(p) or b.tables.get_table(b.c['datasets']['ref'],authority_name(p))!=value(p)):fail('original control closure unknown')
- terminal_timeout(b,p['claim'])
+ terminal_holder(b,p['claim'],timeout=False) if p['version']==4 else terminal_timeout(b,p['claim'])
+ if p['version']==4:no_holder_effect(b,p)
  base,_=BF.resources(b.c);ss=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
  if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(j['state']!='PAUSED' for j in ss['jobs']):fail('Scheduler not frozen')
  for name in (*b.c['marketplaces']['ozon']['jobs'],'tenant-control',O.JOB):
@@ -243,8 +278,9 @@ def live_freeze(b,p,m,records):
     old=O.block(b.c,dict(release=p['claim']['source'],root_hash=p['root'],scheduler_state='ENABLED'),BF.REPO,old_release)
     O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},old)
   if name!=O.JOB and any(CC.at(x['createTime'])>=CC.at(p['claim']['created_at']) for x in xs):fail('new child/external effect')
- rows=b.select(f"SELECT COUNT(*) AS n FROM `{b.journal}` WHERE started_at>=@start",{'start':('TIMESTAMP',p['claim']['created_at'])})
- if rows!=[{'n':0}]:fail('source journal effect after claim')
+ if p['version']!=4:
+  rows=b.select(f"SELECT COUNT(*) AS n FROM `{b.journal}` WHERE started_at>=@start",{'start':('TIMESTAMP',p['claim']['created_at'])})
+  if rows!=[{'n':0}]:fail('source journal effect after claim')
  # Inspect election timestamps, including uncommitted intents. No source fence is
  # released, rewritten or treated as expired by this recovery.
  plans=H.reconstruct_plans(records,m,b.clock());shards={x['shard_root'] for x in plans.values()}|{r['payload']['shard_root'] for r in records if r['kind']=='DEPENDENCY_PLAN'}
@@ -253,7 +289,10 @@ def live_freeze(b,p,m,records):
   if match and match[1] in shards and (created is None or created>=CC.at(p['claim']['created_at']) or expiry):fail('new/unknown source election')
  known,isolated=accepted_incidents(b,m,records)
  if {D.digest(r) for r in records if r['kind']=='STOPPED'}-known!=set(p['stop_hashes']):fail('another unresolved incident')
- if RP.pending_receipts(b,{i:item for i,item in plans.items() if i not in isolated}):fail('unfinished source authority')
+ pending=RP.pending_receipts(b,{i:item for i,item in plans.items() if i not in isolated})
+ if p['version']==4:
+  if [i for i,_ in pending]!=[p['last_source']['index']]:fail('pending source authority differs')
+ elif pending:fail('unfinished source authority')
  ro=FL.observer(b,m,p['last_source']['index']);H.verify_authority(ro,m);ro.preflight({'hash':m['hash'],'plans':[plans[p['last_source']['index']]['plan']]})
  doc=plans[p['last_source']['index']]['plan'];state=ro.state(doc)
  sh=b.store.history(p['last_source']['shard'],max_records=F.MAX_LEAF_RECORDS)
@@ -265,9 +304,10 @@ def live_freeze(b,p,m,records):
  task=x['template'];env={e['name']:e.get('value') for e in task['containers'][0]['env']}
  expected_sa=f"{b.c['marketplaces']['ozon']['service_accounts']['runtime']}@{p['project']}.iam.gserviceaccount.com"
  if task['serviceAccount']!=expected_sa or len(task['containers'])!=1 or task['containers'][0]['image']!=BF.execution_image(doc,b.c) or any(env.get(k)!=v for k,v in dict(INGESTION_RUN_ID=receipt['run_id'],TENANT_BINDING_REQUIRED='1',STRICT_PAGE_CAPS='1',BACKFILL_TARGET_PROJECT=p['project']).items()):fail('source identity differs')
+ prefix=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',p['project']])[:16]
+ if p['version']==4:return live_pending(b,p,m,records,sh,rr,doc,state,receipt,prefix,x['completionTime'])
  proof=BF.read_proof(b.c,doc,receipt['run_id'],request=ro.request)
  if proof['state']!=state:fail('source aggregate/state mismatch')
- prefix=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',p['project']])[:16]
  for n in (BF.CK.lease_name(prefix,receipt['lease_generation']),f"LD_{prefix}_{receipt['lease_generation']:04d}"):
   v=b.tables.get_table(ds,n)
   if not v or v[0].get('owner')!=receipt['run_id'] or parse(v[1]).get('ack_hash')!=doc['ack_hash']:fail('last source lease/LD differs')
@@ -313,6 +353,48 @@ def live_sequence(b,p,m,records,sh,rr,doc,state,ro):
  if state['sequence']<s['sequence']:fail('durable source state precedes the reconciled page')
  coverage=BF.verify_persistence(doc,doc['ack_hash'],backend=ro)
  if coverage['source_sequence']!=state['sequence'] or any(x.get('rows')!=x.get('keys') for x in coverage['readback'] if 'keys' in x):fail('source persistence/key mismatch')
+ return True
+
+
+def no_holder_effect(b,p):
+ """v4: after its claim the holder committed nothing. Every controller-namespace lock
+ and every checkpoint row created since the claim is the claim itself or a dependent
+ STOP; owner release markers use other namespaces and are not holder effects."""
+ ds=b.c['datasets']['tenant_locks'];start=CC.at(p['claim']['created_at'])
+ allowed={CC.names(p['root'],p['claim']['generation'])[0]}|{'BFR_'+h for h in p['stop_hashes']}
+ for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
+  if not CONTROLLER_LOCK.fullmatch(n):continue
+  if created is None:fail('controller lock time unknown')
+  if created>=start and n not in allowed:fail('holder effect after claim')
+ rows=b.select(f"SELECT backfill_id,entity FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE updated_at>=@start LIMIT 1000",{'start':('TIMESTAMP',p['claim']['created_at'])})
+ if any(r['entity']!='orchestration' or r['backfill_id'] not in {h[:16] for h in p['stop_hashes']} for r in rows):fail('checkpoint effect after claim')
+ return True
+
+
+def live_pending(b,p,m,records,sh,rr,doc,state,receipt,prefix,runtime_completed):
+ """v4 publication proof: the pending page is the leaf's latest election, elected and
+ receipted BEFORE the failed claim, its runtime succeeded (checked by the caller), it is
+ not reconciled, and its pilot lease is still held by that run (no LD). The runtime may
+ still journal its own units after the claim (2026-10-25: u1967 one second later), never
+ another run and never after its completion. Nothing here settles, releases or
+ reconciles the page: the ordinary controller reconciles it next."""
+ from tools.tenancy import full_controller as H
+ s=p['last_source'];ds=b.c['datasets']['tenant_locks'];start=CC.at(p['claim']['created_at'])
+ intents=[r['sequence'] for r in sh if r['kind']=='DISPATCH_INTENT']
+ if not intents or max(intents)!=s['sequence'] or rr['sequence']!=s['sequence']:fail('later source election exists')
+ if any(r['kind']=='RECONCILED' and r['sequence']==s['sequence'] for r in sh):fail('pending page already reconciled')
+ if s['index'] in H.completed(records,m) or state['complete'] is not False:fail('pending page must not complete the leaf')
+ created={n:at for n,labels,at,expiry in b.tables.list_tables(ds,with_expiry=True)}
+ for kind in ('DISPATCH_INTENT','DISPATCH_RECEIPT'):
+  at=created.get(f"BFQ_{s['shard']}_{s['sequence']:010d}_{kind}")
+  if at is None or at>=start:fail('pending election not before the failed claim')
+ if f"BFQ_{s['shard']}_{s['sequence']:010d}_RECONCILED" in created:fail('pending page already reconciled')
+ lease=b.tables.get_table(ds,BF.CK.lease_name(prefix,receipt['lease_generation']))
+ if not lease or lease[0].get('owner')!=receipt['run_id'] or parse(lease[1]).get('ack_hash')!=doc['ack_hash']:fail('pending source lease differs')
+ if b.tables.get_table(ds,f"LD_{prefix}_{receipt['lease_generation']:04d}") is not None:fail('pending source lease already released')
+ rows=b.select(f"SELECT ingestion_run_id AS run,FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ',started_at,'UTC') AS started FROM `{b.journal}` WHERE started_at>=@start LIMIT 1001",{'start':('TIMESTAMP',p['claim']['created_at'])})
+ own=re.compile(re.escape(receipt['run_id'])+r'(-u[0-9]+)?')
+ if len(rows)>1000 or any(not own.fullmatch(r['run'] or '') or CC.at(r['started'])>CC.at(runtime_completed) for r in rows):fail('source journal effect after claim')
  return True
 
 
@@ -384,6 +466,52 @@ def observe_sequence(b,m,generation,*,owner_ack_sha256,guard_probe_hash,security
   owner_ack_sha256=owner_ack_sha256,guard_probe_hash=guard_probe_hash,security_proof_hash=security_proof_hash,
   source_proof_hash=D.digest(proof),last_source=dict(index=index,shard=shard,receipt_hash=D.digest(rr[0]),recon_hash=D.digest(rc[0]),sequence=sequence),
   predicates=dict.fromkeys(SEQUENCE_PREDICATES,True),verified_at=verified.isoformat(),source_budget=0,
+  closure=CC.sealed(dict(version=1,claim_hash=claim['hash'],status='SOURCE_FREE_RECOVERED',source_dispatches=0,closed_at=verified.isoformat())))
+ p=sealed(p)
+ validate(p,b,m,records,final=False);live_freeze(b,p,m,records)
+ return p
+
+
+def observe_pending(b,m,generation,*,owner_ack_sha256,guard_probe_hash,security_proof_hash):
+ """Owner-only, read-only v4 certificate on ONE snapshot (the incident of 2026-10-25).
+
+ The failed holder's claim is unclosed; exactly one plan shard has a receipted page
+ without its RECONCILED fence and it is the shard's latest election. The STOP set is
+ the STOPPED records the shared acceptance set does not cover. Predicates are asserted
+ only after validate() and live_freeze() pass; publish() repeats the live checks.
+ """
+ from tools.tenancy import full_controller as H, stop_acceptance as SA, cloud_controller as C
+ if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('owner frozen observation required')
+ verified=b.clock();records=b.store.history(m['hash'])
+ if H.only_manifest(records)!=m:fail('foreign frozen root')
+ ds=b.c['datasets']['tenant_locks'];claim=CC.claim_fields(b,b.tables.get_table(ds,CC.names(m['hash'],generation)[0]))
+ if claim['generation']!=generation or not CC.historical(b,claim) or CC.closed(b,claim):fail('unclosed replaced-release claim required')
+ known=SA.accepted_hashes(b,m,records)
+ stops=sorted(D.digest(r) for r in records if r['kind']=='STOPPED' and D.digest(r) not in known)
+ if not stops:fail('no unresolved STOP to recover')
+ plans=H.reconstruct_plans(records,m,b.clock());by_shard={item['shard_root']:i for i,item in plans.items()}
+ latest={}
+ for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
+  match=re.fullmatch(r'BFQ_([0-9a-f]{64})_([0-9]{10})_(DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)',n)
+  if match and match[1] in by_shard:latest[(match[1],match[3])]=max(int(match[2]),latest.get((match[1],match[3]),0))
+ found=[(shard,latest[(shard,'DISPATCH_RECEIPT')]) for shard in by_shard if latest.get((shard,'DISPATCH_RECEIPT'),0)>latest.get((shard,'RECONCILED'),0)]
+ if len(found)!=1:fail('exactly one pending receipted page required')
+ shard,sequence=found[0];index=by_shard[shard]
+ if latest[(shard,'DISPATCH_INTENT')]!=sequence:fail('pending page is not the latest election')
+ sh=b.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
+ ri=[r for r in sh if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence];rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence]
+ if len(ri)!=1 or len(rr)!=1:fail('pending page evidence ambiguous')
+ marker=b.tables.get_table(ds,C.descriptor_name(b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA'],m['hash'],'PAUSED'))
+ if not marker:fail('installed PAUSED replacement descriptor absent')
+ release=parse(marker[1])['release']
+ doc=plans[index]['plan'];ro=FL_observer(b,m,index);receipt=rr[0]['payload']['receipt']
+ proof=BF.read_proof(b.c,doc,receipt['run_id'],request=ro.request)
+ p=dict(version=4,type=PENDING_TYPE,tenant=m['tenant'],project=m['project'],root=m['hash'],manifest_hash=D.digest(m),claim=claim,
+  stop_hashes=stops,protected_root_hashes=sorted(D.digest(r) for r in records),new_source=release['source_sha'],
+  new_image=release['image'],new_implementation_hash=release['controller_implementation_hash'],runtime_image=release['runtime_image'],
+  owner_ack_sha256=owner_ack_sha256,guard_probe_hash=guard_probe_hash,security_proof_hash=security_proof_hash,
+  source_proof_hash=D.digest(proof),last_source=dict(index=index,shard=shard,intent_hash=D.digest(ri[0]),receipt_hash=D.digest(rr[0]),sequence=sequence),
+  predicates=dict.fromkeys(PENDING_PREDICATES,True),verified_at=verified.isoformat(),source_budget=0,
   closure=CC.sealed(dict(version=1,claim_hash=claim['hash'],status='SOURCE_FREE_RECOVERED',source_dispatches=0,closed_at=verified.isoformat())))
  p=sealed(p)
  validate(p,b,m,records,final=False);live_freeze(b,p,m,records)

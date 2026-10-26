@@ -199,3 +199,113 @@ def test_live_effect_and_ownership_guards_block_without_mutations(monkeypatch,fa
  b.request=request;b.journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS';b.select=lambda *a:[dict(n=1 if fault=='journal_effect' else 0)]
  with pytest.raises(BF.B.EvidenceError):R.live_freeze(b,p,m,root)
  assert objects==before
+
+
+# ── v4: FAILED holder (not a timeout) with a receipted page pending (Heldi STOP aaf68ede) ───
+def v4(m,p,b,root,objects,**change):
+ """The fixture's certificate re-scoped to v4: page 1 of the fbo leaf receipted, not reconciled."""
+ sh=p['last_source']['shard'];doc=next(r for r in root if r['kind']=='CHUNK_PLAN')['payload']['plan']
+ intent=dict(version=D.VERSION,root_hash=sh,kind='DISPATCH_INTENT',sequence=1,payload=dict(preparation=dict(run_id='bf-example',lease_generation=1,ack_hash=doc['ack_hash'])))
+ receipt=dict(version=D.VERSION,root_hash=sh,kind='DISPATCH_RECEIPT',sequence=1,payload=dict(plan=doc,receipt=dict(run_id='bf-example',lease_generation=1,ack_hash=doc['ack_hash'])))
+ root[:]=[r for r in root if r['kind']!='CHUNK_COMPLETE'];shard=[intent,receipt]
+ b.store.history=lambda r,**kw:root if r==m['hash'] else shard
+ q=deepcopy(p);q.update(version=4,type=R.PENDING_TYPE,predicates=dict.fromkeys(R.PENDING_PREDICATES,True),
+  protected_root_hashes=sorted(D.digest(r) for r in root),last_source=dict(index=p['last_source']['index'],shard=sh,intent_hash=D.digest(intent),receipt_hash=D.digest(receipt),sequence=1))
+ q.update(change)
+ return R.sealed({k:v for k,v in q.items() if k!='hash'}),shard
+
+
+def test_v4_certificate_is_closed_and_bounded():
+ m,p,b,root,objects,*_=fixture();q,_=v4(m,p,b,root,objects)
+ assert R.header(q,m) is q and R.validate(q,b,m,root,final=False) is q
+ import json
+ ref=json.loads(R.value(q)[1]);assert ref['type']=='CONTROLLER_CLOSURE_CERTIFICATE_REF' and ref['certificate_hash']==q['hash']
+ for bad in (dict(predicates=dict.fromkeys(R.SEQUENCE_PREDICATES,True)),dict(type=R.SEQUENCE_TYPE),dict(source_budget=1),
+             dict(new_source=p['claim']['source'])):
+  r,_=v4(m,p,b,root,objects,**bad)
+  with pytest.raises(BF.B.EvidenceError):R.header(r,m)
+ for field in sorted(R.PENDING_PREDICATES):
+  r,_=v4(m,p,b,root,objects);r['predicates'][field]=None;r=R.sealed({k:v for k,v in r.items() if k!='hash'})
+  with pytest.raises(BF.B.EvidenceError,match='unknown mandatory'):R.publish(b,r,m)
+
+
+def test_v4_pending_proof_survives_the_ordinary_reconcile_and_rejects_foreign_pages():
+ m,p,b,root,objects,*_=fixture();q,shard=v4(m,p,b,root,objects);before=deepcopy(objects)
+ s=q['last_source']
+ shard.append(dict(version=D.VERSION,root_hash=s['shard'],kind='RECONCILED',sequence=1,payload=dict(persisted_reconciled=True)))
+ assert R.validate_pending(q,b,m,root,s) is q                       # the next wake reconciles the page: still accepted
+ for bad in (dict(s,sequence=2),dict(s,intent_hash='5'*64),dict(s,receipt_hash='5'*64),dict(s,shard='6'*64),dict(s,index=s['index']-1),dict(s,recon_hash='7'*64)):
+  with pytest.raises(BF.B.EvidenceError):R.validate_pending(q,b,m,root,bad)
+ assert objects==before
+
+
+@pytest.mark.parametrize('fault',['valid_failure','timeout','other_exit','other_task','success','cancelled'])
+def test_v4_accepts_only_the_exact_holder_exit_code_one_failure(monkeypatch,tmp_path,fault):
+ from tools.tenancy import cloud_controller as C
+ m,p,b,root,objects,new,x=fixture();old=deepcopy(new)
+ old.update(source_sha=p['claim']['source'],image=p['claim']['image']);old.pop('controller_timeout_seconds');old['verification'].pop('terminal_controller_adapter')
+ path=tmp_path/'infra/tenant/releases/backfill';path.mkdir(parents=True);(path/(old['source_sha']+'.json')).write_text(D.encoded(old))
+ monkeypatch.setattr(BF,'REPO',tmp_path)
+ settings=dict(release=old['source_sha'],root_hash=m['hash'],scheduler_state='ENABLED')
+ objects[C.descriptor_name(old['source_sha'],m['hash'],'ENABLED')]=({},D.encoded(dict(settings=settings,release=old)))
+ task=p['claim']['execution'].rsplit('/',1)[1]
+ message=f'Task {task}-task0 failed with exit code: 1 and message: The container exited with an error.'
+ holder=x[0];holder.update(completionTime=NOW.isoformat(),failedCount=1,conditions=[dict(type='Completed',state='CONDITION_FAILED',message=message)])
+ if fault=='timeout':holder['conditions'][0]['message']='The configured timeout was reached.'
+ if fault=='other_exit':holder['conditions'][0]['message']=message.replace('code: 1 ','code: 137 ')
+ if fault=='other_task':holder['conditions'][0]['message']=message.replace(task,'tenant-backfill-controller-zzzzz')
+ if fault=='success':holder.update(failedCount=0,succeededCount=1)
+ if fault=='cancelled':holder['cancelledCount']=1
+ if fault=='valid_failure':assert R.terminal_holder(b,p['claim'],timeout=False)==holder
+ else:
+  with pytest.raises(BF.B.EvidenceError):R.terminal_holder(b,p['claim'],timeout=False)
+ if fault=='timeout':assert R.terminal_timeout(b,p['claim'])==holder   # v1-v3 unchanged
+ else:
+  with pytest.raises(BF.B.EvidenceError):R.terminal_timeout(b,p['claim'])
+
+
+@pytest.mark.parametrize('fault',['none','owner_marker','stop_row','bfq','bfr','lease','ld','closure','unknown_time','checkpoint','foreign_stop_row'])
+def test_v4_holder_wrote_nothing_after_its_claim(fault):
+ m,p,b,root,objects,*_=fixture();q,_=v4(m,p,b,root,objects);before=deepcopy(objects)
+ start=CC.at(q['claim']['created_at']);after=start+timedelta(seconds=5);sh=q['last_source']['shard'];stop=q['stop_hashes'][0]
+ extra={'none':[],'owner_marker':[('BF_SPEC_'+'f'*40+'_'+m['hash']+'_PAUSED',after)],'stop_row':[('BFR_'+stop,after)],
+  'bfq':[(f'BFQ_{sh}_0000000002_DISPATCH_INTENT',after)],'bfr':[('BFR_'+'c'*64,after)],'lease':[('L_'+'d'*16+'_0002',after)],
+  'ld':[('LD_'+'d'*16+'_0001',after)],'closure':[(CC.names(m['hash'],q['claim']['generation'])[1],after)],
+  'unknown_time':[('BFR_'+'c'*64,None)],'checkpoint':[],'foreign_stop_row':[]}[fault]
+ original=b.tables.list_tables
+ b.tables.list_tables=lambda ds,with_expiry=False:original(ds,with_expiry)+[(n,{},at,None) for n,at in extra]
+ rows={'checkpoint':[dict(backfill_id='ab739857b0ae170f',entity='supplies')],'foreign_stop_row':[dict(backfill_id='e'*16,entity='orchestration')],'stop_row':[dict(backfill_id=stop[:16],entity='orchestration')]}.get(fault,[])
+ b.select=lambda sql,params:rows
+ if fault in {'none','owner_marker','stop_row'}:assert R.no_holder_effect(b,q)
+ else:
+  with pytest.raises(BF.B.EvidenceError):R.no_holder_effect(b,q)
+ assert objects==before
+
+
+@pytest.mark.parametrize('fault',['valid','later_election','reconciled_record','reconciled_fence','elected_after_claim','receipt_after_claim','released','foreign_lease','complete','foreign_journal','late_journal','prefix_journal'])
+def test_v4_pending_page_is_preserved_never_settled(fault):
+ m,p,b,root,objects,*_=fixture();q,shard=v4(m,p,b,root,objects)
+ s=q['last_source'];start=CC.at(q['claim']['created_at']);before_claim=start-timedelta(seconds=60)
+ doc=next(r for r in root if r['kind']=='CHUNK_PLAN')['payload']['plan'];receipt=shard[1]['payload']['receipt']
+ prefix=BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE',q['project']])[:16]
+ objects[BF.CK.lease_name(prefix,1)]=({'owner':'other-run' if fault=='foreign_lease' else 'bf-example'},D.encoded(dict(ack_hash=doc['ack_hash'])))
+ if fault=='released':objects[f'LD_{prefix}_0001']=({'owner':'bf-example'},D.encoded(dict(ack_hash=doc['ack_hash'])))
+ times={f"BFQ_{s['shard']}_0000000001_DISPATCH_INTENT":start+timedelta(seconds=1) if fault=='elected_after_claim' else before_claim,
+        f"BFQ_{s['shard']}_0000000001_DISPATCH_RECEIPT":start+timedelta(seconds=1) if fault=='receipt_after_claim' else before_claim}
+ if fault=='reconciled_fence':times[f"BFQ_{s['shard']}_0000000001_RECONCILED"]=start+timedelta(seconds=9)
+ original=b.tables.list_tables
+ b.tables.list_tables=lambda ds,with_expiry=False:original(ds,with_expiry)+[(n,{},at,None) for n,at in times.items()]
+ if fault=='later_election':shard.append(dict(version=D.VERSION,root_hash=s['shard'],kind='DISPATCH_INTENT',sequence=2,payload={}))
+ if fault=='reconciled_record':shard.append(dict(version=D.VERSION,root_hash=s['shard'],kind='RECONCILED',sequence=1,payload={}))
+ state={'complete':fault=='complete','sequence':0}
+ done=(start+timedelta(seconds=3)).isoformat();b.journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS'
+ rows=[dict(run='bf-example-u1967',started=(start+timedelta(seconds=1)).isoformat()),dict(run='bf-example',started=(start-timedelta(seconds=30)).isoformat())]
+ if fault=='foreign_journal':rows.append(dict(run='bf-other-u1',started=(start+timedelta(seconds=1)).isoformat()))
+ if fault=='late_journal':rows.append(dict(run='bf-example-u1968',started=(start+timedelta(seconds=4)).isoformat()))
+ if fault=='prefix_journal':rows.append(dict(run='bf-example2-u1',started=(start+timedelta(seconds=1)).isoformat()))
+ b.select=lambda sql,params:rows
+ before=deepcopy(objects)
+ if fault=='valid':assert R.live_pending(b,q,m,root,shard,shard[1],doc,state,receipt,prefix,done)
+ else:
+  with pytest.raises(BF.B.EvidenceError):R.live_pending(b,q,m,root,shard,shard[1],doc,state,receipt,prefix,done)
+ assert objects==before
