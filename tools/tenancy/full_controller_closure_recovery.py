@@ -493,24 +493,27 @@ def observe_pending(b,m,generation,*,owner_ack_sha256,guard_probe_hash,security_
  the STOPPED records the shared acceptance set does not cover. Predicates are asserted
  only after validate() and live_freeze() pass; publish() repeats the live checks.
  """
- from tools.tenancy import full_controller as H, stop_acceptance as SA, cloud_controller as C
+ from tools.tenancy import full_controller as H, cloud_controller as C
  if b.current_execution is not None or b.c['orchestration']['job']['env']['HISTORICAL_SCHEDULER_STATE']!='PAUSED':fail('owner frozen observation required')
  verified=b.clock();records=b.store.history(m['hash'])
  if H.only_manifest(records)!=m:fail('foreign frozen root')
  ds=b.c['datasets']['tenant_locks'];claim=CC.claim_fields(b,b.tables.get_table(ds,CC.names(m['hash'],generation)[0]))
  if claim['generation']!=generation or not CC.historical(b,claim) or CC.closed(b,claim):fail('unclosed replaced-release claim required')
- known=SA.accepted_hashes(b,m,records)
+ # The same pending inventory as live_freeze (recent_priority.pending_receipts): receipts
+ # settled by accepted recoveries or isolated by quarantine are not pending authority.
+ from tools.tenancy import recent_priority as RP
+ known,isolated=accepted_incidents(b,m,records)
  stops=sorted(D.digest(r) for r in records if r['kind']=='STOPPED' and D.digest(r) not in known)
  if not stops:fail('no unresolved STOP to recover')
- plans=H.reconstruct_plans(records,m,b.clock());by_shard={item['shard_root']:i for i,item in plans.items()}
- latest={}
+ plans=H.reconstruct_plans(records,m,b.clock())
+ pending=RP.pending_receipts(b,{i:item for i,item in plans.items() if i not in isolated})
+ if len(pending)!=1:fail('exactly one pending receipted page required')
+ index=pending[0][0];shard=plans[index]['shard_root'];latest={}
  for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
   match=re.fullmatch(r'BFQ_([0-9a-f]{64})_([0-9]{10})_(DISPATCH_INTENT|DISPATCH_RECEIPT|RECONCILED)',n)
-  if match and match[1] in by_shard:latest[(match[1],match[3])]=max(int(match[2]),latest.get((match[1],match[3]),0))
- found=[(shard,latest[(shard,'DISPATCH_RECEIPT')]) for shard in by_shard if latest.get((shard,'DISPATCH_RECEIPT'),0)>latest.get((shard,'RECONCILED'),0)]
- if len(found)!=1:fail('exactly one pending receipted page required')
- shard,sequence=found[0];index=by_shard[shard]
- if latest[(shard,'DISPATCH_INTENT')]!=sequence:fail('pending page is not the latest election')
+  if match and match[1]==shard:latest[match[3]]=max(int(match[2]),latest.get(match[3],0))
+ sequence=latest.get('DISPATCH_RECEIPT',0)
+ if not sequence or latest.get('DISPATCH_INTENT')!=sequence or latest.get('RECONCILED',0)>=sequence:fail('pending page is not the latest receipted election')
  sh=b.store.history(shard,max_records=F.MAX_LEAF_RECORDS)
  ri=[r for r in sh if r['kind']=='DISPATCH_INTENT' and r['sequence']==sequence];rr=[r for r in sh if r['kind']=='DISPATCH_RECEIPT' and r['sequence']==sequence]
  if len(ri)!=1 or len(rr)!=1:fail('pending page evidence ambiguous')
