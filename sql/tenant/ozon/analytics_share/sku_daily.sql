@@ -18,7 +18,7 @@ keyed AS (
   FROM `__tenant__.ozon_mart.FACT_OZON_SALES_DAILY` f
   FULL OUTER JOIN ads a ON a.stat_date = f.order_date_msk AND a.sku = f.sku
 )
-SELECT k.sales_date, k.sku, d.internal_sku, d.product_name, COALESCE(d.mapping_status, 'UNMAPPED') AS mapping_status,
+SELECT k.sales_date, k.sku, d.internal_sku, d.product_name, d.offer_id, d.ozon_name, COALESCE(d.mapping_status, 'UNMAPPED') AS mapping_status,
   k.postings AS orders, k.ordered_units, k.ordered_value_rub, k.cancelled_units, k.delivered_units,
   k.delivered_value_rub, k.ad_spend_attributed_rub, k.ad_orders, k.ad_revenue_rub, k.ad_clicks,
   SAFE_DIVIDE(k.ad_spend_attributed_rub, k.ordered_value_rub) AS drr_ratio,

@@ -4,7 +4,7 @@ CREATE OR REPLACE VIEW `__tenant__.analytics_share.inventory_current`
 OPTIONS(description = 'Остатки FBO: последний снимок × SKU × склад, возраст снимка в днях.')
 AS
 WITH last_day AS (SELECT MAX(s.snapshot_date) AS d FROM `__tenant__.ozon_mart.SNAP_OZON_STOCK` s)
-SELECT s.snapshot_date, s.sku, d.internal_sku, d.product_name, s.warehouse_id, s.warehouse_name,
+SELECT s.snapshot_date, s.sku, d.internal_sku, d.product_name, d.offer_id, d.ozon_name, s.warehouse_id, s.warehouse_name,
   s.cluster_name, s.available_stock_count, s.valid_stock_count, s.transit_stock_count,
   s.days_without_sales, s.turnover_grade,
   DATE_DIFF(CURRENT_DATE('Europe/Moscow'), s.snapshot_date, DAY) AS snapshot_age_days
