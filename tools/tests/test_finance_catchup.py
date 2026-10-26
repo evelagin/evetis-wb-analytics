@@ -49,3 +49,16 @@ def test_days_owned_by_full_or_reachable_by_current_are_refused(day):
     x = FC.authority(c, m, p, serial=1, previous=None, owner_ack_sha256='2' * 64, created_at=X.CREATED, days=sorted(X.DAYS + [day]))
     with pytest.raises(Exception):
         FC.validate(x, c, m, p, X.NOW)
+
+
+@pytest.mark.parametrize('created,ok', [('2026-10-26T10:00:00+00:00', False), ('2026-10-26T21:30:00+00:00', True), ('2026-10-27T09:00:00+00:00', True)])
+def test_day_25_10_is_admissible_only_once_its_natural_cycle_can_no_longer_run(created, ok):
+    c, m, p, a = X.fixture()
+    from datetime import datetime, timezone
+    x = FC.authority(c, m, p, serial=1, previous=None, owner_ack_sha256='2' * 64, created_at=created, days=X.DAYS + ['2026-10-25'])
+    now = datetime(2026, 10, 28, tzinfo=timezone.utc)
+    if ok:
+        assert FC.validate(x, c, m, p, now) is x
+    else:
+        with pytest.raises(Exception):
+            FC.validate(x, c, m, p, now)
