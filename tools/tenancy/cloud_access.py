@@ -8,6 +8,7 @@ This adapter does not establish release qualification or authorize activation.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 import time
@@ -48,9 +49,17 @@ def wire(method, url, body=None, headers=None):
         readonly_retry = method=='GET' or url.endswith('/queries') or url.endswith(':generateAccessToken')
         cls = TT.Conflict if e.code == 409 else (TransientReadError if readonly_retry and e.code in (429,500,502,503,504) else TT.TableError)
         raise cls(f"cloud transport HTTP {e.code}") from None
-    except OSError:
+    except (OSError, http.client.IncompleteRead, http.client.BadStatusLine):
+        # A truncated/dropped HTTP response (IncompleteRead, BadStatusLine incl.
+        # RemoteDisconnected) is a transport failure like a socket error, not an untyped
+        # crash: an uncaught one left control claim 1463 without its closure (Heldi
+        # STOP aaf68ede, 2026-10-25).
         cls=TransientReadError if method=='GET' or url.endswith('/queries') or url.endswith(':generateAccessToken') else TT.TableError
         raise cls('cloud transport unavailable') from None
+    except http.client.HTTPException:
+        # Deterministic protocol defects (LineTooLong, UnknownProtocol, ...) never
+        # become an endless read retry: a typed hard failure.
+        raise TT.TableError('cloud transport protocol error') from None
     except ValueError:
         raise TT.TableError('invalid cloud response') from None
 
