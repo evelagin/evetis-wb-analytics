@@ -260,4 +260,21 @@ describe('replay-parity 1:1: Apps Script WbStocksSnapshot.gs ↔ Cloud Run stock
     expect(b.finalize.control).toBe('OK');
     expect((b.finalize.t5 as { control: Obj }).control).toMatchObject({ t5_control_sum: 48, availability_status: 'OK' });
   });
+
+  it('Mig1b-0: prod с пустым env падает ДО любой записи и до WB API', async () => {
+    cr.appends = []; cr.finalize = null; cr.urls = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => { cr.urls.push(String(input)); return new Response('[]'); }) as typeof fetch;
+    try {
+      const config = loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw' });
+      const ctx: LoaderContext = { config, logger: new Logger({}, 'error'), logicalPeriod: '2026-10-27', runId: 'r', targetDate: '2026-10-27' };
+      await expect(stocksLoader(ctx)).rejects.toMatchObject({ code: 'STOCKS_TARGET_MISMATCH' });
+    } finally {
+      globalThis.fetch = orig;
+    }
+    expect(cr.urls).toEqual([]);
+    expect(cr.appends).toEqual([]);
+    expect(cr.finalize).toBeNull();
+  });
 });
+
