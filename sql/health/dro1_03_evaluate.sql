@@ -222,7 +222,7 @@ classified AS (
            WHEN r.reason_code = 'NO_DATA_OBSERVED' THEN 'HIGH'
            WHEN r.reason_code IN ('RUN_FAILED', 'RUN_PARTIAL') THEN
              CASE r.criticality WHEN 'CRITICAL' THEN 'HIGH' ELSE 'MEDIUM' END
-           WHEN r.reason_code IN ('CONTROL_MISMATCH', 'COVERAGE_LOW') THEN
+           WHEN r.reason_code IN ('CONTROL_MISMATCH', 'COVERAGE_LOW', 'T5_DETAIL_MISSING') THEN
              CASE WHEN r.data_class = 'SNAPSHOT' AND r.criticality IN ('CRITICAL', 'HIGH')
                   THEN 'HIGH' ELSE 'MEDIUM' END
            ELSE 'MEDIUM'

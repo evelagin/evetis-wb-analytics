@@ -10,6 +10,11 @@ on:
       source_git_sha:
         description: "SHA коммита, из которого собран этот образ (из summary deploy-shadow)"
         required: true
+      only_job:
+        description: "Mig1b-0: all — прежний промоушен во все prod-Job'ы; wb-stocks-prod — ТОЛЬКО этот Job, с боевым env остатков и readback (остальные не трогаются)"
+        type: choice
+        options: ["all", "wb-stocks-prod"]
+        default: "all"
 
 permissions:
   contents: read
@@ -45,6 +50,7 @@ jobs:
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
       - name: Deploy prod Jobs (промоушен того же digest, source sha)
+        if: inputs.only_job == 'all'
         # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest во ВСЕ
         # prod-Job'ы. Все используют один образ (dispatch по args[0] в cli.ts).
         # Без wb-mart-prod здесь Terraform-created Job остался бы на bootstrap hello-образе и
@@ -63,6 +69,7 @@ jobs:
               --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
           done
       - name: Deploy unitka-engine-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # UNITKA ENGINE v1 (Stage E1): тот же образ, dispatch args[0]=unitka. Пропуск оставил бы
         # Engine на bootstrap hello (урок PR-1). Шаг guarded: до infra apply Job'а нет, и это не
         # должно валить промоушен остальных prod-Job'ов.
@@ -76,6 +83,7 @@ jobs:
             echo "::warning title=unitka-engine-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy ozon-unitka-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # Gate 9: суточный писатель Ozon-Юнитки. Тот же образ, dispatch args[0]=ozon-unitka.
         # Пропуск в этом списке оставил бы Job на bootstrap hello, который выходит с кодом 0
         # и молча ничего не пишет — расхождение не проявилось бы ни в одном «зелёном» прогоне
@@ -90,6 +98,7 @@ jobs:
             echo "::warning title=ozon-unitka-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy ozon-cpo-orders-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # Phase B (2026-10-08): «Оплата за заказ» Ozon, dispatch args[0]=ozon-cpo-orders, SA sa-ozon-cpo-loader.
         # Guard сохраняет совместимость до первого infra apply. Секреты — имена в Terraform env; workflow
         # их не читает и не меняет. Пропуск оставил бы Job на bootstrap-образе (урок PR-1).
@@ -103,6 +112,7 @@ jobs:
             echo "::warning title=ozon-cpo-orders-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy unitka-store-pnl-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # Phase C (2026-10-09): P&L магазина WB, dispatch args[0]=unitka-store-pnl, SA sa-loaders-prod.
         # Лист — только чтение (scope readonly), пишет лишь снимок wb_ops. Guard — до первого infra apply.
         run: |
@@ -115,6 +125,7 @@ jobs:
             echo "::warning title=unitka-store-pnl-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy ozon-store-pnl-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # D4 (2026-10-15): P&L магазина Ozon, dispatch args[0]=ozon-store-pnl, SA sa-loaders-prod.
         # Читает только ozon_mart; без OZON_STORE_PNL_PUBLISH=1 Sheets readonly. Guard — до первого infra apply.
         run: |
@@ -127,6 +138,7 @@ jobs:
             echo "::warning title=ozon-store-pnl-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy wb-paid-storage-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # Stage E4: Job создаётся Terraform'ом. Guard сохраняет совместимость до первого infra apply.
         # Секрет остаётся WB_TOKEN_ANALYTICS из Terraform env; workflow его не читает и не меняет.
         run: |
@@ -139,6 +151,7 @@ jobs:
             echo "::warning title=wb-paid-storage-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy wb-promo-prod (тот же digest)
+        if: inputs.only_job == 'all'
         # PR-PROMO-1: наблюдатель акций WB. Тот же образ, dispatch args[0]=promo.
         # Guard сохраняет совместимость до первого infra apply: пока Terraform не
         # создал Job, шаг предупреждает и не валит промоушен остальных.
@@ -160,6 +173,7 @@ jobs:
             echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
+        if: inputs.only_job == 'all'
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
         # (решение владельца); WB_TOKEN_ANALYTICS не трогаем — на нём остатки и
         # платное хранение. Шаг отдельный, чтобы WB_ANALYTICS_SECRET не попал
@@ -175,3 +189,37 @@ jobs:
             --image "${DIGEST}" \
             --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}",WB_ANALYTICS_SECRET=WB_TOKEN_REPORTS
       # НЕ включает Scheduler и НЕ меняет IAM.
+      # ── Mig1b-0: целевой выкат ОДНОГО Job'а wb-stocks-prod ─────────────────────────────────────
+      # Образ — только проверенный в shadow (digest = текущий образ wb-stocks-shadow), env — боевые
+      # таблицы остатков. НЕ запускает Job, НЕ трогает Scheduler (у sa-deployer нет Scheduler Admin),
+      # НЕ меняет args (их владелец — Terraform). Readback валит выкат, если изменился любой другой Job.
+      # Порядок применения — docs/ops/MIG1B0_STOCKS_PROD_PREP.md, только по OWNER ACK MIG1B.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: inputs.only_job == 'wb-stocks-prod'
+        with:
+          persist-credentials: false
+      - name: "wb-stocks-prod: pre-check — digest = образ wb-stocks-shadow; снимок всех Job'ов"
+        if: inputs.only_job == 'wb-stocks-prod'
+        run: |
+          gcloud run jobs describe wb-stocks-shadow --region ${{ vars.GCP_REGION }} --format=json > shadow.json
+          python3 tools/stocks_prod_deploy_check.py pre shadow.json "$DIGEST"
+          gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > jobs_before.json
+      - name: "wb-stocks-prod: образ + боевой env остатков"
+        if: inputs.only_job == 'wb-stocks-prod'
+        run: |
+          gcloud run jobs update wb-stocks-prod \
+            --region ${{ vars.GCP_REGION }} \
+            --image "${DIGEST}" \
+            --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}",STOCKS_RAW_TABLE=RAW_WB_STOCKS,STOCKS_SNAPSHOT_TABLE=WB_STOCKS_SNAPSHOTS,STOCKS_T5_TABLE=RAW_WB_STOCKS_T5,STOCKS_T5_MODE=on,REF_SKU_TABLE=REF_SKU_MASTER,WB_ANALYTICS_SECRET=WB_TOKEN_ANALYTICS
+      - name: "wb-stocks-prod: readback — образ, env, SA; остальные Job'ы не изменились"
+        if: inputs.only_job == 'wb-stocks-prod'
+        run: |
+          gcloud run jobs describe wb-stocks-prod --region ${{ vars.GCP_REGION }} --format=json > stocks_prod.json
+          gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > jobs_after.json
+          python3 tools/stocks_prod_deploy_check.py post stocks_prod.json jobs_before.json jobs_after.json "$DIGEST" "$SOURCE_GIT_SHA"
+          {
+            echo "### wb-stocks-prod promoted (only_job) — Scheduler НЕ тронут, Job НЕ запускался"
+            echo "- image_digest: \`${DIGEST}\`"
+            echo "- source_git_sha: \`${SOURCE_GIT_SHA}\`"
+            echo "- Scheduler wb-stocks-prod проверить отдельно: PAUSED до OWNER ACK MIG1B"
+          } >> "$GITHUB_STEP_SUMMARY"

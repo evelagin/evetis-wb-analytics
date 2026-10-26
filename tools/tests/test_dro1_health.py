@@ -209,6 +209,22 @@ def test_completeness_failure_degrades_snapshot(classify):
     assert _state(row) == ("DEGRADED", "INCOMPLETE", "CONTROL_MISMATCH", "HIGH")
 
 
+def test_t5_detail_missing_degrades_snapshot_like_control_mismatch(classify):
+    """Mig1b-0: снимок остатков с control_status=OK, но без детализации T5 — не COMPLETE."""
+    row = classify(completeness_status="INCOMPLETE", completeness_reason="T5_DETAIL_MISSING")
+    assert _state(row) == ("DEGRADED", "INCOMPLETE", "T5_DETAIL_MISSING", "HIGH")
+
+
+def test_stocks_completeness_requires_t5_detail_in_probe(objects):
+    """Mig1b-0: проба полноты остатков проверяет t5_rows_written, причины — в строгом порядке."""
+    body = objects["TVF_PIPELINE_PROBE"]["body"]
+    block = body[body.index("SELECT 'stocks_snapshot' AS pipeline_id"):]
+    block = block[:block.index("UNION ALL")]
+    assert "IFNULL(t5_rows_written, 0) > 0" in block
+    assert block.index("'CONTROL_MISMATCH'") < block.index("'T5_DETAIL_MISSING'")
+    assert "t5_rows_written" in block[block.index("FROM (SELECT"):]
+
+
 def test_low_criticality_loss_is_not_critical(classify):
     row = classify(criticality="LOW", latest_business_date="2026-10-03",
                    slot_late_minutes=1155, minutes_to_loss=-30)

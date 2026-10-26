@@ -224,6 +224,30 @@ resource "google_bigquery_table_iam_member" "prod_write_runs" {
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
 }
 
+# Mig1b-0: запись боевых таблиц остатков для prod-загрузчика. Табличный уровень, ровно три таблицы
+# Apps Script (сами таблицы Terraform не создаёт — ими владеет Apps Script, как и REF_SKU_MASTER выше).
+# Выдача права ничего не пишет: prod Scheduler PAUSED; первый снимок — только по OWNER ACK MIG1B.
+resource "google_bigquery_table_iam_member" "prod_write_raw_stocks" {
+  dataset_id = var.raw_dataset
+  table_id   = "RAW_WB_STOCKS"
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+resource "google_bigquery_table_iam_member" "prod_write_raw_stocks_t5" {
+  dataset_id = var.raw_dataset
+  table_id   = "RAW_WB_STOCKS_T5"
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+resource "google_bigquery_table_iam_member" "prod_write_stocks_snapshots" {
+  dataset_id = var.raw_dataset
+  table_id   = "WB_STOCKS_SNAPSHOTS"
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
 resource "google_bigquery_table_iam_member" "prod_read_ref" {
   dataset_id = var.raw_dataset
   table_id   = "REF_SKU_MASTER"

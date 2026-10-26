@@ -256,13 +256,21 @@ extra_bd AS (
 
 -- ── Сигналы полноты, которые уже пишут сами загрузчики ───────────────────────
 completeness AS (
+  -- Mig1b-0: полнота снимка = контроль T5/T6 OK И детализация T5 действительно записана.
+  -- Раньше снимок с control_status=OK и t5_rows_written=0 (детализация best-effort не записалась)
+  -- считался COMPLETE, хотя V_WB_STOCKS_T5_CURRENT при этом пуст — пробел общий у Apps Script
+  -- и Cloud Run. Порядок причин: сначала контроль (MISMATCH / T5_UNAVAILABLE), затем детализация.
   SELECT 'stocks_snapshot' AS pipeline_id,
-         IF(IFNULL(control_status, 'OK') = 'OK', 'COMPLETE', 'INCOMPLETE') AS completeness_status,
-         IF(IFNULL(control_status, 'OK') = 'OK', CAST(NULL AS STRING), 'CONTROL_MISMATCH') AS completeness_reason,
-         FORMAT('control_status=%s, availability_status=%s, снимок %s',
+         IF(IFNULL(control_status, 'OK') = 'OK' AND IFNULL(t5_rows_written, 0) > 0,
+            'COMPLETE', 'INCOMPLETE') AS completeness_status,
+         CASE WHEN IFNULL(control_status, 'OK') != 'OK' THEN 'CONTROL_MISMATCH'
+              WHEN IFNULL(t5_rows_written, 0) <= 0 THEN 'T5_DETAIL_MISSING'
+         END AS completeness_reason,
+         FORMAT('control_status=%s, availability_status=%s, t5_rows_written=%s, снимок %s',
                 IFNULL(control_status, '-'), IFNULL(availability_status, '-'),
+                IFNULL(CAST(t5_rows_written AS STRING), '-'),
                 FORMAT_TIMESTAMP('%Y-%m-%d %H:%M UTC', completed_at)) AS completeness_detail
-  FROM (SELECT control_status, availability_status, completed_at
+  FROM (SELECT control_status, availability_status, t5_rows_written, completed_at
         FROM `wb_raw.WB_STOCKS_SNAPSHOTS`, clock
         WHERE status = 'COMPLETE' AND completed_at <= as_of AND started_at >= win_ts
         ORDER BY completed_at DESC LIMIT 1)
