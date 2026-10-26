@@ -32,11 +32,17 @@ SEQUENCE_PREDICATES=(PREDICATES-{'current_catalog_pass','last_source_reconciled'
 # aaf68ede, 2026-10-25: an untyped transport exception). The holder wrote nothing but its
 # claim; the pending receipt is preserved for the ordinary reconcile and never settled here.
 PENDING_TYPE='TERMINAL_FAILED_CONTROLLER_PENDING_RECEIPT_CLOSURE_V4'
-PENDING_PREDICATES=(PREDICATES-{'registered_terminal_timeout','current_catalog_pass','last_source_reconciled','no_pending_source_authority'})|{
- 'registered_terminal_failure','no_holder_effect_after_claim','pending_receipt_before_claim','pending_runtime_succeeded','pending_receipt_preserved'}
+# Counts/keys of the pending page are proven by its ordinary reconcile, not here; after the claim
+# the source journal holds only the pending run's own units (2026-10-25: u1967 one second later).
+PENDING_PREDICATES=(PREDICATES-{'registered_terminal_timeout','current_catalog_pass','last_source_reconciled','no_pending_source_authority',
+ 'source_counts_keys_pass','no_new_source_journal'})|{
+ 'registered_terminal_failure','no_holder_effect_after_claim','pending_receipt_before_claim','pending_runtime_succeeded','pending_receipt_preserved',
+ 'pending_source_proof_read','source_journal_only_pending_run'}
 VERSIONS={(1,TYPE):PREDICATES,(2,RECONCILED_TYPE):RECONCILED_PREDICATES,(3,SEQUENCE_TYPE):SEQUENCE_PREDICATES,(4,PENDING_TYPE):PENDING_PREDICATES}
-# Lock namespaces only the controller writes; owner release markers never use them.
-CONTROLLER_LOCK=re.compile(r'(BFQ_[0-9a-f]{64}_[0-9]{10}_[A-Z_]+|BFR_[0-9a-f]{64}|LD?_[0-9a-f]{16}_[0-9]{4}|BFC[WX]_[0-9a-f]{64}_[0-9]{10})')
+# Every tenant_locks name the controller identity may create (cloud_access append boundary);
+# owner release markers never use them.
+CONTROLLER_LOCK=re.compile(r'(BFQ_[0-9a-f]{64}_[0-9]{10}_[A-Z_]+|BFR_[0-9a-f]{64}|LD?_[0-9a-f]{16}_[0-9]{4,10}|BFC[WX]_[0-9a-f]{64}_[0-9]{10}'
+ r'|(?:BFFLR|BFFRF)_[0-9a-f]{64}_[0-9a-f]{64}|BFD[CO]_[0-9a-f]{64}|BFLQ_[0-9a-f]{64})')
 FAILED_MESSAGE=re.compile(r'Task tenant-backfill-controller-[a-z0-9]{5}-task0 failed with exit code: 1 and message: The container exited with an error\.')
 FIELDS=frozenset({'version','type','tenant','project','root','manifest_hash','claim',
  'stop_hashes','protected_root_hashes','new_source','new_image','new_implementation_hash',
@@ -356,18 +362,25 @@ def live_sequence(b,p,m,records,sh,rr,doc,state,ro):
  return True
 
 
+def publication_record(p):return dict(version=D.VERSION,root_hash=p['root'],kind=KIND,sequence=p['claim']['generation'],payload=p)
+
+
 def no_holder_effect(b,p):
  """v4: after its claim the holder committed nothing. Every controller-namespace lock
- and every checkpoint row created since the claim is the claim itself or a dependent
- STOP; owner release markers use other namespaces and are not holder effects."""
+ and every checkpoint row created since the claim is the claim itself, a dependent STOP
+ or this certificate's own publication (its exact closure, record marker and row), so an
+ interrupted publication is resumable; owner release markers are other namespaces."""
  ds=b.c['datasets']['tenant_locks'];start=CC.at(p['claim']['created_at'])
- allowed={CC.names(p['root'],p['claim']['generation'])[0]}|{'BFR_'+h for h in p['stop_hashes']}
+ own=D.digest(publication_record(p));closure=CC.names(p['root'],p['claim']['generation'])[1]
+ allowed={CC.names(p['root'],p['claim']['generation'])[0],'BFR_'+own}|{'BFR_'+h for h in p['stop_hashes']}
  for n,labels,created,expiry in b.tables.list_tables(ds,with_expiry=True):
   if not CONTROLLER_LOCK.fullmatch(n):continue
   if created is None:fail('controller lock time unknown')
-  if created>=start and n not in allowed:fail('holder effect after claim')
- rows=b.select(f"SELECT backfill_id,entity FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE updated_at>=@start LIMIT 1000",{'start':('TIMESTAMP',p['claim']['created_at'])})
- if any(r['entity']!='orchestration' or r['backfill_id'] not in {h[:16] for h in p['stop_hashes']} for r in rows):fail('checkpoint effect after claim')
+  if created<start or n in allowed:continue
+  if n==closure and b.tables.get_table(ds,n)==({'kind':'controller_close','root':p['root'][:16]},D.encoded(p['closure'])):continue
+  fail('holder effect after claim')
+ rows=b.select(f"SELECT backfill_id,entity FROM `{p['project']}.tenant_ops.BACKFILL_CHECKPOINTS` WHERE updated_at>=@start LIMIT 1001",{'start':('TIMESTAMP',p['claim']['created_at'])})
+ if len(rows)>1000 or any(r['entity']!='orchestration' or r['backfill_id'] not in {h[:16] for h in p['stop_hashes']+[own]} for r in rows):fail('checkpoint effect after claim')
  return True
 
 

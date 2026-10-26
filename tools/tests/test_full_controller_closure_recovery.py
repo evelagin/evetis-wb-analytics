@@ -264,19 +264,27 @@ def test_v4_accepts_only_the_exact_holder_exit_code_one_failure(monkeypatch,tmp_
   with pytest.raises(BF.B.EvidenceError):R.terminal_timeout(b,p['claim'])
 
 
-@pytest.mark.parametrize('fault',['none','owner_marker','stop_row','bfq','bfr','lease','ld','closure','unknown_time','checkpoint','foreign_stop_row'])
+@pytest.mark.parametrize('fault',['none','owner_marker','stop_row','own_publication','bfq','bfr','lease','ld','closure','foreign_closure','diagnostic','unknown_time','checkpoint','foreign_stop_row','overflow'])
 def test_v4_holder_wrote_nothing_after_its_claim(fault):
  m,p,b,root,objects,*_=fixture();q,_=v4(m,p,b,root,objects);before=deepcopy(objects)
  start=CC.at(q['claim']['created_at']);after=start+timedelta(seconds=5);sh=q['last_source']['shard'];stop=q['stop_hashes'][0]
  extra={'none':[],'owner_marker':[('BF_SPEC_'+'f'*40+'_'+m['hash']+'_PAUSED',after)],'stop_row':[('BFR_'+stop,after)],
   'bfq':[(f'BFQ_{sh}_0000000002_DISPATCH_INTENT',after)],'bfr':[('BFR_'+'c'*64,after)],'lease':[('L_'+'d'*16+'_0002',after)],
   'ld':[('LD_'+'d'*16+'_0001',after)],'closure':[(CC.names(m['hash'],q['claim']['generation'])[1],after)],
-  'unknown_time':[('BFR_'+'c'*64,None)],'checkpoint':[],'foreign_stop_row':[]}[fault]
+  'foreign_closure':[(CC.names(m['hash'],q['claim']['generation'])[1],after)],'diagnostic':[('BFDC_'+'e'*64,after)],
+  'own_publication':[(CC.names(m['hash'],q['claim']['generation'])[1],after),('BFR_'+D.digest(R.publication_record(q)),after)],
+  'unknown_time':[('BFR_'+'c'*64,None)],'checkpoint':[],'foreign_stop_row':[],'overflow':[]}[fault]
+ close=CC.names(m['hash'],q['claim']['generation'])[1]      # an interrupted publication left its own exact closure
+ if fault=='own_publication':objects[close]=({'kind':'controller_close','root':m['hash'][:16]},D.encoded(q['closure']))
+ if fault=='foreign_closure':objects[close]=({'kind':'controller_close','root':m['hash'][:16]},D.encoded(dict(q['closure'],status='STOPPED')))
+ before=deepcopy(objects)
  original=b.tables.list_tables
  b.tables.list_tables=lambda ds,with_expiry=False:original(ds,with_expiry)+[(n,{},at,None) for n,at in extra]
- rows={'checkpoint':[dict(backfill_id='ab739857b0ae170f',entity='supplies')],'foreign_stop_row':[dict(backfill_id='e'*16,entity='orchestration')],'stop_row':[dict(backfill_id=stop[:16],entity='orchestration')]}.get(fault,[])
+ rows={'checkpoint':[dict(backfill_id='ab739857b0ae170f',entity='supplies')],'foreign_stop_row':[dict(backfill_id='e'*16,entity='orchestration')],'stop_row':[dict(backfill_id=stop[:16],entity='orchestration')],
+       'own_publication':[dict(backfill_id=D.digest(R.publication_record(q))[:16],entity='orchestration')],
+       'overflow':[dict(backfill_id=stop[:16],entity='orchestration')]*1001}.get(fault,[])
  b.select=lambda sql,params:rows
- if fault in {'none','owner_marker','stop_row'}:assert R.no_holder_effect(b,q)
+ if fault in {'none','owner_marker','stop_row','own_publication'}:assert R.no_holder_effect(b,q)
  else:
   with pytest.raises(BF.B.EvidenceError):R.no_holder_effect(b,q)
  assert objects==before

@@ -127,7 +127,7 @@ def test_wire_denies_redirect_without_following_or_disclosing_tokens():
     with pytest.raises(C.TT.TableError,match='redirect'):
         C.NoRedirect().redirect_request(None,None,302,'private server diagnostic',{},'https://attacker.example')
 
-@pytest.mark.parametrize('error',['incomplete','bad_status','remote_disconnected','socket'])
+@pytest.mark.parametrize('error',['incomplete','bad_status','remote_disconnected','socket','line_too_long'])
 @pytest.mark.parametrize('method,url,typed',[
     ('GET',C.TT.BQ+'/projects/mpa-t-client-001/datasets/tenant_locks/tables?maxResults=1000','transient'),
     ('POST',C.TT.BQ+'/projects/mpa-t-client-001/queries','transient'),
@@ -142,11 +142,15 @@ def test_wire_types_broken_http_response_as_transport_failure(monkeypatch,error,
         def __exit__(self,*a):return False
         def read(self,n):
             raise {'incomplete':http.client.IncompleteRead(b'partial',17741),'bad_status':http.client.BadStatusLine('x'),
-                   'remote_disconnected':http.client.RemoteDisconnected('closed'),'socket':TimeoutError('timed out')}[error]
+                   'remote_disconnected':http.client.RemoteDisconnected('closed'),'socket':TimeoutError('timed out'),
+                   'line_too_long':http.client.LineTooLong('header line')}[error]
     class Opener:
         def open(self,request,timeout):return Response()
     monkeypatch.setattr(C.urllib.request,'build_opener',lambda *a:Opener())
     with pytest.raises(C.TT.TableError) as e:C.wire(method,url,{} if method=='POST' else None)
+    if error=='line_too_long':                       # a deterministic protocol defect is never retried
+        assert type(e.value) is C.TT.TableError and str(e.value)=='cloud transport protocol error'
+        return
     assert (type(e.value) is C.TransientReadError)==(typed=='transient')
     assert str(e.value)=='cloud transport unavailable'
 
