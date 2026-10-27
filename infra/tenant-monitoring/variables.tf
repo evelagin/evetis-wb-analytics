@@ -50,3 +50,54 @@ variable "expected_entities" {
     error_message = "Только сущности суточного контура (current_policy.ORDER)."
   }
 }
+
+# Push-уведомления приложения Google Cloud (решение владельца 27.10: push + email).
+# Канал создаёт само приложение после входа владельца и выбора проекта mpa-t-client-001
+# (docs.cloud.google.com/monitoring/support/notification-options, «Google Cloud console Mobile App»);
+# API/Terraform его не создают. Здесь — только имя уже существующего канала.
+# null — как до 27.10: STOP и проверка доставки уходят только на почту.
+variable "owner_push_channel" {
+  description = "Канал мобильного приложения Google Cloud владельца (projects/<project>/notificationChannels/<id>)."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.owner_push_channel == null || can(regex("^projects/${var.project_id}/notificationChannels/[0-9]+$", var.owner_push_channel))
+    error_message = "Нужно полное имя канала уведомлений этого же проекта арендатора."
+  }
+}
+# ── Облачное наблюдение Heldi (watch.tf) ──
+variable "region" {
+  description = "Регион задания наблюдателя (как у контроллера)."
+  type        = string
+  default     = "europe-west1"
+  validation {
+    condition     = var.region == "europe-west1"
+    error_message = "Наблюдатель живёт рядом с контроллером: europe-west1."
+  }
+}
+
+# Образ собирается FROM образа живого контроллера (tools/heldi_watch/Dockerfile), только по digest.
+# null — слой 2 не создаётся (остаются сигналы слоя 1).
+variable "watch_image" {
+  description = "Образ heldi-health-eval по digest."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.watch_image == null || can(regex("^europe-west1-docker\\.pkg\\.dev/mpa-platform/mpa-runtime/heldi-health-eval@sha256:[0-9a-f]{64}$", var.watch_image))
+    error_message = "Только неизменяемый образ heldi-health-eval@sha256 из mpa-runtime; тег запрещён."
+  }
+}
+
+# Второй apply после ручного доверенного прогона: Scheduler снимается с паузы, включается сторож.
+variable "watch_active" {
+  description = "Регулярная оценка heldi-health-eval и сторож пульса."
+  type        = bool
+  default     = false
+}
+
+# Второй apply не раньше чем через 20 мин после создания метрики heldi_controller_status.
+variable "silence_alerts_enabled" {
+  description = "Включить политику H3 «контроллер молчит 20 мин»."
+  type        = bool
+  default     = false
+}

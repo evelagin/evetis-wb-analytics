@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-10-27 — Heldi: облачное наблюдение контроллера (поток E, НЕ применено)
+
+Замена локального `observe_loop` (25.10 умер от протухшего gcloud-токена). Регламент — `docs/ops/HELDI_CLOUD_WATCH.md`.
+- `tools/heldi_watch/health.py` — Cloud Run Job `heldi-health-eval` (слой 2), только чтение: неразрешённые STOP через
+  `stop_acceptance`, CURRENT_CERT сегодняшних суток к 09:00 МСК, Scheduler, длительность и падения исполнений,
+  продвижение FULL. Вывод HEALTH (только при смене состояния) и HEARTBEAT; паузы и записи нет.
+  Образ — `FROM` точного образа контроллера (`tools/heldi_watch/Dockerfile`).
+- `infra/tenant-monitoring/watch.tf`: H2 (Traceback в stderr контроллера), H3 (тишина 20 мин, включается вторым apply),
+  SA `sa-heldi-watch` / `sa-heldi-watch-wake`, пользовательские роли `heldiWatchRead`, `heldiWatchData` (условие IAM на
+  ozon_raw/ref/tenant_ops/tenant_locks), `heldiWatchWake`; задание, Scheduler на паузе, 3 политики наблюдателя.
+  Только новые ресурсы; H1 STOP — существующая `controller_stopped`. Колонки и витрины не меняются.
+- CI: `tools/tests/test_tenancy_heldi_watch.py`, `infra/tenant-monitoring/tests/watch.tftest.hcl`, сборка образа
+  наблюдателя поверх CI-образа контроллера и проверка отказа без своей личности (`--network=none`).
+
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 
 Дальше Mig1 (T6) к полному повтору боевого `wbStocksSnapshotCore_`. Подробно — `docs/MIG1_STOCKS_PARITY.md`, раздел Mig1c.
