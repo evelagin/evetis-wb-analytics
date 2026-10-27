@@ -50,3 +50,18 @@ variable "expected_entities" {
     error_message = "Только сущности суточного контура (current_policy.ORDER)."
   }
 }
+
+# Push-уведомления приложения Google Cloud (решение владельца 27.10: push + email).
+# Канал создаёт само приложение после входа владельца и выбора проекта mpa-t-client-001
+# (docs.cloud.google.com/monitoring/support/notification-options, «Google Cloud console Mobile App»);
+# API/Terraform его не создают. Здесь — только имя уже существующего канала.
+# null — как до 27.10: STOP и проверка доставки уходят только на почту.
+variable "owner_push_channel" {
+  description = "Канал мобильного приложения Google Cloud владельца (projects/<project>/notificationChannels/<id>)."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.owner_push_channel == null || can(regex("^projects/${var.project_id}/notificationChannels/[0-9]+$", var.owner_push_channel))
+    error_message = "Нужно полное имя канала уведомлений этого же проекта арендатора."
+  }
+}

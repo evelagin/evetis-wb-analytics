@@ -13,8 +13,11 @@ locals {
     "resource.labels.job_name=\"tenant-backfill-controller\"",
     "logName=\"projects/${var.project_id}/logs/run.googleapis.com%2Fstdout\"",
   ])
-  who     = "${var.tenant_id} (${var.project_id})"
-  runbook = "Регламент: docs/ops/TENANT_ALERTS_CLIENT001.md. Автоматического восстановления нет; аварийная пауза — только по действующему ACK владельца."
+  who = "${var.tenant_id} (${var.project_id})"
+  # STOP и проверка доставки: почта + push приложения Google Cloud (решение владельца 27.10).
+  # Канал push создаёт само приложение при выборе проекта; Terraform им не управляет, только ссылается.
+  stop_channels = concat([google_monitoring_notification_channel.owner_email.id], var.owner_push_channel == null ? [] : [var.owner_push_channel])
+  runbook       = "Регламент: docs/ops/TENANT_ALERTS_CLIENT001.md. Автоматического восстановления нет; аварийная пауза — только по действующему ACK владельца."
   # Окно 24 ч = snapshot_sla_seconds/fbo_sla_seconds политики суточного контура (86400).
   # Для пользовательских лог-метрик PromQL видит не больше 25 ч: окно 24 ч + повтор 30 мин.
   # Счёт событий, а не наличие точек: лог-метрика пишет нули рядом с событием, и
@@ -134,7 +137,7 @@ resource "google_monitoring_alert_policy" "controller_stopped" {
   }
   # Закрытие инцидента после паузы тика не означает, что STOP разрешён: письма о закрытии нет.
   alert_strategy { notification_prompts = ["OPENED"] }
-  notification_channels = [google_monitoring_notification_channel.owner_email.id]
+  notification_channels = local.stop_channels
   documentation {
     mime_type = "text/markdown"
     content   = "Контроллер ${local.who} остановлен STOP: в Ozon он больше ничего не отправляет (fail-closed), каждый тик завершается STOPPED. Данные не обновляются до разрешения STOP новым OWNER ACK. Причина — в логе тика (jsonPayload.reason, diagnostic). ${local.runbook}"
@@ -231,7 +234,7 @@ resource "google_monitoring_alert_policy" "delivery_test" {
     }
   }
   alert_strategy { notification_prompts = ["OPENED"] }
-  notification_channels = [google_monitoring_notification_channel.owner_email.id]
+  notification_channels = local.stop_channels
   documentation {
     mime_type = "text/markdown"
     content   = "Это проверка, а не авария. Доставка доказана, когда владелец подтверждает письмо с этим test_id. ${local.runbook}"
