@@ -283,7 +283,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         validate_certificate(base,p,day,cert,item)
         if entity in certs and certs[entity]!=cert:fail('conflicting current certificate')
         certs[entity]=cert
-    if 'catalog' in certs:
+    if 'catalog' in certs and not local_full_stop(base):
         from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
         result=DIAGNOSTIC.queued(base)
         if result is not None:return result
@@ -303,6 +303,16 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
     # Today's CURRENT has nothing left: an owner-authorised missed finance day may run (or None).
     return FC.wake(base,catchup,certs,partial)
+
+def local_full_stop(base):
+    """S4 admitted wake: an unresolved FULL-local STOP exists and only CURRENT runs.
+
+    The owner FBO diagnostic token (BFDQUEUE/BFDA) is then left untouched: its dispatch requires no
+    unresolved STOP and would refuse with a new global STOP. No BFDC, RunJob, source POST or STOP;
+    the token is consumed only by a wake after the local STOP is resolved (or it expires).
+    """
+    admission=getattr(base,'current_independence',None)
+    return isinstance(admission,dict) and admission.get('admitted') is True
 
 def historical_candidates(records,plans,done,quarantined):
     """Catalog dependencies carry the same immutable dispatch authority as leaves."""

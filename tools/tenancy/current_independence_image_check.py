@@ -8,6 +8,7 @@
   * the wake gate keeps acceptance and automatic recovery unchanged and opens only CURRENT;
   * CURRENT selects new work only for catalog, stocks, prices and finance_accrual, still drains every
     previously elected intent, and a PARTIAL entity does not stop the others.
+  * R0/S4: an admitted wake never touches the owner FBO diagnostic token (no BFDC, RunJob, POST, STOP).
 Every patched seam is restored before returning.
 """
 from contextlib import contextmanager
@@ -244,8 +245,54 @@ def selection_check():
     return 'PASS'
 
 
+def diagnostic_token_check():
+    """R0/S4: an admitted wake (FULL-local STOP unresolved) never touches the owner FBO diagnostic token.
+
+    No BFDQUEUE/BFDA read, no BFDC claim, no RunJob/source POST and no new STOP; CURRENT continues.
+    Without a local STOP the queue is consulted exactly as before."""
+    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
+    from tools.tenancy import full_controller as H,stop_acceptance as SA,full_leaf_recovery as FL,full_first_receipt_recovery as FRR
+    day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
+    writes=[];reads=[];ticks=[]
+    tables=SimpleNamespace(get_table=lambda ds,n:reads.append(n) or (({'kind':'fbo_diagnostic_queue'},D.encoded({'policy_hash':'d'*64})) if n.startswith('BFDQUEUE_') else None),
+                           create_marker=lambda *a:writes.append(a) or True)
+    c=BF.target('client_001')
+    def run(admission):
+        reads.clear();writes.clear();ticks.clear();commits=[]
+        items={e:{'day':day.isoformat(),'policy_hash':p['hash'],'plan':{'ack_hash':e,'runtime_plan':{'entity':e,'from':'2026-10-22'}},'shard':'s-'+e} for e in CUR.INDEPENDENT_ENTITIES}
+        records=[{'kind':'CURRENT_CERT','payload':{'fact':{'entity':'catalog'}}}]
+        base=SimpleNamespace(c=c,tables=tables,clock=lambda:NOW,wake_activity={},current_execution='x',
+            store=SimpleNamespace(history=lambda shard,**k:[],commit=lambda *a:commits.append(a) or 'h'),state=lambda d:{'progress':{}})
+        if admission is not None:base.current_independence=admission
+        with patched(CUR,'policy',lambda b:p),patched(CC,'ensure',lambda b:None),patched(RP,'pending_receipts',lambda *a:[]),\
+             patched(CUR,'cycles',lambda b,pp:{day.isoformat():{}}),patched(CUR,'plans',lambda b,pp,d:(records,items)),\
+             patched(CUR,'validate_certificate',lambda *a:a[3]),patched(CUR,'Backend',lambda *a:None),\
+             patched(CUR,'source_tick',lambda b,pp,d,it:ticks.append(it['plan']['runtime_plan']['entity']) or {'status':'WAITING','source_dispatches':0}),\
+             patched(DIAG,'policy',lambda *a,**k:(_ for _ in ()).throw(AssertionError('diagnostic permission read'))),\
+             patched(DIAG,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('diagnostic dispatched'))),\
+             patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
+            try:result=CUR.wake(base,[],{},{},set())
+            except AssertionError as e:result={'refused':str(e)}
+        return result,commits
+    result,commits=run({'admitted':True,'local_full_leaves':[465]})
+    assert result is None and not writes and not commits and not any(n.startswith(('BFDQUEUE_','BFDA_','BFDC_')) for n in reads),(result,reads)
+    assert ticks==['stocks','prices','finance_accrual']                                   # CURRENT continues
+    # No local STOP (no admission, or an ended one): the token path is unchanged and reaches the owner permission.
+    for admission in (None,{'admitted':False,'blocker':'X'}):
+        result,commits=run(admission)
+        assert result=={'refused':'diagnostic permission read'} and any(n.startswith('BFDQUEUE_') for n in reads) and not writes and not ticks
+    # The S4 gate is what marks the wake: historical_gate stores the admission on the wake's backend.
+    m,plans=leaves();stop=leaf_stop(m,465);b=SimpleNamespace(clock=lambda:NOW)
+    with patched(SA,'approved',lambda *a,**k:[]),patched(CC,'enabled',lambda _b:False),patched(FL,'recover_pending',lambda *a:None),\
+         patched(FRR,'recover_pending',lambda *a:None),patched(CI,'admit',lambda *a:{'admitted':True,'local_full_leaves':[465]}),\
+         patched(H,'reconstruct_plans',lambda *a:plans),patched(H,'completed',lambda *a:{}):
+        H.historical_gate(b,m,[stop],[],set())
+    assert CUR.local_full_stop(b) is True and CUR.local_full_stop(SimpleNamespace()) is False
+    return 'PASS'
+
+
 def check():
-    for name,fn in (('classify',classify_check),('admission',admission_check),('evidence',evidence_readers_check),('gate',gate_check),('wake',wake_check),('selection',selection_check)):
+    for name,fn in (('classify',classify_check),('admission',admission_check),('evidence',evidence_readers_check),('gate',gate_check),('wake',wake_check),('selection',selection_check),('diagnostic_token',diagnostic_token_check)):
         assert fn()=='PASS',name
     return {'current_independence_adapter':'PASS'}
 
