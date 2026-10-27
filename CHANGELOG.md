@@ -10,6 +10,9 @@
 - `deploy-prod.yml`: вход `only_job` (`all` по умолчанию — прежнее поведение; `wb-stocks-prod` — только этот Job, боевой env,
   `tools/stocks_prod_deploy_check.py` pre/post: digest = образ shadow, остальные Job'ы не изменились).
 - DRO-1: полнота `stocks_snapshot` требует `t5_rows_written > 0`, причина `T5_DETAIL_MISSING`.
+- Ревью 27.10: pre/post проверяют точный проект (`namespace`, `GCP_PROJECT_ID`), `BQ_RAW_DATASET=wb_raw`, полный email
+  `sa-loaders-prod`; pre — происхождение образа (sha256 манифест → конфиг → метка `git-sha` = `source_git_sha`).
+  Ранбук: продвигается только образ, квалифицированный одним чистым штатным запуском shadow после merge.
 
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 

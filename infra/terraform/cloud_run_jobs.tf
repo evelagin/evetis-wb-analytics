@@ -45,7 +45,7 @@ locals {
   # значения, выставленные deploy-prod.yml, останутся нетронутыми. Это и есть цель фикса.
   # Mig1b-0: боевые таблицы остатков — те же, что пишет Apps Script. 🔴 Применяются ТОЛЬКО при
   # создании Job'а с нуля: у существующего wb-stocks-prod env в ignore_changes, и на UPDATE их
-  # выставляет целевой деплой `.github/workflows/deploy-prod-stocks.yml` (он же делает readback).
+  # выставляет целевой деплой `.github/workflows/deploy-prod.yml`, режим `only_job=wb-stocks-prod` (он же делает readback).
   # Загрузчик сам проверяет контур (cloud/src/loaders/stocks/targets.ts): prod без этих значений
   # или с `__CR` падает до любой записи, поэтому args=["stocks"] без env безопасен.
   prod_stocks_env = {

@@ -10,7 +10,7 @@
 | `infra/terraform/cloud_run_jobs.tf` | `wb_stocks_prod`: `args` `["noop"]` → `["stocks"]`. `local.prod_stocks_env` используется только при CREATE: у существующего Job env в `ignore_changes`. В `ignore_changes` добавлены `client` и `client_version` — та же нормализация, что у shadow. |
 | `infra/terraform/bigquery.tf` | `sa-loaders-prod` получает `roles/bigquery.dataEditor` ровно на 3 таблицы Apps Script: `RAW_WB_STOCKS`, `RAW_WB_STOCKS_T5`, `WB_STOCKS_SNAPSHOTS`. |
 | `.github/workflows/deploy-prod.yml` | Новый вход `only_job`: `all` (по умолчанию, прежнее поведение) или `wb-stocks-prod`. `wb-stocks-prod` выкатывает **только этот Job**: образ = текущий образ `wb-stocks-shadow`, боевой env остатков, readback. Workflow не запускает Job, не трогает Scheduler и `args`. WIF не меняется: привязка deployer к `deploy-prod.yml@main` уже есть. |
-| `tools/stocks_prod_deploy_check.py` | Pre: digest = образ shadow. Post: образ, env, SA, неизменные `args`; **ни один другой Job не изменился** (образ, generation, env, args). |
+| `tools/stocks_prod_deploy_check.py` | Pre (до любого update):<br>• digest = образ shadow, из реестра проекта;<br>• **происхождение** — `sha256(манифест) = digest`, `sha256(конфиг) = manifest.config.digest`, метка `git-sha` конфига = `source_git_sha` (её ставит `deploy-shadow.yml` при сборке);<br>• у текущего `wb-stocks-prod` — проект (`namespace` = номер проекта, `GCP_PROJECT_ID`), `BQ_RAW_DATASET=wb_raw`, SA = полный email `sa-loaders-prod@<проект>.iam.gserviceaccount.com`.<br><br>Post: те же проект / датасет / SA, а также образ, env, неизменные `args`; **ни один другой Job не изменился** (образ, generation, env, args).<br>Формат — живой JSON `gcloud run jobs describe/list --format=json`; проверено read-only 27.10. Тег AR `<sha>` доказательством не служит: повторная сборка того же SHA перевешивает тег, а метка конфига адресована самим digest. |
 | `sql/health/dro1_02_probe.sql`, `dro1_03_evaluate.sql` | Полнота `stocks_snapshot` = `control_status = OK` **И** `t5_rows_written > 0`. Новая причина `T5_DETAIL_MISSING` с той же серьёзностью, что у `CONTROL_MISMATCH`. |
 
 ## Проверено до PR (только чтение, 26.10.2026)
@@ -28,11 +28,22 @@
   Но образ под приёмкой паритета сменится, поэтому **сливать после подписанного паритета** (или с явным согласием, что дни после merge считаются на новом образе).
 - Terraform, DRO-1 SQL и `deploy-prod.yml` merge не запускает: все три — ручные и под ACK.
 
-## Production-операции, требующие OWNER ACK MIG1B (в этом порядке)
-День **X** — первый день после подписанного паритета. Окно main согласовано с Heldi.
+## Квалификация образа перед продвижением (обязательна)
+Паритет Mig1c (24–28.10) принят на образе `ec0bce74…` (main 69d6926). Merge этого PR выкатит в shadow **новый** образ, и продвигать в prod разрешается только его. Порядок:
+1. После merge #382 дождаться автоматического `deploy-shadow` и записать из его summary пару (**D′**, `source_git_sha`).
+2. Дождаться **одного штатного** запуска `wb-stocks-shadow` (06:30 МСК) на D′. Ручной запуск не используется: суточный `snapshot_id` и guard.
+3. Запуск считается чистым, если:
+   - COMPLETE, `control_status = OK`, `availability_status = OK`;
+   - `t5_rows_written > 0`, T5/T6 полноценные, дублей 0;
+   - QUERY 1 `sql/mig1c_stocks_t5_parity.sql` за этот день — EXACT или объяснённый DATA_DRIFT (QUERY 3).
+4. Только после этого — продвижение **именно D′** в `wb-stocks-prod` (шаг 1 ниже). Другой digest, в том числе более свежий от следующего merge в `cloud/**`, требует своей квалификации.
+5. Пять дней паритета **не повторяются**, если изменения не затрагивают расчёты и квалификационный запуск чистый. Mig1b-0 меняет только проверку контура до записи (`targets.ts`), а расчёт T5/T6 не трогает. Если квалификационный запуск не чистый — STOP, разбор, отдельное решение владельца.
 
-1. **X, после 06:35 МСК — `deploy-prod.yml`, `only_job=wb-stocks-prod`.** Входы: `image_digest` = текущий образ `wb-stocks-shadow` (**D**) и его `source_git_sha`. Readback в workflow:
-   - образ = D;
+## Production-операции, требующие OWNER ACK MIG1B (в этом порядке)
+День **X** — первый день после квалификации образа D′. Окно main согласовано с Heldi.
+
+1. **X, после 06:35 МСК — `deploy-prod.yml`, `only_job=wb-stocks-prod`.** Входы: `image_digest` = **D′** (квалифицированный образ `wb-stocks-shadow`) и его `source_git_sha`. Pre-check в workflow (до update): происхождение D′ (манифест → конфиг → `git-sha`), контур текущего prod-Job'а (проект, `wb_raw`, SA). Readback в workflow:
+   - образ = D′;
    - `STOCKS_*` боевые, `STOCKS_T5_MODE=on`;
    - SA prod;
    - остальные Job не изменились.
