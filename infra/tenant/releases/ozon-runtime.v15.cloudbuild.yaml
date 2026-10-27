@@ -202,4 +202,4 @@ options:
   sourceProvenanceHash: ["SHA256"]
   substitutionOption: MUST_MATCH
 
-timeout: 1200s
+timeout: 3600s
