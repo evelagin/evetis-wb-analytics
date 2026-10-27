@@ -82,7 +82,11 @@ def validate_document(p, day, doc, *, make_plan=None, historical=True):
     entity=doc.get('runtime_plan',{}).get('entity') if isinstance(doc,dict) else None
     expected=document(p,day,entity,make_plan=make_plan)
     if expected==doc:return True
-    if historical and original_runtime(p,expected)==doc:return True
+    # Only a plan actually pinned to the policy's original runtime (and differing from the live one)
+    # is re-derived; without a succession the two pins are equal and nothing else is accepted.
+    pin=doc.get('runtime_plan',{}).get('implementation_hash') if isinstance(doc,dict) else None
+    if (historical and pin==p['runtime_implementation_hash']!=expected['runtime_plan'].get('implementation_hash')
+            and original_runtime(p,expected)==doc):return True
     fail('current plan/window/budget differs')
 
 def eligible(p, certificates, *, pending_entities=()):
