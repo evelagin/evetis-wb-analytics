@@ -227,7 +227,7 @@ resource "google_cloud_run_v2_job" "watch" {
     parallelism = 1
     template {
       service_account = google_service_account.watch[0].email
-      timeout         = "900s"
+      timeout         = "1500s"
       max_retries     = 0
       containers {
         image   = var.watch_image
