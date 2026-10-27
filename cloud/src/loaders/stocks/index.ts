@@ -29,6 +29,7 @@ import { fetchStocksT6, fetchStocksT5 } from './wbApi.js';
 import { validateT6, normalizeT6 } from './normalize.js';
 import { normalizeT5, sumT5, evaluateT5Control, t5UnavailableControl } from './t5.js';
 import { StocksBq, type ManifestT5Ext } from './bq.js';
+import { assertStocksTargets } from './targets.js';
 import { stocksLoadJobId, stocksDataSnapshotId } from './jobId.js';
 import { evaluatePostLoad, planFinalize } from './postLoad.js';
 import {
@@ -50,6 +51,8 @@ export async function stocksLoader(ctx: LoaderContext): Promise<LoaderResult> {
   const loadId = `STOCK_LOAD_${dataSnapshotId}`;
   const loadJobId = stocksLoadJobId(config.environment, snapshotDate, config.stocksRawTable);
 
+  // Mig1b-0: контур ↔ целевые таблицы проверяются ДО любого обращения к BQ и WB (fail-closed).
+  assertStocksTargets(config);
   const bq = new StocksBq(config.projectId, config.bqLocation, config.rawDataset);
   const token = await new SecretsClient(config.projectId).access(config.wbAnalyticsSecret);
 

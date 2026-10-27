@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
+
+`docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.
+- `cloud/src/loaders/stocks/targets.ts`: контур ↔ таблицы проверяется до любой записи (shadow → только `__CR`; prod → ровно таблицы
+  Apps Script + `STOCKS_T5_MODE=on`), иначе `STOCKS_TARGET_MISMATCH`.
+- Terraform: `wb_stocks_prod.args` → `["stocks"]`, боевой env для пути CREATE, `ignore_changes` + `client/client_version`;
+  `sa-loaders-prod` — `dataEditor` на `RAW_WB_STOCKS`, `RAW_WB_STOCKS_T5`, `WB_STOCKS_SNAPSHOTS`.
+- `deploy-prod.yml`: вход `only_job` (`all` по умолчанию — прежнее поведение; `wb-stocks-prod` — только этот Job, боевой env,
+  `tools/stocks_prod_deploy_check.py` pre/post: digest = образ shadow, остальные Job'ы не изменились).
+- DRO-1: полнота `stocks_snapshot` требует `t5_rows_written > 0`, причина `T5_DETAIL_MISSING`.
+- Ревью 27.10: pre/post проверяют точный проект (`namespace`, `GCP_PROJECT_ID`), `BQ_RAW_DATASET=wb_raw`, полный email
+  `sa-loaders-prod`; pre — происхождение образа (sha256 манифест → конфиг → метка `git-sha` = `source_git_sha`).
+  Ранбук: продвигается только образ, квалифицированный одним чистым штатным запуском shadow после merge.
+
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 
 Дальше Mig1 (T6) к полному повтору боевого `wbStocksSnapshotCore_`. Подробно — `docs/MIG1_STOCKS_PARITY.md`, раздел Mig1c.

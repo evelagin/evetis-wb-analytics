@@ -43,6 +43,19 @@ locals {
   # НАБОРОМ ключей (значения тут же перезапишет ближайший deploy-prod). Для уже существующих
   # wb-stocks-prod / wb-mart-prod этот блок — no-op: Terraform не станет их добавлять, а живые
   # значения, выставленные deploy-prod.yml, останутся нетронутыми. Это и есть цель фикса.
+  # Mig1b-0: боевые таблицы остатков — те же, что пишет Apps Script. 🔴 Применяются ТОЛЬКО при
+  # создании Job'а с нуля: у существующего wb-stocks-prod env в ignore_changes, и на UPDATE их
+  # выставляет целевой деплой `.github/workflows/deploy-prod.yml`, режим `only_job=wb-stocks-prod` (он же делает readback).
+  # Загрузчик сам проверяет контур (cloud/src/loaders/stocks/targets.ts): prod без этих значений
+  # или с `__CR` падает до любой записи, поэтому args=["stocks"] без env безопасен.
+  prod_stocks_env = {
+    STOCKS_RAW_TABLE      = "RAW_WB_STOCKS"
+    STOCKS_SNAPSHOT_TABLE = "WB_STOCKS_SNAPSHOTS"
+    STOCKS_T5_TABLE       = "RAW_WB_STOCKS_T5"
+    STOCKS_T5_MODE        = "on"
+    REF_SKU_TABLE         = "REF_SKU_MASTER"
+    WB_ANALYTICS_SECRET   = "WB_TOKEN_ANALYTICS"
+  }
   deploy_managed_env = {
     GIT_SHA      = "unknown"
     IMAGE_DIGEST = "unknown"
@@ -116,9 +129,11 @@ resource "google_cloud_run_v2_job" "wb_stocks_prod" {
       timeout         = "1800s"
       containers {
         image = var.container_image
-        args  = ["noop"]
+        # Mig1b-0: ["noop"] → ["stocks"]. Сам по себе ничего не запускает: prod Scheduler PAUSED,
+        # ручных запусков нет; первый боевой снимок — только по OWNER ACK MIG1B (resume Scheduler).
+        args = ["stocks"]
         dynamic "env" {
-          for_each = merge(local.common_env, local.deploy_managed_env, { ENVIRONMENT = "prod" })
+          for_each = merge(local.common_env, local.prod_stocks_env, local.deploy_managed_env, { ENVIRONMENT = "prod" })
           content {
             name  = env.key
             value = env.value
@@ -134,10 +149,15 @@ resource "google_cloud_run_v2_job" "wb_stocks_prod" {
   # ломает работающий загрузчик — но на cutover Mig1b Scheduler запустил бы hello, который
   # молча выходит с 0 и ничего не грузит. Это ловушка, а не косметика.
   # env целиком — см. общий комментарий о совместном владении над wb_mart_prod.
+  # Mig1b-0: client/client_version — отметка инструмента последней записи (gcloud у деплоя), не
+  # конфигурация Job'а; та же нормализация, что у wb_stocks_shadow (см. комментарий там). Без неё
+  # targeted plan Mig1b-0 кроме args стирал бы происхождение ресурса.
   lifecycle {
     ignore_changes = [
       template[0].template[0].containers[0].image,
       template[0].template[0].containers[0].env,
+      client,
+      client_version,
     ]
   }
   depends_on = [google_project_service.enabled]
