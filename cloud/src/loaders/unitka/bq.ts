@@ -134,6 +134,11 @@ export interface LogisticsRateRow {
   saleRefusalOverlap: number | null;
   /** Только у магазина: уникальные srid с одним плечом в окне, без «Продажи» и с «Возвратом» (хвост доказанного возврата: продажа ушла за начало окна). null у SKU и при отсутствии поля. */
   returnTail: number | null;
+  /** Возврат брака продавцу: srid с одним плечом «Возврат брака (К продавцу)», без «Продажи» и «Возврата» в окне — не
+   *  отправка покупателю, ни в sales, ни в refusals, ни в ставках (27.10.2026). Магазин и SKU; null — поля нет. */
+  sellerReturn: number | null;
+  /** Сумма плеч sellerReturn (вне прямой и обратной ставки; деньги — в Store P&L по факту финотчёта). */
+  sellerReturnSum: number | null;
 }
 
 export interface CommissionRateRow {
@@ -413,7 +418,8 @@ export class UnitkaBq {
   async logisticsRates(): Promise<LogisticsRateRow[]> {
     const rows = await this.runner.query(
       `SELECT nm_id, shipments, direct_rate, refusals, reverse_rate, forward_sum, reverse_sum, n_logistics, n_delivery,
-              delivery_component_sum, sales, window_from, window_to, sale_refusal_overlap, return_tail
+              delivery_component_sum, sales, window_from, window_to, sale_refusal_overlap, return_tail,
+              seller_return, seller_return_sum
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_LOGISTICS_RATES')} ORDER BY nm_id`,
     );
     return rows.map((r) => ({
@@ -432,6 +438,8 @@ export class UnitkaBq {
       windowTo: date(r.window_to) ?? '',
       saleRefusalOverlap: num(r.sale_refusal_overlap),
       returnTail: num(r.return_tail),
+      sellerReturn: num(r.seller_return),
+      sellerReturnSum: num(r.seller_return_sum),
     }));
   }
 

@@ -48,7 +48,7 @@ class FakeRunner implements QueryRunner {
   spp: Array<{ nm_id: number; date_msk: string; effective_spp_pct: number | null; spp_status: string }> = [];
   sppQueries = 0;
   sppThrows = false;
-  constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number; logisticsOver?: Partial<LogisticsRateRow>; overlapColumnAbsent?: boolean; returnTailColumnAbsent?: boolean } = {}) {}
+  constructor(private readonly o: { lcd?: string; d1?: string; logisticsSales?: number; logisticsOver?: Partial<LogisticsRateRow>; overlapColumnAbsent?: boolean; returnTailColumnAbsent?: boolean; sellerReturnColumnAbsent?: boolean } = {}) {}
   async query<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>, _types?: Record<string, string>, options?: { jobTimeoutMs?: number }): Promise<T[]> {
     if (sql.includes('V_UNITKA_COGS_CANONICAL')) {
       this.integrityQueries++;
@@ -106,6 +106,7 @@ class FakeRunner implements QueryRunner {
         window_from: { value: r.windowFrom }, window_to: { value: r.windowTo },
         ...(this.o.overlapColumnAbsent ? {} : { sale_refusal_overlap: r.saleRefusalOverlap }),
         ...(this.o.returnTailColumnAbsent ? {} : { return_tail: r.returnTail }),
+        ...(this.o.sellerReturnColumnAbsent ? {} : { seller_return: r.sellerReturn, seller_return_sum: r.sellerReturnSum === null ? null : String(r.sellerReturnSum) }),
       })) as T[];
     }
     if (sql.includes('V_UNITKA_COMMISSION_RATES')) {
@@ -288,6 +289,20 @@ describe('unitkaLoader — SHADOW', () => {
   });
   it('колонки return_tail нет в ответе вью — INVARIANT_FAIL, пустое поле не подменяется нулём', async () => {
     const runner = new FakeRunner({ returnTailColumnAbsent: true });
+    const sheets = new FakeSheets(snapshot(), true);
+    await expect(unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'INVARIANT_FAIL' });
+    expect(sheets.writes).toEqual([]);
+  });
+  it('возврат брака продавцу (27.10.2026): seller_return из вью → инвариант проходит, SHADOW-план строится', async () => {
+    // 598 отправлений = 545 продаж + 52 отказа − 0 + 0 + 1 srid «Возврат брака (К продавцу)»
+    const runner = new FakeRunner({ logisticsOver: { shipments: 598, sellerReturn: 1, sellerReturnSum: 209.4 } });
+    const sheets = new FakeSheets(snapshot({ applyFacts: false, lcdInSheet: '2026-09-01' }));
+    await unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets));
+    expect(runner.journal[0]!.mode).toBe('SHADOW');
+    expect(sheets.writes).toEqual([]);
+  });
+  it('колонки seller_return нет в ответе вью — INVARIANT_FAIL, пустое поле не подменяется нулём', async () => {
+    const runner = new FakeRunner({ sellerReturnColumnAbsent: true });
     const sheets = new FakeSheets(snapshot(), true);
     await expect(unitkaLoader(ctx(mkConfig('shadow', true)), deps(runner, sheets))).rejects.toMatchObject({ code: 'INVARIANT_FAIL' });
     expect(sheets.writes).toEqual([]);
