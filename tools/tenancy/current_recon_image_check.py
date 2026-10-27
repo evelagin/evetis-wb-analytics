@@ -154,7 +154,7 @@ def observed(b,f):
     return R.observe(b,b.manifest,f['stop'],'2026-10-14',owner_ack_sha256=ACK,qualification_hash='3'*64,security_hash='4'*64,source_probe_hash='5'*64)[0]
 
 
-def check():
+def _check():
     with full_fixture() as (b,f):
         before_observation=deepcopy((f['rows'],b.tables.values))
         p=observed(b,f); assert f['authority'] and before_observation==(f['rows'],b.tables.values)
@@ -169,5 +169,13 @@ def check():
         del b.tables.values[(b.c['datasets']['tenant_locks'],f['lease_name'])]
         assert R.load(b,b.manifest,b.store.history(b.manifest['hash']))==[p]
     return dict(owner_phase_b_gate='PASS',byte_exact_current_namespace='PASS',real_durable_append='PASS',partial_not_complete='PASS',expired_retained_lease='PASS',source_calls=0,business_writes=0)
+
+
+def check():
+    """Frozen production incident replayed with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        return _check()
+
 
 if __name__=='__main__':print(json.dumps(check(),sort_keys=True))

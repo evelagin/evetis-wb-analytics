@@ -331,10 +331,18 @@ def acceptance_check():
     assert R.KIND in D.KINDS and 'full_terminal_gate_recovery.py' in O.SOURCE_FILES and 'full_terminal_gate_image_check.py' in O.SOURCE_FILES
     return 'PASS'
 
-def check():
+def _check():
     for name,fn in (('certificate',certificate_check),('negatives',negative_check),('publish',publish_check),('write_path',write_path_check),('main',main_check),('acceptance',acceptance_check)):
         assert fn()=='PASS',name
     return {'terminal_gate_recovery_adapter':'PASS'}
+
+
+def check():
+    """Frozen production incident replayed with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        return _check()
+
 
 if __name__=='__main__':
     print(json.dumps(check(),sort_keys=True))

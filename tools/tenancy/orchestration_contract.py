@@ -30,7 +30,7 @@ SOURCE_FILES = (
     'stop_acceptance.py','wake_budget.py','controller_wake_budget_image_check.py',
     'full_terminal_gate_recovery.py','full_terminal_gate_image_check.py',
     'current_independence.py','current_independence_image_check.py',
-    'current_runtime_succession_image_check.py',
+    'current_runtime_succession_image_check.py','runtime_history_fixture.py',
 )
 
 

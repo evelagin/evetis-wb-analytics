@@ -29,32 +29,48 @@ def expect_fail(fn, text):
     raise AssertionError('accepted: ' + text)
 
 
+BASE = '2253a311871fb4a3b9e4644d5c5de9f18d37a407'   # installed release the succession inherits
+OLD = 'ba9d3d0430e598290ef71e321f235e27941170f5'    # owner of the original CURRENT policy
+NEW = 'a' * 40
+ACK = 'e' * 64
+
+
 def fixture():
-    """Production shape: original policy pinned to the registered predecessor runtime pair."""
-    from tools.tenancy.current_recon_image_check import setup, OLD, NEW, ACK
-    b, _, _, release = setup()
+    """Post-succession shape: live contract on the replacement runtime, original policy on the
+    registered predecessor pair, replacement controller = installed release + succession flag."""
+    from types import SimpleNamespace
+    from tools.tenancy import orchestration_contract as O, cloud_controller as CLOUD
+    from tools.tenancy.current_recon_image_check import Tables, Store, NOW
+    c = BF.target('client_001'); root = c['orchestration']['job']['env']['BACKFILL_ROOT_HASH']
     old = parse((BF.REPO / 'infra/tenant/releases/backfill' / (OLD + '.json')).read_text())
-    release = dict(deepcopy(release), runtime_implementation_hash=BF.B.implementation_hash(),
-                   current_runtime_succession_version=1,
-                   verification=dict(release['verification'], current_runtime_succession_adapter='PASS'))
-    policy = P.sealed(dict(version=1, type=P.C.TYPE, tenant='client_001', project=b.c['project_id'],
-        historical_root=b.manifest['hash'], owner_decision_sha256='1' * 64, created_at='2026-10-14T04:00:00+00:00',
+    base = parse((BF.REPO / 'infra/tenant/releases/backfill' / (BASE + '.json')).read_text())
+    release = dict(deepcopy(base), source_sha=NEW,
+        image='europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:' + '2' * 64,
+        controller_implementation_hash=O.implementation_hash(BF.REPO),
+        runtime_image=c['marketplaces']['ozon']['runtime_image'], runtime_implementation_hash=BF.B.implementation_hash(),
+        current_runtime_succession_version=1,
+        verification=dict(base['verification'], current_runtime_succession_adapter='PASS'))
+    c['orchestration'] = O.block(c, dict(release=NEW, root_hash=root, scheduler_state='PAUSED'), BF.REPO, release)
+    policy = P.sealed(dict(version=1, type=P.C.TYPE, tenant='client_001', project=c['project_id'],
+        historical_root=root, owner_decision_sha256='1' * 64, created_at='2026-10-14T04:00:00+00:00',
         first_day='2026-10-14', entities=list(P.ORDER), snapshot_sla_seconds=86400, fbo_sla_seconds=86400,
         controller_source=OLD, controller_image=old['image'], runtime_image=old['runtime_image'],
         runtime_implementation_hash=old['runtime_implementation_hash'],
         fbo_contract_hash=None, source_concurrency=1, finance_finality='PROVISIONAL'))
-    ds = b.c['datasets']['ref']
-    b.tables.values[(ds, P.name(OLD))] = ({'kind': 'current_policy', 'root': policy['hash'][:16]}, D.encoded(policy))
-    spec = dict(settings=dict(release=NEW, root_hash=b.manifest['hash'], scheduler_state='PAUSED'), release=release)
-    from tools.tenancy import cloud_controller as CLOUD
-    b.tables.values[(b.c['datasets']['tenant_locks'], CLOUD.descriptor_name(NEW, b.manifest['hash'], 'PAUSED'))] = ({}, D.encoded(spec))
-    handoff = dict(version=2, type=A.TYPE_V2, tenant='client_001', project=b.c['project_id'], root=b.manifest['hash'],
+    tables = Tables(); m = dict(hash=root, tenant='client_001', project=c['project_id'], programs=[])
+    b = SimpleNamespace(c=c, manifest=m, clock=lambda: NOW, current_execution=None, phase_b_ack_sha256=ACK,
+                        tables=tables, store=Store(), journal=c['project_id'] + '.ozon_raw.OZON_INGESTION_RUNS')
+    ds = c['datasets']['ref']
+    tables.values[(ds, P.name(OLD))] = ({'kind': 'current_policy', 'root': policy['hash'][:16]}, D.encoded(policy))
+    spec = dict(settings=dict(release=NEW, root_hash=root, scheduler_state='PAUSED'), release=release)
+    tables.values[(c['datasets']['tenant_locks'], CLOUD.descriptor_name(NEW, root, 'PAUSED'))] = ({}, D.encoded(spec))
+    handoff = dict(version=2, type=A.TYPE_V2, tenant='client_001', project=c['project_id'], root=root,
         policy_hash=policy['hash'], old_source=OLD, old_image=old['image'], new_source=NEW, new_image=release['image'],
         new_implementation_hash=release['controller_implementation_hash'], runtime_image=release['runtime_image'],
-        runtime_implementation_hash=BF.B.implementation_hash(), original_runtime_image=policy['runtime_image'],
+        runtime_implementation_hash=release['runtime_implementation_hash'], original_runtime_image=policy['runtime_image'],
         original_runtime_implementation_hash=policy['runtime_implementation_hash'], owner_ack_sha256=ACK,
         qualification_hash='3' * 64, security_hash='4' * 64, created_at='2026-10-14T05:00:00+00:00', source_budget=0)
-    handoff = dict(handoff, hash=D.digest(handoff)); b.tables.values[(ds, A.name(NEW))] = A.value(handoff)
+    handoff = dict(handoff, hash=D.digest(handoff)); tables.values[(ds, A.name(NEW))] = A.value(handoff)
     return b, policy, handoff, release
 
 
@@ -65,7 +81,7 @@ def scenario():
     runtime, a synthetic replacement implementation stands in for it (plans are rebuilt
     from it consistently)."""
     from tools.tenancy import orchestration_contract as O
-    old = parse((BF.REPO / 'infra/tenant/releases/backfill' / ('ba9d3d0430e598290ef71e321f235e27941170f5.json')).read_text())
+    old = parse((BF.REPO / 'infra/tenant/releases/backfill' / (OLD + '.json')).read_text())
     live = BF.B.implementation_hash()
     synthetic = live if live != old['runtime_implementation_hash'] else 'c' * 64
     with patched(BF.B, 'implementation_hash', lambda: synthetic), patched(A, 'registered_runtime', registered), \
@@ -108,11 +124,12 @@ def check():
         v1 = {k: v for k, v in handoff.items() if k not in ('hash', 'original_runtime_image', 'original_runtime_implementation_hash')}
         v1.update(version=1, type=A.TYPE); v1['hash'] = D.digest(v1)
         expect_fail(lambda: A.resolve(b, v1['new_source'], A.value(v1), release), 'original registered pair')
-    # 5. The replacement runtime must be exactly registered (no registration stub).
-    with scenario() as (b, policy, handoff, release), patched(A, 'registered_runtime', REAL_REGISTERED):
-        expect_fail(lambda: A.resolve(b, handoff['new_source'], A.value(handoff), release), 'registration missing')
+    # 5. The replacement runtime must be exactly registered (real registry, no stub).
+    expect_fail(lambda: REAL_REGISTERED(release['runtime_image'], 'f' * 64), 'registration missing')
+    expect_fail(lambda: REAL_REGISTERED(release['runtime_image'][:-1] + '0', release['runtime_implementation_hash']), 'registration missing')
     # 6. Release contract: succession requires S4 independence and its own adapter.
-    s4 = parse((BF.REPO / 'infra/tenant/releases/backfill' / '73b3e3c255acd3207c6a25b9238f4b49835d3264.json').read_text())
+    s4 = dict(parse((BF.REPO / 'infra/tenant/releases/backfill' / (BASE + '.json')).read_text()),
+              runtime_image=b.c['marketplaces']['ozon']['runtime_image'])
     settings = dict(release=s4['source_sha'], root_hash=b.manifest['hash'], scheduler_state='PAUSED')
     good = dict(s4, current_runtime_succession_version=1,
                 verification=dict(s4['verification'], current_runtime_succession_adapter='PASS'))

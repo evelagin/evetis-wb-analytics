@@ -140,7 +140,7 @@ def observed(b):
                      review_hash='5'*64,security_hash='4'*64)
 
 
-def check():
+def _check():
     with fixture() as (b,f):
         p=observed(b); original=deepcopy(f['rows']); markers=deepcopy(b.tables.values)
         ops=R.write_manifest(p,b.manifest)
@@ -157,6 +157,13 @@ def check():
         assert not any(parse(r['evidence_json'])['kind'] in {'RECONCILED','CURRENT_CERT','COMPLETE','FULL_COMPLETE'} for r in f['inserts'])
     return dict(exact_f507='PASS',real_four_write_transport='PASS',originals_preserved='PASS',
                 idempotent_no_source='PASS',partial_not_complete='PASS')
+
+
+def check():
+    """Frozen production incident replayed with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        return _check()
 
 
 if __name__=='__main__': print(json.dumps(check(),sort_keys=True))
