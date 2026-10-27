@@ -22,7 +22,10 @@ Protocol (its own durable scope; nothing accepted is rewritten):
     certificate: COMPLETE dated readback, natural keys, DQ and DATA_COVERAGE) or CATCHUP_PARTIAL;
   * before the first dispatch of a day the persisted day must be empty (RAW rows and DATA_COVERAGE),
     otherwise CATCHUP_PARTIAL ACCEPTED_DATA_PRESENT without any source call;
-  * the first PARTIAL halts this authority and every later serial without a STOP; CURRENT continues.
+  * the first PARTIAL halts this authority and every later serial without a STOP; CURRENT continues
+    (a new chain needs a new owner decision); a reconcile-time count mismatch stays a global STOP,
+    as for CURRENT;
+  * an open day is drained whatever the installed release; only a new day needs finance_catchup_version.
 """
 from datetime import date, timedelta
 from tools.tenancy import tenant_backfill as BF, durable_plan as D, current_contract as K
@@ -37,8 +40,10 @@ FIELDS = frozenset({'version', 'type', 'tenant', 'project', 'historical_root', '
 KINDS = frozenset({'CATCHUP_PLAN', 'CATCHUP_CERT', 'CATCHUP_PARTIAL'})
 PARTIAL_FIELDS = frozenset({'day', 'authority_hash', 'ack_hash', 'status', 'reason'})
 REASONS = frozenset({'SOURCE_RETENTION_COMPLETENESS_UNPROVEN', 'ACCEPTED_DATA_PRESENT', 'DQ_RECONCILIATION_FAILED'})
-# Persisted-data verdicts of the dated readback. They end this day as PARTIAL (never COMPLETE) and
-# halt the authority instead of a global STOP; every other error stays fail-closed.
+# Verdicts of the certificate's dated readback (Catalog linkage of today's snapshot). They end this day as
+# PARTIAL (never COMPLETE) and halt the authority instead of a global STOP; every other error stays
+# fail-closed. A source/persisted count mismatch is normally raised earlier, by the ordinary reconcile
+# (verify_persistence), and is a global STOP exactly as for CURRENT.
 DQ_CODES = ('PILOT_DATA_RECONCILIATION_FAILED', 'PILOT_SKU_LINKAGE_UNPROVEN', 'PILOT_CATALOG_SKU_JOIN_AMBIGUOUS')
 MAX_DAYS = 31
 MAX_SERIAL = 20
@@ -175,23 +180,29 @@ def scan(b, policy, current_finance=None):
     pending: open (intent without reconciliation) days; next: the first day without completion;
     halted: the reason no further day may start. current_finance (days of CURRENT finance plans) is
     None only for read-only use (S4 lease ownership), never for a new election.
+    Open days are found whatever the installed release says: an elected authority is always drained.
+    Only a NEW day needs the qualified release. A CERT/PARTIAL day cannot hold an open intent (CERT
+    needs every receipt reconciled, PARTIAL is written before the first intent or after reconcile),
+    so its shard is not read: the per-wake cost is one root history per authorised day.
     """
-    out = dict(authorities=[], pending=[], next=None, halted=None, complete=[], partial=[])
+    out = dict(authorities=[], pending=[], next=None, halted=None, complete=[], partial=[], receipts=[])
     chain = authorities(b, b.manifest, policy)
-    if not chain or not qualified(b): return out
+    if not chain: return out
     out['authorities'] = [a['hash'] for a in chain]
+    if not qualified(b): out['halted'] = 'RELEASE_NOT_QUALIFIED'
     for a in chain:
         for text in a['days']:
             day = date.fromisoformat(text)
             item, cert, partial = day_state(b, a, day)
+            if cert is not None: out['complete'].append(text); continue
+            if partial is not None:
+                out['partial'].append(text); out['halted'] = out['halted'] or 'PARTIAL_' + partial['reason']; continue
             if item is not None:
                 hs = b.store.history(item['shard'])
                 intents = [r['sequence'] for r in hs if r['kind'] == 'DISPATCH_INTENT']
                 if intents and not any(r['kind'] == 'RECONCILED' and r['sequence'] == max(intents) for r in hs):
                     out['pending'].append((a, day, item))
-            if cert is not None: out['complete'].append(text); continue
-            if partial is not None:
-                out['partial'].append(text); out['halted'] = out['halted'] or 'PARTIAL_' + partial['reason']; continue
+                    out['receipts'] += [r['payload']['receipt'] for r in hs if r['kind'] == 'DISPATCH_RECEIPT' and r['sequence'] == max(intents)]
             if current_finance is not None and text in current_finance:
                 out['halted'] = out['halted'] or 'DAY_OWNED_BY_CURRENT'
             if out['next'] is None and out['halted'] is None: out['next'] = (a, day, item)
@@ -201,12 +212,7 @@ def scan(b, policy, current_finance=None):
 
 def receipts(b, policy):
     """Receipts of open catch-up shards (S4: the held lease may belong to exactly one of them)."""
-    out = []
-    for a, day, item in scan(b, policy)['pending']:
-        hs = b.store.history(item['shard'])
-        last = max(r['sequence'] for r in hs if r['kind'] == 'DISPATCH_INTENT')
-        out += [r['payload']['receipt'] for r in hs if r['kind'] == 'DISPATCH_RECEIPT' and r['sequence'] == last]
-    return out
+    return scan(b, policy)['receipts']
 
 
 def summary(s):
@@ -223,7 +229,7 @@ def drain(base, s):
 def wake(base, s, certs, partial):
     """New catch-up work only after today's CURRENT has nothing left; None when there is none."""
     from tools.tenancy import wake_budget as WB
-    if not s['authorities'] or s['next'] is None or s['halted'] is not None: return None
+    if not s['authorities'] or s['next'] is None or s['halted'] is not None: return None   # incl. RELEASE_NOT_QUALIFIED
     if 'catalog' not in certs or not set(CURRENT.INDEPENDENT_ENTITIES) <= set(certs) | set(partial): return None
     a, day, item = s['next']
     budget = WB.of(base)

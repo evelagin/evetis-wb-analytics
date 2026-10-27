@@ -16,7 +16,7 @@ def test_tick_elects_before_dispatch_never_repeats_and_completes_only_through_th
     assert X.tick_check() == 'PASS'
 
 
-def test_scope_disabled_without_marker_and_halts_on_partial_or_current_owned_day():
+def test_scope_disabled_without_marker_drains_open_day_without_flag_and_halts_on_partial_or_current_owned_day():
     assert X.scope_check() == 'PASS'
 
 

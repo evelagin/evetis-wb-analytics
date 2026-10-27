@@ -8,8 +8,9 @@
     day PARTIAL without a source call, COMPLETE only through the CURRENT certificate and only with
     today's Catalog CERT, DQ verdicts end the day PARTIAL (no global STOP), any other error stays
     fail-closed;
-  * scope: no marker means one metadata read and nothing else; an unqualified release ignores the
-    marker; the first PARTIAL or a CURRENT-owned day halts; two open catch-up authorities fail;
+  * scope: no marker means one metadata read and nothing else; an unqualified release elects no new
+    day but still drains an open one; a certified day costs one root read; the first PARTIAL or a
+    CURRENT-owned day halts; two open catch-up authorities fail;
   * order: an open catch-up receipt is drained before new CURRENT work; new catch-up work only after
     today's CURRENT has nothing left (Catalog CERT, every independent entity CERT or PARTIAL);
   * release: finance_catchup_version requires current_independence and its adapter.
@@ -236,7 +237,13 @@ def scope_check():
     s = FC.scan(b, p, set())
     assert s['authorities'] == [] and reads == [FC.name(p['hash'], 1)] and store.reads == 0          # disabled: one read
     b, reads, store = scope_backend(a, p, c, m, release=False)
-    assert FC.scan(b, p, set())['authorities'] == [] and store.reads == 0                          # unqualified release ignores it
+    s = FC.scan(b, p, set())
+    assert s['halted'] == 'RELEASE_NOT_QUALIFIED' and s['next'] is None and not s['pending']        # no new day without the flag
+    it = elect(store, a, '2026-10-08'); store.commit(it['shard'], 'DISPATCH_INTENT', 1, {'plan': it['plan']}, NOW)
+    store.commit(it['shard'], 'DISPATCH_RECEIPT', 1, {'plan': it['plan'], 'receipt': {'run_id': RUN, 'lease_generation': 7}}, NOW)
+    s = FC.scan(b, p, set())
+    assert [x[1] for x in s['pending']] == [date(2026, 10, 8)] and s['next'] is None                 # but an open day is still drained
+    assert FC.receipts(b, p) == [{'run_id': RUN, 'lease_generation': 7}]
     b, reads, store = scope_backend(a, p, c, m)
     s = FC.scan(b, p, {'2026-10-13', '2026-10-24'})
     assert s['next'][1] == date(2026, 10, 8) and s['next'][2] is None and s['halted'] is None and not s['pending']
@@ -249,8 +256,9 @@ def scope_check():
     store.commit(item['shard'], 'RECONCILED', 1, {}, NOW)
     cert = dict(day='2026-10-08', policy_hash=a['hash'], ack_hash=item['plan']['ack_hash'], shard=item['shard'], fact={'entity': 'finance_accrual', 'current_scope': a['hash']})
     store.commit(FC.root(a, date(2026, 10, 8)), 'CATCHUP_CERT', 0, cert, NOW)
-    s = FC.scan(b, p, set())
+    before = store.reads; s = FC.scan(b, p, set()); used = store.reads - before
     assert not s['pending'] and s['complete'] == ['2026-10-08'] and s['next'][1] == date(2026, 10, 9) and FC.receipts(b, p) == []
+    assert used == len(DAYS)                                                                        # certified day: no shard read
     assert FC.scan(b, p, {'2026-10-09'})['halted'] == 'DAY_OWNED_BY_CURRENT' and FC.scan(b, p, {'2026-10-09'})['next'] is None
     item9 = elect(store, a, '2026-10-09')
     store.commit(FC.root(a, date(2026, 10, 9)), 'CATCHUP_PARTIAL', 0, dict(day='2026-10-09', authority_hash=a['hash'], ack_hash=item9['plan']['ack_hash'], status='PARTIAL', reason='ACCEPTED_DATA_PRESENT'), NOW)
