@@ -65,3 +65,39 @@ variable "owner_push_channel" {
     error_message = "Нужно полное имя канала уведомлений этого же проекта арендатора."
   }
 }
+# ── Облачное наблюдение Heldi (watch.tf) ──
+variable "region" {
+  description = "Регион задания наблюдателя (как у контроллера)."
+  type        = string
+  default     = "europe-west1"
+  validation {
+    condition     = var.region == "europe-west1"
+    error_message = "Наблюдатель живёт рядом с контроллером: europe-west1."
+  }
+}
+
+# Образ собирается FROM образа живого контроллера (tools/heldi_watch/Dockerfile), только по digest.
+# null — слой 2 не создаётся (остаются сигналы слоя 1).
+variable "watch_image" {
+  description = "Образ heldi-health-eval по digest."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.watch_image == null || can(regex("^europe-west1-docker\\.pkg\\.dev/mpa-platform/mpa-runtime/heldi-health-eval@sha256:[0-9a-f]{64}$", var.watch_image))
+    error_message = "Только неизменяемый образ heldi-health-eval@sha256 из mpa-runtime; тег запрещён."
+  }
+}
+
+# Второй apply после ручного доверенного прогона: Scheduler снимается с паузы, включается сторож.
+variable "watch_active" {
+  description = "Регулярная оценка heldi-health-eval и сторож пульса."
+  type        = bool
+  default     = false
+}
+
+# Второй apply не раньше чем через 20 мин после создания метрики heldi_controller_status.
+variable "silence_alerts_enabled" {
+  description = "Включить политику H3 «контроллер молчит 20 мин»."
+  type        = bool
+  default     = false
+}

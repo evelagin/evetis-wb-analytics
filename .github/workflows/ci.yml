@@ -140,6 +140,19 @@ jobs:
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_independence_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
+      - name: Heldi cloud watch — checks, read-only boundary, synthetic STOP (offline)
+        run: python -m pytest -q tools/tests/test_tenancy_heldi_watch.py
+      - name: Heldi cloud watch image FROM the controller image (no push, no cloud credentials)
+        run: docker build --build-arg CONTROLLER_IMAGE=tenant-backfill-controller:ci -f tools/heldi_watch/Dockerfile -t heldi-health-eval:ci .
+      - name: Heldi cloud watch fails closed without its identity (network disabled)
+        run: |
+          set +e
+          docker run --rm --network=none heldi-health-eval:ci > watch.out
+          rc=$?
+          set -e
+          cat watch.out
+          test "$rc" = 3
+          python -c "import json; x=[json.loads(l) for l in open('watch.out')]; assert [l['heldi_watch'] for l in x] == ['UNAVAILABLE'], x"
 
   infra:
     runs-on: ubuntu-latest

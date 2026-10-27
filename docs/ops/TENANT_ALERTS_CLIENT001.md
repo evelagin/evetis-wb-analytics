@@ -3,6 +3,8 @@
 Корень Terraform: `infra/tenant-monitoring/` (отдельно от `infra/tenant`, см. `versions.tf`).
 Проект: `mpa-t-client-001`. Канал: почта владельца (адрес передаётся при apply, в Git его нет).
 Автоматического восстановления и автоматической паузы нет.
+Облачное наблюдение (H2 падение, H3 тишина, наблюдатель `heldi-health-eval`) — в том же корне, `watch.tf`;
+регламент — `docs/ops/HELDI_CLOUD_WATCH.md`.
 
 ## Сигналы
 
