@@ -246,9 +246,13 @@ def test_installed_image_driver_runs_network_free():
     import sys
     from pathlib import Path
     tests = Path(__file__).resolve().parent
-    env = dict(os.environ, PYTHONPATH=str(tests.parent / 'runtime'),
-               GCP_PROJECT_ID='offline-qualification-project', BQ_REF_DATASET='ref')
-    out = subprocess.run([sys.executable, str(tests / '_perf_429_image_driver.py')], env=env,
+    env = dict(os.environ, GCP_PROJECT_ID='offline-qualification-project', BQ_REF_DATASET='ref')
+    # Fresh process (the driver patches module state); conftest supplies the offline cloud-SDK
+    # stubs exactly as for this suite when the SDK is not installed (CI deployment-contract job).
+    boot = ('import runpy, sys; sys.path[:0] = [sys.argv[1], sys.argv[2]]; import conftest; '
+            'runpy.run_path(sys.argv[3], run_name="__main__")')
+    out = subprocess.run([sys.executable, '-c', boot, str(tests), str(tests.parent / 'runtime'),
+                          str(tests / '_perf_429_image_driver.py')], env=env,
                          capture_output=True, text=True, timeout=120, check=True)
     facts = json.loads(out.stdout.strip().splitlines()[-1])
     assert facts == {'performance_429_bounded_get_retry': 'PASS', 'performance_429_retry_paths': 4,
