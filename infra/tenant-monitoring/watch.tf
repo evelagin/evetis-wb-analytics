@@ -15,8 +15,9 @@
 #   HEALTH FAIL → критическое письмо, HEALTH DEGRADED/OK (смена состояния) → уведомление,
 #   нет HEARTBEAT 75 мин → сторож (наблюдатель сам ослеп).
 #
-# Канал — та же почта владельца (owner_email). Telegram не используется: исключение из F-18
-# не дано (как у DRO-1, infra/terraform/evetis_health.tf).
+# Каналы (решение владельца 27.10): аварии (H2 падение, FAIL наблюдателя, сторож) — почта + push
+# приложения Google Cloud (local.stop_channels, как у STOP); H3 и смена состояния — только почта
+# (H3 открывается и на плановой паузе тика). Telegram не используется: исключение из F-18 не дано.
 locals {
   controller_stderr = join(" AND ", [
     "resource.type=\"cloud_run_job\"",
@@ -82,7 +83,7 @@ resource "google_monitoring_alert_policy" "controller_crash" {
     }
   }
   alert_strategy { notification_prompts = ["OPENED"] }
-  notification_channels = [google_monitoring_notification_channel.owner_email.id]
+  notification_channels = local.stop_channels
   documentation {
     mime_type = "text/markdown"
     content   = "Исполнение контроллера ${local.who} завершилось необработанным исключением (Traceback, exit 1): решение тика могло остаться без закрытия, следующий тик, вероятно, запишет STOP (так было 25.10: kc4bg 20:09Z → STOP aaf68ede 20:10Z). Проверить исполнение по метке run.googleapis.com/execution_name в stderr. ${local.watch_runbook}"
@@ -314,7 +315,7 @@ resource "google_monitoring_alert_policy" "watch_fail" {
     notification_rate_limit { period = "300s" }
     auto_close = "1800s"
   }
-  notification_channels = [google_monitoring_notification_channel.owner_email.id]
+  notification_channels = local.stop_channels
   documentation {
     subject   = "Heldi FAIL: $${log.extracted_label.summary}"
     mime_type = "text/markdown"
@@ -369,7 +370,7 @@ resource "google_monitoring_alert_policy" "watch_watchdog" {
     }
   }
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
-  notification_channels = [google_monitoring_notification_channel.owner_email.id]
+  notification_channels = local.stop_channels
   documentation {
     mime_type = "text/markdown"
     content   = "Наблюдатель Heldi 75 мин не завершил ни одной оценки: состояние контроллера сейчас НЕИЗВЕСТНО по слою 2 (слой 1 — STOP, падение, тишина — продолжает работать). Проверить Scheduler heldi-health-eval и строки UNAVAILABLE/stderr задания. ${local.watch_runbook}"

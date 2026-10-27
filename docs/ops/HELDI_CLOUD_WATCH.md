@@ -20,7 +20,7 @@
 - отсутствие продвижения FULL;
 - Scheduler обычных загрузок.
 
-Ночной канал по-прежнему почта (см. §6).
+Каналы (решение владельца 27.10): почта + push приложения Google Cloud для аварий, см. §7.
 
 ## 2. Слои
 
@@ -105,15 +105,30 @@ ACL датасетов в `infra/tenant` авторитетны (T3.3). Если
 
 ## 4. Порядок включения (каждый шаг — по OWNER ACK)
 
-1. **Образ.** Сборка в Cloud Build с `CONTROLLER_IMAGE` = digest живого контроллера. На 27.10 это
-   `…/tenant-backfill-controller@sha256:f9c56b6a…`, источник `2253a311`. Публикуется в
-   `mpa-platform/mpa-runtime/heldi-health-eval`, развёртывание только по digest.
+0. **Push** подключён к STOP отдельным PR (#385) и применён раньше: этот корень должен получать тот же
+   `-var owner_push_channel=<name>`, иначе apply откатит push у STOP и проверки доставки.
+1. **Образ.** Cloud Build в mpa-platform (`tools/heldi_watch/cloudbuild.yaml`), контекст — ровно `tools/heldi_watch`
+   проверенного коммита:
+
+   ```text
+   WSHA=<коммит>; CTX=$(mktemp -d); git archive "$WSHA" tools/heldi_watch | tar -x -C "$CTX"
+   gcloud builds submit "$CTX" --project mpa-platform --region europe-west1 \
+     --config "$CTX/tools/heldi_watch/cloudbuild.yaml" \
+     --service-account projects/mpa-platform/serviceAccounts/sa-runtime-builder@mpa-platform.iam.gserviceaccount.com \
+     --gcs-source-staging-dir gs://mpa-platform-runtime-build-777428383056/source \
+     --substitutions _CONTROLLER_IMAGE=<live controller image@sha256>,_CONTROLLER_SOURCE_SHA=<its source>,_WATCH_SOURCE_SHA=$WSHA
+   ```
+
+   На 27.10: `tenant-backfill-controller@sha256:f9c56b6a2bf408fcb7d11a878e40bd5e73e47eb089471553d7806987ed050cb5`,
+   источник `2253a311871fb4a3b9e4644d5c5de9f18d37a407`. Сборка сама проверяет, что внутри тот же
+   `CONTROLLER_SOURCE_SHA` и что без своей личности образ отказывает (exit 3). В Terraform — только digest из
+   результата сборки.
 2. **Первый apply** (Scheduler на паузе, H3 и сторож выключены):
 
    ```text
    terraform init -backend-config=bucket=mpa-platform-tfstate-777428383056 -backend-config=prefix=monitoring/tenants/client_001
    terraform plan -var tenant_id=client_001 -var project_id=mpa-t-client-001 -var alert_email=<почта> \
-     -var watch_image=<digest> -out=watch.plan
+     -var owner_push_channel=<name> -var watch_image=<digest> -out=watch.plan
    ```
 
    Ожидается 18 to add, 0 to change, 0 to destroy (состав — в описании PR; read-only plan 27.10 против
@@ -129,8 +144,8 @@ ACL датасетов в `infra/tenant` авторитетны (T3.3). Если
      --args=--synthetic-fail,syn-<YYYYMMDD-HHMM>
    ```
 
-   Владелец подтверждает письмо «Heldi FAIL: SYNTHETIC FAIL syn-…». Следующий плановый прогон пришлёт
-   «смена состояния» обратно.
+   Владелец подтверждает **и письмо, и push** «Heldi FAIL: SYNTHETIC FAIL syn-…». Следующий прогон пришлёт
+   «смена состояния» обратно (только письмо).
 5. **Синтетический STOP на копии.** Оценка `evaluate()` с транспортом копии `overlay2.Copy` (как в репетиции
    пакета S4.1a), в которую в памяти добавлена запись STOPPED. Ожидается FAIL `UNRESOLVED_STOP`. Офлайн это же
    проверяет тест `test_synthetic_unresolved_stop_is_fail`, а сквозной вывод — `test_synthetic_stop_end_to_end…`.
@@ -156,7 +171,30 @@ ACL датасетов в `infra/tenant` авторитетны (T3.3). Если
 Время уходит на сеть: CPU занят на 4 %, каждый GET открывает новое TLS-соединение (`cloud_access.wire`).
 Таймаут задания — 1500 с. Фактическое время в Cloud Run фиксируется при доверенном прогоне в `facts.seconds`.
 
-## 5. Откат
+## 5. Синхронизация с релизами контроллера
+
+Наблюдатель собран FROM образа контроллера и судит его кодом. Поэтому после **каждого** релиза контроллера
+(ближайшие — C, затем B) синхронизируются три вещи:
+
+| Что | Откуда | Как |
+|---|---|---|
+| Базовый образ | новый `image` живого `tenant-backfill-controller` (digest) и его `CONTROLLER_SOURCE_SHA` | `_CONTROLLER_IMAGE`, `_CONTROLLER_SOURCE_SHA` сборки |
+| Код наблюдателя | `tools/heldi_watch` того же или более нового main | `_WATCH_SOURCE_SHA` |
+| Развёрнутый образ | digest новой сборки | `-var watch_image=<digest>`, plan: ровно 0 add, 1 change (`google_cloud_run_v2_job.watch` image) |
+
+Что происходит между выпуском контроллера и пересборкой:
+- Наблюдатель видит, что код в образе не тот, что у живого релиза (`O.verify_artifact_source`). Он пишет
+  DEGRADED `WATCH_IMAGE_STALE` (письмо «смена состояния») и **не судит** STOP и CURRENT. Слой 1 (STOP, падение,
+  тишина) работает без перерыва: он не зависит от образа.
+- Новый корень FULL у живого контроллера, которого нет в упакованном манифесте, тоже даёт `WATCH_IMAGE_STALE`.
+
+Поэтому пересборку и apply образа лучше включать в пакет выпуска контроллера последним шагом после
+`enabled-readback`. Это отдельная строка того же ACK, со своим plan «1 change».
+
+Если релиз меняет runtime (B — реклама 429), базовый образ контроллера уже содержит согласованную с ним пару
+runtime-кода. Отдельно синхронизировать runtime не нужно.
+
+## 6. Откат
 
 Plan и apply без `-var watch_image`: значение по умолчанию null, и слой 2 удаляется целиком.
 `deletion_protection = false` у задания допускает удаление. Слой 1 (H2, H3)
@@ -164,8 +202,12 @@ Plan и apply без `-var watch_image`: значение по умолчани�
 
 Контроллер, его Scheduler, датасеты и ACL этот корень не затрагивает.
 
-## 6. Чего здесь нет
+## 7. Каналы и чего здесь нет
 
-- **Telegram.** Исключение из F-18 не дано (как у DRO-1). Ночной канал — та же почта. Если нужен будящий канал
-  (SMS или push мобильного приложения Cloud Console), это отдельное решение владельца.
+- **Push + почта** (решение владельца 27.10): STOP, проверка доставки (PR #385), H2 падение, FAIL наблюдателя,
+  сторож. Только почта: «нет завершений», Scheduler, свежесть, H3 тишина и смена состояния наблюдателя — они
+  открываются и на плановой паузе тика.
+- **SMS** — дополнительный канал, только после подтверждения доступности номера и успешного теста. Канал `sms`
+  создаётся в консоли с подтверждением кодом; в Terraform — тем же способом, ссылкой на существующий канал.
+- **Telegram.** Исключение из F-18 не дано (как у DRO-1).
 - **Автоматическая пауза.** Её нет и не будет: аварийная пауза остаётся решением владельца или пакета под ACK.

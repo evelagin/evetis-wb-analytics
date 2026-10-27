@@ -83,3 +83,19 @@ run "reject_other_region" {
   variables { region = "europe-west4" }
   expect_failures = [var.region]
 }
+
+run "push_goes_to_crash_fail_and_watchdog_only" {
+  command = plan
+  variables {
+    watch_image        = "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/heldi-health-eval@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    owner_push_channel = "projects/mpa-t-client-001/notificationChannels/123456789"
+  }
+  assert {
+    condition     = alltrue([for p in [google_monitoring_alert_policy.controller_crash, google_monitoring_alert_policy.watch_fail[0], google_monitoring_alert_policy.watch_watchdog[0]] : contains(p.notification_channels, "projects/mpa-t-client-001/notificationChannels/123456789") && length(p.notification_channels) == 2])
+    error_message = "Аварии — почта + push."
+  }
+  assert {
+    condition     = length(google_monitoring_alert_policy.controller_silence.notification_channels) == 1 && length(google_monitoring_alert_policy.watch_change[0].notification_channels) == 1
+    error_message = "Тишина и смена состояния — только почта (тишина открывается и на плановой паузе)."
+  }
+}
