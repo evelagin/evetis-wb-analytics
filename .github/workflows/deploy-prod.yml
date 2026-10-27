@@ -198,12 +198,22 @@ jobs:
         if: inputs.only_job == 'wb-stocks-prod'
         with:
           persist-credentials: false
-      - name: "wb-stocks-prod: pre-check — digest = образ wb-stocks-shadow; снимок всех Job'ов"
+      - name: "wb-stocks-prod: pre-check — digest = образ wb-stocks-shadow, происхождение образа, контур prod; снимок всех Job'ов"
         if: inputs.only_job == 'wb-stocks-prod'
         run: |
           gcloud run jobs describe wb-stocks-shadow --region ${{ vars.GCP_REGION }} --format=json > shadow.json
-          python3 tools/stocks_prod_deploy_check.py pre shadow.json "$DIGEST"
           gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > jobs_before.json
+          # Происхождение: манифест и конфиг образа по digest (только GET в реестр). Проверка —
+          # цепочка sha256 манифест → конфиг → метка git-sha, которую ставит deploy-shadow.
+          REPO_PATH="${DIGEST%@*}"; REPO_PATH="${REPO_PATH#*/}"
+          REG="https://${{ vars.GCP_REGION }}-docker.pkg.dev/v2/${REPO_PATH}"
+          AUTH="Authorization: Bearer $(gcloud auth print-access-token)"
+          curl -fsS -o manifest.json -H "$AUTH" \
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json' \
+            "${REG}/manifests/${DIGEST#*@}"
+          CONFIG_DIGEST=$(python3 tools/stocks_prod_deploy_check.py config-digest manifest.json)
+          curl -fsSL -o image_config.json -H "$AUTH" "${REG}/blobs/${CONFIG_DIGEST}"
+          python3 tools/stocks_prod_deploy_check.py pre shadow.json jobs_before.json manifest.json image_config.json "$DIGEST" "$SOURCE_GIT_SHA"
       - name: "wb-stocks-prod: образ + боевой env остатков"
         if: inputs.only_job == 'wb-stocks-prod'
         run: |
