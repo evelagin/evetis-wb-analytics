@@ -100,6 +100,7 @@ SELECT event_date, COUNT(*) AS n, ROUND(SUM(amount_rub), 2) AS amount_rub,
 FROM `mpa-t-client-001.ozon_raw.RAW_OZON_FINANCE_ACCRUAL`
 WHERE event_date BETWEEN DATE '2026-04-09' AND DATE '2026-10-24'
   AND event_date NOT IN UNNEST([DATE '2026-10-08', DATE '2026-10-09', DATE '2026-10-10', DATE '2026-10-11',
-                                DATE '2026-10-12', DATE '2026-10-17', DATE '2026-10-19', DATE '2026-10-22', DATE '2026-10-23'])
+                                DATE '2026-10-12', DATE '2026-10-17', DATE '2026-10-19', DATE '2026-10-22', DATE '2026-10-23',
+                                DATE '2026-10-25'])
 GROUP BY 1
 ORDER BY 1;

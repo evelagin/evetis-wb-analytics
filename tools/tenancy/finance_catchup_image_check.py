@@ -311,7 +311,7 @@ def release_check():
     from tools.tenancy import orchestration_contract as O
     c = BF.target('client_001'); env = c['orchestration']['job']['env']
     from tools.tenancy.validation import parse_tenant_json
-    rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/73b3e3c255acd3207c6a25b9238f4b49835d3264.json').read_text())
+    rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/baff01b29781f1105ca2316ced29938771691fee.json').read_text())
     settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
     ok = dict(rel, finance_catchup_version=1, verification=dict(rel['verification'], finance_catchup_adapter='PASS'))
     assert O.block(c, settings, BF.REPO, release=ok)['job']['env']['CURRENT_DATA_MODE'] == K.TYPE
