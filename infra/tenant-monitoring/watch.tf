@@ -304,7 +304,7 @@ resource "google_monitoring_alert_policy" "watch_fail" {
       filter = "${local.watch_stdout} AND jsonPayload.heldi_watch=\"HEALTH\" AND jsonPayload.health=\"FAIL\""
       label_extractors = {
         summary = "EXTRACT(jsonPayload.summary)"
-        reasons = "EXTRACT(jsonPayload.reasons)"
+        reasons = "EXTRACT(jsonPayload.reason_codes)"
       }
     }
   }

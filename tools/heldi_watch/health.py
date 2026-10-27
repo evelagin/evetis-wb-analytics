@@ -430,7 +430,8 @@ def lines(v, prev, emit):
     out = []
     if emit:
         out.append(dict(heldi_watch='HEALTH', tenant=TENANT, severity=SEVERITY[v['health']], health=v['health'],
-                        previous=prev['health'] if prev else None, fingerprint=v['fingerprint'], reasons=v['reasons'],
+                        previous=prev['health'] if prev else 'NONE', fingerprint=v['fingerprint'], reasons=v['reasons'],
+                        reason_codes=','.join(v['reasons']) or 'NONE',
                         summary=v['summary'], message='Heldi %s: %s' % (v['health'], v['summary']),
                         findings=v['findings'], facts=v['facts'], evaluated_at=v['evaluated_at']))
     out.append(dict(heldi_watch='HEARTBEAT', tenant=TENANT, severity='INFO', health=v['health'], fingerprint=v['fingerprint'],
