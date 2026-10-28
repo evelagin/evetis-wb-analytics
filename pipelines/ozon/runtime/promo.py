@@ -34,10 +34,13 @@ from common import (DATASET, PROJECT, append_rows, bq, h, log, now_msk,
 
 # ── Разрешённые пути. Закрытый список. ──────────────────────────────────────
 P_ACTIONS = "/v1/actions"
-P_PRODUCTS = "/v1/actions/products"
-P_CANDIDATES = "/v1/actions/candidates"
-P_AUTO_ADD_LIST = "/v1/actions/auto-add/products/list"
-P_AUTO_ADD_CANDIDATES = "/v1/actions/auto-add/products/candidates"
+# Методы v1 товаров акций и автодобавления сняты Ozon (dev.ozon.ru, ст. 563: отключение 13→19.10.2026;
+# 14.10 — 400 code 9 «unified price logic», с 26.10 — 404). Список акций остаётся /v1/actions:
+# auto_add_dates для v2 берутся из него (docs.ozon.ru, описание auto_add_date).
+P_PRODUCTS = "/v2/actions/products"
+P_CANDIDATES = "/v2/actions/candidates"
+P_AUTO_ADD_LIST = "/v2/actions/auto-add/products/list"
+P_AUTO_ADD_CANDIDATES = "/v2/actions/auto-add/products/candidates"
 P_PRICES = "/v5/product/info/prices"
 
 ALLOWED_PATHS = (P_ACTIONS, P_PRODUCTS, P_CANDIDATES,
@@ -67,12 +70,16 @@ KNOWN_PRODUCT_FIELDS = {
     "id", "price", "action_price", "max_action_price", "alert_max_action_price",
     "alert_max_action_price_failed", "add_mode", "stock", "min_stock",
     "current_boost", "price_min_elastic", "price_max_elastic", "min_boost", "max_boost",
+    # v2
+    "recommended_stock", "marketplace_seller_price", "website_prices", "min_seller_price", "is_quarantined",
 }
 KNOWN_AUTO_ADD_FIELDS = {
     "product_id", "offer_id", "sku", "name", "price", "base_price",
     "max_discount_price", "min_seller_price", "marketplace_seller_price",
     "action_price_to_auto_add", "min_action_quantity", "quantity_to_auto_add",
     "currency", "add_mode",
+    # v2 (у auto-add/candidates идентификатор товара — id)
+    "id", "has_expired_min_seller_price", "website_prices", "will_be_quarantined", "is_manually_added",
 }
 
 
@@ -146,6 +153,34 @@ def _num(v):
         return None
 
 
+def _money(v):
+    """Цена v2 — Money {amount: "1827", currency: "RUB"}; v1 — число. Иначе None (НЕ 0).
+
+    Без этого float(dict) молча давал бы None по всем ценам ответа v2.
+    """
+    if isinstance(v, dict):
+        return _num(v.get("amount"))
+    return _num(v)
+
+
+def _currency(it, *money_fields):
+    """Валюта: поле currency (v1 и auto-add v2) или currency первой Money-цены."""
+    if it.get("currency"):
+        return it.get("currency")
+    for f in money_fields:
+        v = it.get(f)
+        if isinstance(v, dict) and v.get("currency"):
+            return v.get("currency")
+    return None
+
+
+def _mode(v):
+    """add_mode: строка v1/v2 как есть; bool v2 (auto-add) — литерал 'true'/'false', без толкования."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return v
+
+
 def _int(v):
     n = _num(v)
     return None if n is None else int(n)
@@ -215,7 +250,7 @@ def _paged_products(path, action_id):
         code, r = promo_call(path, body)
         if code != 200:
             raise PromoHttpError(path, code, str(r)[:200], action_id)
-        res = r.get("result") or {}
+        res = r.get("result", r) or {}
         items = res.get("products") or []
         out.extend(items)
         nxt = res.get("last_id") or ""
@@ -322,18 +357,18 @@ def promo(run_id, ts, _f, _t):
                     product_rows.append(dict(
                         action_id=aid, membership=membership, product_id=pid,
                         internal_sku=sku, sku_resolution_status=status,
-                        price_rub=_num(it.get("price")),
-                        action_price_rub=_num(it.get("action_price")),
-                        max_action_price_rub=_num(it.get("max_action_price")),
-                        alert_max_action_price_rub=_num(it.get("alert_max_action_price")),
+                        price_rub=_money(it.get("price")),
+                        action_price_rub=_money(it.get("action_price")),
+                        max_action_price_rub=_money(it.get("max_action_price")),
+                        alert_max_action_price_rub=_money(it.get("alert_max_action_price")),
                         alert_max_action_price_failed=it.get("alert_max_action_price_failed"),
-                        add_mode=it.get("add_mode"),
+                        add_mode=_mode(it.get("add_mode")),
                         stock=_int(it.get("stock")), min_stock=_int(it.get("min_stock")),
                         current_boost_pct=_num(it.get("current_boost")),
                         min_boost_pct=_num(it.get("min_boost")),
                         max_boost_pct=_num(it.get("max_boost")),
-                        price_min_elastic_rub=_num(it.get("price_min_elastic")),
-                        price_max_elastic_rub=_num(it.get("price_max_elastic")),
+                        price_min_elastic_rub=_money(it.get("price_min_elastic")),
+                        price_max_elastic_rub=_money(it.get("price_max_elastic")),
                         raw_item_json=json.dumps(it, ensure_ascii=False, sort_keys=True),
                         **_meta(f"POST {path}", obs, slot, env, run_id, observed_at,
                                 aid, membership, pid)))
@@ -357,7 +392,7 @@ def promo(run_id, ts, _f, _t):
                         continue
                     unknown |= _unknown(items, KNOWN_AUTO_ADD_FIELDS, "auto_add")
                     for it in items:
-                        pid = _int(it.get("product_id"))
+                        pid = _int(it.get("product_id") if it.get("product_id") is not None else it.get("id"))
                         offer = it.get("offer_id")
                         sku, status = _resolve(by_pid, by_offer, pid, offer)
                         auto_rows.append(dict(
@@ -365,15 +400,15 @@ def promo(run_id, ts, _f, _t):
                             product_id=pid, offer_id=(str(offer) if offer is not None else None),
                             ozon_sku=_int(it.get("sku")), internal_sku=sku,
                             sku_resolution_status=status, product_name=it.get("name"),
-                            price_rub=_num(it.get("price")),
-                            base_price_rub=_num(it.get("base_price")),
-                            max_discount_price_rub=_num(it.get("max_discount_price")),
-                            min_seller_price_rub=_num(it.get("min_seller_price")),
-                            marketplace_seller_price_rub=_num(it.get("marketplace_seller_price")),
-                            action_price_to_auto_add_rub=_num(it.get("action_price_to_auto_add")),
+                            price_rub=_money(it.get("price")),
+                            base_price_rub=_money(it.get("base_price")),
+                            max_discount_price_rub=_money(it.get("max_discount_price")),
+                            min_seller_price_rub=_money(it.get("min_seller_price")),
+                            marketplace_seller_price_rub=_money(it.get("marketplace_seller_price")),
+                            action_price_to_auto_add_rub=_money(it.get("action_price_to_auto_add")),
                             min_action_quantity=_int(it.get("min_action_quantity")),
                             quantity_to_auto_add=_int(it.get("quantity_to_auto_add")),
-                            currency_code=it.get("currency"), add_mode=it.get("add_mode"),
+                            currency_code=_currency(it, "price", "action_price_to_auto_add"), add_mode=_mode(it.get("add_mode")),
                             raw_item_json=json.dumps(it, ensure_ascii=False, sort_keys=True),
                             **_meta(f"POST {path}", obs, slot, env, run_id, observed_at,
                                     aid, d, kind, pid)))
