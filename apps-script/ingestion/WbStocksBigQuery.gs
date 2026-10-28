@@ -547,6 +547,19 @@ function wbStocksBqSnapshotCounts_(snapshotId, snapshotDate) {
   };
 }
 
+/**
+ * Есть ли за сутки МСК COMPLETE-снимок в manifest (боевой или восстановленный).
+ * Защищает от второго снимка за дату при догоне и ручном запуске.
+ */
+function wbStocksBqCompleteSnapshotExists_(snapshotDate) {
+  var c = getBqConfig_();
+  var sql = 'SELECT COUNT(*) AS c FROM `' + c.projectId + '.' + c.datasetId + '.' + WB_STOCKS_MANIFEST_TABLE_ + '` ' +
+    'WHERE status="COMPLETE" AND period_from=' + wbStocksSqlStr_(snapshotDate);
+  var r = bqQuery_(sql);
+  var f = (r && r.rows && r.rows[0] && r.rows[0].f) || [];
+  return Number(f[0] && f[0].v != null ? f[0].v : 0) > 0;
+}
+
 /** V_WB_STOCKS_CURRENT: строки RAW только последнего COMPLETE-снимка. */
 function wbStocksBqCreateView() {
   wbStocksBqEnsureRaw_();
