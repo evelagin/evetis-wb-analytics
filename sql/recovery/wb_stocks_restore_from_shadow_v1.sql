@@ -23,10 +23,12 @@
 -- Провенанс: snapshot_id сохраняется (`STOCK_SNAP_shadow_<yyyymmdd>`), load_id получает
 -- префикс `RESTORE_FROM_SHADOW_`, error_message манифеста — отметку восстановления.
 --
--- Откат (тоже по ACK, та же дата):
---   DELETE FROM wb_raw.RAW_WB_STOCKS    WHERE _snapshot_date = p_date AND load_id = p_load_id;
---   DELETE FROM wb_raw.RAW_WB_STOCKS_T5 WHERE _snapshot_date = p_date AND load_id = p_load_id;
---   DELETE FROM wb_raw.WB_STOCKS_SNAPSHOTS WHERE snapshot_id = p_snapshot_id AND STARTS_WITH(error_message, 'RESTORED_FROM_SHADOW');
+-- Откат (тоже по ACK, та же дата): `wb_stocks_restore_from_shadow_v1_rollback.sql` — одна транзакция,
+-- удаляет только строки с load_id восстановления и манифест с отметкой RESTORED_FROM_SHADOW.
+--
+-- Разрешённые даты — список ниже (ASSERT p_date IN ...). В shadow есть и 03.09 (боевой манифест
+-- ERROR, RAW пуст), поэтому предусловия сами по себе 03.09 не отсекают: каждая новая дата —
+-- отдельный OWNER ACK и правка списка в PR.
 --
 -- До развёртывания защиты Apps Script (PR #386, `wbStocksBqCompleteSnapshotExists_`) не запускать
 -- Apps Script-снимок вручную за восстановленную дату. Плановый триггер пишет только «сегодня».
@@ -43,6 +45,8 @@ DECLARE total_t5_before INT64;
 DECLARE total_manifest_before INT64;
 
 -- ── 1. Предусловия (только чтение; при провале ничего не записано) ──────────
+ASSERT p_date IN (DATE '2026-10-28')
+  AS 'RESTORE: на эту дату нет OWNER ACK (список разрешённых дат в скрипте)';
 ASSERT p_date <= CURRENT_DATE('Europe/Moscow')
   AS 'RESTORE: дата из будущего';
 ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_STOCKS` WHERE _snapshot_date = p_date) = 0
