@@ -82,25 +82,33 @@ const run = (h: Harness) => vm.runInContext('runWbStocksSnapshot()', h.ctx) as O
 const state = (h: Harness) => JSON.parse(h.props.get('WB_STOCKS_CATCHUP_STATE') ?? '{}') as { date?: string; attempts?: number };
 
 describe('WbStocksSnapshot: защита суточного снимка от общего ScriptLock', () => {
-  it('ждёт замок дольше, чем одну секунду (часовые загрузчики держат его секунды)', () => {
+  it('ждёт замок, но оставляет время на сам снимок в лимите исполнения 6 мин', () => {
     const h = load({ lockOk: true });
     run(h);
     expect(h.lockWaits).toHaveLength(1);
-    expect(h.lockWaits[0]).toBeGreaterThanOrEqual(60_000);
-    expect(h.lockWaits[0]).toBeLessThanOrEqual(240_000); // оставить время на сам снимок в лимите 6 мин
+    expect(h.lockWaits[0]).toBeGreaterThanOrEqual(30_000);   // p90 держателей замка — 21 с (журналы 26–27.10)
+    expect(h.lockWaits[0]).toBeLessThanOrEqual(90_000);      // худший снимок ~5 мин: ожидание + снимок < 6 мин
   });
 
-  it('SKIPPED_LOCKED больше не теряет сутки: ставится одноразовый догон', () => {
+  it('догон взведён ДО работы ядра — переживает обрыв исполнения по лимиту', () => {
+    const h = load({ lockOk: true });
+    let armedDuringCore: string[] = [];
+    h.ctx.wbStocksSnapshotCore_ = () => { armedDuringCore = h.triggers.map((t) => t.fn); throw new Error('обрыв'); };
+    run(h);
+    expect(armedDuringCore).toEqual(['wbStocksCatchupTick']);
+  });
+
+  it('SKIPPED_LOCKED больше не теряет сутки: догон остаётся взведённым', () => {
     const h = load({ lockOk: false });
     const r = run(h);
     expect(r.status).toBe('SKIPPED_LOCKED');
     expect(h.coreCalls).toBe(0);
     expect(h.triggers).toEqual([{ fn: 'wbStocksCatchupTick', afterMs: 15 * 60 * 1000 }]);
     expect(state(h)).toEqual({ date: '2026-10-28', attempts: 1 });
-    expect(h.logs.some((l) => l.startsWith('STOCKS: CATCHUP_SCHEDULED | 2026-10-28 | попытка 1/4'))).toBe(true);
+    expect(h.logs.some((l) => l.startsWith('STOCKS: CATCHUP_SCHEDULED | 2026-10-28 | попытка 1/5'))).toBe(true);
   });
 
-  it('ERROR ядра тоже ставит догон, а исключение не теряет manifest-финализацию', () => {
+  it('ERROR ядра оставляет догон, а ошибка уходит в результат', () => {
     const h = load({ lockOk: true, coreThrows: true });
     const r = run(h);
     expect(r.status).toBe('ERROR');
@@ -108,7 +116,7 @@ describe('WbStocksSnapshot: защита суточного снимка от о
     expect(h.triggers.map((t) => t.fn)).toEqual(['wbStocksCatchupTick']);
   });
 
-  it('за сутки с COMPLETE в manifest второй снимок не пишется и догон не ставится', () => {
+  it('за сутки с COMPLETE в manifest второй снимок не пишется и догон снимается', () => {
     const h = load({ lockOk: true, completeExists: true });
     const r = run(h);
     expect(r.status).toBe('SKIPPED_ALREADY_COMPLETE');
@@ -116,7 +124,7 @@ describe('WbStocksSnapshot: защита суточного снимка от о
     expect(h.triggers).toHaveLength(0);
   });
 
-  it('если проверку manifest выполнить нельзя — не пишем вслепую: ERROR и догон', () => {
+  it('если проверку manifest выполнить нельзя — не пишем вслепую: ERROR и догон остаётся', () => {
     const h = load({ lockOk: true, completeExists: new Error('BigQuery недоступен') });
     const r = run(h);
     expect(r.status).toBe('ERROR');
@@ -124,17 +132,17 @@ describe('WbStocksSnapshot: защита суточного снимка от о
     expect(h.triggers.map((t) => t.fn)).toEqual(['wbStocksCatchupTick']);
   });
 
-  it('догон ограничен: после 4 попыток за сутки — только CATCHUP_EXHAUSTED', () => {
+  it('догон ограничен: после 5 взведений за сутки — только CATCHUP_EXHAUSTED, триггер не копится', () => {
     const h = load({ lockOk: false });
-    for (let i = 0; i < 6; i++) run(h);
-    expect(state(h)).toEqual({ date: '2026-10-28', attempts: 4 });
-    expect(h.triggers).toHaveLength(1); // старый триггер догона заменяется, а не копится
+    for (let i = 0; i < 7; i++) run(h);
+    expect(state(h)).toEqual({ date: '2026-10-28', attempts: 5 });
+    expect(h.triggers).toHaveLength(1);
     expect(h.logs.some((l) => l.startsWith('STOCKS: CATCHUP_EXHAUSTED | 2026-10-28'))).toBe(true);
   });
 
   it('счётчик попыток живёт в пределах суток МСК', () => {
     const h = load({ lockOk: false });
-    h.props.set('WB_STOCKS_CATCHUP_STATE', JSON.stringify({ date: '2026-10-27', attempts: 4 }));
+    h.props.set('WB_STOCKS_CATCHUP_STATE', JSON.stringify({ date: '2026-10-27', attempts: 5 }));
     run(h);
     expect(state(h)).toEqual({ date: '2026-10-28', attempts: 1 });
   });
@@ -148,7 +156,7 @@ describe('WbStocksSnapshot: защита суточного снимка от о
     expect(h.triggers.map((t) => t.fn)).toEqual(['runWbStocksSnapshot']);
   });
 
-  it('успешный снимок не ставит догон', () => {
+  it('успешный снимок снимает взведённый догон', () => {
     const h = load({ lockOk: true });
     const r = run(h);
     expect(r.status).toBe('OK');

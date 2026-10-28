@@ -336,19 +336,22 @@ function wbStocksNormalize_(data, snapshotId, snapshotTsIso, snapshotDate, loadI
 
 // 🔴 28.10.2026: снимок дня потерян — tryLock(1000) проиграл ежечасному инкременту
 // продаж (D2c) за общий ScriptLock, а повтора не было (снимок остатков из API за
-// прошедшие сутки не получить). Поэтому: ждём замок, при неудаче ставим ограниченный
-// догон в те же сутки МСК, а второй снимок за дату не пишем (защита по manifest).
-var WB_STOCKS_LOCK_WAIT_MS_     = 180000;          // часовые заказы/продажи держат замок секунды
+// прошедшие сутки не получить). Поэтому: ждём замок, догон в те же сутки МСК ставится
+// ЗАРАНЕЕ (переживает обрыв исполнения по лимиту 6 мин) и снимается только при успехе,
+// второй снимок за дату не пишем (защита по manifest).
+// Ожидание 60 с: по журналам 26–27.10 90 % исполнений проекта держат замок ≤ 21 с; худший
+// случай самого снимка (опрос T5 20×9 с + повторы 429) — ~5 мин, поэтому ждать дольше нельзя.
+var WB_STOCKS_LOCK_WAIT_MS_     = 60000;
 var WB_STOCKS_CATCHUP_FN_       = 'wbStocksCatchupTick';
 var WB_STOCKS_CATCHUP_DELAY_MS_ = 15 * 60 * 1000;
-var WB_STOCKS_CATCHUP_MAX_      = 4;               // попыток догона на одни сутки МСК
+var WB_STOCKS_CATCHUP_MAX_      = 5;               // взведений догона на одни сутки МСК (включая плановый запуск)
 var WB_STOCKS_CATCHUP_PROP_     = 'WB_STOCKS_CATCHUP_STATE';
 
 /**
  * Один суточный снимок под ОБЩИМ ScriptLock (ждём до WB_STOCKS_LOCK_WAIT_MS_).
- * Если за сутки МСК уже есть COMPLETE в manifest — SKIPPED_ALREADY_COMPLETE, без записи.
- * SKIPPED_LOCKED / ERROR → одноразовый догон через WB_STOCKS_CATCHUP_DELAY_MS_
- * (не больше WB_STOCKS_CATCHUP_MAX_ за сутки).
+ * До ожидания взводится одноразовый догон через WB_STOCKS_CATCHUP_DELAY_MS_ (не больше
+ * WB_STOCKS_CATCHUP_MAX_ за сутки): он остаётся при SKIPPED_LOCKED / ERROR / обрыве исполнения
+ * и снимается при OK или SKIPPED_ALREADY_COMPLETE (за сутки в manifest уже есть COMPLETE — без записи).
  * Любая ошибка после manifest STARTED → manifest ERROR (если ещё не финализирован).
  */
 function runWbStocksSnapshot() {
@@ -357,14 +360,14 @@ function runWbStocksSnapshot() {
     error_message: '', control_status: '', metrics: null, written_rows: 0,
     _manifestStarted: false, _manifestFinalized: false };
   var snapshotDate = Utilities.formatDate(new Date(), WB_STOCKS_TZ_, 'yyyy-MM-dd');
+  wbStocksScheduleCatchup_(snapshotDate, { status: 'ARMED_BEFORE_RUN' });
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(WB_STOCKS_LOCK_WAIT_MS_)) {
     r.status = 'SKIPPED_LOCKED';
-    r.error_message = 'Активен другой запуск (общий ScriptLock) — снимок отложен.';
+    r.error_message = 'Активен другой запуск (общий ScriptLock) — снимок отложен до догона.';
     wbStocksSafeSheetLog_(r, Date.now() - t0);
     console.log('STOCKS: ' + r.status + ' | ' + r.error_message);
-    wbStocksScheduleCatchup_(snapshotDate, r);
     return r;
   }
   try {
@@ -388,7 +391,8 @@ function runWbStocksSnapshot() {
   wbStocksSafeSheetLog_(r, Date.now() - t0);
   console.log('STOCKS snapshot: ' + r.status + ' | id=' + r.snapshot_id + ' | written=' + r.written_rows +
     ' | control=' + r.control_status + (r.error_message ? ' | ' + r.error_message : ''));
-  if (r.status === 'ERROR') wbStocksScheduleCatchup_(snapshotDate, r);
+  // Успех (или снимок за сутки уже есть) — взведённый догон не нужен; иначе он остаётся.
+  if (r.status === 'OK' || r.status === 'SKIPPED_ALREADY_COMPLETE') wbStocksRemoveCatchupTriggers_();
   return r;
 }
 
@@ -399,8 +403,9 @@ function wbStocksCatchupTick() {
 }
 
 /**
- * Одноразовый догон в те же сутки МСК. Счётчик попыток — в Script Properties по дате;
- * исчерпание лимита только журналируется (сигнал владельцу — DRO-1 stocks_snapshot SLOT_LATE).
+ * Взводит одноразовый догон в те же сутки МСК (прежний триггер догона заменяется, не копится).
+ * Счётчик взведений — в Script Properties по дате; исчерпание лимита только журналируется
+ * (сигнал владельцу — DRO-1 stocks_snapshot SLOT_LATE).
  */
 function wbStocksScheduleCatchup_(snapshotDate, r) {
   try {

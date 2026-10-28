@@ -5,15 +5,19 @@
 Инцидент 28.10.2026 03:23:16 UTC: `STOCKS: SKIPPED_LOCKED` — `runWbStocksSnapshot` ждал общий ScriptLock 1 с,
 проиграл ежечасному инкременту продаж (D2c) и пропустил сутки без повтора; остатки за прошедшие сутки WB не отдаёт.
 
-- `apps-script/ingestion/WbStocksSnapshot.gs`: ожидание замка до 3 мин; при `SKIPPED_LOCKED` или `ERROR` —
-  одноразовый догон `wbStocksCatchupTick` через 15 мин, не больше 4 попыток за сутки МСК (счётчик в Script Properties;
-  исчерпание — `STOCKS: CATCHUP_EXHAUSTED` в журнале, сигнал владельцу — DRO-1 `stocks_snapshot` SLOT_LATE).
+- `apps-script/ingestion/WbStocksSnapshot.gs`: ожидание замка 60 с (журналы 26–27.10: p90 держателей замка 21 с; худший
+  случай самого снимка ~5 мин, лимит исполнения 6 мин); одноразовый догон `wbStocksCatchupTick` через 15 мин взводится
+  ДО работы (переживает обрыв исполнения) и снимается при OK / `SKIPPED_ALREADY_COMPLETE`; не больше 5 взведений за
+  сутки МСК (Script Properties; исчерпание — `STOCKS: CATCHUP_EXHAUSTED`, сигнал владельцу — DRO-1 SLOT_LATE).
+  Дополнительная нагрузка в худший случай ≈ 5 × (1 мин ожидания + снимок) при ~17 мин/сут текущей работы проекта.
 - Новый статус `SKIPPED_ALREADY_COMPLETE`: если за сутки МСК в `WB_STOCKS_SNAPSHOTS` уже есть COMPLETE (боевой или
   восстановленный), второй снимок не пишется. Ошибка этой проверки — `ERROR` и догон, а не запись вслепую.
 - `apps-script/ingestion/WbStocksBigQuery.gs`: `wbStocksBqCompleteSnapshotExists_` (SELECT по manifest).
-- `sql/recovery/wb_stocks_restore_from_shadow_v1.sql`: адресное восстановление даты из shadow (`__CR`) одной транзакцией,
-  с ASSERT до и после записи; только по OWNER ACK. Колонки таблиц не меняются.
-- Тест `cloud/test/stocks_snapshot_lock_catchup.test.ts` (9 случаев, исполняемый .gs в node:vm; 8 падают на прежнем коде).
+- `sql/recovery/wb_stocks_restore_from_shadow_v1.sql`: адресное восстановление ОДНОЙ даты из shadow (`__CR`): предусловия
+  (нет боевых RAW/T5/COMPLETE, shadow COMPLETE и сходится с манифестом по строкам и сумме, нет второго snapshot_id),
+  одна транзакция с ROLLBACK при любой ошибке, readback и доказательство «других партиций не тронуто» по итогам
+  таблиц; только по OWNER ACK. Колонки таблиц не меняются.
+- Тест `cloud/test/stocks_snapshot_lock_catchup.test.ts` (10 случаев, исполняемый .gs в node:vm; на прежнем коде падают все, кроме «успех снимает догон»).
 
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
