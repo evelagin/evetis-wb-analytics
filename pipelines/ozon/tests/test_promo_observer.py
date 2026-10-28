@@ -11,10 +11,10 @@ import json
 import pytest
 
 P_ACTIONS = "/v1/actions"
-P_PRODUCTS = "/v1/actions/products"
-P_CANDIDATES = "/v1/actions/candidates"
-P_AUTO_LIST = "/v1/actions/auto-add/products/list"
-P_AUTO_CAND = "/v1/actions/auto-add/products/candidates"
+P_PRODUCTS = "/v2/actions/products"
+P_CANDIDATES = "/v2/actions/candidates"
+P_AUTO_LIST = "/v2/actions/auto-add/products/list"
+P_AUTO_CAND = "/v2/actions/auto-add/products/candidates"
 P_PRICES = "/v5/product/info/prices"
 
 
@@ -344,3 +344,259 @@ def test_repeated_run_in_same_slot_reuses_job_id(promo_mod, monkeypatch):
     seen.clear()
     promo_mod.promo("run-2", "ts", None, None)
     assert seen == first, "job_id обязан зависеть от слота, а не от прогона"
+
+
+# ───────────────────────────────── изоляция этапов (инцидент 14–28.10.2026)
+BLOCKED_9 = (400, {"_error": '{"code":9, "message":"the method is blocked due to unified price logic"}'})
+GONE_404 = (404, {"_error": "404 page not found\n"})
+
+
+@pytest.fixture
+def manifest_sql(promo_mod, monkeypatch):
+    """Перехват записи и SQL манифеста: [(table, rows)], [sql]."""
+    written, sqls = [], []
+
+    def _append(table, rows, job_id):
+        written.append((table, rows))
+        return "LOADED", len(rows)
+
+    class _Q:
+        def result(self):
+            return []
+
+    class _BQ:
+        def query(self, sql, *_a, **_k):
+            sqls.append(sql)
+            return _Q()
+
+    monkeypatch.setattr(promo_mod, "append_rows", _append)
+    monkeypatch.setattr(promo_mod, "bq", lambda: _BQ())
+    return written, sqls
+
+
+def _final_update(sqls):
+    ups = [q for q in sqls if q.lstrip().startswith("UPDATE")]
+    assert len(ups) == 1, ups
+    return ups[0]
+
+
+@pytest.mark.parametrize("failure", [BLOCKED_9, GONE_404], ids=["400_code9", "404"])
+def test_withdrawn_auto_add_method_keeps_other_stages(promo_mod, manifest_sql, monkeypatch, failure):
+    """Снятый метод автодобавления больше не уносит акции, участников, кандидатов и marketing."""
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_AUTO_LIST: failure}))
+    with pytest.raises(promo_mod.PromoPartial, match="auto_add_scheduled=UNSUPPORTED"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert len(tables[promo_mod.TBL_ACTIONS]) == 2
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"PARTICIPATING", "CANDIDATE"}
+    # автодобавление: соседний (рабочий) путь ELIGIBLE записан, снятый SCHEDULED — нет
+    assert {r["list_kind"] for r in tables[promo_mod.TBL_AUTO_ADD]} == {"ELIGIBLE"}
+    assert tables[promo_mod.TBL_MARKETING] and tables[promo_mod.TBL_PRODUCT_ACTION]
+    up = _final_update(sqls)
+    assert "status='PARTIAL'" in up
+    assert "auto_add_scheduled_rows=NULL" in up          # не 0: «не собрано» ≠ «нет товаров»
+    assert "auto_add_eligible_rows=1" in up
+    assert "error_code='PARTIAL_STAGES'" in up
+    assert f"auto_add_scheduled=UNSUPPORTED({failure[0]})" in up
+
+
+@pytest.mark.parametrize("code", [403, 429, 500])
+def test_access_or_rate_errors_are_failed_not_empty(promo_mod, manifest_sql, monkeypatch, code):
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_CANDIDATES: (code, {"_error": "x"})}))
+    with pytest.raises(promo_mod.PromoPartial, match=f"products_candidate=FAILED\\({code}\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"PARTICIPATING"}
+    up = _final_update(sqls)
+    assert "products_candidate=NULL" in up and "products_participating=1" in up
+
+
+def test_stage_is_atomic_across_actions(promo_mod, manifest_sql, monkeypatch):
+    """Отказ участников на второй акции отбрасывает и строки первой: частичный список хуже явного отказа."""
+    written, _ = manifest_sql
+
+    def products(path, body):
+        if body["action_id"] == 4253043:
+            return 404, {"_error": "gone"}
+        return 200, {"result": {"products": [PARTICIPANT], "total": 1, "last_id": ""}}
+
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_PRODUCTS: products}))
+    with pytest.raises(promo_mod.PromoPartial, match="products_participating=UNSUPPORTED"):
+        promo_mod.promo("run-1", "ts", None, None)
+    rows = dict(written)[promo_mod.TBL_PRODUCTS]
+    assert {r["membership"] for r in rows} == {"CANDIDATE"}
+
+
+def test_all_product_and_auto_add_stages_failed_skip_their_tables(promo_mod, manifest_sql, monkeypatch):
+    """Ни одной записи в таблицу этапа, если все её этапы не собраны (job_id слота не расходуется)."""
+    written, _ = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({
+        P_PRODUCTS: GONE_404, P_CANDIDATES: GONE_404, P_AUTO_LIST: GONE_404, P_AUTO_CAND: GONE_404}))
+    with pytest.raises(promo_mod.PromoPartial):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = [t for t, _ in written]
+    assert promo_mod.TBL_PRODUCTS not in tables and promo_mod.TBL_AUTO_ADD not in tables
+    assert promo_mod.TBL_ACTIONS in tables and promo_mod.TBL_MARKETING in tables
+
+
+def test_marketing_stage_failure_is_isolated(promo_mod, manifest_sql, monkeypatch):
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_PRICES: (503, {"_error": "busy"})}))
+    with pytest.raises(promo_mod.PromoPartial, match="marketing=FAILED\\(503\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = [t for t, _ in written]
+    assert promo_mod.TBL_MARKETING not in tables and promo_mod.TBL_PRODUCT_ACTION not in tables
+    up = _final_update(sqls)
+    assert "marketing_products=NULL" in up and "marketing_action_rows=NULL" in up
+
+
+def test_actions_list_failure_is_still_fatal(promo_mod, manifest_sql, monkeypatch):
+    """Без списка акций снимка нет: ERROR, как и раньше (не PARTIAL)."""
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_ACTIONS: GONE_404}))
+    with pytest.raises(RuntimeError) as ei:
+        promo_mod.promo("run-1", "ts", None, None)
+    assert not isinstance(ei.value, promo_mod.PromoPartial)
+    assert written == []
+    assert "status='ERROR'" in _final_update(sqls)
+
+
+def test_all_stages_ok_is_complete(promo_mod, manifest_sql, monkeypatch):
+    _, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route())
+    promo_mod.promo("run-1", "ts", None, None)
+    up = _final_update(sqls)
+    assert "status='COMPLETE'" in up and "error_code" not in up and "=NULL, " not in up.split("unmapped_ids")[0]
+
+
+
+# ─────────────────────────── ответы v2 (docs.ozon.ru/api/seller, снято 28.10.2026)
+def M(x):
+    return {"amount": str(x), "currency": "RUB"}
+
+
+V2_PARTICIPANT = {"id": 1563818723, "price": M(1287), "action_price": M(1287), "max_action_price": M(1287),
+                  "add_mode": "SELLER", "stock": 2, "min_stock": 1, "recommended_stock": 10,
+                  "marketplace_seller_price": M(1287), "alert_max_action_price_failed": False,
+                  "alert_max_action_price": M(0), "current_boost": 15, "price_min_elastic": M(1287),
+                  "price_max_elastic": M(1076), "min_boost": 15, "max_boost": 55,
+                  "website_prices": {"price": M(1100), "prices_by_schema": {}}, "min_seller_price": M(1287),
+                  "is_quarantined": False}
+V2_AUTO_LIST = {"action_price_to_auto_add": M(1287), "add_mode": True, "base_price": M(3225), "currency": "RUB",
+                "has_expired_min_seller_price": False, "marketplace_seller_price": M(1287),
+                "max_discount_price": M(1287), "min_action_quantity": 0, "min_seller_price": M(1287),
+                "name": "Товар", "offer_id": "305101272", "price": M(1287), "product_id": 1563818723,
+                "quantity_to_auto_add": 0, "sku": 1991772098, "website_prices": {"price": M(1100)},
+                "will_be_quarantined": False}
+V2_AUTO_CAND = {k: v for k, v in V2_AUTO_LIST.items() if k not in ("product_id", "add_mode")}
+V2_AUTO_CAND.update({"id": 1563818723, "is_manually_added": False, "action_price_to_auto_add": M(1044),
+                     "max_discount_price": M(1044)})
+
+
+def route_v2(overrides=None):
+    """Транспорт-заглушка с формой ответов v2: без result, цены Money, last_id строкой."""
+    o = overrides or {}
+
+    def call(path, body=None):
+        if path in o:
+            return o[path](path, body) if callable(o[path]) else o[path]
+        if path == P_ACTIONS:
+            return 200, {"result": ACTIONS}                      # список акций остаётся v1
+        if path == P_PRODUCTS:
+            return 200, {"products": [V2_PARTICIPANT] if body["action_id"] == 1977747 else [],
+                         "total": 1, "last_id": ""}
+        if path == P_CANDIDATES:
+            return 200, {"products": [dict(V2_PARTICIPANT, id=2875763373)], "total": 1, "last_id": ""}
+        if path == P_AUTO_LIST:
+            return 200, {"products": [V2_AUTO_LIST], "total": 1}
+        if path == P_AUTO_CAND:
+            return 200, {"products": [V2_AUTO_CAND], "total": 1}
+        if path == P_PRICES:
+            return 200, {"items": [PRICES_ITEM], "cursor": ""}
+        raise AssertionError(f"неожиданный путь {path}")
+
+    return call
+
+
+def test_v2_paths_are_used_for_product_and_auto_add_methods(promo_mod):
+    assert (promo_mod.P_PRODUCTS, promo_mod.P_CANDIDATES, promo_mod.P_AUTO_ADD_LIST, promo_mod.P_AUTO_ADD_CANDIDATES) == (
+        "/v2/actions/products", "/v2/actions/candidates",
+        "/v2/actions/auto-add/products/list", "/v2/actions/auto-add/products/candidates")
+    assert promo_mod.P_ACTIONS == "/v1/actions"
+
+
+def test_v2_money_prices_are_parsed_not_nulled(promo_mod, captured, monkeypatch):
+    """float(dict) дал бы None по всем ценам — Money обязан разбираться."""
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2())
+    promo_mod.promo("run-1", "ts", None, None)
+    part = [r for r in rows_of(captured, promo_mod.TBL_PRODUCTS) if r["membership"] == "PARTICIPATING"][0]
+    assert (part["price_rub"], part["action_price_rub"], part["price_max_elastic_rub"]) == (1287.0, 1287.0, 1076.0)
+    assert part["add_mode"] == "SELLER" and part["stock"] == 2
+    auto = rows_of(captured, promo_mod.TBL_AUTO_ADD)
+    sched = [r for r in auto if r["list_kind"] == "SCHEDULED"][0]
+    elig = [r for r in auto if r["list_kind"] == "ELIGIBLE"][0]
+    assert (sched["price_rub"], sched["base_price_rub"], sched["action_price_to_auto_add_rub"]) == (1287.0, 3225.0, 1287.0)
+    assert sched["add_mode"] == "true" and sched["currency_code"] == "RUB"
+    # у auto-add/candidates идентификатор товара — id: строка не теряет товар и резолвится в SKU
+    assert elig["product_id"] == 1563818723 and elig["internal_sku"] == "EVT-FS-MOIST-30"
+    assert elig["action_price_to_auto_add_rub"] == 1044.0 and elig["currency_code"] == "RUB"
+
+
+def test_v2_known_fields_do_not_raise_schema_drift(promo_mod, monkeypatch):
+    sqls = []
+
+    class _Q:
+        def result(self):
+            return []
+
+    class _BQ:
+        def query(self, sql, *_a, **_k):
+            sqls.append(sql)
+            return _Q()
+
+    monkeypatch.setattr(promo_mod, "append_rows", lambda t, rows, j: ("LOADED", len(rows)))
+    monkeypatch.setattr(promo_mod, "bq", lambda: _BQ())
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2())
+    promo_mod.promo("run-1", "ts", None, None)
+    up = [q for q in sqls if q.lstrip().startswith("UPDATE")][0]
+    assert "schema_status='OK'" in up and "status='COMPLETE'" in up
+
+
+def test_v2_products_paginate_by_string_last_id(promo_mod, monkeypatch):
+    pages = {"": ("p1", 100), "p1": ("p2", 100), "p2": ("", 3)}
+    seen = []
+
+    def call(path, body=None):
+        lid = body.get("last_id", "")
+        seen.append(lid)
+        nxt, n = pages[lid]
+        return 200, {"products": [dict(V2_PARTICIPANT, id=i) for i in range(n)], "total": 203, "last_id": nxt}
+
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    assert len(promo_mod._paged_products(P_PRODUCTS, 1)) == 203
+    assert seen == ["", "p1", "p2"]
+
+
+def test_v2_auto_add_paginates_by_offset(promo_mod, monkeypatch):
+    offsets = []
+
+    def call(path, body=None):
+        offsets.append(body["offset"])
+        assert body["limit"] == promo_mod.PAGE_LIMIT and body["auto_add_date"] == "2026-10-01T21:00:00Z"
+        n = promo_mod.PAGE_LIMIT if body["offset"] < 200 else 7
+        return 200, {"products": [V2_AUTO_LIST] * n, "total": 207}
+
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    assert len(promo_mod._paged_auto_add(P_AUTO_LIST, 1, "2026-10-01T21:00:00Z")) == 207
+    assert offsets == [0, 100, 200]
+
+
+def test_v2_empty_money_is_null_not_zero(promo_mod, captured, monkeypatch):
+    broken = dict(V2_PARTICIPANT, price={"amount": "", "currency": "RUB"}, action_price=None, max_action_price={})
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2({
+        P_PRODUCTS: (200, {"products": [broken], "total": 1, "last_id": ""})}))
+    promo_mod.promo("run-1", "ts", None, None)
+    r = [x for x in rows_of(captured, promo_mod.TBL_PRODUCTS) if x["membership"] == "PARTICIPATING"][0]
+    assert (r["price_rub"], r["action_price_rub"], r["max_action_price_rub"]) == (None, None, None)

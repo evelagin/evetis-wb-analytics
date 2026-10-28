@@ -26,6 +26,11 @@ DENIED_PATHS = [
     "/v1/actions/products/deactivate",
     "/v1/actions/auto-add/products/update",
     "/v1/actions/auto-add/products/delete",
+    # v2 (dev.ozon.ru, ст. 563): мутирующие методы акций — наблюдателю запрещены
+    "/v1/actions/products/update",
+    "/v2/actions/products/deactivate",
+    "/v2/actions/auto-add/products/update",
+    "/v2/actions/auto-add/products/delete",
     "/v1/actions/discounts-task/approve",
     "/v1/actions/discounts-task/decline",
     "/v1/actions/hotsales/activate",
@@ -76,10 +81,10 @@ def test_allowed_paths_are_read_only():
 
     assert sorted(M.ALLOWED_PATHS) == sorted([
         "/v1/actions",
-        "/v1/actions/products",
-        "/v1/actions/candidates",
-        "/v1/actions/auto-add/products/list",
-        "/v1/actions/auto-add/products/candidates",
+        "/v2/actions/products",
+        "/v2/actions/candidates",
+        "/v2/actions/auto-add/products/list",
+        "/v2/actions/auto-add/products/candidates",
         "/v5/product/info/prices",
     ])
 
