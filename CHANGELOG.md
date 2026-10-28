@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## 2026-10-28 — WB остатки: суточный снимок не теряется из-за общего ScriptLock (НЕ развёрнуто)
+
+Инцидент 28.10.2026 03:23:16 UTC: `STOCKS: SKIPPED_LOCKED` — `runWbStocksSnapshot` ждал общий ScriptLock 1 с,
+проиграл ежечасному инкременту продаж (D2c) и пропустил сутки без повтора; остатки за прошедшие сутки WB не отдаёт.
+
+- `apps-script/ingestion/WbStocksSnapshot.gs`: ожидание замка до 3 мин; при `SKIPPED_LOCKED` или `ERROR` —
+  одноразовый догон `wbStocksCatchupTick` через 15 мин, не больше 4 попыток за сутки МСК (счётчик в Script Properties;
+  исчерпание — `STOCKS: CATCHUP_EXHAUSTED` в журнале, сигнал владельцу — DRO-1 `stocks_snapshot` SLOT_LATE).
+- Новый статус `SKIPPED_ALREADY_COMPLETE`: если за сутки МСК в `WB_STOCKS_SNAPSHOTS` уже есть COMPLETE (боевой или
+  восстановленный), второй снимок не пишется. Ошибка этой проверки — `ERROR` и догон, а не запись вслепую.
+- `apps-script/ingestion/WbStocksBigQuery.gs`: `wbStocksBqCompleteSnapshotExists_` (SELECT по manifest).
+- `sql/recovery/wb_stocks_restore_from_shadow_v1.sql`: адресное восстановление даты из shadow (`__CR`) одной транзакцией,
+  с ASSERT до и после записи; только по OWNER ACK. Колонки таблиц не меняются.
+- Тест `cloud/test/stocks_snapshot_lock_catchup.test.ts` (9 случаев, исполняемый .gs в node:vm; 8 падают на прежнем коде).
+
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
 Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.
