@@ -3,7 +3,7 @@
  * Контракт infra/terraform/unitka_monitoring.tf: отсутствие ряда и ряд с нулями — НЕ исправная работа,
  * фильтры событий совпадают с тем, что пишет код, новые политики создаются выключенными.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const tf = readFileSync(new URL('../../infra/terraform/unitka_monitoring.tf', import.meta.url), 'utf8');
@@ -129,5 +129,29 @@ describe('классы: отказ / блок публикации / внима�
     for (const n of ['unitka_engine_failed', 'unitka_platform_failed', 'ozon_unitka_failed', 'unitka_store_pnl_failed', 'ozon_store_pnl_failed']) {
       expect(tf).toContain(n); // перечислены в порядке включения как снимаемые последними
     }
+  });
+});
+
+describe('ограничения Cloud Monitoring на имена', () => {
+  // apply 21.10.2026: «display_name must not be more than 100 characters» на имени в 107 байт —
+  // предел считается в байтах UTF-8, кириллица занимает 2 байта.
+  const dir = new URL('../../infra/terraform/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.tf'));
+  const heartbeatKeys = [...tf.matchAll(/^ {4}(\w+) = \{\n {6}job /gm)].map((m) => m[1] as string);
+  const render = (s: string): string[] => {
+    const one = s.replace(/\$\{local\.unitka_signal_window\}/g, '24h30m').replace(/\$\{each\.value\.duration\}/g, '3600s');
+    return one.includes('${each.key}') ? heartbeatKeys.map((k) => one.replace(/\$\{each\.key\}/g, k)) : [one];
+  };
+  it('у всех политик и условий display_name ≤ 100 байт (с подставленными переменными)', () => {
+    expect(heartbeatKeys).toHaveLength(4);
+    const names: string[] = [];
+    for (const f of files) {
+      const text = readFileSync(new URL(f, dir), 'utf8');
+      for (const m of text.matchAll(/display_name\s*=\s*"((?:[^"\\]|\\.)*)"/g)) names.push(...render(m[1] as string));
+      if (f === 'unitka_monitoring.tf') for (const m of text.matchAll(/title\s+=\s+"((?:[^"\\]|\\.)*)"/g)) names.push(m[1] as string);
+    }
+    expect(names.length).toBeGreaterThan(40);
+    expect(names.filter((n) => n.includes('${'))).toEqual([]); // нераскрытая переменная — добавить подстановку в render
+    expect(names.filter((n) => Buffer.byteLength(n, 'utf8') > 100)).toEqual([]);
   });
 });
