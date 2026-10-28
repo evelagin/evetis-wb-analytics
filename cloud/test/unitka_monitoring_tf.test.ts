@@ -163,3 +163,20 @@ describe('ограничения Cloud Monitoring на имена', () => {
     expect(names.filter((n) => Buffer.byteLength(n, 'utf8') > 100)).toEqual([]);
   });
 });
+
+describe('пакет включения к 01.11: адреса expected_changes = адреса Terraform', () => {
+  const doc = readFileSync(new URL('../../docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md', import.meta.url), 'utf8');
+  const expected = /`expected_changes=([^`]+)`/.exec(doc)?.[1] ?? '';
+  const addrs = expected.split(',').map((p) => p.split('=')[0]);
+  it('ровно три изменения: два update heartbeat LCD и create writers_failed', () => {
+    expect(expected.split(',').map((p) => p.split('=')[1])).toEqual(['update', 'update', 'create']);
+  });
+  it('у ресурса с count адрес с индексом [0], у for_each — с ключом (иначе tf_plan_guard отказывает в apply)', () => {
+    for (const a of addrs) {
+      const name = /google_monitoring_alert_policy\.([a-z_]+)/.exec(a)?.[1] ?? '';
+      const body = block(name);
+      if (/\n  count\s+=/.test(body)) expect(a).toMatch(/\[0\]$/);
+      else if (/\n  for_each\s+=/.test(body)) expect(a).toMatch(/\["[a-z_]+"\]$/);
+    }
+  });
+});
