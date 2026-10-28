@@ -18,7 +18,7 @@
 существуют; события `LCD_COMMITTED` WB и Ozon — ежедневно 21–28.10 (окно 25 ч заполнено, ложного срабатывания при
 включении не будет); канал — email владельца (единственный).
 
-## Проверенный план (локально, 28.10.2026 ~15:40 UTC, `terraform plan -lock=false`, state `evetis/wb-cloud`, только чтение)
+## Проверенный план (локально, 28.10.2026, `terraform plan -lock=false`, state `evetis/wb-cloud`, только чтение)
 
 Targeted plan этой ветки (41f27667) по трём адресам — `Plan: 1 to add, 2 to change, 0 to destroy`:
 
