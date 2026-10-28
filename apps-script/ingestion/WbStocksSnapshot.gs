@@ -334,8 +334,24 @@ function wbStocksNormalize_(data, snapshotId, snapshotTsIso, snapshotDate, loadI
 // ЗАПУСК СНИМКА
 // ───────────────────────────────────────────────────────────────
 
+// 🔴 28.10.2026: снимок дня потерян — tryLock(1000) проиграл ежечасному инкременту
+// продаж (D2c) за общий ScriptLock, а повтора не было (снимок остатков из API за
+// прошедшие сутки не получить). Поэтому: ждём замок, догон в те же сутки МСК ставится
+// ЗАРАНЕЕ (переживает обрыв исполнения по лимиту 6 мин) и снимается только при успехе,
+// второй снимок за дату не пишем (защита по manifest).
+// Ожидание 60 с: по журналам 26–27.10 90 % исполнений проекта держат замок ≤ 21 с; худший
+// случай самого снимка (опрос T5 20×9 с + повторы 429) — ~5 мин, поэтому ждать дольше нельзя.
+var WB_STOCKS_LOCK_WAIT_MS_     = 60000;
+var WB_STOCKS_CATCHUP_FN_       = 'wbStocksCatchupTick';
+var WB_STOCKS_CATCHUP_DELAY_MS_ = 15 * 60 * 1000;
+var WB_STOCKS_CATCHUP_MAX_      = 5;               // взведений догона на одни сутки МСК (включая плановый запуск)
+var WB_STOCKS_CATCHUP_PROP_     = 'WB_STOCKS_CATCHUP_STATE';
+
 /**
- * Один суточный снимок под ОБЩИМ ScriptLock. Параллельный запуск = SKIPPED_LOCKED.
+ * Один суточный снимок под ОБЩИМ ScriptLock (ждём до WB_STOCKS_LOCK_WAIT_MS_).
+ * До ожидания взводится одноразовый догон через WB_STOCKS_CATCHUP_DELAY_MS_ (не больше
+ * WB_STOCKS_CATCHUP_MAX_ за сутки): он остаётся при SKIPPED_LOCKED / ERROR / обрыве исполнения
+ * и снимается при OK или SKIPPED_ALREADY_COMPLETE (за сутки в manifest уже есть COMPLETE — без записи).
  * Любая ошибка после manifest STARTED → manifest ERROR (если ещё не финализирован).
  */
 function runWbStocksSnapshot() {
@@ -343,17 +359,25 @@ function runWbStocksSnapshot() {
   var r = { status: 'ERROR', snapshot_id: '', started_at_iso: '', period_from: '', period_to: '',
     error_message: '', control_status: '', metrics: null, written_rows: 0,
     _manifestStarted: false, _manifestFinalized: false };
+  var snapshotDate = Utilities.formatDate(new Date(), WB_STOCKS_TZ_, 'yyyy-MM-dd');
+  wbStocksScheduleCatchup_(snapshotDate, { status: 'ARMED_BEFORE_RUN' });
 
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) {
+  if (!lock.tryLock(WB_STOCKS_LOCK_WAIT_MS_)) {
     r.status = 'SKIPPED_LOCKED';
-    r.error_message = 'Активен другой запуск (общий ScriptLock) — снимок пропущен.';
+    r.error_message = 'Активен другой запуск (общий ScriptLock) — снимок отложен до догона.';
     wbStocksSafeSheetLog_(r, Date.now() - t0);
     console.log('STOCKS: ' + r.status + ' | ' + r.error_message);
     return r;
   }
   try {
-    wbStocksSnapshotCore_(r);
+    // Без доказанного «снимка за сутки ещё нет» не пишем: ошибка проверки = ERROR.
+    if (wbStocksBqCompleteSnapshotExists_(snapshotDate)) {
+      r.status = 'SKIPPED_ALREADY_COMPLETE';
+      r.period_from = snapshotDate; r.period_to = snapshotDate;
+    } else {
+      wbStocksSnapshotCore_(r);
+    }
   } catch (e) {
     r.status = 'ERROR';
     r.error_message = 'Исключение: ' + ((e && e.message) || e);
@@ -367,7 +391,49 @@ function runWbStocksSnapshot() {
   wbStocksSafeSheetLog_(r, Date.now() - t0);
   console.log('STOCKS snapshot: ' + r.status + ' | id=' + r.snapshot_id + ' | written=' + r.written_rows +
     ' | control=' + r.control_status + (r.error_message ? ' | ' + r.error_message : ''));
+  // Успех (или снимок за сутки уже есть) — взведённый догон не нужен; иначе он остаётся.
+  if (r.status === 'OK' || r.status === 'SKIPPED_ALREADY_COMPLETE') wbStocksRemoveCatchupTriggers_();
   return r;
+}
+
+/** Обработчик одноразового догона: снимает свои триггеры и повторяет снимок. */
+function wbStocksCatchupTick() {
+  wbStocksRemoveCatchupTriggers_();
+  return runWbStocksSnapshot();
+}
+
+/**
+ * Взводит одноразовый догон в те же сутки МСК (прежний триггер догона заменяется, не копится).
+ * Счётчик взведений — в Script Properties по дате; исчерпание лимита только журналируется
+ * (сигнал владельцу — DRO-1 stocks_snapshot SLOT_LATE).
+ */
+function wbStocksScheduleCatchup_(snapshotDate, r) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var st = {};
+    try { st = JSON.parse(props.getProperty(WB_STOCKS_CATCHUP_PROP_) || '{}') || {}; } catch (e) { st = {}; }
+    var attempts = (st.date === snapshotDate) ? Number(st.attempts || 0) : 0;
+    if (attempts >= WB_STOCKS_CATCHUP_MAX_) {
+      console.log('STOCKS: CATCHUP_EXHAUSTED | ' + snapshotDate + ' | попыток ' + attempts + ' | последний статус ' + r.status);
+      return { scheduled: false, attempts: attempts };
+    }
+    wbStocksRemoveCatchupTriggers_();
+    ScriptApp.newTrigger(WB_STOCKS_CATCHUP_FN_).timeBased().after(WB_STOCKS_CATCHUP_DELAY_MS_).create();
+    props.setProperty(WB_STOCKS_CATCHUP_PROP_, JSON.stringify({ date: snapshotDate, attempts: attempts + 1 }));
+    console.log('STOCKS: CATCHUP_SCHEDULED | ' + snapshotDate + ' | попытка ' + (attempts + 1) + '/' +
+      WB_STOCKS_CATCHUP_MAX_ + ' через ' + Math.round(WB_STOCKS_CATCHUP_DELAY_MS_ / 60000) + ' мин | причина ' + r.status);
+    return { scheduled: true, attempts: attempts + 1 };
+  } catch (e) {
+    console.error('STOCKS: CATCHUP_SCHEDULE_FAILED | ' + ((e && e.message) || e));
+    return { scheduled: false, attempts: -1 };
+  }
+}
+
+/** Удаляет только триггеры догона остатков (дневной триггер и чужие обработчики не трогает). */
+function wbStocksRemoveCatchupTriggers_() {
+  var trs = ScriptApp.getProjectTriggers(), n = 0;
+  for (var i = 0; i < trs.length; i++) if (trs[i].getHandlerFunction() === WB_STOCKS_CATCHUP_FN_) { ScriptApp.deleteTrigger(trs[i]); n++; }
+  return n;
 }
 
 /** Ядро снимка (мутирует r). Порядок строго по C2. */

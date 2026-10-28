@@ -1,5 +1,24 @@
 # CHANGELOG.md
 
+## 2026-10-28 — WB остатки: суточный снимок не теряется из-за общего ScriptLock (НЕ развёрнуто)
+
+Инцидент 28.10.2026 03:23:16 UTC: `STOCKS: SKIPPED_LOCKED` — `runWbStocksSnapshot` ждал общий ScriptLock 1 с,
+проиграл ежечасному инкременту продаж (D2c) и пропустил сутки без повтора; остатки за прошедшие сутки WB не отдаёт.
+
+- `apps-script/ingestion/WbStocksSnapshot.gs`: ожидание замка 60 с (журналы 26–27.10: p90 держателей замка 21 с; худший
+  случай самого снимка ~5 мин, лимит исполнения 6 мин); одноразовый догон `wbStocksCatchupTick` через 15 мин взводится
+  ДО работы (переживает обрыв исполнения) и снимается при OK / `SKIPPED_ALREADY_COMPLETE`; не больше 5 взведений за
+  сутки МСК (Script Properties; исчерпание — `STOCKS: CATCHUP_EXHAUSTED`, сигнал владельцу — DRO-1 SLOT_LATE).
+  Дополнительная нагрузка в худший случай ≈ 5 × (1 мин ожидания + снимок) при ~17 мин/сут текущей работы проекта.
+- Новый статус `SKIPPED_ALREADY_COMPLETE`: если за сутки МСК в `WB_STOCKS_SNAPSHOTS` уже есть COMPLETE (боевой или
+  восстановленный), второй снимок не пишется. Ошибка этой проверки — `ERROR` и догон, а не запись вслепую.
+- `apps-script/ingestion/WbStocksBigQuery.gs`: `wbStocksBqCompleteSnapshotExists_` (SELECT по manifest).
+- `sql/recovery/wb_stocks_restore_from_shadow_v1.sql`: адресное восстановление ОДНОЙ даты из shadow (`__CR`): предусловия
+  (нет боевых RAW/T5/COMPLETE, shadow COMPLETE и сходится с манифестом по строкам и сумме, нет второго snapshot_id),
+  одна транзакция с ROLLBACK при любой ошибке, readback и доказательство «других партиций не тронуто» по итогам
+  таблиц; только по OWNER ACK. Колонки таблиц не меняются.
+- Тест `cloud/test/stocks_snapshot_lock_catchup.test.ts` (10 случаев, исполняемый .gs в node:vm; на прежнем коде падают все, кроме «успех снимает догон»).
+
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
 Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.
