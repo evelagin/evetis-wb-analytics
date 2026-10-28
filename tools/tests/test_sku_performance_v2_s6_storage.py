@@ -152,3 +152,18 @@ def test_dry_build_sql_has_no_permanent_writes_and_all_asserts():
     body = SQL[SQL.index("CREATE TEMP TABLE b AS"):SQL.index("SET v_rows")]
     assert len(stmt.findall(out)) == len(stmt.findall(body)) >= 10  # S1–S6, включая обе проверки хранения
     assert PAIRS in out and CALENDAR in out
+
+
+def test_recon_is_read_only_and_covers_every_numeric_field():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("dry", ROOT / "tools" / "sku_performance_v2" / "dry_build_sql.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.recon(SQL)
+    for w in mod.WRITES:
+        assert w not in out
+    assert "INFORMATION_SCHEMA.COLUMNS" in out  # список полей сверяется со схемой живого слоя
+    for c in mod.NUMERIC:
+        assert f"SELECT 'money', '{c}'," in out
+    assert {"credited_for_goods_rub", "storage_sku_rub", "cogs_rub", "contribution_after_cogs_rub"} <= set(mod.NUMERIC)
+    assert len(mod.NUMERIC) == len(set(mod.NUMERIC)) == 52
