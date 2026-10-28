@@ -344,3 +344,128 @@ def test_repeated_run_in_same_slot_reuses_job_id(promo_mod, monkeypatch):
     seen.clear()
     promo_mod.promo("run-2", "ts", None, None)
     assert seen == first, "job_id обязан зависеть от слота, а не от прогона"
+
+
+# ───────────────────────────────── изоляция этапов (инцидент 14–28.10.2026)
+BLOCKED_9 = (400, {"_error": '{"code":9, "message":"the method is blocked due to unified price logic"}'})
+GONE_404 = (404, {"_error": "404 page not found\n"})
+
+
+@pytest.fixture
+def manifest_sql(promo_mod, monkeypatch):
+    """Перехват записи и SQL манифеста: [(table, rows)], [sql]."""
+    written, sqls = [], []
+
+    def _append(table, rows, job_id):
+        written.append((table, rows))
+        return "LOADED", len(rows)
+
+    class _Q:
+        def result(self):
+            return []
+
+    class _BQ:
+        def query(self, sql, *_a, **_k):
+            sqls.append(sql)
+            return _Q()
+
+    monkeypatch.setattr(promo_mod, "append_rows", _append)
+    monkeypatch.setattr(promo_mod, "bq", lambda: _BQ())
+    return written, sqls
+
+
+def _final_update(sqls):
+    ups = [q for q in sqls if q.lstrip().startswith("UPDATE")]
+    assert len(ups) == 1, ups
+    return ups[0]
+
+
+@pytest.mark.parametrize("failure", [BLOCKED_9, GONE_404], ids=["400_code9", "404"])
+def test_withdrawn_auto_add_method_keeps_other_stages(promo_mod, manifest_sql, monkeypatch, failure):
+    """Снятый метод автодобавления больше не уносит акции, участников, кандидатов и marketing."""
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_AUTO_LIST: failure}))
+    with pytest.raises(promo_mod.PromoPartial, match="auto_add_scheduled=UNSUPPORTED"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert len(tables[promo_mod.TBL_ACTIONS]) == 2
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"PARTICIPATING", "CANDIDATE"}
+    # автодобавление: соседний (рабочий) путь ELIGIBLE записан, снятый SCHEDULED — нет
+    assert {r["list_kind"] for r in tables[promo_mod.TBL_AUTO_ADD]} == {"ELIGIBLE"}
+    assert tables[promo_mod.TBL_MARKETING] and tables[promo_mod.TBL_PRODUCT_ACTION]
+    up = _final_update(sqls)
+    assert "status='PARTIAL'" in up
+    assert "auto_add_scheduled_rows=NULL" in up          # не 0: «не собрано» ≠ «нет товаров»
+    assert "auto_add_eligible_rows=1" in up
+    assert "error_code='PARTIAL_STAGES'" in up
+    assert f"auto_add_scheduled=UNSUPPORTED({failure[0]})" in up
+
+
+@pytest.mark.parametrize("code", [403, 429, 500])
+def test_access_or_rate_errors_are_failed_not_empty(promo_mod, manifest_sql, monkeypatch, code):
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_CANDIDATES: (code, {"_error": "x"})}))
+    with pytest.raises(promo_mod.PromoPartial, match=f"products_candidate=FAILED\\({code}\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"PARTICIPATING"}
+    up = _final_update(sqls)
+    assert "products_candidate=NULL" in up and "products_participating=1" in up
+
+
+def test_stage_is_atomic_across_actions(promo_mod, manifest_sql, monkeypatch):
+    """Отказ участников на второй акции отбрасывает и строки первой: частичный список хуже явного отказа."""
+    written, _ = manifest_sql
+
+    def products(path, body):
+        if body["action_id"] == 4253043:
+            return 404, {"_error": "gone"}
+        return 200, {"result": {"products": [PARTICIPANT], "total": 1, "last_id": ""}}
+
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_PRODUCTS: products}))
+    with pytest.raises(promo_mod.PromoPartial, match="products_participating=UNSUPPORTED"):
+        promo_mod.promo("run-1", "ts", None, None)
+    rows = dict(written)[promo_mod.TBL_PRODUCTS]
+    assert {r["membership"] for r in rows} == {"CANDIDATE"}
+
+
+def test_all_product_and_auto_add_stages_failed_skip_their_tables(promo_mod, manifest_sql, monkeypatch):
+    """Ни одной записи в таблицу этапа, если все её этапы не собраны (job_id слота не расходуется)."""
+    written, _ = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({
+        P_PRODUCTS: GONE_404, P_CANDIDATES: GONE_404, P_AUTO_LIST: GONE_404, P_AUTO_CAND: GONE_404}))
+    with pytest.raises(promo_mod.PromoPartial):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = [t for t, _ in written]
+    assert promo_mod.TBL_PRODUCTS not in tables and promo_mod.TBL_AUTO_ADD not in tables
+    assert promo_mod.TBL_ACTIONS in tables and promo_mod.TBL_MARKETING in tables
+
+
+def test_marketing_stage_failure_is_isolated(promo_mod, manifest_sql, monkeypatch):
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_PRICES: (503, {"_error": "busy"})}))
+    with pytest.raises(promo_mod.PromoPartial, match="marketing=FAILED\\(503\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = [t for t, _ in written]
+    assert promo_mod.TBL_MARKETING not in tables and promo_mod.TBL_PRODUCT_ACTION not in tables
+    up = _final_update(sqls)
+    assert "marketing_products=NULL" in up and "marketing_action_rows=NULL" in up
+
+
+def test_actions_list_failure_is_still_fatal(promo_mod, manifest_sql, monkeypatch):
+    """Без списка акций снимка нет: ERROR, как и раньше (не PARTIAL)."""
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route({P_ACTIONS: GONE_404}))
+    with pytest.raises(RuntimeError) as ei:
+        promo_mod.promo("run-1", "ts", None, None)
+    assert not isinstance(ei.value, promo_mod.PromoPartial)
+    assert written == []
+    assert "status='ERROR'" in _final_update(sqls)
+
+
+def test_all_stages_ok_is_complete(promo_mod, manifest_sql, monkeypatch):
+    _, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route())
+    promo_mod.promo("run-1", "ts", None, None)
+    up = _final_update(sqls)
+    assert "status='COMPLETE'" in up and "error_code" not in up and "=NULL, " not in up.split("unmapped_ids")[0]
