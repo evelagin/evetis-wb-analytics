@@ -25,6 +25,7 @@ DEFERRED_PRIVACY_SENSITIVE_SOURCE — в V1 он не вызывается и н
 """
 import json
 import os
+import re
 import urllib.request
 
 import common as C
@@ -77,6 +78,43 @@ KNOWN_AUTO_ADD_FIELDS = {
 
 class PromoPathDenied(RuntimeError):
     """Запрошен путь вне закрытого списка наблюдателя акций."""
+
+
+class PromoHttpError(RuntimeError):
+    """Не-200 ответ Seller API. Путь и код сохраняются для классификации этапа."""
+
+    def __init__(self, path, code, text, action_id=None):
+        where = f"{path} action_id={action_id}" if action_id is not None else path
+        super().__init__(f"{where} → {code}: {text}")
+        self.path, self.code, self.text = path, code, text
+
+
+class PromoPartial(RuntimeError):
+    """Часть независимых этапов не собрана. Собранное записано, манифест PARTIAL.
+
+    Наружу — как сбой сущности: прогон не зелёный, OZON_INGESTION_RUNS = FAILED с этой
+    причиной, история акций (только COMPLETE/REUSED) частичный снимок не читает.
+    """
+
+
+# Этапы после списка акций независимы: отказ одного не обнуляет остальные (инцидент
+# 14–28.10.2026: Ozon снял /v1/actions/auto-add/products/list — сначала 400 code 9
+# «unified price logic», с 26.10 — 404 — и вместе с ним терялись акции, участники и кандидаты).
+STAGES = ("products_participating", "products_candidate",
+          "auto_add_scheduled", "auto_add_eligible", "marketing")
+
+
+def _stage_outcome(e):
+    """UNSUPPORTED — метод снят/заблокирован площадкой; FAILED — всё прочее (403, 429, 5xx, потолок).
+
+    Ни один исход не означает «товаров нет»: строки этапа не пишутся, счётчики в манифесте — NULL.
+    """
+    if isinstance(e, PromoHttpError):
+        compact = re.sub(r"\s+", "", str(e.text))
+        if e.code == 404 or (e.code == 400 and '"code":9' in compact):
+            return "UNSUPPORTED", str(e.code)
+        return "FAILED", str(e.code)
+    return "FAILED", type(e).__name__
 
 
 def promo_call(path, body=None):
@@ -176,7 +214,7 @@ def _paged_products(path, action_id):
             body["last_id"] = last_id
         code, r = promo_call(path, body)
         if code != 200:
-            raise RuntimeError(f"{path} action_id={action_id} → {code}: {str(r)[:200]}")
+            raise PromoHttpError(path, code, str(r)[:200], action_id)
         res = r.get("result") or {}
         items = res.get("products") or []
         out.extend(items)
@@ -194,7 +232,7 @@ def _paged_auto_add(path, action_id, auto_add_date):
         code, r = promo_call(path, {"action_id": action_id, "auto_add_date": auto_add_date,
                                     "limit": PAGE_LIMIT, "offset": offset})
         if code != 200:
-            raise RuntimeError(f"{path} action_id={action_id} → {code}: {str(r)[:200]}")
+            raise PromoHttpError(path, code, str(r)[:200], action_id)
         res = r.get("result", r) or {}
         items = res.get("products") or []
         out.extend(items)
@@ -263,11 +301,20 @@ def promo(run_id, ts, _f, _t):
                 **_meta(f"GET {P_ACTIONS}", obs, slot, env, run_id, observed_at, aid)))
 
         # ── 2. Товары акций: участники и кандидаты ─────────────────────────
+        stages = {k: ("OK", None) for k in STAGES}
         product_rows = []
         for a in actions:
             aid = _int(a.get("id"))
             for path, membership in ((P_PRODUCTS, "PARTICIPATING"), (P_CANDIDATES, "CANDIDATE")):
-                items = _paged_products(path, aid)
+                stage = "products_participating" if membership == "PARTICIPATING" else "products_candidate"
+                if stages[stage][0] != "OK":
+                    continue
+                try:
+                    items = _paged_products(path, aid)
+                except Exception as e:                                # noqa: BLE001
+                    stages[stage] = _stage_outcome(e) + (C.safe_error_text(e, 200)
+                                                         if hasattr(C, "safe_error_text") else str(e)[:200],)
+                    continue
                 unknown |= _unknown(items, KNOWN_PRODUCT_FIELDS, "product")
                 for it in items:
                     pid = _int(it.get("id"))
@@ -299,7 +346,15 @@ def promo(run_id, ts, _f, _t):
                 auto_pairs += 1
                 for path, kind in ((P_AUTO_ADD_LIST, "SCHEDULED"),
                                    (P_AUTO_ADD_CANDIDATES, "ELIGIBLE")):
-                    items = _paged_auto_add(path, aid, d)
+                    stage = "auto_add_scheduled" if kind == "SCHEDULED" else "auto_add_eligible"
+                    if stages[stage][0] != "OK":
+                        continue
+                    try:
+                        items = _paged_auto_add(path, aid, d)
+                    except Exception as e:                            # noqa: BLE001
+                        stages[stage] = _stage_outcome(e) + (C.safe_error_text(e, 200)
+                                                             if hasattr(C, "safe_error_text") else str(e)[:200],)
+                        continue
                     unknown |= _unknown(items, KNOWN_AUTO_ADD_FIELDS, "auto_add")
                     for it in items:
                         pid = _int(it.get("product_id"))
@@ -328,54 +383,74 @@ def promo(run_id, ts, _f, _t):
         # отбрасывается, кроме одного флага. RAW_OZON_PRICES НЕ трогаем —
         # существующая семантика остаётся прежней, наблюдение живёт здесь.
         mk_rows, act_rows, cursor = [], [], ""
-        while True:
-            code, r = promo_call(P_PRICES, {"cursor": cursor, "limit": PAGE_LIMIT,
-                                            "filter": {"offer_id": [], "product_id": [],
-                                                       "visibility": "ALL"}})
-            if code != 200:
-                raise RuntimeError(f"{P_PRICES} → {code}: {str(r)[:200]}")
-            items = r.get("items") or []
-            for i in items:
-                offer = str(i.get("offer_id"))
-                pid = _int(i.get("product_id"))
-                sku, status = _resolve(by_pid, by_offer, pid, offer)
-                ma = i.get("marketing_actions") or {}
-                acts = ma.get("actions") or []
-                p = i.get("price") or {}
-                mk_rows.append(dict(
-                    offer_id=offer, product_id=pid, internal_sku=sku,
-                    sku_resolution_status=status,
-                    # ⚠️ ДОСЛОВНО и НЕ авторитетно: наблюдался FALSE при непустом actions[].
-                    source_actions_exist_flag=ma.get("ozon_actions_exist"),
-                    current_period_from=_ts(ma.get("current_period_from")),
-                    current_period_to=_ts(ma.get("current_period_to")),
-                    actions_count=len(acts),
-                    price_rub=_num(p.get("price")), min_price_rub=_num(p.get("min_price")),
-                    marketing_seller_price_rub=_num(p.get("marketing_seller_price")),
-                    old_price_rub=_num(p.get("old_price")),
-                    auto_action_enabled=p.get("auto_action_enabled"),
-                    auto_add_to_ozon_actions_enabled=p.get("auto_add_to_ozon_actions_list_enabled"),
-                    marketing_actions_json=json.dumps(ma, ensure_ascii=False, sort_keys=True),
-                    **_meta(f"POST {P_PRICES}", obs, slot, env, run_id, observed_at, offer)))
-                for n, act in enumerate(acts):
-                    act_rows.append(dict(
-                        offer_id=offer, product_id=pid, internal_sku=sku, action_ordinal=n,
-                        action_title=act.get("title"),
-                        # value разнороден по единице измерения — не нормализуем.
-                        action_value_num=_num(act.get("value")),
-                        action_date_from=_ts(act.get("date_from")),
-                        action_date_to=_ts(act.get("date_to")),
-                        raw_item_json=json.dumps(act, ensure_ascii=False, sort_keys=True),
-                        **_meta(f"POST {P_PRICES}", obs, slot, env, run_id, observed_at, offer, n)))
-            cursor = r.get("cursor") or ""
-            if not cursor or not items:
-                break
+        try:
+            while True:
+                code, r = promo_call(P_PRICES, {"cursor": cursor, "limit": PAGE_LIMIT,
+                                                "filter": {"offer_id": [], "product_id": [],
+                                                           "visibility": "ALL"}})
+                if code != 200:
+                    raise PromoHttpError(P_PRICES, code, str(r)[:200])
+                items = r.get("items") or []
+                for i in items:
+                    offer = str(i.get("offer_id"))
+                    pid = _int(i.get("product_id"))
+                    sku, status = _resolve(by_pid, by_offer, pid, offer)
+                    ma = i.get("marketing_actions") or {}
+                    acts = ma.get("actions") or []
+                    p = i.get("price") or {}
+                    mk_rows.append(dict(
+                        offer_id=offer, product_id=pid, internal_sku=sku,
+                        sku_resolution_status=status,
+                        # ⚠️ ДОСЛОВНО и НЕ авторитетно: наблюдался FALSE при непустом actions[].
+                        source_actions_exist_flag=ma.get("ozon_actions_exist"),
+                        current_period_from=_ts(ma.get("current_period_from")),
+                        current_period_to=_ts(ma.get("current_period_to")),
+                        actions_count=len(acts),
+                        price_rub=_num(p.get("price")), min_price_rub=_num(p.get("min_price")),
+                        marketing_seller_price_rub=_num(p.get("marketing_seller_price")),
+                        old_price_rub=_num(p.get("old_price")),
+                        auto_action_enabled=p.get("auto_action_enabled"),
+                        auto_add_to_ozon_actions_enabled=p.get("auto_add_to_ozon_actions_list_enabled"),
+                        marketing_actions_json=json.dumps(ma, ensure_ascii=False, sort_keys=True),
+                        **_meta(f"POST {P_PRICES}", obs, slot, env, run_id, observed_at, offer)))
+                    for n, act in enumerate(acts):
+                        act_rows.append(dict(
+                            offer_id=offer, product_id=pid, internal_sku=sku, action_ordinal=n,
+                            action_title=act.get("title"),
+                            # value разнороден по единице измерения — не нормализуем.
+                            action_value_num=_num(act.get("value")),
+                            action_date_from=_ts(act.get("date_from")),
+                            action_date_to=_ts(act.get("date_to")),
+                            raw_item_json=json.dumps(act, ensure_ascii=False, sort_keys=True),
+                            **_meta(f"POST {P_PRICES}", obs, slot, env, run_id, observed_at, offer, n)))
+                cursor = r.get("cursor") or ""
+                if not cursor or not items:
+                    break
+        except Exception as e:                                    # noqa: BLE001
+            stages["marketing"] = _stage_outcome(e) + (C.safe_error_text(e, 200)
+                                                       if hasattr(C, "safe_error_text") else str(e)[:200],)
+            mk_rows, act_rows = [], []
+
+        # Строки неуспешного этапа не пишутся вовсе (атомарность этапа): частичный список
+        # участников или автодобавления хуже, чем явное «этап не собран».
+        ok = {k for k, v in stages.items() if v[0] == "OK"}
+        product_rows = [r for r in product_rows if ("products_participating" if r["membership"] == "PARTICIPATING"
+                                                    else "products_candidate") in ok]
+        auto_rows = [r for r in auto_rows if ("auto_add_scheduled" if r["list_kind"] == "SCHEDULED"
+                                              else "auto_add_eligible") in ok]
+        partial = sorted(k for k in STAGES if k not in ok)
+        stage_summary = "; ".join(f"{k}={stages[k][0]}({stages[k][1]})" for k in partial)
 
         # ── 5. Запись: append-only, детерминированный job_id ───────────────
         written, outcomes = 0, []
-        for table, rows in ((TBL_ACTIONS, action_rows), (TBL_PRODUCTS, product_rows),
-                            (TBL_AUTO_ADD, auto_rows), (TBL_MARKETING, mk_rows),
-                            (TBL_PRODUCT_ACTION, act_rows)):
+        tables = [(TBL_ACTIONS, action_rows)]
+        if {"products_participating", "products_candidate"} & ok:
+            tables.append((TBL_PRODUCTS, product_rows))
+        if {"auto_add_scheduled", "auto_add_eligible"} & ok:
+            tables.append((TBL_AUTO_ADD, auto_rows))
+        if "marketing" in ok:
+            tables += [(TBL_MARKETING, mk_rows), (TBL_PRODUCT_ACTION, act_rows)]
+        for table, rows in tables:
             outcome, n = append_rows(table, rows, promo_load_job_id(env, slot, table))
             outcomes.append(outcome)
             written += n
@@ -389,21 +464,28 @@ def promo(run_id, ts, _f, _t):
              if r["sku_resolution_status"] == "UNRESOLVED" and r["product_id"] is not None})
         mapped = len(src_ids) - len(unmapped)
         cov = round(mapped / len(src_ids) * 100, 2) if src_ids else None
-        reused = bool(outcomes) and all(o == "REUSED" for o in outcomes)
+        reused = bool(outcomes) and all(o == "REUSED" for o in outcomes) and not partial
+
+        partial_sql = (f"error_code='PARTIAL_STAGES', "
+                       f"error_message={repr(stage_summary.replace(chr(39), '')[:400])}, ") if partial else ""
+
+        def cnt(stage, n):
+            return "NULL" if stage in partial else n
 
         bq().query(
             f"UPDATE `{PROJECT}.{DATASET}.{TBL_OBSERVATIONS}` SET "
-            f"status='{'REUSED' if reused else 'COMPLETE'}', "
+            f"status='{'PARTIAL' if partial else ('REUSED' if reused else 'COMPLETE')}', "
             f"observed_at=TIMESTAMP('{observed_at}'), completed_at=CURRENT_TIMESTAMP(), "
             f"requests={C.STATS['requests'] - r0}, retries={C.STATS['retries'] - t0}, "
             f"actions_total={len(action_rows)}, "
             f"actions_participating={sum(1 for a in action_rows if a['is_participating'])}, "
-            f"products_participating={sum(1 for p in product_rows if p['membership'] == 'PARTICIPATING')}, "
-            f"products_candidate={sum(1 for p in product_rows if p['membership'] == 'CANDIDATE')}, "
-            f"auto_add_scheduled_rows={sum(1 for a in auto_rows if a['list_kind'] == 'SCHEDULED')}, "
-            f"auto_add_eligible_rows={sum(1 for a in auto_rows if a['list_kind'] == 'ELIGIBLE')}, "
-            f"auto_add_pairs={auto_pairs}, marketing_products={len(mk_rows)}, "
-            f"marketing_action_rows={len(act_rows)}, source_products={len(src_ids)}, "
+            f"products_participating={cnt('products_participating', sum(1 for p in product_rows if p['membership'] == 'PARTICIPATING'))}, "
+            f"products_candidate={cnt('products_candidate', sum(1 for p in product_rows if p['membership'] == 'CANDIDATE'))}, "
+            f"auto_add_scheduled_rows={cnt('auto_add_scheduled', sum(1 for a in auto_rows if a['list_kind'] == 'SCHEDULED'))}, "
+            f"auto_add_eligible_rows={cnt('auto_add_eligible', sum(1 for a in auto_rows if a['list_kind'] == 'ELIGIBLE'))}, "
+            f"auto_add_pairs={auto_pairs}, marketing_products={cnt('marketing', len(mk_rows))}, "
+            f"marketing_action_rows={cnt('marketing', len(act_rows))}, source_products={len(src_ids)}, "
+            f"{partial_sql}"
             f"mapped_products={mapped}, unmapped_products={len(unmapped)}, "
             f"unmapped_ids={'NULL' if not unmapped else repr(','.join(unmapped))}, "
             f"mapping_coverage_pct={'NULL' if cov is None else cov}, "
@@ -418,9 +500,14 @@ def promo(run_id, ts, _f, _t):
             marketing=len(mk_rows), marketing_actions=len(act_rows),
             unmapped=len(unmapped), mapping_coverage_pct=cov,
             schema_status="DRIFT_NEW_FIELDS" if unknown else "OK")
+        if partial:
+            log(event="ozon_promo_partial", observation_id=obs, stages=stage_summary)
+            raise PromoPartial(f"PARTIAL_STAGES: {stage_summary}")
         return {"received": written, "inserted": 0 if reused else written,
                 "updated": written if reused else 0}
 
+    except PromoPartial:
+        raise
     except Exception as e:                                            # noqa: BLE001
         msg = repr(e)[:400].replace("'", "")
         try:
