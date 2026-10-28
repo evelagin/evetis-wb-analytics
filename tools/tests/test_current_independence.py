@@ -23,6 +23,10 @@ def test_real_ledger_and_current_receipt_readers():
     assert X.evidence_readers_check()=='PASS'
 
 
+def test_admitted_wake_leaves_fbo_diagnostic_token_untouched_and_writes_no_stop():
+    assert X.diagnostic_token_check()=='PASS'
+
+
 def test_v1_selects_four_entities_drains_existing_and_isolates_partial():
     assert X.selection_check()=='PASS'
 

@@ -240,7 +240,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     if RP.pending_receipts(base,historical_candidates(historical_records,historical_plans,done,quarantined)):return None
     day=base.clock().astimezone(K.MSK).date();known=cycles(base,p)
     # Drain every committed current receipt before making a new day's plan.
-    pending=[];reports=[];sku_plans=[]
+    pending=[];reports=[];sku_plans=[];finance_days=set()
     for text,v in sorted(known.items()):
         d=date.fromisoformat(text);records,items=plans(base,p,d)
         for entity,item in items.items():
@@ -248,9 +248,15 @@ def wake(base,historical_records,historical_plans,done,quarantined):
             intents=[r for r in hs if r['kind']=='DISPATCH_INTENT']
             if intents and not any(r['kind']=='RECONCILED' and r['sequence']==max(z['sequence'] for z in intents) for r in hs):pending.append((d,item))
             if entity=='ads_sku_daily':sku_plans.append((d,item))
-    if len(pending)>1:fail('multiple current source authorities')
+            if entity=='finance_accrual':finance_days.add(item['plan']['runtime_plan']['from'])
+    # Owner finance catch-up (its own durable scope): an open catch-up receipt is one more source
+    # authority and is drained before any new CURRENT work; new catch-up days only at the very end.
+    from tools.tenancy import finance_catchup as FC
+    catchup=FC.scan(base,p,finance_days)
+    if len(pending)+len(catchup['pending'])>1:fail('multiple current source authorities')
     if pending:
         d,item=pending[0];return source_tick(Backend(base,p,d),p,d,item)
+    if catchup['pending']:return FC.drain(base,catchup)
     for d,item in sku_plans:
         report=base.state(item['plan'])['progress'].get('report')
         if report:
@@ -277,7 +283,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         validate_certificate(base,p,day,cert,item)
         if entity in certs and certs[entity]!=cert:fail('conflicting current certificate')
         certs[entity]=cert
-    if 'catalog' in certs:
+    if 'catalog' in certs and not local_full_stop(base):
         from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
         result=DIAGNOSTIC.queued(base)
         if result is not None:return result
@@ -295,10 +301,24 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         return result
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
-    return None
+    # Today's CURRENT has nothing left: an owner-authorised missed finance day may run (or None).
+    return FC.wake(base,catchup,certs,partial)
+
+def local_full_stop(base):
+    """S4 admitted wake: an unresolved FULL-local STOP exists and only CURRENT runs.
+
+    The owner FBO diagnostic token (BFDQUEUE/BFDA) is then left untouched: its dispatch requires no
+    unresolved STOP and would refuse with a new global STOP. No BFDC, RunJob, source POST or STOP;
+    the token is consumed only by a wake after the local STOP is resolved (or it expires).
+    """
+    admission=getattr(base,'current_independence',None)
+    return isinstance(admission,dict) and admission.get('admitted') is True
 
 def historical_candidates(records,plans,done,quarantined):
     """Catalog dependencies carry the same immutable dispatch authority as leaves."""
     selected={i:v for i,v in plans.items() if i not in done and i not in quarantined}
     selected.update({('dependency',n):r['payload'] for n,r in enumerate(records) if r['kind']=='DEPENDENCY_PLAN'})
     return selected
+
+# Loaded once with the real adapter class: the catch-up adapter subclasses Backend at import time.
+from tools.tenancy import finance_catchup as _finance_catchup  # noqa: E402,F401
