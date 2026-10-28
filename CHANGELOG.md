@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)
+
+`evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`: возраст последнего годного снимка > 780 мин (FAIL контракта DRO-1 для
+ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon показывался OBSERVED/COMPLETE при снимке
+двухнедельной давности. Колонки не меняются; манифест — новый хеш тела, `pending_deploy`. Тест сверяет порог с DRO-1.
+План — `docs/ops/PROMO_OBSERVABILITY_STALE_DEPLOY_2026-10-28.md`.
+
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
 Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.

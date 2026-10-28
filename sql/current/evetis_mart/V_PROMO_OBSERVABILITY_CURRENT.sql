@@ -14,6 +14,12 @@
 --                          перечисление, неоднозначная связь, нет сопоставления SKU).
 -- source_provides_capability = FALSE — у площадки нет такого источника вовсе
 -- (у WB нет автодобавления и marketing_actions; зафиксировано фазой 0, CONFIRMED_DOCS).
+--
+-- STALE (28.10.2026): последний годный снимок старше 780 мин — способность не «наблюдается»,
+-- что бы ни было в том снимке. Порог = FAIL контракта DRO-1 для ozon_promo / wb_promo
+-- (sql/health/dro1_01_contract.sql); самый длинный плановый перерыв между слотами — 9 ч.
+-- Инцидент: Ozon показывался OBSERVED/COMPLETE при снимке 14.10 (возраст 19 956 мин) — потребители
+-- видели состояние двухнедельной давности как текущее. NOT_PROVIDED_BY_SOURCE от возраста не зависит.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`
 OPTIONS (description = "PR-PROMO-2. Наблюдаемость состояния акций в последнем годном снимке каждой площадки: одна строка на marketplace × capability. Для каждой способности: сколько единиц установлено, сколько не наблюдаемо по контракту источника, сколько не определено в этом снимке, и даёт ли площадка такой источник вовсе. Свежесть — возраст последнего снимка в минутах.")
@@ -100,6 +106,7 @@ SELECT
   source_provides_capability,
   CASE
     WHEN NOT source_provides_capability THEN 'NOT_PROVIDED_BY_SOURCE'
+    WHEN TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, MINUTE) > 780 THEN 'STALE'
     WHEN units_total = 0 THEN 'NO_UNITS_IN_LATEST_OBSERVATION'
     WHEN units_established = units_total THEN 'OBSERVED'
     WHEN units_established = 0 AND units_not_observable = units_total THEN 'NOT_OBSERVABLE'

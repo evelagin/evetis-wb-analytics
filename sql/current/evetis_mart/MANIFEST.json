@@ -2038,7 +2038,7 @@
       "object_name": "V_PROMO_OBSERVABILITY_CURRENT",
       "object_type": "VIEW",
       "canonical_path": "sql/current/evetis_mart/V_PROMO_OBSERVABILITY_CURRENT.sql",
-      "sync_state": "captured_live",
+      "sync_state": "pending_deploy",
       "dependencies": [
         "V_PROMO_OBSERVATION_HISTORY",
         "V_PROMO_SKU_EVIDENCE_HISTORY",
@@ -2144,10 +2144,10 @@
           "ordinal_position": 14
         }
       ],
-      "canonical_body_sha256": "a8a428cae4f3289e613fc3e848bbd5403398fa47fd12aa56114d9a6fcabaaeae",
+      "canonical_body_sha256": "97583471cb446b367c6d9e9a88657dec502d46e456fdbfe17494d3e12d76d4b9",
       "canonical_description_sha256": "9adbed7626f69f9fd359d1c4a9a3b7b60dd8b94ce114bc66f6b72eb84baaf3e1",
       "canonical_schema_sha256": "0c601e92124d6f798eeaace8adcb67bdaef0d5c0827ebdeaee30e8e493fbe16d",
-      "canonical_schema_verification": "bigquery_verified",
+      "canonical_schema_verification": "unverified",
       "canonical_column_count": 14,
       "canonical_schema": [
         {
