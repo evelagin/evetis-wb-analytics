@@ -19,26 +19,45 @@ const flat = body.replace(/\s+/g, ' ');
 
 describe('V_UNITKA_LOGISTICS_RATES: хвост доказанного возврата', () => {
   it('хвост определён независимо: одно плечо, без «Продажи», с «Возвратом» на том же срезе b', () => {
-    expect(flat).toContain("(legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')) AS tail");
-    expect(flat).toContain("WHERE legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')");
+    expect(flat).toContain("(NOT srx AND legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')) AS tail");
+    expect(flat).toContain("WHERE legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid IN (SELECT srid FROM b WHERE son = 'Возврат') AND srid NOT IN (SELECT srid FROM sr)");
   });
   it('плечо хвоста — обратное: вне популяции прямых, в пуле обратных', () => {
-    expect(flat).toContain('SUM(IF(tail, 0, fwd)) AS fwd');
+    expect(flat).toContain('SUM(IF(tail OR sret, 0, fwd)) AS fwd');
     expect(flat).toContain('SUM(rev) + SUM(IF(tail, fwd, 0)) AS rev');
-    expect(flat).toContain("SUM(IF(son = 'Доставка' AND NOT tail, fwd, 0)) AS dlvfwd");
+    expect(flat).toContain("SUM(IF(son = 'Доставка' AND NOT tail AND NOT sret, fwd, 0)) AS dlvfwd");
   });
   it('знаменатели: прямая — отправки без хвостов, обратная — отказы плюс хвосты (SKU и магазин)', () => {
-    expect(flat).toContain('ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt, 0)), 4) AS direct_rate');
+    expect(flat).toContain('ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt - ns, 0)), 4) AS direct_rate');
     expect(flat).toContain('ROUND(SAFE_DIVIDE(rev, NULLIF(ref + nt, 0)), 4) AS reverse_rate');
-    expect(flat).toContain('ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt), 0)), 4)');
+    expect(flat).toContain('ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt) - SUM(ns), 0)), 4)');
     expect(flat).toContain('ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4)');
   });
   it('у SKU return_tail = число хвостов (порог своей ставки в Engine — shipments − return_tail)', () => {
-    expect(flat).toContain('CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail FROM a UNION ALL');
+    expect(flat).toContain('CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail, ns AS seller_return, ROUND(srsum, 2) AS seller_return_sum FROM a UNION ALL');
   });
   it('shipments и refusals сохраняют смысл (все srid с плечом; два и более плеч) — инвариант V1 не меняется', () => {
     expect(flat).toContain('COUNT(*) AS n,');
-    expect(flat).toContain('COUNTIF(legs >= 2) AS ref');
-    expect(flat).toMatch(/\(SELECT n FROM ov\), \(SELECT n FROM rt\) FROM a;?\s*$/);
+    expect(flat).toContain('COUNTIF(legs >= 2 AND NOT srx) AS ref');
+    expect(flat).toMatch(/\(SELECT n FROM ov\), \(SELECT n FROM rt\), \(SELECT n FROM sx\), ROUND\(SUM\(srsum\), 2\) FROM a;?\s*$/);
+  });
+});
+
+describe('V_UNITKA_LOGISTICS_RATES: возврат брака продавцу (27.10.2026)', () => {
+  it('класс определён строго по bonusTypeName плеча, без допусков', () => {
+    expect(flat).toContain("JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus");
+    expect(flat).toContain("sr AS (SELECT DISTINCT srid FROM b WHERE son IN ('Логистика', 'Доставка') AND bonus = 'Возврат брака (К продавцу)')");
+    expect(flat).toContain("(srx AND legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')) AS sret");
+    expect(flat).toContain("WHERE legs = 1 AND srid IN (SELECT srid FROM sr) AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')");
+  });
+  it('srid с плечом «К продавцу» исключён из sales, refusals, пересечения и хвоста — другая форма не попадёт ни в один класс (fail-closed)', () => {
+    expect(flat).toContain("sale AS (SELECT COUNT(DISTINCT srid) AS n FROM b WHERE son = 'Продажа' AND srid NOT IN (SELECT srid FROM sr))");
+    expect(flat).toContain('COUNTIF(legs >= 2 AND NOT srx) AS ref');
+    expect(flat).toContain("WHERE legs >= 2 AND srid IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM sr)");
+    expect(flat).toContain('(NOT srx AND legs = 1');
+  });
+  it('плечо не в ставках, но и не теряется: отдельная сумма seller_return_sum (fwd + rev + seller_return_sum = все плечи окна)', () => {
+    expect(flat).toContain('SUM(IF(sret, fwd, 0)) AS srsum');
+    expect(flat).toContain('SUM(IF(tail OR sret, 0, fwd)) AS fwd');
   });
 });
