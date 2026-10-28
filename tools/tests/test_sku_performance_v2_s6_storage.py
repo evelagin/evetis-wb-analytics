@@ -138,3 +138,17 @@ def test_unattributed_storage_view_declares_reasons():
 def test_asserts_stay_inside_build_procedure(msg):
     proc = SQL[SQL.index("CREATE OR REPLACE PROCEDURE"):SQL.index("\nEND;", SQL.index("CREATE OR REPLACE PROCEDURE"))]
     assert msg in proc
+
+
+def test_dry_build_sql_has_no_permanent_writes_and_all_asserts():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("dry", ROOT / "tools" / "sku_performance_v2" / "dry_build_sql.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.build(SQL)
+    for w in mod.WRITES:
+        assert w not in out
+    stmt = re.compile(r"^\s+ASSERT ", re.M)
+    body = SQL[SQL.index("CREATE TEMP TABLE b AS"):SQL.index("SET v_rows")]
+    assert len(stmt.findall(out)) == len(stmt.findall(body)) >= 10  # S1–S6, включая обе проверки хранения
+    assert PAIRS in out and CALENDAR in out
