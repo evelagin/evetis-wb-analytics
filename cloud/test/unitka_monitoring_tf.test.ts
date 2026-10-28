@@ -175,8 +175,8 @@ describe('пакет включения к 01.11: адреса expected_changes 
     for (const a of addrs) {
       const name = /google_monitoring_alert_policy\.([a-z_]+)/.exec(a)?.[1] ?? '';
       const body = block(name);
-      if (/\n  count\s+=/.test(body)) expect(a).toMatch(/\[0\]$/);
-      else if (/\n  for_each\s+=/.test(body)) expect(a).toMatch(/\["[a-z_]+"\]$/);
+      if (/\n {2}count\s+=/.test(body)) expect(a).toMatch(/\[0\]$/);
+      else if (/\n {2}for_each\s+=/.test(body)) expect(a).toMatch(/\["[a-z_]+"\]$/);
     }
   });
 });
