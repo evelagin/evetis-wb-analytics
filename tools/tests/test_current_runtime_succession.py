@@ -99,3 +99,51 @@ def test_retained_f507_acceptance_survives_the_runtime_succession(monkeypatch):
         del b.tables.values[(c['datasets']['ref'], A.name(succ))]
         with pytest.raises((BF.B.EvidenceError, ValueError)):
             F507.load(b, b.manifest, b.store.history(F507.ROOT))
+
+
+def test_same_day_plan_of_the_original_runtime_is_never_dispatched_and_never_stops(succession):
+    """Plans elected under C the same Moscow day stay read-back only: the entity waits for the next day (no STOP)."""
+    from types import SimpleNamespace
+    from tools.tenancy import controller_cadence as CC, recent_priority as RP, fbo_diagnostic_owner as DIAG, finance_catchup as FC
+    b, policy, _, _ = succession
+    day = CHECK.DAY
+    def item(entity, original):
+        doc = P.document(policy, day, entity); doc = P.original_runtime(policy, doc) if original else doc
+        return {'day': day.isoformat(), 'policy_hash': policy['hash'], 'plan': doc, 'shard': P.shard(policy, day, doc)}
+    items = {'catalog': item('catalog', False), 'stocks': item('stocks', True), 'prices': item('prices', False)}
+    records = [{'kind': 'CURRENT_CERT', 'payload': {'fact': {'entity': 'catalog'}}}]
+    ticks = []
+    from datetime import datetime, timezone
+    base = SimpleNamespace(clock=lambda: datetime(2026, 10, 14, 20, tzinfo=timezone.utc),
+                           store=SimpleNamespace(history=lambda *a, **k: [], commit=lambda *a: 'h'), state=lambda d: {'progress': {}})
+    def tick(bb, pp, d, it):
+        ticks.append(it['plan']['runtime_plan']['entity']); return {'status': 'WAITING', 'source_dispatches': 0}
+    with CHECK.patched(C, 'policy', lambda bb: policy), CHECK.patched(CC, 'ensure', lambda bb: None), CHECK.patched(RP, 'pending_receipts', lambda *a: []), \
+            CHECK.patched(C, 'cycles', lambda bb, pp: {day.isoformat(): {}}), CHECK.patched(C, 'plans', lambda bb, pp, d: (records, items)), \
+            CHECK.patched(C, 'validate_certificate', lambda *a: a[3]), CHECK.patched(C, 'Backend', lambda *a: None), CHECK.patched(C, 'source_tick', tick), \
+            CHECK.patched(DIAG, 'queued', lambda bb: None), CHECK.patched(FC, 'scan', lambda *a: {'pending': []}), CHECK.patched(FC, 'wake', lambda *a: None):
+        assert C.wake(base, [], {}, {}, set()) is None
+    assert 'stocks' not in ticks and ticks[:1] == ['prices'] and set(ticks) <= {'prices', 'finance_accrual'}
+    assert C.original_runtime_plan(policy, items['stocks']['plan']) and not C.original_runtime_plan(policy, items['prices']['plan'])
+
+
+def test_finance_catchup_day_elected_under_the_original_runtime_halts_without_dispatch(succession):
+    from types import SimpleNamespace
+    from tools.tenancy import finance_catchup as FC, durable_plan as Dp
+    from datetime import date
+    b, policy, _, _ = succession
+    a = FC.sealed(dict(version=1, type=FC.TYPE, tenant='client_001', project='mpa-t-client-001', historical_root=b.manifest['hash'],
+                       policy_hash=policy['hash'], serial=1, previous=None, owner_ack_sha256='e' * 64, created_at='2026-10-14T05:00:00+00:00',
+                       entity=FC.ENTITY, days=['2026-10-08'], source_concurrency=1, finance_finality='PROVISIONAL'))
+    day = date(2026, 10, 8); live = FC.document(a, day); old = P.original_runtime(policy, live)
+    rec = dict(version=Dp.VERSION, root_hash=FC.root(a, day), kind='CATCHUP_PLAN', sequence=0,
+               payload={'day': day.isoformat(), 'authority_hash': a['hash'], 'plan': old, 'shard': FC.shard(a, day, old)})
+    store = SimpleNamespace(history=lambda root, **k: [rec] if root == FC.root(a, day) else [])
+    bb = SimpleNamespace(store=store, manifest=b.manifest)
+    with pytest.raises(BF.B.EvidenceError, match='plan ownership'):
+        FC.day_state(bb, a, day)                                    # the dispatch path (no policy) never accepts it
+    item, cert, partial = FC.day_state(bb, a, day, policy)          # the read-back path recognizes it exactly
+    assert item['plan'] == old and cert is None and partial is None
+    with CHECK.patched(FC, 'authorities', lambda *x: [a]), CHECK.patched(FC, 'qualified', lambda *x: True):
+        s = FC.scan(bb, policy)
+    assert s['halted'] == 'DAY_ELECTED_UNDER_ORIGINAL_RUNTIME' and s['next'] is None and not s['pending']

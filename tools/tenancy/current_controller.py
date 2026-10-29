@@ -302,6 +302,10 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         if item is None:
             doc=P.document(p,day,entity);item={'day':day.isoformat(),'policy_hash':p['hash'],'plan':doc,'shard':P.shard(p,day,doc)}
             base.store.commit(P.cycle_root(p,day),'CURRENT_PLAN',P.ORDER.index(entity),item,base.clock())
+        elif original_runtime_plan(p,item['plan']):
+            # Elected under the original runtime before an owner runtime succession and not finished: read-back only,
+            # never dispatched; the entity waits for the next Moscow day (its cycle gets a live-runtime plan).
+            continue
         current=Backend(base,p,day);result=source_tick(current,p,day,item)
         if result['status'] in {'WAITING','SNAPSHOT_DAY_ROLLOVER'} and not WB.exhausted(result):continue
         return result
@@ -319,6 +323,12 @@ def local_full_stop(base):
     """
     admission=getattr(base,'current_independence',None)
     return isinstance(admission,dict) and admission.get('admitted') is True
+
+def original_runtime_plan(p,doc):
+    """A plan pinned to the policy's original runtime while another runtime is packaged (owner runtime succession).
+    plans() has already validated it exactly (current_policy.validate_document read-back form)."""
+    pin=(doc.get('runtime_plan') or {}).get('implementation_hash')
+    return pin is not None and pin==p.get('runtime_implementation_hash')!=BF.B.implementation_hash()
 
 def historical_candidates(records,plans,done,quarantined):
     """Catalog dependencies carry the same immutable dispatch authority as leaves."""
