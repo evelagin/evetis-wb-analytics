@@ -110,7 +110,7 @@ def block(c, settings, repo, release=None):
     owner_pause='owner_pause_quiescent_version' in release
     if owner_pause:
         expected.add('owner_pause_quiescent_version')
-        if not independence or type(release['owner_pause_quiescent_version']) is not int or release['owner_pause_quiescent_version']!=1:raise ValueError('unqualified owner pause handling')
+        if not independence or not catchup or type(release['owner_pause_quiescent_version']) is not int or release['owner_pause_quiescent_version']!=1:raise ValueError('unqualified owner pause handling')
     if catchup:
         expected.add('finance_catchup_version')
         if not independence or type(release['finance_catchup_version']) is not int or release['finance_catchup_version']!=1:raise ValueError('unqualified finance catch-up')

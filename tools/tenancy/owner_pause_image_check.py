@@ -155,17 +155,22 @@ def current_paths_check():
 
 
 def diagnostic_check():
-    """FBO diagnostic: a paused tick declines before BFDC; queued() keeps the permission and lets the claim close."""
-    from tools.tenancy import fbo_diagnostic_owner as DIAG
+    """FBO diagnostic: a paused tick declines before BFDC by the same exact-descriptor rule as every dispatch path;
+    queued() keeps the permission and lets the claim close; the owner main() ends QUIESCENT_PAUSED, permission kept."""
+    from tools.tenancy import fbo_diagnostic_owner as DIAG, controller_cadence as CC
+    o = deepcopy(BF.target('client_001')['orchestration'])
     base = 'projects/mpa-t-client-001/locations/europe-west1'
-    def ss(**states):
-        names = dict({'tenant-backfill-tick': 'ENABLED', 'ozon-daily': 'PAUSED', 'ozon-fast': 'PAUSED', 'ozon-weekly': 'PAUSED'}, **states)
-        return {'jobs': [{'name': base + '/jobs/' + n, 'state': v} for n, v in names.items()]}
-    assert DIAG.degraded_schedulers(ss())['state'] == 'ENABLED'
-    e = rejects(lambda: DIAG.degraded_schedulers(ss(**{'tenant-backfill-tick': 'PAUSED'})), SourceDispatchPaused)
+    def ss(tick=None, **states):
+        names = dict({'ozon-daily': 'PAUSED', 'ozon-fast': 'PAUSED', 'ozon-weekly': 'PAUSED'}, **states)
+        t = tick or schedule(o)
+        return {'jobs': [dict(t, name=base + '/jobs/tenant-backfill-tick')] + [{'name': base + '/jobs/' + n, 'state': v} for n, v in names.items()]}
+    assert DIAG.degraded_schedulers(ss(), o)['state'] == 'ENABLED'
+    e = rejects(lambda: DIAG.degraded_schedulers(ss(schedule(o, state='PAUSED')), o), SourceDispatchPaused)
     assert e is not None and type(e) is SourceDispatchPaused
-    for bad in (ss(**{'ozon-daily': 'ENABLED'}), ss(**{'tenant-backfill-tick': 'UPDATE_FAILED'}), {'jobs': ss()['jobs'][:3]}):
-        err = rejects(lambda: DIAG.degraded_schedulers(bad))
+    for bad in (ss(**{'ozon-daily': 'ENABLED'}), ss(schedule(o, state='UPDATE_FAILED')), {'jobs': ss()['jobs'][:3]},
+                ss(schedule(o, state='PAUSED', serviceAccountEmail='other@x.iam.gserviceaccount.com')),   # drift is never a pause
+                ss(schedule(o, state='PAUSED', schedule='*/5 * * * *'))):
+        err = rejects(lambda: DIAG.degraded_schedulers(bad, o))
         assert err is not None and type(err) is BF.B.EvidenceError
     with patched(DIAG, 'dispatch', lambda b, h: (_ for _ in ()).throw(SourceDispatchPaused('dedicated tick paused by the owner; diagnostic permission kept'))), \
          patched(DIAG, 'policy', lambda *a, **k: {'expires_at': '2099-01-01T00:00:00+00:00'}):
@@ -173,12 +178,52 @@ def diagnostic_check():
         qb = SimpleNamespace(c=BF.target('client_001'), tables=tables, wake_activity={}, clock=lambda: NOW)
         out = DIAG.queued(qb)
     assert out == {'status': 'QUIESCENT_PAUSED', 'source_dispatches': 0, 'basis': 'DIAGNOSTIC_TICK_PAUSED'} and qb.wake_activity['diagnostic_active'] is False
+    # The owner's direct diagnostic process (main): typed quiescent end, claim closed with 0 dispatches, permission kept, rc 0.
+    from tools.tenancy import cloud_controller as CLOUD
+    closes, mb = [], SimpleNamespace(c=BF.target('client_001'))
+    with patched(CLOUD, 'bootstrap', lambda env: (mb, None)), patched(DIAG, 'policy', lambda *a, **k: {}), \
+         patched(CC, 'acquire', lambda b: None), patched(CC, 'close', lambda b, r: closes.append(r)), \
+         patched(DIAG, 'dispatch', lambda b, h: (_ for _ in ()).throw(SourceDispatchPaused('dedicated tick paused by the owner; diagnostic permission kept'))), \
+         patched(DIAG, 'await_terminal', lambda *a: (_ for _ in ()).throw(AssertionError('no terminal wait after a declined dispatch'))):
+        output = io.StringIO()
+        with _ctx.redirect_stdout(output):
+            rc = DIAG.main('d' * 64, {})
+    from tools.tenancy.validation import parse_tenant_json
+    assert rc == 0 and parse_tenant_json(output.getvalue()) == {'status': 'QUIESCENT_PAUSED', 'source_requests': 0, 'permission_consumed': False}, output.getvalue()
+    assert closes == [{'status': 'QUIESCENT_PAUSED', 'source_dispatches': 0}], closes
+    return 'PASS'
+
+
+def closure_check():
+    """Local FBO quarantine (CR v4 automatic class): an owner-paused tick declines BEFORE the local STOP commit (the cloud
+    observation requires the tick ENABLED, so a STOP written now would stay a root STOP); ENABLED proceeds to it."""
+    from tools.tenancy import full_fbo_diagnostic_closure as Z
+    o = deepcopy(BF.target('client_001')['orchestration']); base = 'projects/mpa-t-client-001/locations/europe-west1'
+    def world(state):
+        commits = []
+        tick = dict(schedule(o, state=state), name=base + '/jobs/' + o['scheduler']['name'])
+        b = SimpleNamespace(c=BF.target('client_001'), manifest={'hash': 'm' * 64}, journal='p.d.j', index=465, current_execution='x',
+                            select=lambda sql, params: [{'evidence_json': json.dumps({'fbo_window_validation': {'validation_class': sorted(Z.CLASSES)[0]}})}],
+                            request=lambda method, url, body=None: {'jobs': [tick]} if method == 'GET' else (_ for _ in ()).throw(AssertionError('write')),
+                            store=SimpleNamespace(history=lambda root: (_ for _ in ()).throw(StopAfterGate()),
+                                                  commit=lambda *a: commits.append(a)))
+        return b, commits
+    class StopAfterGate(Exception): pass
+    doc = {'runtime_plan': {'entity': 'fbo_postings'}}
+    with patched(Z, 'owner_policy', lambda b, m: {'owner_decision_sha256': 'o', 'qualification_hash': 'q', 'security_hash': 's'}):
+        b, commits = world('PAUSED')
+        e = rejects(lambda: Z.automatic(b, doc, {'run_id': 'r'}), SourceDispatchPaused)
+        assert e is not None and type(e) is SourceDispatchPaused and commits == []
+        b, commits = world('ENABLED')                                            # not paused: proceeds past the gate
+        assert rejects(lambda: Z.automatic(b, doc, {'run_id': 'r'}), StopAfterGate) is not None and commits == []
+        b, commits = world('UPDATE_FAILED')                                      # drift is not a pause: unchanged path
+        assert rejects(lambda: Z.automatic(b, doc, {'run_id': 'r'}), StopAfterGate) is not None
     return 'PASS'
 
 
 def check():
     for label, fn in (('scheduler', scheduler_check), ('dispatch', dispatch_boundary_check), ('vwfcr', vwfcr_sequence_check), ('wake', wake_end_check),
-                      ('current', current_paths_check), ('diagnostic', diagnostic_check)):
+                      ('current', current_paths_check), ('diagnostic', diagnostic_check), ('closure', closure_check)):
         assert fn() == 'PASS', label
     return {'owner_pause_quiescent_adapter': 'PASS'}
 
