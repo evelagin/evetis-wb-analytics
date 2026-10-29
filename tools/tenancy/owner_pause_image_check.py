@@ -85,6 +85,23 @@ def dispatch_boundary_check():
     return 'PASS'
 
 
+def vwfcr_sequence_check():
+    """The exact vwfcr order with the real scheduler decision: the leaf preflight (reads, reconciliation) passes with the
+    tick paused; the next page's BF.start runs the dispatch preflight and declines before _start (lease/intent/POST)."""
+    o = deepcopy(BF.target('client_001')['orchestration']); paused = schedule(o, state='PAUSED'); calls = []
+    def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False, dispatch=False):
+        calls.append(('preflight', dispatch, BF.dedicated_scheduler(o, paused, dispatch=dispatch)))
+        return 'tables', 'ledger'
+    def forbidden(*a, **k): raise AssertionError('lease/intent path reached')
+    doc = {'runtime_plan': {'entity': 'supplies'}, 'ack_hash': 'a' * 64}
+    with patched(BF, 'validate_plan', lambda d, h: BF.target('client_001')), patched(BF, 'preflight', preflight), patched(BF, '_start', forbidden):
+        BF.preflight(None, doc, NOW, backend=object(), allow_active=True)                          # leaf preflight before the reconcile
+        calls.append(('reconciled', 242))                                                            # page 242 reconciled in this wake
+        e = rejects(lambda: BF.start(doc, doc['ack_hash'], backend=SimpleNamespace(append_request=forbidden)), SourceDispatchPaused)
+    assert e is not None and calls == [('preflight', False, 'OWNER_PAUSED'), ('reconciled', 242)], calls
+    return 'PASS'
+
+
 def wake_end_check():
     """cloud_controller.main: QUIESCENT_PAUSED, claim closed with 0 dispatches, no STOPPED — also after a reconciliation."""
     from tools.tenancy import cloud_controller as CLOUD, controller_cadence as CC, wake_budget as WB
@@ -160,7 +177,7 @@ def diagnostic_check():
 
 
 def check():
-    for label, fn in (('scheduler', scheduler_check), ('dispatch', dispatch_boundary_check), ('wake', wake_end_check),
+    for label, fn in (('scheduler', scheduler_check), ('dispatch', dispatch_boundary_check), ('vwfcr', vwfcr_sequence_check), ('wake', wake_end_check),
                       ('current', current_paths_check), ('diagnostic', diagnostic_check)):
         assert fn() == 'PASS', label
     return {'owner_pause_quiescent_adapter': 'PASS'}

@@ -16,6 +16,18 @@ def test_pause_before_claim_and_after_a_reconciled_page_closes_quiescent_without
     assert X.wake_end_check() == 'PASS'
 
 
+def test_exact_vwfcr_sequence_reads_pass_and_the_next_page_dispatch_declines_before_lease():
+    assert X.vwfcr_sequence_check() == 'PASS'
+
+
+@pytest.mark.parametrize('suite', ['tools.tenancy.full_controller_closure_image_check', 'tools.tenancy.full_terminal_gate_image_check',
+                                   'tools.tenancy.current_independence_image_check', 'tools.tenancy.finance_catchup_image_check'])
+def test_regression_cr_v4_tg_s4_catchup_adapters(suite):
+    import importlib
+    out = importlib.import_module(suite).check()
+    assert out and all(v == 'PASS' for v in out.values() if isinstance(v, str))
+
+
 def test_current_and_catchup_dispatch_raise_the_typed_pause_without_intent():
     assert X.current_paths_check() == 'PASS'
 
