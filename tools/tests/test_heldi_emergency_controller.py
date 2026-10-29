@@ -429,6 +429,8 @@ def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
     monkeypatch.setattr(CUR, 'Backend', lambda base, p, d: base)
     ticks = []
     monkeypatch.setattr(CUR, 'source_tick', lambda b, p, d, item: ticks.append(item) or WB.handoff('DISPATCH'))
+    from tools.tenancy import finance_catchup as FC                                              # no owner catch-up scope
+    monkeypatch.setattr(FC, 'scan', lambda *a: {'pending': []}); monkeypatch.setattr(FC, 'wake', lambda *a: None)
     base = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda *a, **k: []), state=lambda doc: {'progress': {}})
     result = CUR.wake(base, [], {}, {}, set())
     assert result['basis'] == 'WAKE_BUDGET_DISPATCH' and len(ticks) == 1
