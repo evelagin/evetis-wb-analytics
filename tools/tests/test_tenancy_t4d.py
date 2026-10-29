@@ -56,7 +56,7 @@ def _run(ds, name, tables):
 # ═══════════════════════════════════════ контракт ↔ SQL
 def test_contract_describes_exactly_the_share_views():
     assert sorted(CONTRACT["objects"]) == _share_names()
-    assert len(_share_names()) == 9
+    assert len(_share_names()) == 11
 
 
 @pytest.mark.parametrize("name", sorted(CONTRACT["objects"]))
@@ -164,7 +164,7 @@ def test_sku_daily_keeps_ad_spend_on_days_without_orders():
         "FACT_OZON_SALES_DAILY": (SALES_COLS, [("2026-01-01", 7, 1, 1, 100.0, 0, 1, 0, 100.0)]),
         "NORM_OZON_ADS_SKU_DAILY": (["stat_date", "sku", "attributed_spend_rub", "orders", "revenue_promo_rub", "clicks"],
                                     [("2026-01-01", 7, 10.0, 1, 100.0, 5), ("2026-01-02", 8, 4.0, 0, 0.0, 2)]),
-        "DIM_OZON_PRODUCT": (["sku", "internal_sku", "product_name", "mapping_status", "sku_joinable"], [(7, "A", "a", "MAPPED", True)]),
+        "DIM_OZON_PRODUCT": (["sku", "internal_sku", "product_name", "offer_id", "ozon_name", "mapping_status", "sku_joinable"], [(7, "A", "a", "OF-7", "Товар 7", "MAPPED", True)]),
         "V_COVERAGE_DAILY": (COV, []),
     })
     by = {(r["sales_date"], r["sku"]): r for r in rows}
@@ -218,7 +218,7 @@ def test_share_renders_identically_for_client_002(tmp_path, monkeypatch):
     a = SP.render("client_001", tmp_path / "a")
     b = SP.render("client_002", tmp_path / "b")
     share_a = [o for o in a["objects"] if o["dataset"] == "analytics_share"]
-    assert len(share_a) == 9
+    assert len(share_a) == 11
     for o in share_a:
         ta = (tmp_path / "a" / "analytics_share" / f"{o['name']}.sql").read_text(encoding="utf-8")
         tb = (tmp_path / "b" / "analytics_share" / f"{o['name']}.sql").read_text(encoding="utf-8")
@@ -306,7 +306,7 @@ ECON_ROW = ("2026-01-05", "S1", "A1", 1, 1000, -300, -100, -15, 0, 0, 0, 0, 0, 0
 def test_profitability_publishes_a_result_only_with_complete_finance(window, status, pre, after):
     rows = _run("analytics_share", "profitability_daily", {
         "FACT_OZON_SKU_ECONOMICS_DAILY": (ECON, [ECON_ROW]),
-        "DIM_OZON_PRODUCT": (["sku", "product_name", "sku_joinable"], [("S1", "a", True)]),
+        "DIM_OZON_PRODUCT": (["sku", "product_name", "offer_id", "ozon_name", "sku_joinable"], [("S1", "a", "OF-1", "Товар 1", True)]),
         "V_FINANCE_WINDOW_STATUS": (["from_date", "status", "reason"], window)})
     (r,) = rows
     assert (r["finance_data_status"], r["contribution_pre_cogs_rub"], r["contribution_after_cogs_rub"]) == \

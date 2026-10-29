@@ -47,9 +47,9 @@ def test_no_authorized_dataset_targets_analytics_share_or_tenant_locks():
     assert all(v != "tenant_locks" for v, _ in CA.AUTHORIZED_VIEW_EDGES)
 
 
-def test_client_facing_views_are_the_nine_published_ones():
-    assert CA.client_facing_views() == ["advertising_daily", "data_coverage", "inventory_current", "orders", "price_history",
-                                        "profitability_daily", "sales_daily", "sku_daily", "store_costs_daily"]
+def test_client_facing_views_are_the_eleven_published_ones():
+    assert CA.client_facing_views() == ["advertising_daily", "data_coverage", "data_freshness", "inventory_cover", "inventory_current",
+                                        "orders", "price_history", "profitability_daily", "sales_daily", "sku_daily", "store_costs_daily"]
 
 
 # ═══════════════════════════════════════ контракт
