@@ -92,7 +92,31 @@ variable "contract" {
         env  = map(string)
       })
     }))
+    # T6: клиентский доступ только к analytics_share (tools/tenancy/client_access.py). null — не выдан.
+    client_access = optional(object({
+      mode             = string
+      dataset_key      = string
+      principals       = list(object({ kind = string, email = string }))
+      authorized_views = list(object({ viewer_key = string, source_key = string }))
+      query_role       = object({ role_id = string, permissions = list(string) })
+    }))
   })
+
+  validation {
+    condition = var.contract.client_access == null || (
+      var.contract.client_access.mode == "ANALYTICS_SHARE_VIEWER"
+      && var.contract.client_access.dataset_key == "analytics_share"
+      && length(var.contract.client_access.principals) > 0
+      && alltrue([for p in var.contract.client_access.principals : contains(["user", "group"], p.kind)])
+      && alltrue([for p in var.contract.client_access.principals : !endswith(p.email, "gserviceaccount.com")])
+      && var.contract.client_access.query_role.role_id == "vtsClientQueryRunner"
+      && toset(var.contract.client_access.query_role.permissions) == toset(["bigquery.config.get", "bigquery.jobs.create", "resourcemanager.projects.get"])
+      && length(var.contract.client_access.query_role.permissions) == 3
+      && alltrue([for e in var.contract.client_access.authorized_views : contains(keys(var.contract.datasets), e.viewer_key) && contains(keys(var.contract.datasets), e.source_key) && e.viewer_key != e.source_key])
+      && alltrue([for e in var.contract.client_access.authorized_views : e.source_key != "analytics_share" && e.source_key != "tenant_locks"])
+    )
+    error_message = "T6: клиентский доступ — только user:/group: с READER на analytics_share и ролью vtsClientQueryRunner (jobs.create, config.get, projects.get); авторизованные вью только из внутренних датасетов-источников (не tenant_locks)."
+  }
 
   validation {
     condition     = var.contract.contract_version == 1
