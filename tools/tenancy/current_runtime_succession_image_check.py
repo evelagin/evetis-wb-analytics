@@ -29,7 +29,7 @@ def expect_fail(fn, text):
     raise AssertionError('accepted: ' + text)
 
 
-BASE = '2253a311871fb4a3b9e4644d5c5de9f18d37a407'   # installed release the succession inherits
+BASE = 'e82ba56bb51c0df095157b337e6146d7429d6269'   # installed release (C) the succession inherits
 OLD = 'ba9d3d0430e598290ef71e321f235e27941170f5'    # owner of the original CURRENT policy
 NEW = 'a' * 40
 ACK = 'e' * 64
