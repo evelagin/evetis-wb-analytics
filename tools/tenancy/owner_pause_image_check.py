@@ -167,6 +167,9 @@ def diagnostic_check():
     assert DIAG.degraded_schedulers(ss(), o)['state'] == 'ENABLED'
     e = rejects(lambda: DIAG.degraded_schedulers(ss(schedule(o, state='PAUSED')), o), SourceDispatchPaused)
     assert e is not None and type(e) is SourceDispatchPaused
+    po = deepcopy(o); po['scheduler']['state'] = 'PAUSED'                     # PAUSED descriptor, live PAUSED: EXACT, still no dispatch
+    e = rejects(lambda: DIAG.degraded_schedulers(ss(schedule(po)), po), SourceDispatchPaused)
+    assert e is not None and type(e) is SourceDispatchPaused
     for bad in (ss(**{'ozon-daily': 'ENABLED'}), ss(schedule(o, state='UPDATE_FAILED')), {'jobs': ss()['jobs'][:3]},
                 ss(schedule(o, state='PAUSED', serviceAccountEmail='other@x.iam.gserviceaccount.com')),   # drift is never a pause
                 ss(schedule(o, state='PAUSED', schedule='*/5 * * * *'))):
@@ -221,9 +224,32 @@ def closure_check():
     return 'PASS'
 
 
+def release_check():
+    """The release flag: owner_pause_quiescent_version == 1 requires current independence AND finance catch-up, plus the
+    owner_pause_quiescent_adapter verification; without catch-up (or with a non-int/other version) block() refuses."""
+    from tools.tenancy import orchestration_contract as O
+    from tools.tenancy.validation import parse_tenant_json
+    c = BF.target('client_001'); env = c['orchestration']['job']['env']
+    rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/2253a311871fb4a3b9e4644d5c5de9f18d37a407.json').read_text())
+    settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
+    ok = dict(rel, finance_catchup_version=1, owner_pause_quiescent_version=1,
+              verification=dict(rel['verification'], finance_catchup_adapter='PASS', owner_pause_quiescent_adapter='PASS'))
+    assert O.block(c, settings, BF.REPO, release=ok)['job']['env']
+    no_catchup = dict({k: v for k, v in ok.items() if k != 'finance_catchup_version'},
+                      verification=dict(rel['verification'], owner_pause_quiescent_adapter='PASS'))   # consistent, only catch-up absent
+    e = rejects(lambda: O.block(c, settings, BF.REPO, release=no_catchup), ValueError)
+    assert e is not None and 'unqualified owner pause handling' in str(e), e
+    for bad in ({k: v for k, v in ok.items() if k != 'finance_catchup_version'},
+                {k: v for k, v in ok.items() if k != 'current_independence_version'},
+                dict(ok, owner_pause_quiescent_version=2), dict(ok, owner_pause_quiescent_version=True),
+                dict(ok, verification=dict(rel['verification'], finance_catchup_adapter='PASS'))):
+        assert rejects(lambda: O.block(c, settings, BF.REPO, release=bad), (ValueError, BF.B.EvidenceError, AssertionError, KeyError))
+    return 'PASS'
+
+
 def check():
     for label, fn in (('scheduler', scheduler_check), ('dispatch', dispatch_boundary_check), ('vwfcr', vwfcr_sequence_check), ('wake', wake_end_check),
-                      ('current', current_paths_check), ('diagnostic', diagnostic_check), ('closure', closure_check)):
+                      ('current', current_paths_check), ('diagnostic', diagnostic_check), ('closure', closure_check), ('release', release_check)):
         assert fn() == 'PASS', label
     return {'owner_pause_quiescent_adapter': 'PASS'}
 

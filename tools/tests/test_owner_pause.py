@@ -134,3 +134,11 @@ def test_real_preflight_with_the_tick_paused_reads_pass_and_the_dispatch_preflig
 def test_local_fbo_quarantine_declines_before_its_stop_when_the_owner_paused_the_tick(monkeypatch):
     """SHOULD-4: full_fbo_diagnostic_closure.automatic raises SourceDispatchPaused BEFORE committing the local STOP."""
     assert X.closure_check() == 'PASS'
+
+
+def test_owner_pause_release_flag_requires_independence_and_finance_catchup():
+    assert X.release_check() == 'PASS'
+
+
+def test_fbo_diagnostic_never_dispatches_under_a_paused_descriptor():
+    assert X.diagnostic_check() == 'PASS'      # includes the PAUSED-descriptor/PAUSED-tick case (EXACT, still declined)

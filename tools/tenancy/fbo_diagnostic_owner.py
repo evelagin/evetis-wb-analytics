@@ -91,6 +91,9 @@ def degraded_schedulers(ss,orchestration):
     tick=[x for x in ss['jobs'] if x['name'].endswith('/tenant-backfill-tick')]
     if len(tick)!=1:fail('degraded Scheduler state differs')
     BF.dedicated_scheduler(orchestration,tick[0],dispatch=True)   # owner PAUSED -> SourceDispatchPaused; drift -> EvidenceError
+    if tick[0]['state']!='ENABLED':   # a PAUSED descriptor with a PAUSED tick is EXACT, yet never a dispatch (as Backend.start)
+        from tools.tenancy.cloud_tick import SourceDispatchPaused
+        raise SourceDispatchPaused('dedicated tick PAUSED by the deployment descriptor; diagnostic permission kept')
     return tick[0]
 
 def dispatch(b,h):
