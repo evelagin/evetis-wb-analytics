@@ -131,7 +131,8 @@ def validate(p, b, m, records):
                 stage='SOURCE_DISPATCH_BOUNDARY', category='EVIDENCE')):
         fail('exact retained STOP payload differs')
     old = parse((BF.REPO / 'infra/tenant/releases/backfill' / (OLD + '.json')).read_text())
-    oldblock = O.block(b.c, dict(release=OLD, root_hash=ROOT, scheduler_state='ENABLED'), BF.REPO, old)
+    # Retained on every wake: the old release is read with its own registered runtime pair.
+    oldblock = O.block(O.historical_contract(b.c, old, m), dict(release=OLD, root_hash=ROOT, scheduler_state='ENABLED'), BF.REPO, old)
     actor = p['archive']['actor']
     CC.verify_execution_template(b, actor, oldblock)
     if (D.digest(actor) != p['archive']['actor_hash'] or actor.get('failedCount') != 1

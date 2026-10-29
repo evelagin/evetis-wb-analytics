@@ -63,9 +63,7 @@ def isolated(b,p):
     generations=[int(match[2]) for n,*_ in b.tables.list_tables(ds) if (match:=BF.CK.LEASE_RE.match(n)) and match[1]==cid]
     if generations and b.tables.get_table(ds,f'LD_{cid}_{max(generations):04d}') is None:raise OverlapWait('WAIT_RECONCILIATION')
     base,_=BF.resources(b.c)
-    ss=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
-    if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(x['state']!=('ENABLED' if x['name'].endswith('/tenant-backfill-tick') else 'PAUSED') for x in ss['jobs']):fail('degraded Scheduler state differs')
-    dedicated=next(x for x in ss['jobs'] if x['name'].endswith('/tenant-backfill-tick'))
+    dedicated=degraded_schedulers(b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100'),b.c['orchestration'])
     if dedicated['schedule']!='*/3 * * * *' or dedicated['timeZone']!='Europe/Moscow':fail('preserved cadence required')
     current=b.request('GET',BF.RUN_API+'/'+b.current_execution)
     if current.get('retriedCount',0) or current.get('cancelledCount',0) or current.get('taskCount')!=1:fail('single no-retry controller required')
@@ -83,6 +81,20 @@ def isolated(b,p):
                 or t['template'].get('maxRetries',0)!=0 or t['template']['serviceAccount']!='sa-ozon-runtime@'+p['project']+'.iam.gserviceaccount.com'
                 or e.get('TENANT_BINDING_REQUIRED')!='1' or e.get('STRICT_PAGE_CAPS')!='1'):fail('runtime identity/caps differ')
     return m
+
+def degraded_schedulers(ss,orchestration):
+    """The dedicated tick ENABLED, the three ordinary Schedulers PAUSED. An owner pause of the tick during this wake
+    (Heldi STOP bf7d1370 class) declines BEFORE the BFDC claim: no permission is consumed, a typed quiescent end.
+    The tick is judged by the ONE exact-descriptor rule of every dispatch path (BF.dedicated_scheduler, dispatch=True):
+    only the owner's pause is typed; target/identity/schedule drift stays a failure."""
+    if len(ss.get('jobs',[]))!=4 or ss.get('nextPageToken') or any(x['state']!='PAUSED' for x in ss['jobs'] if not x['name'].endswith('/tenant-backfill-tick')):fail('degraded Scheduler state differs')
+    tick=[x for x in ss['jobs'] if x['name'].endswith('/tenant-backfill-tick')]
+    if len(tick)!=1:fail('degraded Scheduler state differs')
+    BF.dedicated_scheduler(orchestration,tick[0],dispatch=True)   # owner PAUSED -> SourceDispatchPaused; drift -> EvidenceError
+    if tick[0]['state']!='ENABLED':   # a PAUSED descriptor with a PAUSED tick is EXACT, yet never a dispatch (as Backend.start)
+        from tools.tenancy.cloud_tick import SourceDispatchPaused
+        raise SourceDispatchPaused('dedicated tick PAUSED by the deployment descriptor; diagnostic permission kept')
+    return tick[0]
 
 def dispatch(b,h):
     p=policy(b,h);isolated(b,p)
@@ -154,10 +166,15 @@ def queued(b):
     if datetime.fromisoformat(p['expires_at'].replace('Z','+00:00'))<=b.clock():return None
     from tools.tenancy.cloud_tick import OverlapWait
     b.wake_activity['diagnostic_active']=True
+    from tools.tenancy.cloud_tick import SourceDispatchPaused
     try:record=dispatch(b,h)
     except OverlapWait:
         b.wake_activity['diagnostic_active']=False
         return {'status':'WAITING','source_dispatches':0,'basis':'DIAGNOSTIC_SOURCE_SLOT_WAIT'}
+    except SourceDispatchPaused:
+        # Raised before the BFDC claim: nothing consumed; the wake closes its claim as an ordinary quiescent pause.
+        b.wake_activity['diagnostic_active']=False
+        return {'status':'QUIESCENT_PAUSED','source_dispatches':0,'basis':'DIAGNOSTIC_TICK_PAUSED'}
     terminal=await_terminal(b,p,record)
     b.wake_activity['diagnostic_active']=False
     return {'status':'MONITORING','source_dispatches':0,'diagnostic_finished':True,
@@ -166,7 +183,7 @@ def queued(b):
 def main(h,env):
     from tools.tenancy.cloud_controller import bootstrap
     from tools.tenancy import controller_cadence as CC
-    from tools.tenancy.cloud_tick import OverlapWait
+    from tools.tenancy.cloud_tick import OverlapWait,SourceDispatchPaused
     b,_=bootstrap(env)
     import json
     p=policy(b,h)
@@ -176,6 +193,10 @@ def main(h,env):
     except OverlapWait as wait:
         CC.close(b,{'status':'MONITORING','source_dispatches':0})
         print(json.dumps({'status':wait.status,'source_requests':0,'permission_consumed':False}));return 0
+    except SourceDispatchPaused:
+        # The owner paused the tick before the BFDC claim (STOP bf7d1370 class): typed quiescent end, permission kept.
+        CC.close(b,{'status':'QUIESCENT_PAUSED','source_dispatches':0})
+        print(json.dumps({'status':'QUIESCENT_PAUSED','source_requests':0,'permission_consumed':False}));return 0
     # Never close this shared authority while its diagnostic child is active or
     # uncertain. Natural ingestion wakes observe/WAIT throughout this bounded slot.
     terminal=await_terminal(b,p,result)

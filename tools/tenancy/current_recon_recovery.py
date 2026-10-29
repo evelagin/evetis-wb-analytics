@@ -195,7 +195,7 @@ def observe(b, m, stop_hash, day, *, owner_ack_sha256, qualification_hash, secur
             or x.get('taskCount') != 1): fail('exact failed controller required')
     env = {v['name']: v.get('value') for v in x['template']['containers'][0]['env']}
     old = parse((BF.REPO / 'infra/tenant/releases/backfill' / (env['CONTROLLER_SOURCE_SHA'] + '.json')).read_text())
-    old_block = O.block(b.c, dict(release=old['source_sha'], root_hash=m['hash'], scheduler_state='ENABLED'), BF.REPO, old)
+    old_block = O.block(O.historical_contract(b.c, old, m), dict(release=old['source_sha'], root_hash=m['hash'], scheduler_state='ENABLED'), BF.REPO, old)
     CC.verify_execution_template(b, x, old_block)
     policy = C.policy(b)
     if policy is None: fail('original current namespace unavailable')

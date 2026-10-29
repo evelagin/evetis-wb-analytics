@@ -281,7 +281,7 @@ def live_freeze(b,p,m,records):
    for record in dependent_stops:
     x=by.get(record['payload']['controller_execution'])
     dependent_terminal(b,p,record,x,original)
-    old=O.block(b.c,dict(release=p['claim']['source'],root_hash=p['root'],scheduler_state='ENABLED'),BF.REPO,old_release)
+    old=O.block(O.historical_contract(b.c,old_release,m),dict(release=p['claim']['source'],root_hash=p['root'],scheduler_state='ENABLED'),BF.REPO,old_release)
     O.verify_job({'template':{'taskCount':x.get('taskCount',1),'template':x['template']}},old)
   if name!=O.JOB and any(CC.at(x['createTime'])>=CC.at(p['claim']['created_at']) for x in xs):fail('new child/external effect')
  if p['version']!=4:
