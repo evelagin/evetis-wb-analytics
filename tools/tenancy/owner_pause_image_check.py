@@ -232,6 +232,7 @@ def release_check():
     c = BF.target('client_001'); env = c['orchestration']['job']['env']
     rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/2253a311871fb4a3b9e4644d5c5de9f18d37a407.json').read_text())
     settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
+    c = O.historical_contract(c, rel)   # the registered release is checked with its own runtime pair (stream B runtime succession)
     ok = dict(rel, finance_catchup_version=1, owner_pause_quiescent_version=1,
               verification=dict(rel['verification'], finance_catchup_adapter='PASS', owner_pause_quiescent_adapter='PASS'))
     assert O.block(c, settings, BF.REPO, release=ok)['job']['env']
