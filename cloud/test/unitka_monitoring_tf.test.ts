@@ -21,8 +21,13 @@ describe('heartbeat: отсутствие события = сигнал', () => 
     expect(hb).toContain('increase(');
     expect(hb).not.toMatch(/condition_absent/); // окно absence ≤ 1 суток — короче суточного цикла
   });
-  it('создаётся выключенной: метрика не заполняется задним числом', () => {
-    expect(hb).toMatch(/enabled\s+=\s+false/);
+  it('включение по писателю: к переходу месяца — только LCD WB и Ozon, P&L выключены', () => {
+    expect(hb).toContain('enabled      = each.value.enabled');
+    const on = (k: string) => new RegExp(`${k} = \\{\\n      job      = [^\\n]+\\n      enabled  = (true|false)`).exec(tf)?.[1];
+    expect(on('unitka_wb_lcd_committed')).toBe('true');
+    expect(on('unitka_ozon_lcd_committed')).toBe('true');
+    expect(on('unitka_store_pnl_published')).toBe('false');
+    expect(on('ozon_store_pnl_published')).toBe('false');
   });
   it('heartbeat: окно 24 ч + duration 1 ч = 25 ч у всех четырёх (duration ≤ 24 ч, сумма ≤ 25 ч)', () => {
     expect(hb).toContain('[24h])) or vector(0)) < 1');
@@ -84,8 +89,11 @@ describe('классы: отказ / блок публикации / внима�
       expect(b).toContain('condition_prometheus_query_language');
       expect(b).toContain('[${local.unitka_signal_window}])) > 0');
       expect(b).not.toContain('condition_matched_log');
-      expect(b).toMatch(/enabled\s+=\s+false/);
     }
+    // К переходу месяца включается только класс 2 (сбой писателя); 3 и 4 остаются выключенными.
+    expect(block('unitka_writers_failed')).toMatch(/enabled\s+=\s+true/);
+    expect(block('unitka_publication_blocked')).toMatch(/enabled\s+=\s+false/);
+    expect(block('unitka_owner_attention')).toMatch(/enabled\s+=\s+false/);
     expect(block('unitka_writers_failed')).toContain('sum by (job_name) (');
     expect(block('unitka_publication_blocked')).toContain('sum by (job_name) (');
     expect(block('unitka_owner_attention')).toContain('sum by (job_name, event) (');
@@ -153,5 +161,22 @@ describe('ограничения Cloud Monitoring на имена', () => {
     expect(names.length).toBeGreaterThan(40);
     expect(names.filter((n) => n.includes('${'))).toEqual([]); // нераскрытая переменная — добавить подстановку в render
     expect(names.filter((n) => Buffer.byteLength(n, 'utf8') > 100)).toEqual([]);
+  });
+});
+
+describe('пакет включения к 01.11: адреса expected_changes = адреса Terraform', () => {
+  const doc = readFileSync(new URL('../../docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md', import.meta.url), 'utf8');
+  const expected = /`expected_changes=([^`]+)`/.exec(doc)?.[1] ?? '';
+  const addrs = expected.split(',').map((p) => p.split('=')[0]);
+  it('ровно три изменения: два update heartbeat LCD и create writers_failed', () => {
+    expect(expected.split(',').map((p) => p.split('=')[1])).toEqual(['update', 'update', 'create']);
+  });
+  it('у ресурса с count адрес с индексом [0], у for_each — с ключом (иначе tf_plan_guard отказывает в apply)', () => {
+    for (const a of addrs) {
+      const name = /google_monitoring_alert_policy\.([a-z_]+)/.exec(a)?.[1] ?? '';
+      const body = block(name);
+      if (/\n {2}count\s+=/.test(body)) expect(a).toMatch(/\[0\]$/);
+      else if (/\n {2}for_each\s+=/.test(body)) expect(a).toMatch(/\["[a-z_]+"\]$/);
+    }
   });
 });

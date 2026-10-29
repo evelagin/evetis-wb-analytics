@@ -1,5 +1,11 @@
 # CHANGELOG.md
 
+## 2026-10-28 — Юнитка: минимальное включение оповещений к переходу месяца (НЕ применено)
+
+`infra/terraform/unitka_monitoring.tf`: `enabled` у heartbeat — по писателю (ON только LCD WB и LCD Ozon, P&L — OFF);
+`unitka_writers_failed` — ON (создаётся этим apply: 21.10 метрика создавалась в ту же секунду). Остальные политики
+не меняются. Порядок, targeted plan с точным составом и проверка доставки — `docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md`.
+
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
 Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.
