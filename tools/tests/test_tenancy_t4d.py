@@ -195,7 +195,9 @@ def test_package_creates_no_grants_or_authorized_views():
         text = p.read_text(encoding="utf-8").upper()
         assert "GRANT " not in text and "AUTHORIZED" not in text and "ROW ACCESS POLICY" not in text, p.name
     tf = "\n".join(p.read_text(encoding="utf-8") for p in (REPO / "infra" / "tenant").glob("*.tf"))
-    assert "authorized_view" not in tf and "google_bigquery_dataset_access" not in tf
+    # T6: авторизация датасетов (только VIEWS, по рёбрам контракта client_access) живёт в ACL датасета
+    # main.tf и включается лишь при bi_access.mode = ANALYTICS_SHARE_VIEWER; пакет SQL сам ничего не выдаёт.
+    assert "authorized_view" not in tf.replace("authorized_views", "") and "google_bigquery_dataset_access" not in tf
 
 
 @pytest.mark.parametrize("col", ["customer", "phone", "email", "address", "buyer", "fio", "passport"])
