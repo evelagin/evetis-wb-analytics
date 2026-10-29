@@ -54,6 +54,14 @@ class Tables:
 
 @contextmanager
 def fixture():
+    """The frozen f507 incident, replayed with the runtime it actually ran with (also for inline qualification drivers)."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime(), _fixture() as value:
+        yield value
+
+
+@contextmanager
+def _fixture():
     base = R.baseline(); fresh = parse((BF.REPO / 'tools/tenancy/fixtures/f507_fresh.json').read_text())
     roots = parse((BF.REPO / 'tools/tenancy/fixtures/f507_records.json').read_text())
     c = BF.target('client_001'); tables = Tables(); rows = []; inserts = []
