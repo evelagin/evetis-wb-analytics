@@ -164,6 +164,8 @@ def check(source_sha):
     full.update(check_independence())
     from tools.tenancy.finance_catchup_image_check import check as check_catchup
     full.update(check_catchup())
+    from tools.tenancy.owner_pause_image_check import check as check_owner_pause
+    full.update(check_owner_pause())
     return {**check_full_leaf(),**full,'controller_dispatch_recovery':check_dispatch(),'controller_stop_recovery':check_controller_stop(),'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
             'pre_source_recovery':check_pre_source(),'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
