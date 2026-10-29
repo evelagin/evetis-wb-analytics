@@ -93,6 +93,7 @@ locals {
   unitka_heartbeats = {
     unitka_wb_lcd_committed = {
       job      = "unitka-engine-prod"
+      enabled  = true
       event    = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"WB\""
       duration = "3600s"
       title    = "UNITKA WB: LCD не сдвигался 25 ч"
@@ -100,6 +101,7 @@ locals {
     }
     unitka_ozon_lcd_committed = {
       job      = "ozon-unitka-prod"
+      enabled  = true
       event    = "jsonPayload.message=\"unitka_lifecycle\"\njsonPayload.lifecycle_event=\"LCD_COMMITTED\"\njsonPayload.platform=\"OZON\""
       duration = "3600s"
       title    = "UNITKA Ozon: LCD не сдвигался 25 ч"
@@ -107,6 +109,7 @@ locals {
     }
     unitka_store_pnl_published = {
       job      = "unitka-store-pnl-prod"
+      enabled  = false
       event    = "jsonPayload.message=\"store_pnl_tab_published\"\njsonPayload.action=(\"WRITE\" OR \"NOOP\")"
       duration = "3600s"
       title    = "WB STORE P&L: вкладка не публиковалась 25 ч"
@@ -114,6 +117,7 @@ locals {
     }
     ozon_store_pnl_published = {
       job      = "ozon-store-pnl-prod"
+      enabled  = false
       event    = "jsonPayload.message=\"ozon_store_pnl_readback\""
       duration = "3600s"
       title    = "OZON STORE P&L: вкладка не подтверждена 25 ч"
@@ -142,7 +146,7 @@ resource "google_monitoring_alert_policy" "unitka_heartbeat" {
   for_each     = { for k, v in local.unitka_heartbeats : k => v if var.unitka_alert_email != "" }
   display_name = each.value.title
   combiner     = "OR"
-  enabled      = false # включается по ACK не раньше чем через 25 ч после появления метрики (задним числом не заполняется)
+  enabled      = each.value.enabled # по писателю; к переходу месяца 01–02.11.2026 — только LCD WB и Ozon (метрики с 21.10)
 
   conditions {
     display_name = "нет события ${each.key} за 24 ч дольше ${each.value.duration}"
@@ -187,7 +191,7 @@ resource "google_monitoring_alert_policy" "unitka_writers_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "ЮНИТКА/P&L: сбой прогона или источника"
   combiner     = "OR"
-  enabled      = false
+  enabled      = true # OWNER ACK к переходу месяца: метрика unitka_writer_failures существует с 21.10
 
   conditions {
     display_name = "отказ писателя за ${local.unitka_signal_window} (по job_name)"
@@ -294,6 +298,8 @@ resource "google_monitoring_alert_policy" "unitka_owner_attention" {
   depends_on = [google_project_service.enabled]
 }
 
+# Cloud Monitoring: display_name политики и условия ≤ 100 БАЙТ UTF-8 (кириллица — 2 байта на букву):
+# apply 21.10.2026 отклонил имя в 107 байт. Контроль — тест unitka_monitoring_tf.
 # ── Класс 5. Пауза / изменение / удаление расписания писателя; изменение или удаление задания писателя
 #    (PUBLISH=0 / UNITKA_WRITE_ENABLED=0 / образ). lifecycle.ignore_changes = [paused] у расписаний: пауза
 #    вне Terraform живёт бессрочно. Штатные выкаты образа идут от sa-deployer по ACK — исключены
@@ -301,12 +307,12 @@ resource "google_monitoring_alert_policy" "unitka_owner_attention" {
 #    реальные паузы, включая 15.10 ozon-store-pnl-prod; ReplaceJob 20.10 PUBLISH=1 ozon-store-pnl-prod.
 resource "google_monitoring_alert_policy" "unitka_writer_config" {
   count        = var.unitka_alert_email == "" ? 0 : 1
-  display_name = "ЮНИТКА/P&L: пауза расписания или изменение задания писателя"
+  display_name = "ЮНИТКА/P&L: изменение расписания или задания"
   combiner     = "OR"
   enabled      = false
 
   conditions {
-    display_name = "Pause/Update/Delete расписания или Replace/Update/Delete задания писателя"
+    display_name = "Scheduler Pause/Update/Delete или Job Replace/Update/Delete"
     condition_matched_log {
       filter = <<-EOT
         logName="projects/${var.project_id}/logs/cloudaudit.googleapis.com%2Factivity"
