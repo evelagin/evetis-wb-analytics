@@ -19,6 +19,7 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { colA1, NAMED, serialToIso, type CellValue } from '../model.js';
 import { quoteSheet } from '../section.js';
+import { formulaStyleOf } from '../formulas.js';
 import { parseUnitkaComponents } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan, HEADER_ROW, type TabPlan } from './tabplan.js';
@@ -52,7 +53,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 }
 
 export interface StorePnlDeps {
-  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'structureWrite' | 'readSheetStructure'>
+  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'readFormulas' | 'structureWrite' | 'readSheetStructure'>
     & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes' | 'readSheetsList'>;
   makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
   now: () => Date;
@@ -97,7 +98,9 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
   const lcdRaw = single(lcdV, NAMED.LCD);
   const lcd = typeof lcdRaw === 'number' ? serialToIso(lcdRaw) : String(lcdRaw).trim();
   const rev = Number(single(revV, NAMED.REVERSE));
-  const parsed = parseUnitkaComponents(grid ?? [], lcd, rev);
+  // Формулы листа — ради поправки отмен без логистики в W (unitka-cancel-restore): V живёт только в формуле строки.
+  const formulas = await sheets.readFormulas(`${quoteSheet(name)}!A1:${colA1(meta.columnCount)}${meta.rowCount}`);
+  const parsed = parseUnitkaComponents(grid ?? [], lcd, rev, STORE_PNL_FROM, formulas, formulaStyleOf(meta.locale));
 
   const now = deps.now();
   const snap = { snapshotId: snapshotIdOf(now), runId: ctx.runId || `store_pnl_${randomUUID()}`, snapshotAt: now.toISOString(),

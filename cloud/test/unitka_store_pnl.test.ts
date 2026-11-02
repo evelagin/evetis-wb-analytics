@@ -292,7 +292,7 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
 });
 
 function deps(pnl: PnlRow[] = [pnlRow()]) {
-  const calls: { appended: number; snapshotId?: string; lcd?: string; ranges?: string[]; metaAnchor?: boolean; readonly?: boolean; writes: string[]; requests: unknown[] } = { appended: 0, writes: [], requests: [] };
+  const calls: { appended: number; snapshotId?: string; lcd?: string; ranges?: string[]; metaAnchor?: boolean; readonly?: boolean; formulasRead?: number; writes: string[]; requests: unknown[] } = { appended: 0, writes: [], requests: [] };
   const d: StorePnlDeps = {
     now: () => new Date('2026-10-09T07:40:00Z'),
     makeSheets: (_c, readonly) => ({
@@ -301,6 +301,8 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
         if (ranges[0]!.startsWith(`'${TAB_NAME}'`)) return [tabState.values];
         calls.ranges = ranges; return [[...grid(MAY), ...grid(JUN), ...grid(JUL), ...grid(AUG), ...grid(SEP)], [[isoToSerial('2026-09-30')]], [[REV]]];
       },
+      // формулы листа Юнитки (поправка отмен без логистики в W): в этих фикстурах их нет — V = 0
+      readFormulas: async () => { calls.formulasRead = (calls.formulasRead ?? 0) + 1; return []; },
       readSheetMetadata: async (id: number) => (id === TAB_ID ? { title: tabState.title, rowCount: 20, columnCount: tabState.cols, metadata: tabState.meta } : null),
       readNotes: async (_n: string, cells: ReadonlyArray<{ row: number; col: number }>) => {
         // как Sheets API: ячейка за пределами сетки — ошибка всего запроса

@@ -34,9 +34,12 @@ export interface SnapshotMeta {
 
 /** Строка снимка — ровно колонки таблицы (Terraform: infra/terraform/unitka_store_pnl.tf). */
 export function snapshotRecord(r: SkuComponentRow, m: SnapshotMeta): Record<string, unknown> {
+  const { void_cancels: voidCancels, ...base } = r;
   return {
     snapshot_id: m.snapshotId, run_id: m.runId, snapshot_at: m.snapshotAt, lcd: m.lcd,
-    month_key: r.date_msk.slice(0, 7), ...r, image_digest: m.imageDigest, git_sha: m.gitSha,
+    month_key: r.date_msk.slice(0, 7), ...base, image_digest: m.imageDigest, git_sha: m.gitSha,
+    // Колонка добавлена в КОНЕЦ схемы (INSERT … SELECT * из stage): строки старых снимков — NULL (= 0).
+    void_cancels: voidCancels,
   };
 }
 

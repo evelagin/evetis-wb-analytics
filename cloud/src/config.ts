@@ -243,6 +243,16 @@ export interface Config {
   unitkaMonthRollbackWrite: boolean;
   /** DRY_RUN=1: структурные записи Calendar V2 (создание, дописывание, откат) запрещены независимо от прочих флагов. */
   unitkaDryRun: boolean;
+  // ── unitka-cancel-restore (OWNER ACK «CANCEL RECONCILIATION» 02.11.2026) — мягкий разбор. ──
+  /** apply — восстановление по классу отмен (по умолчанию); rollback — откат по манифесту. Иное — apply + предупреждение. */
+  unitkaCancelRestoreDirection: 'apply' | 'rollback';
+  unitkaCancelRestoreDirectionInvalid: string | null;
+  /** Исполнение. ТОЛЬКО prod И UNITKA_CANCEL_RESTORE_WRITE=1 И без DRY_RUN И подтверждённый отпечаток; иначе — план. */
+  unitkaCancelRestoreWrite: boolean;
+  /** Отпечаток просмотренного манифеста (журнал unitka_cancel_restore_plan) — UNITKA_CANCEL_RESTORE_DIGEST. */
+  unitkaCancelRestoreDigest: string;
+  /** Откат: манифест (manifest_b64 из журнала) — UNITKA_CANCEL_RESTORE_MANIFEST. */
+  unitkaCancelRestoreManifest: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -319,6 +329,19 @@ function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'u
   };
 }
 
+/** unitka-cancel-restore: мягкий разбор, опечатка не роняет суточный Engine. */
+function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirection' | 'unitkaCancelRestoreDirectionInvalid' | 'unitkaCancelRestoreWrite' | 'unitkaCancelRestoreDigest' | 'unitkaCancelRestoreManifest'> {
+  const dir = (env.UNITKA_CANCEL_RESTORE_DIRECTION ?? '').trim().toLowerCase();
+  const known = dir === 'apply' || dir === 'rollback';
+  return {
+    unitkaCancelRestoreDirection: dir === 'rollback' ? 'rollback' : 'apply',
+    unitkaCancelRestoreDirectionInvalid: dir === '' || known ? null : dir,
+    unitkaCancelRestoreWrite: (env.UNITKA_CANCEL_RESTORE_WRITE ?? '').trim() === '1',
+    unitkaCancelRestoreDigest: (env.UNITKA_CANCEL_RESTORE_DIGEST ?? '').trim().toLowerCase(),
+    unitkaCancelRestoreManifest: (env.UNITKA_CANCEL_RESTORE_MANIFEST ?? '').trim(),
+  };
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const environment = (env.ENVIRONMENT ?? '').trim();
   if (environment !== 'shadow' && environment !== 'prod') {
@@ -373,5 +396,6 @@ export function loadConfig(env: Env = process.env): Config {
     ...ozonUnitkaConfig(env),
     ...integrityConfig(env),
     ...calendarConfig(env),
+    ...cancelRestoreConfig(env),
   };
 }

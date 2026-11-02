@@ -56,6 +56,8 @@ locals {
     { name = "model_gap", type = "FLOAT64" },
     { name = "image_digest", type = "STRING" },
     { name = "git_sha", type = "STRING" },
+    # Отмены без логистики в S (поправка формулы W, cancel_class_v1.sql). Только в конце: INSERT … SELECT * из stage.
+    { name = "void_cancels", type = "INT64" },
   ]
 }
 

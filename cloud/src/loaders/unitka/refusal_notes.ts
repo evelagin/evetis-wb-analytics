@@ -5,8 +5,10 @@
  * (sql/unitka/refusals_v1.sql). Число в ячейке не говорит, откуда взялась его часть, поэтому каждая ячейка S
  * с отказом вне Orders API получает заметку с доказательством: srid и логистика из финотчёта.
  *
- * Владение заметкой: движок ставит и снимает ТОЛЬКО заметки со своей меткой REFUSAL_NOTE_MARKER. Чужую заметку
- * (владельца) не перезаписывает и не стирает: на такой ячейке заметка не пишется, а план отмечает конфликт.
+ * Владение заметкой: движок ставит и снимает ТОЛЬКО заметки со своей меткой REFUSAL_NOTE_MARKER или CANCEL_NOTE_MARKER.
+ * Чужую заметку (владельца) не перезаписывает и не стирает: на такой ячейке заметка не пишется, а план отмечает конфликт.
+ * Раздел о классе отмен (CANCEL_NOTE_MARKER, пишет только unitka-cancel-restore) суточный прогон сохраняет как есть:
+ * заметка = раздел об отказах + раздел о классе отмен.
  */
 import type { FactRow } from './bq.js';
 import type { ExpectedCell } from './plan.js';
@@ -14,6 +16,23 @@ import type { QaCheck } from './qa.js';
 import type { SheetsGateway, StructureRequest } from './sheets.js';
 
 export const REFUSAL_NOTE_MARKER = 'ОТКАЗ ВНЕ ORDERS API';
+/** Метка раздела заметки S о классе отмены (cancel_restore.ts). */
+export const CANCEL_NOTE_MARKER = 'КЛАСС ОТМЕНЫ';
+
+/** Заметка движка (или пустая) — её можно переписать; иначе заметка владельца. */
+export const isEngineNote = (note: string): boolean => note === '' || note.startsWith(REFUSAL_NOTE_MARKER) || note.startsWith(CANCEL_NOTE_MARKER);
+
+/** Раздел о классе отмен внутри заметки движка ('' — раздела нет). */
+export function cancelSectionOf(note: string): string {
+  if (!isEngineNote(note)) return '';
+  const i = note.indexOf(CANCEL_NOTE_MARKER);
+  return i < 0 ? '' : note.slice(i);
+}
+
+/** Заметка S из двух разделов: об отказах вне Orders API и о классе отмены (любой может быть пустым). */
+export function joinSNote(refusal: string, cancel: string): string {
+  return [refusal, cancel].filter((x) => x !== '').join('\n\n');
+}
 
 export interface NoteCell { row: number; col: number; nmId: number; date: string; note: string; before: string }
 
@@ -53,11 +72,12 @@ export function planRefusalNotes(
     if (!f) continue;
     const want = refusalNote(f);
     const before = current.get(noteKey(e.row, e.col)) ?? '';
-    if (before === want) continue;
-    const ours = before === '' || before.startsWith(REFUSAL_NOTE_MARKER);
-    const cell = { row: e.row, col: e.col, nmId: e.nmId, date: e.date, note: want, before };
+    const note = joinSNote(want, cancelSectionOf(before));
+    if (before === note) continue;
+    const ours = isEngineNote(before);
+    const cell = { row: e.row, col: e.col, nmId: e.nmId, date: e.date, note, before };
     if (ours) notes.push(cell);
-    else if (want !== '') conflicts.push(cell);
+    else if (note !== '') conflicts.push(cell);
   }
   return { notes, conflicts };
 }

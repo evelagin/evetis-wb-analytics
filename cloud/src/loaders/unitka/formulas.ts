@@ -36,20 +36,49 @@ export interface BlockFormulaParams {
 
 const c = (start: number, off: number): string => colA1(start + off);
 
+/**
+ * Формула W «Доходность (общая)» строки дня. voidQty > 0 — адресная поправка «отмена без логистики» (cancel_class_v1.sql):
+ * отменённый заказ остаётся в Q и в S, но его прямое и обратное плечо не списываются — «+V*(AF+REVERSE_LEG_RATE)» в конце.
+ * Поправку пишет ТОЛЬКО загрузчик unitka-cancel-restore по манифесту; построитель месяца всегда даёт форму без неё.
+ */
+export function profitAllFormula(start: number, row: number, voidQty = 0): string {
+  if (!Number.isInteger(voidQty) || voidQty < 0) throw new RangeError(`поправка отмен без логистики ${voidQty}: нужно целое ≥ 0`);
+  const x = (off: number): string => `${c(start, off)}${row}`;
+  const Q = x(OFFSET.orders), X = x(OFFSET.adsIn), AG = x(OFFSET.storage), S = x(OFFSET.cancels), AI = x(OFFSET.unitProfit);
+  const AF = x(OFFSET.logistics), Y = x(OFFSET.adsOut);
+  const fix = voidQty > 0 ? `+${voidQty}*(${AF}+REVERSE_LEG_RATE)` : '';
+  return `=IF($${c(start, OFFSET.date)}${row}>${LCD},"",${Q}*${AI}-${X}-${AG}-${S}*(${AI}+${AF}+REVERSE_LEG_RATE)+${Y}${fix})`;
+}
+
+/**
+ * Поправка V в формуле W строки (каноническая форма en или форма локали книги — пробелы и регистр не значимы):
+ * 0 — каноническая формула без поправки, V ≥ 1 — каноническая формула с поправкой, null — ЛЮБАЯ другая формула
+ * (чужая правка, другая строка или блок, иной член) — вызывающий отказывает, а не угадывает.
+ */
+export function profitAllVoidQty(formula: unknown, start: number, row: number, style: FormulaStyle = 'COMMA'): number | null {
+  if (typeof formula !== 'string' || !formula.startsWith('=')) return null;
+  const got = normFormula(fromLocaleFormula(formula, style));
+  if (got === normFormula(profitAllFormula(start, row))) return 0;
+  const m = /\+(\d+)\*\(/.exec(got.slice(normFormula(profitAllFormula(start, row)).length - 1));
+  if (!m || m.index !== 0) return null;
+  const v = Number(m[1]);
+  return v >= 1 && got === normFormula(profitAllFormula(start, row, v)) ? v : null;
+}
+
 /** Формулы расчётных колонок строки дня (смещение → формула). */
 export function blockDayFormulas(p: BlockFormulaParams, row: number): Map<number, string> {
   const s = p.start;
   const D = `$${c(s, OFFSET.date)}${row}`;
   const x = (off: number): string => `${c(s, off)}${row}`;
   const g = (body: string): string => `=IF(${D}>${LCD},"",${body})`;
-  const Q = x(OFFSET.orders), T = x(OFFSET.stock), W = x(OFFSET.profitAll), X = x(OFFSET.adsIn), Y = x(OFFSET.adsOut);
-  const N = x(OFFSET.bloggers), S = x(OFFSET.cancels), AA = x(OFFSET.price), AB = x(OFFSET.spp), AC = x(OFFSET.priceSpp);
-  const AD = x(OFFSET.commission), AE = x(OFFSET.priceMinusComm), AF = x(OFFSET.logistics), AG = x(OFFSET.storage);
-  const AH = x(OFFSET.tax), AI = x(OFFSET.unitProfit);
+  const Q = x(OFFSET.orders), T = x(OFFSET.stock), W = x(OFFSET.profitAll), X = x(OFFSET.adsIn);
+  const N = x(OFFSET.bloggers), AA = x(OFFSET.price), AB = x(OFFSET.spp), AC = x(OFFSET.priceSpp);
+  const AD = x(OFFSET.commission), AE = x(OFFSET.priceMinusComm), AF = x(OFFSET.logistics);
+  const AH = x(OFFSET.tax);
   const m = new Map<number, string>();
   m.set(OFFSET.turnover, g(`IF(${Q}=0,"",${T}/${Q})`));
   m.set(OFFSET.profit1, g(`IFERROR(${W}/${Q},"")`));
-  m.set(OFFSET.profitAll, g(`${Q}*${AI}-${X}-${AG}-${S}*(${AI}+${AF}+REVERSE_LEG_RATE)+${Y}`));
+  m.set(OFFSET.profitAll, profitAllFormula(s, row));
   m.set(OFFSET.adsOut, g(`-(${p.cogsTerm}+${AA}*(1-${AD})+${p.overhead}-(${AA}*(1-${AD})-${AF}))*${N}`));
   m.set(OFFSET.drr, g(`IFERROR(${X}/((${Q}-${N})*${AC}),"")`));
   m.set(OFFSET.priceSpp, g(`${AA}-${AA}*${AB}%`));

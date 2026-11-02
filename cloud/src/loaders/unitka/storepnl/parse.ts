@@ -9,6 +9,10 @@
  *   W = R·AA − R·AA·AD − Q·AF − S·REV − R·AH − R·COGS − X − AG + Y,   R = Q − S,
  *   COGS на единицу = AE − AF − AH − AI (AI — прибыль с единицы, AE — цена минус комиссия).
  * model_gap = W − модель. Для месяцев на формулах Engine он нулевой; ненулевой — наследие старых формул.
+ * Отмены без логистики (cancel_class_v1.sql, загрузчик unitka-cancel-restore): V из поправки «+V*(AF+REVERSE_LEG_RATE)»
+ * в формуле W строки — такие единицы входят в S, но их плечи не списываются:
+ *   W = … − (Q − V)·AF − (S − V)·REV − …,   void_cancels = V (логистика модели в P&L магазина — без них).
+ * V читается из ФОРМУЛЫ W (formulas.profitAllVoidQty); формула с непризнанной поправкой — отказ, а не догадка.
  *
  * Fail-closed: ошибка формулы или текст в числовой ячейке, дубль (сутки, nm), дата блока ≠ дата строки.
  * Полнота стороны SKU (ревью Phase C, M1b): по каждым суткам Σ W всех блоков = итоговая колонка листа
@@ -18,6 +22,7 @@
 import { LoaderError } from '../../../errors.js';
 import { BLOCK_FIRST_COLUMN } from '../calendar.js';
 import { OFFSET, SUMMARY, addDaysIso, findBlocks, isEmpty, isFormulaError, serialToIso, type CellValue } from '../model.js';
+import { fromLocaleFormula, normFormula, profitAllVoidQty, type FormulaStyle } from '../formulas.js';
 
 /**
  * Первый месяц снимка листа. С H0 (OWNER ACK 11.10.2026) — 2026-05: исторический слой берёт из листа ТОЛЬКО ручной
@@ -44,6 +49,8 @@ export interface SkuComponentRow {
   cogs_per_unit: number;
   profit: number;
   model_gap: number;
+  /** Отмены без логистики в S (поправка формулы W); 0 — поправки нет. */
+  void_cancels: number;
 }
 
 export interface MonthTotals {
@@ -78,8 +85,28 @@ function num(v: CellValue | undefined, where: string): number {
  * Все секции листа (строка заголовков: «Дата» в колонке M), сутки ≤ LCD, блоки с nmID.
  * Пустые SKU-сутки (нет заказов, прибыли, рекламы, хранения) не попадают в снимок: их вклад нулевой.
  */
+/** Похоже на поправку отмен в конце формулы W — для отказа, если profitAllVoidQty её не признал. */
+const VOID_FIX_SHAPE = /\+\d+\*\([A-Z]+\d+\+REVERSE_LEG_RATE\)\)$/;
+
+/**
+ * V строки из формулы W: 0 — формулы нет (сетка формул не передана) или канон без поправки, либо старая форма W
+ * прошлых месяцев; V — признанная поправка; отказ — поправка-подобный хвост не в каноне или V > S.
+ */
+function voidOf(formula: CellValue | undefined, start: number, row: number, style: FormulaStyle, cancels: number, where: string): number {
+  if (formula === undefined) return 0;
+  const v = profitAllVoidQty(formula, start, row, style);
+  if (v === null) {
+    if (typeof formula === 'string' && VOID_FIX_SHAPE.test(normFormula(fromLocaleFormula(formula, style)))) {
+      throw new LoaderError(`${where}: поправка отмен в формуле W не в каноне (${formula})`, 'STORE_PNL_SHEET_ERROR');
+    }
+    return 0;
+  }
+  if (v > cancels) throw new LoaderError(`${where}: поправка отмен V=${v} больше S=${cancels}`, 'STORE_PNL_SHEET_ERROR');
+  return v;
+}
+
 export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], lcd: string, reverseLegRate: number,
-  from: string = STORE_PNL_FROM): ParsedComponents {
+  from: string = STORE_PNL_FROM, formulas?: readonly (readonly CellValue[])[], style: FormulaStyle = 'COMMA'): ParsedComponents {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(lcd)) throw new LoaderError(`LAST_CLOSED_DATE: не дата (${lcd})`, 'STORE_PNL_SHEET_ERROR');
   if (!Number.isFinite(reverseLegRate) || reverseLegRate <= 0) {
     throw new LoaderError(`REVERSE_LEG_RATE: недопустимо (${reverseLegRate})`, 'STORE_PNL_SHEET_ERROR');
@@ -130,14 +157,15 @@ export function parseUnitkaComponents(grid: readonly (readonly CellValue[])[], l
         seen.add(key);
         const R = v.orders - v.cancels;
         const cogs = v.priceMinusComm - v.logistics - v.tax - v.unitProfit;
-        const model = R * v.price - R * v.price * v.commission - v.orders * v.logistics - v.cancels * reverseLegRate
+        const V = formulas ? voidOf(formulas[i - 1]?.[a + OFFSET.profitAll - 1], a, i, style, v.cancels, `строка ${i}, блок ${b.nmId}`) : 0;
+        const model = R * v.price - R * v.price * v.commission - (v.orders - V) * v.logistics - (v.cancels - V) * reverseLegRate
           - R * v.tax - R * cogs - v.adsIn - v.storage + v.adsOut;
         const row: SkuComponentRow = {
           date_msk: day, nm_id: b.nmId, sheet_row: i, block_col: a,
           orders: v.orders, cancels: v.cancels, price: v.price, commission_rate: v.commission,
           logistics_per_unit: v.logistics, reverse_leg_rate: reverseLegRate, storage: v.storage,
           ads_in: v.adsIn, ads_out: v.adsOut, tax_per_unit: v.tax, cogs_per_unit: cogs,
-          profit: v.profitAll, model_gap: v.profitAll - model,
+          profit: v.profitAll, model_gap: v.profitAll - model, void_cancels: V,
         };
         rows.push(row);
         const m = day.slice(0, 7);

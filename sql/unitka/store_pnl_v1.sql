@@ -321,6 +321,7 @@ WITH snap AS (
 sku_day AS (
   SELECT s.date_msk, s.nm_id, s.orders, s.cancels, s.orders - s.cancels realized, s.price, s.commission_rate,
     s.logistics_per_unit, s.reverse_leg_rate, s.storage, s.ads_in, s.ads_out, s.profit, s.lcd, s.model_gap, s.tax_per_unit, s.cogs_per_unit,
+    s.void_cancels,
     c.sold_qty, c.seller_base_rub, c.wb_take_rub, c.logistics_rub fin_logistics_rub
   FROM snap s LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COHORT_DAILY` c
     ON c.order_date_msk = s.date_msk AND c.nm_id = s.nm_id),
@@ -329,7 +330,8 @@ sku AS (
     SUM(realized * price) revenue_model_rub,
     SUM(profit) sku_contribution_rub,
     SUM(ads_in) ads_sku_rub, SUM(storage) storage_sku_rub,
-    SUM(orders * logistics_per_unit + cancels * reverse_leg_rate) logistics_sku_rub,
+    -- отмены без логистики (void_cancels, поправка W) не несут ни прямого, ни обратного плеча — как в формуле W листа
+    SUM((orders - IFNULL(void_cancels, 0)) * logistics_per_unit + (cancels - IFNULL(void_cancels, 0)) * reverse_leg_rate) logistics_sku_rub,
     SUM(IFNULL(sold_qty, 0)) sold_qty, SUM(realized) realized_qty,
     SUM(IFNULL(seller_base_rub, 0) - IFNULL(sold_qty, 0) * price) price_adjustment_rub,
     SUM(IFNULL(sold_qty, 0) * price * commission_rate - IFNULL(wb_take_rub, 0)) commission_adjustment_rub,
