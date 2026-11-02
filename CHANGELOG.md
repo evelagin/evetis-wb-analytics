@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)
+
+`evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`: возраст последнего годного снимка > 780 мин (FAIL контракта DRO-1 для
+ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon показывался OBSERVED/COMPLETE при снимке
+двухнедельной давности. Колонки не меняются; манифест — новый хеш тела, `pending_deploy`. Тест сверяет порог с DRO-1.
+План — `docs/ops/PROMO_OBSERVABILITY_STALE_DEPLOY_2026-10-28.md`.
+
 ## 2026-10-28 — SKU Performance V2: S6 хранения по парам SKU-дня, без потери денег (НЕ развёрнуто)
 
 Инцидент: `sp_build_sku_performance_v2_daily` падает каждый час с 19.10.2026 04:20 UTC (154 сборки) на
