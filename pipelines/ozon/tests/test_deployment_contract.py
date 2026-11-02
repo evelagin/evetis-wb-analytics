@@ -160,3 +160,56 @@ def test_runtime_image_is_pinned_by_digest():
     assert not re.search(r":(latest|dev|stable)(@|$)", image), (
         f"в идентификаторе образа mutable-тег: {image}"
     )
+
+
+# C5 (OWNER ACK 02.11.2026): ozon-runtime-promo работает на собственном digest из изолированной
+# релизной ветки (605a34b7), три остальных job'а — на общем 24e3c6d6. Файл обязан говорить правду
+# о каждом job'е: образ под ignore_changes, и рассогласование не всплыло бы ни в plan, ни в apply.
+RECORDED_JOB_DIGESTS = {
+    "ozon-runtime-fast": "sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b",
+    "ozon-runtime-daily": "sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b",
+    "ozon-runtime-weekly": "sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b",
+    "ozon-runtime-promo": "sha256:cae0af75c1af2272390d5023485d99b3b9fb0a20feafecfd0f2c968b548f03d7",
+}
+IMAGE_REPO = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest"
+
+
+def _tf_image_locals(tf: str) -> dict[str, str]:
+    return dict(re.findall(r'^\s*(ozon_runtime\w*_image)\s*=\s*"([^"]+)"', tf, re.M))
+
+
+def _tf_job_images(tf: str) -> dict[str, str]:
+    block = re.search(r"ozon_job_images\s*=\s*\{(.*?)\n  \}", tf, re.S)
+    assert block, "local.ozon_job_images не найден"
+    return dict(re.findall(r'"(ozon-runtime-[a-z]+)"\s*=\s*local\.(\w+)', block.group(1)))
+
+
+def test_each_ozon_job_maps_to_its_recorded_digest():
+    tf = OZON_TF.read_text(encoding="utf-8")
+    images, mapping = _tf_image_locals(tf), _tf_job_images(tf)
+    assert set(mapping) == set(load_tf_jobs()) == set(RECORDED_JOB_DIGESTS), "у каждого job'а ровно одна строка образа"
+    for job, ref in mapping.items():
+        assert ref in images, f"{job}: ссылка на неизвестный local.{ref}"
+        assert images[ref] == f"{IMAGE_REPO}@{RECORDED_JOB_DIGESTS[job]}", f"{job}: digest в Terraform ≠ развёрнутому"
+
+
+def test_promo_has_its_own_digest_and_the_other_three_share_one():
+    mapping = _tf_job_images(OZON_TF.read_text(encoding="utf-8"))
+    shared = {mapping[j] for j in ("ozon-runtime-fast", "ozon-runtime-daily", "ozon-runtime-weekly")}
+    assert shared == {"ozon_runtime_image"}
+    assert mapping["ozon-runtime-promo"] == "ozon_runtime_promo_image"
+
+
+def test_job_resource_reads_image_from_the_per_job_table_and_keeps_ignore_changes():
+    tf = OZON_TF.read_text(encoding="utf-8")
+    job = tf.split('resource "google_cloud_run_v2_job" "ozon_runtime"', 1)[1].split("\nresource ", 1)[0]
+    assert "image = local.ozon_job_images[each.key]" in job
+    assert "image = local.ozon_runtime_image" not in job
+    lifecycle = re.search(r"ignore_changes\s*=\s*\[(.*?)\n\s*\]", job, re.S)
+    assert lifecycle and "template[0].template[0].containers[0].image" in lifecycle.group(1), \
+        "образ продвигается gcloud, не Terraform: ignore_changes на image обязателен"
+
+
+def test_every_ozon_image_local_is_pinned_by_digest():
+    for name, image in _tf_image_locals(OZON_TF.read_text(encoding="utf-8")).items():
+        assert re.fullmatch(re.escape(IMAGE_REPO) + r"@sha256:[0-9a-f]{64}", image), f"{name}: не digest — {image}"
