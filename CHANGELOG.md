@@ -10,6 +10,9 @@
   plan по четырём job'ам: 0 изменений. Scheduler, IAM, env, SA, ресурсы — не менялись.
 - `pipelines/ozon/DEPLOYMENT.md`: §4 — правило «один digest на четыре job'а» заменено на «общий для трёх + свой у promo»,
   новый §4b с провенансом и откатом.
+- `DEPLOYMENT.md` §4a: окно `finance_accrual` 30 суток отмечено как развёрнутое 22.09 (Gate 9B, замер прогонов 01–02.11 — 30 суток);
+  устаревшее «записать digest, `terraform apply`» заменено разграничением: деплой — `gcloud run jobs update`, фиксация digest —
+  коммит в Terraform (image под `ignore_changes`, apply образ не меняет).
 - `pipelines/ozon/tests/test_deployment_contract.py`: 4 теста соответствия job → digest (6 мутаций Terraform ловятся).
 - `promo.py` из релизной ветки в `main` не переносится; PR #388 остаётся заблокированным. Квалификационные хеши Heldi
   (`pipelines/ozon/runtime/*`, `tools/tenancy/*`) не затронуты.

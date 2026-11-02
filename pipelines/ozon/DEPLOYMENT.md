@@ -150,7 +150,11 @@ Terraform».
 
 ---
 
-## 4a. 🔴 НЕ РАЗВЁРНУТО: окно загрузки начислений 30 суток (Gate 9)
+## 4a. Окно загрузки начислений 30 суток (Gate 9) — РАЗВЁРНУТО 22.09.2026
+
+> Статус на 02.11.2026: развёрнуто образом `sha256:dccc50ae…` (Gate 9B, 22.09.2026, из `main` 1b651fd) и далее
+> `sha256:24e3c6d6…` (`finance_accrual` = 30 в `entities.py` @08dfb88). Замер `OZON_INGESTION_RUNS`: прогоны
+> `finance_accrual` 01.11 и 02.11 взяли окно 30 суток. Текст ниже — история на 22.09 до раскатки.
 
 Gate 9 изменил окно `finance_accrual` с 14 на 30 суток
 (`pipelines/ozon/runtime/entities.py`, `REGISTRY`). Изменение **в `main`, но не в
@@ -166,9 +170,13 @@ Gate 9, а `pipelines/ozon/**` не входит ни в один деплойн
 14 суток за всю историю не появлялось. 30 суток — запас на случай, когда Ozon
 опубликует начисление задним числом, а не устранение известной потери.
 
-Развернуть: собрать образ из `main` по §4, записать digest в
-`local.ozon_runtime_image` (`infra/terraform/ozon_ingestion.tf`; promo — отдельно, §4b), `terraform apply`.
-До этого момента считать production-окно равным **14**, а не 30.
+Как это выпускалось (и как выпускается любой образ Ozon) — два разных шага, `terraform apply` в них нет:
+1. **Деплой** — `gcloud run jobs update <job> --image …@sha256:<digest>` (§4 п.4; promo — отдельно, §4b).
+   Только эта команда меняет образ в production.
+2. **Фиксация digest** — коммит нового digest в `local.ozon_runtime_image` (или `local.ozon_runtime_promo_image`)
+   в `infra/terraform/ozon_ingestion.tf` (§4 п.3). Это запись о развёрнутом, а не раскатка: поле `image` стоит под
+   `ignore_changes`, и `terraform apply` образ не меняет.
+До раскатки 22.09 production-окно было **14** суток.
 
 ---
 
