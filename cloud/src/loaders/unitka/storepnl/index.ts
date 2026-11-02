@@ -20,7 +20,7 @@ import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { colA1, NAMED, serialToIso, type CellValue } from '../model.js';
 import { quoteSheet } from '../section.js';
 import { formulaStyleOf } from '../formulas.js';
-import { parseUnitkaComponents } from './parse.js';
+import { parseUnitkaComponents, profitAllColumns, formulaGridFromColumns } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan, HEADER_ROW, type TabPlan } from './tabplan.js';
 import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, otherTabsFingerprint, PUBLISH_META_KEY, CONTRACT_META_KEY, TAB_COLS,
@@ -53,7 +53,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 }
 
 export interface StorePnlDeps {
-  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'readFormulas' | 'structureWrite' | 'readSheetStructure'>
+  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'readFormulasBatch' | 'structureWrite' | 'readSheetStructure'>
     & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes' | 'readSheetsList'>;
   makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
   now: () => Date;
@@ -99,7 +99,11 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
   const lcd = typeof lcdRaw === 'number' ? serialToIso(lcdRaw) : String(lcdRaw).trim();
   const rev = Number(single(revV, NAMED.REVERSE));
   // Формулы листа — ради поправки отмен без логистики в W (unitka-cancel-restore): V живёт только в формуле строки.
-  const formulas = await sheets.readFormulas(`${quoteSheet(name)}!A1:${colA1(meta.columnCount)}${meta.rowCount}`);
+  // Только колонки W блоков (одним batchGet), а не вся книга: замер 02.11.2026 на тестовой копии — 0,87 МБ / ≈0,95 с
+  // против 7,46 МБ / ≈2,3 с у A1:WY803.
+  const wCols = profitAllColumns(meta.columnCount);
+  if (!sheets.readFormulasBatch) throw new LoaderError('шлюз Sheets не читает формулы пакетом — поправку отмен в W не проверить', 'STORE_PNL_CONFIG');
+  const formulas = formulaGridFromColumns(wCols, await sheets.readFormulasBatch(wCols.map((c) => `${quoteSheet(name)}!${colA1(c)}1:${colA1(c)}${meta.rowCount}`)));
   const parsed = parseUnitkaComponents(grid ?? [], lcd, rev, STORE_PNL_FROM, formulas, formulaStyleOf(meta.locale));
 
   const now = deps.now();

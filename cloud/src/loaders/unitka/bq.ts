@@ -426,7 +426,9 @@ export class UnitkaBq {
       const ok = row.finalCancels === row.refusalCountedQty + row.logInQ + row.nologInQ && row.voidQty === row.nologInQ
         && row.nologAbsentQty === row.cancelNologQty - row.nologInQ && row.logInQ <= row.cancelLogQty && row.nologInQ <= row.cancelNologQty
         && row.finalCancels <= row.funnelOrders && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && /^\d{4}-\d{2}-\d{2}$/.test(row.financeFinalThrough)
-        && row.matureOn <= row.financeFinalThrough === (status !== 'IMMATURE');
+        // зрелость — непрерывное покрытие окончательным финотчётом (вью); здесь вторая линия: FINAL ⇒ горизонт не позже
+        // последнего окончательного отчёта (IMMATURE возможен и при более позднем отчёте — пропуск недели).
+        && (status === 'IMMATURE' || row.matureOn <= row.financeFinalThrough);
       if (!ok) throw new LoaderError(`V_UNITKA_CANCEL_CLASS_DAILY: строка не сходится (${where}: ${JSON.stringify(r)})`, 'BQ_SHAPE');
       return row;
     });

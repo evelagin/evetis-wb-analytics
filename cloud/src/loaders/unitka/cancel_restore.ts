@@ -17,7 +17,13 @@
  *   манифеста, пересчитанного из живого листа в момент записи (пишется ровно просмотренный план).
  *   ОТКАТ: UNITKA_CANCEL_RESTORE_DIRECTION=rollback + UNITKA_CANCEL_RESTORE_MANIFEST (+ отпечаток при записи).
  * Каждое поле ячейки (S, формула W, заметка) обязано быть «до» или «после» манифеста; иное — DRIFT, отказ ДО записи.
- * Повтор после частичной записи безопасен: поле, уже стоящее «после», не пишется. Перечитывание сверяет поля и значение W
+ * Аномалии класса (ANOMALY_*) входят в отпечаток манифеста; ЗАПИСЬ при аномалии, не принятой владельцем поимённо
+ * (UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES = «nmID|дата|статус,…»), — отказ CANCEL_RESTORE_ANOMALY до первой записи.
+ * АТОМАРНОСТЬ (аудит PR #394): все поля всех суток — ОДИН spreadsheets.batchUpdate из updateCells (S: значение и заметка,
+ * W: формула в локали книги, как пишет месяц monthprep); Sheets применяет пакет целиком или не применяет вовсе, поэтому
+ * лист и снимок Store P&L никогда не видят S без W или W без S. Запросы ограничены sheetId манифеста и ячейками S/W
+ * его суток (assertConfined). Ошибка или таймаут записи — исход неизвестен: только перечитывание и диагноз состояния
+ * (ВСЁ ДО / ВСЁ ПОСЛЕ / СМЕШАНО), повтора нет (CANCEL_RESTORE_UNKNOWN_OUTCOME). Перечитывание сверяет поля и значение W
  * с формулой строки (Q·AI − X − AG − S·(AI+AF+REV) + Y + V·(AF+REV)) по живым ячейкам.
  */
 import { createHash } from 'node:crypto';
@@ -28,12 +34,12 @@ import { UnitkaBq, type CancelClassRow } from './bq.js';
 import { OFFSET, NAMED, colA1, findBlocks, isoToSerial, asNumber, type CellValue, type Block } from './model.js';
 import { geometryAt, locateSection, monthKeyOf, dayIndexOf, dayRowOf, formatMonthKey, type MonthGeometry } from './calendar.js';
 import { profitAllFormula, profitAllVoidQty, toLocaleFormula, formulaStyleOf, type FormulaStyle } from './formulas.js';
-import { CANCEL_NOTE_MARKER, isEngineNote, joinSNote, noteRequests, noteKey } from './refusal_notes.js';
+import { CANCEL_NOTE_MARKER, isEngineNote, joinSNote, noteKey } from './refusal_notes.js';
 import { canonicalJson } from './monthrollback.js';
 import { RECONCILIATION_EPOCH } from './reconcile.js';
 import { quoteSheet, readColumnA } from './section.js';
 import { defaultUnitkaDeps, ENGINE_VERSION, type UnitkaDeps } from './index.js';
-import type { SheetsGateway } from './sheets.js';
+import type { SheetsGateway, StructureRequest } from './sheets.js';
 
 export const CANCEL_RESTORE_VERSION = `${ENGINE_VERSION}+cancel-restore`;
 export const CANCEL_MANIFEST_KIND = 'unitka-cancel/class-restore';
@@ -64,7 +70,7 @@ export function cancelNoteText(r: CancelClassRow): string {
     ...why,
     `Воронка Q = ${r.funnelOrders}; заказов Orders API без отмены ${r.keptQty}; доказанных вне Orders API ${r.refusalCountedQty + r.soldNotInApiQty}; мест для отмен ${r.room}.`,
     `Отмены Orders API: с логистикой ${r.cancelLogQty}, без логистики ${r.cancelNologQty}.`,
-    `Логистики нет в окончательном финотчёте по ${r.financeFinalThrough} (зрелость 46 суток — с ${r.matureOn}).`,
+    `Логистики нет: финотчёт окончателен непрерывно с ${r.date} по ${r.matureOn} (46 суток; недели FINANCE_WEEK_STATUS, отчёты FINANCE_REPORT_LOADS), последний окончательный отчёт — по ${r.financeFinalThrough}.`,
     `srid без логистики: ${pairs(r.nologSrids, r.nologCancelDates)}`,
     ...(r.logSrids.length ? [`srid с логистикой: ${r.logSrids.join(', ')}`] : []),
     'Источник: wb_mart.V_UNITKA_CANCEL_CLASS_DAILY (sql/unitka/cancel_class_v1.sql); запись — unitka-cancel-restore по OWNER ACK.',
@@ -90,13 +96,15 @@ export interface CancelManifest {
   spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle;
   financeFinalThrough: string;
   cells: CancelManifestCell[];
+  /** Аномалии класса на момент плана (ключ nmID|дата|статус): просмотренный отпечаток фиксирует и их. */
+  anomalies: string[];
   digest: string;
 }
 
 const sha = (v: unknown): string => createHash('sha256').update(canonicalJson(v)).digest('hex');
 
-export function buildCancelManifest(cells: readonly CancelManifestCell[], a: { spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle; financeFinalThrough: string }): CancelManifest {
-  const body: Omit<CancelManifest, 'digest'> = { kind: CANCEL_MANIFEST_KIND, version: CANCEL_MANIFEST_VERSION, ...a, cells: [...cells] };
+export function buildCancelManifest(cells: readonly CancelManifestCell[], a: { spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle; financeFinalThrough: string; anomalies?: readonly string[] }): CancelManifest {
+  const body: Omit<CancelManifest, 'digest'> = { kind: CANCEL_MANIFEST_KIND, version: CANCEL_MANIFEST_VERSION, ...a, anomalies: [...(a.anomalies ?? [])].sort(), cells: [...cells] };
   return { ...body, digest: sha(body) };
 }
 
@@ -113,7 +121,7 @@ export function parseCancelManifest(raw: string): CancelManifest | { error: stri
     obj = JSON.parse(text.startsWith('{') ? text : gunzipSync(Buffer.from(text.replace(/^gz\./, ''), 'base64url')).toString('utf8'));
   } catch { return { error: 'манифест восстановления отмен не разбирается' }; }
   const m = obj as Partial<CancelManifest> | null;
-  if (!m || m.kind !== CANCEL_MANIFEST_KIND || m.version !== CANCEL_MANIFEST_VERSION || !Array.isArray(m.cells) || typeof m.digest !== 'string') {
+  if (!m || m.kind !== CANCEL_MANIFEST_KIND || m.version !== CANCEL_MANIFEST_VERSION || !Array.isArray(m.cells) || !Array.isArray(m.anomalies) || typeof m.digest !== 'string') {
     return { error: 'вид, версия или поля манифеста восстановления отмен' };
   }
   const { digest, ...body } = m as CancelManifest;
@@ -184,8 +192,10 @@ export interface CancelRestorePlan {
   alreadyApplied: number;
   /** Отказы плана — запись невозможна, пока список не пуст. */
   refusals: string[];
-  /** Аномалии класса: лист не меняется, только журнал. */
+  /** Аномалии класса: лист по ним не меняется; описание для журнала. */
   anomalies: string[];
+  /** Ключи аномалий nmID|дата|статус — в отпечатке; запись требует поимённого принятия каждой. */
+  anomalyKeys: string[];
   /** Ожидаемое изменение W по суткам при текущей REVERSE_LEG_RATE — только журнал (в отпечаток не входит). */
   expectedDeltaW: Array<{ date: string; nmId: number; deltaW: number }>;
 }
@@ -201,11 +211,16 @@ export function planCancelRestore(a: {
   const cells: CancelManifestCell[] = [];
   const refusals = [...a.missing];
   const anomalies: string[] = [];
+  const anomalyKeys: string[] = [];
   const expectedDeltaW: CancelRestorePlan['expectedDeltaW'] = [];
   let alreadyApplied = 0;
   for (const r of a.rows) {
     const where = `${r.nmId} ${r.date}`;
-    if (r.status.startsWith('ANOMALY')) { anomalies.push(`${where}: ${r.status} (Q ${r.funnelOrders}, без отмены ${r.keptQty}, с логистикой ${r.cancelLogQty}, мест ${r.room})`); continue; }
+    if (r.status.startsWith('ANOMALY')) {
+      anomalies.push(`${where}: ${r.status} (Q ${r.funnelOrders}, без отмены ${r.keptQty}, с логистикой ${r.cancelLogQty}, мест ${r.room})`);
+      anomalyKeys.push(anomalyKey(r));
+      continue;
+    }
     if (r.status !== 'FINAL' || !r.sheetChangeRequired) continue;
     if (r.date < CANCEL_CLASS_FROM || r.date < RECONCILIATION_EPOCH) { refusals.push(`${where}: раньше ${CANCEL_CLASS_FROM}`); continue; }
     if (r.date >= a.windowFrom) { refusals.push(`${where}: внутри окна сверки (с ${a.windowFrom}) — сутки ещё ведёт писатель`); continue; }
@@ -242,7 +257,16 @@ export function planCancelRestore(a: {
     expectedDeltaW.push({ date: r.date, nmId: r.nmId,
       deltaW: Math.round((-(r.finalCancels - r.legacyCancels) * (ai + af + a.reverseLegRate) + r.voidQty * (af + a.reverseLegRate)) * 100) / 100 });
   }
-  return { cells, alreadyApplied, refusals, anomalies, expectedDeltaW };
+  return { cells, alreadyApplied, refusals, anomalies, anomalyKeys, expectedDeltaW };
+}
+
+/** Ключ аномалии для поимённого принятия владельцем. */
+export const anomalyKey = (r: Pick<CancelClassRow, 'nmId' | 'date' | 'status'>): string => `${r.nmId}|${r.date}|${r.status}`;
+
+/** Аномалии, не принятые владельцем поимённо: любая — запись запрещена. */
+export function unacceptedAnomalies(keys: readonly string[], accepted: readonly string[]): string[] {
+  const ok = new Set(accepted.map((x) => x.trim()).filter(Boolean));
+  return keys.filter((k) => !ok.has(k));
 }
 
 /* ───────────────────────────── запись и перечитывание ───────────────────────────── */
@@ -270,22 +294,72 @@ export function verifyCancelCells(cells: readonly CancelManifestCell[], live: Re
   return bad;
 }
 
-/** Запись полей, отличающихся от цели: S (RAW), формула W (USER_ENTERED, локаль книги), заметка S. */
-async function writeCells(sheets: SheetsGateway, sheetName: string, sheetId: number, cells: readonly CancelManifestCell[], live: ReadonlyMap<string, LiveRow>, target: 'after' | 'before'): Promise<number> {
-  const q = quoteSheet(sheetName);
-  const s = [], w = [], notes = [];
+const cellRange = (sheetId: number, row: number, col: number): Record<string, number> =>
+  ({ sheetId, startRowIndex: row - 1, endRowIndex: row, startColumnIndex: col - 1, endColumnIndex: col });
+
+/**
+ * Запросы ОДНОГО batchUpdate для полей, отличающихся от цели: S — значение и заметка одной ячейкой (updateCells,
+ * fields userEnteredValue,note — формат ячейки не трогается), W — формула в локали книги (fields userEnteredValue).
+ */
+export function cancelWriteRequests(sheetId: number, cells: readonly CancelManifestCell[], live: ReadonlyMap<string, LiveRow>, target: 'after' | 'before'): StructureRequest[] {
+  const out: StructureRequest[] = [];
   for (const c of cells) {
-    const l = live.get(`${c.nmId}|${c.date}`)!;
+    const l = live.get(`${c.nmId}|${c.date}`);
+    if (!l) throw new LoaderError(`${c.date} ${c.nmId}: сутки не найдены перед записью`, 'CANCEL_RESTORE_DRIFT');
     const want = c[target];
-    if (!numEq(l.s, want.s)) s.push({ range: `${q}!${c.sA1}:${c.sA1}`, values: [[want.s]] });
-    if (String(l.wFormula) !== want.wFormula) w.push({ range: `${q}!${c.wA1}:${c.wA1}`, values: [[want.wFormula]] });
-    if (l.note !== want.note) notes.push({ row: c.row, col: c.sCol, nmId: c.nmId, date: c.date, note: want.note, before: l.note });
+    if (!numEq(l.s, want.s) || l.note !== want.note) {
+      out.push({ updateCells: { range: cellRange(sheetId, c.row, c.sCol), rows: [{ values: [{ userEnteredValue: { numberValue: want.s }, note: want.note }] }], fields: 'userEnteredValue,note' } });
+    }
+    if (String(l.wFormula) !== want.wFormula) {
+      out.push({ updateCells: { range: cellRange(sheetId, c.row, c.wCol), rows: [{ values: [{ userEnteredValue: { formulaValue: want.wFormula } }] }], fields: 'userEnteredValue' } });
+    }
   }
-  let n = 0;
-  if (s.length) n += await sheets.batchWrite(s, 'RAW');
-  if (w.length) n += await sheets.batchWrite(w, 'USER_ENTERED');
-  if (notes.length) n += await sheets.structureWrite(noteRequests(sheetId, notes));
-  return n;
+  return out;
+}
+
+/** Каждый запрос — updateCells одной ячейки S или W суток манифеста на листе манифеста; иное — отказ без записи. */
+export function assertConfined(requests: readonly StructureRequest[], sheetId: number, cells: readonly CancelManifestCell[]): void {
+  const allowed = new Set(cells.flatMap((c) => [`${c.row}|${c.sCol}`, `${c.row}|${c.wCol}`]));
+  for (const q of requests) {
+    const u = (q as { updateCells?: { range?: Record<string, number> } }).updateCells;
+    const r = u?.range;
+    const ok = Object.keys(q).length === 1 && r !== undefined && r.sheetId === sheetId && r.endRowIndex === r.startRowIndex! + 1
+      && r.endColumnIndex === r.startColumnIndex! + 1 && allowed.has(`${r.startRowIndex! + 1}|${r.startColumnIndex! + 1}`);
+    if (!ok) throw new LoaderError(`запрос вне ячеек манифеста: ${JSON.stringify(q).slice(0, 200)}`, 'CANCEL_RESTORE_NOT_CONFINED');
+  }
+}
+
+/** Состояние суток после неизвестного исхода записи: все поля «до», все «после» или смешано (диагноз, без повтора). */
+export function outcomeState(cells: readonly CancelManifestCell[], live: ReadonlyMap<string, LiveRow>, style: FormulaStyle): 'ALL_BEFORE' | 'ALL_AFTER' | 'MIXED' {
+  let before = 0, after = 0;
+  for (const c of cells) {
+    const l = live.get(`${c.nmId}|${c.date}`);
+    if (!l) return 'MIXED';
+    const v = profitAllVoidQty(l.wFormula, c.blockStart, c.row, style);
+    if (numEq(l.s, c.after.s) && v === c.voidQty && l.note === c.after.note) after++;
+    else if (numEq(l.s, c.before.s) && v === 0 && l.note === c.before.note) before++;
+  }
+  return after === cells.length ? 'ALL_AFTER' : before === cells.length ? 'ALL_BEFORE' : 'MIXED';
+}
+
+/**
+ * Одна атомарная запись. Ошибка API — исход неизвестен: перечитать, назвать состояние, НЕ повторять.
+ * Возвращает число запросов пакета.
+ */
+async function writeAtomic(
+  sheets: SheetsGateway, sheetName: string, meta: { sheetId: number; rowCount: number; columnCount: number }, cells: readonly CancelManifestCell[],
+  live: ReadonlyMap<string, LiveRow>, target: 'after' | 'before', style: FormulaStyle, log: LoaderContext['logger'],
+): Promise<number> {
+  const requests = cancelWriteRequests(meta.sheetId, cells, live, target);
+  assertConfined(requests, meta.sheetId, cells);
+  if (!requests.length) return 0;
+  try {
+    return await sheets.structureWrite(requests);
+  } catch (e) {
+    const state = outcomeState(cells, (await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, cells)).rows, style);
+    log.error('unitka_cancel_restore_unknown_outcome', { target, requests: requests.length, state, error: e instanceof Error ? e.message : String(e) });
+    throw new LoaderError(`исход записи неизвестен (${state}): только перечитывание и решение владельца, повтора нет`, 'CANCEL_RESTORE_UNKNOWN_OUTCOME');
+  }
 }
 
 /** Состояние поля относительно манифеста при откате: каждое поле «до» или «после», иначе DRIFT. */
@@ -332,7 +406,7 @@ export async function unitkaCancelRestoreLoader(ctx: LoaderContext, deps: Unitka
     log.info('unitka_cancel_restore_rollback_plan', { manifest_digest: m.digest, cells: m.cells.length, drift: drift.length, drift_sample: drift.slice(0, 10) });
     if (drift.length) throw new LoaderError(`${drift.length} полей изменены после восстановления — откат не перетирает чужие правки`, 'CANCEL_RESTORE_DRIFT');
     if (!write) return { rowsFetched: m.cells.length, rowsLoaded: 0 };
-    const written = await writeCells(sheets, sheetName, meta.sheetId, m.cells, live, 'before');
+    const written = await writeAtomic(sheets, sheetName, meta, m.cells, live, 'before', style, log);
     const after = (await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, m.cells)).rows;
     const bad = verifyCancelCells(m.cells, after, 'before', rev, style);
     log.info('unitka_cancel_restore_rollback_done', { manifest_digest: m.digest, cells: m.cells.length, written, verify_failed: bad.length, sample: bad.slice(0, 10) });
@@ -346,21 +420,26 @@ export async function unitkaCancelRestoreLoader(ctx: LoaderContext, deps: Unitka
   const { rows: live, missing } = await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, keys);
   const plan = planCancelRestore({ rows, live, missing, windowFrom: window.from, reverseLegRate: rev, style });
   const fft = rows.reduce((m, r) => (r.financeFinalThrough > m ? r.financeFinalThrough : m), '');
-  const manifest = buildCancelManifest(plan.cells, { ...book, style, financeFinalThrough: fft });
+  const manifest = buildCancelManifest(plan.cells, { ...book, style, financeFinalThrough: fft, anomalies: plan.anomalyKeys });
+  const unaccepted = unacceptedAnomalies(plan.anomalyKeys, config.unitkaCancelRestoreAcceptedAnomalies ?? []);
   log.info('unitka_cancel_restore_plan', {
     manifest_digest: manifest.digest, manifest_b64: encodeCancelManifest(manifest), cells: plan.cells.length, already_applied: plan.alreadyApplied,
     finance_final_through: fft, window_from: window.from, reverse_leg_rate: rev,
     rows: plan.cells.map((c) => `${c.date} ${c.nmId} ${c.sA1}: S ${c.before.s} → ${c.after.s}, V ${c.voidQty}`),
     expected_delta_w: plan.expectedDeltaW, expected_delta_w_total: Math.round(plan.expectedDeltaW.reduce((s, x) => s + x.deltaW, 0) * 100) / 100,
-    refusals: plan.refusals, anomalies: plan.anomalies,
+    refusals: plan.refusals, anomalies: plan.anomalies, anomaly_keys: plan.anomalyKeys, anomalies_unaccepted: unaccepted,
   });
   if (plan.anomalies.length) log.warn('unitka_cancel_class_anomalies', { anomalies: plan.anomalies });
   if (plan.refusals.length) throw new LoaderError(`план восстановления отмен отказан: ${plan.refusals.slice(0, 5).join(' | ')}`, 'CANCEL_RESTORE_DRIFT');
   if (!write) return { rowsFetched: rows.length, rowsLoaded: 0 };
+  // Аномалия, не принятая владельцем поимённо, останавливает ЗАПИСЬ до первой записи (контракт выпуска).
+  if (unaccepted.length) {
+    throw new LoaderError(`аномалии класса отмен не приняты владельцем: ${unaccepted.join(', ')} — запись остановлена`, 'CANCEL_RESTORE_ANOMALY');
+  }
   if (config.unitkaCancelRestoreDigest !== manifest.digest) {
     throw new LoaderError(`UNITKA_CANCEL_RESTORE_DIGEST «${config.unitkaCancelRestoreDigest ?? ''}» ≠ отпечатку плана ${manifest.digest}: лист или источник изменились после просмотра`, 'CANCEL_RESTORE_DIGEST_MISMATCH');
   }
-  const written = await writeCells(sheets, sheetName, meta.sheetId, plan.cells, live, 'after');
+  const written = await writeAtomic(sheets, sheetName, meta, plan.cells, live, 'after', style, log);
   const after = (await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, plan.cells)).rows;
   const bad = verifyCancelCells(plan.cells, after, 'after', rev, style);
   log.info('unitka_cancel_restore_done', { manifest_digest: manifest.digest, cells: plan.cells.length, written, verify_failed: bad.length, sample: bad.slice(0, 10) });

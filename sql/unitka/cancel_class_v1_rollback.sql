@@ -1,6 +1,6 @@
 -- ============================================================================
 -- ОТКАТ cancel_class_v1 (OWNER ACK «CANCEL RECONCILIATION» 02.11.2026): прежние тела трёх вью-потребителей
--- (origin/main 3ea1b8a2; live = Git, сверено 02.11.2026 через bq show) и снятие двух новых вью.
+-- (origin/main 3ea1b8a2; live = Git, сверено 02.11.2026 через bq show) и снятие четырёх новых вью.
 -- Порядок: сначала потребители (иначе они ссылались бы на снятую вью), затем DROP.
 -- Колонка wb_ops.UNITKA_SKU_COMPONENTS_DAILY.void_cancels остаётся (NULL-able, Terraform): прежняя вью её не читает.
 -- Лист откатывается отдельно — загрузчиком unitka-cancel-restore с UNITKA_CANCEL_RESTORE_DIRECTION=rollback.
@@ -523,3 +523,5 @@ FROM n;
 
 DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY`;
 DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_EVIDENCE`;
+DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_MATURITY`;
+DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_FINANCE_FINAL_INTERVALS`;

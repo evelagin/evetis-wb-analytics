@@ -20,7 +20,7 @@
  * Окно — с STORE_PNL_FROM: раньше наследие формул и оценочное хранение (P&L их не считает).
  */
 import { LoaderError } from '../../../errors.js';
-import { BLOCK_FIRST_COLUMN } from '../calendar.js';
+import { BLOCK_FIRST_COLUMN, slotStart } from '../calendar.js';
 import { OFFSET, SUMMARY, addDaysIso, findBlocks, isEmpty, isFormulaError, serialToIso, type CellValue } from '../model.js';
 import { fromLocaleFormula, normFormula, profitAllVoidQty, type FormulaStyle } from '../formulas.js';
 
@@ -85,6 +85,26 @@ function num(v: CellValue | undefined, where: string): number {
  * Все секции листа (строка заголовков: «Дата» в колонке M), сутки ≤ LCD, блоки с nmID.
  * Пустые SKU-сутки (нет заказов, прибыли, рекламы, хранения) не попадают в снимок: их вклад нулевой.
  */
+/**
+ * Колонки W «Доходность (общая)» всех слотов блоков, помещающихся в сетку листа: формулы читаются только по ним
+ * (одним values:batchGet), а не по всей книге. Слот блока одинаков во всех месяцах (calendar.slotStart).
+ */
+export function profitAllColumns(columnCount: number): number[] {
+  const out: number[] = [];
+  for (let slot = 0; slotStart(slot) + OFFSET.profitAll <= columnCount; slot++) out.push(slotStart(slot) + OFFSET.profitAll);
+  return out;
+}
+
+/** Разреженная сетка формул (как A1:…): заполнены только прочитанные колонки W; остальное — undefined. */
+export function formulaGridFromColumns(columns: readonly number[], values: readonly (readonly (readonly CellValue[])[])[]): CellValue[][] {
+  if (columns.length !== values.length) throw new LoaderError(`формулы W: ${values.length} диапазонов вместо ${columns.length}`, 'STORE_PNL_SHEET_ERROR');
+  const grid: CellValue[][] = [];
+  columns.forEach((c, k) => {
+    values[k]!.forEach((row, i) => { (grid[i] ??= [])[c - 1] = row?.[0] ?? ''; });
+  });
+  return grid;
+}
+
 /** Похоже на поправку отмен в конце формулы W — для отказа, если profitAllVoidQty её не признал. */
 const VOID_FIX_SHAPE = /\+\d+\*\([A-Z]+\d+\+REVERSE_LEG_RATE\)\)$/;
 

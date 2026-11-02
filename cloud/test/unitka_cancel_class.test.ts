@@ -18,10 +18,11 @@ import { profitAllFormula, profitAllVoidQty, toLocaleFormula } from '../src/load
 import { CANCEL_NOTE_MARKER, REFUSAL_NOTE_MARKER, planRefusalNotes, noteKey } from '../src/loaders/unitka/refusal_notes.js';
 import {
   cancelNoteText, planCancelRestore, modelW, verifyCancelCells, buildCancelManifest, encodeCancelManifest, parseCancelManifest,
-  rollbackDrift, unitkaCancelRestoreLoader, cancelRestoreWriteAllowed, type LiveRow,
+  rollbackDrift, unitkaCancelRestoreLoader, cancelRestoreWriteAllowed, cancelWriteRequests, assertConfined, outcomeState, unacceptedAnomalies,
+  type LiveRow,
 } from '../src/loaders/unitka/cancel_restore.js';
 import { UnitkaBq, type CancelClassRow, type FactRow } from '../src/loaders/unitka/bq.js';
-import { parseUnitkaComponents } from '../src/loaders/unitka/storepnl/parse.js';
+import { parseUnitkaComponents, profitAllColumns, formulaGridFromColumns } from '../src/loaders/unitka/storepnl/parse.js';
 import { snapshotRecord } from '../src/loaders/unitka/storepnl/bq.js';
 import { LOADERS } from '../src/loaders/registry.js';
 import { OFFSET, colA1, isoToSerial, type CellValue } from '../src/loaders/unitka/model.js';
@@ -50,8 +51,8 @@ describe('SQL: слой классов отмен (cancel_class_v1.sql)', () => 
   const sql = read('sql/unitka/cancel_class_v1.sql');
   const v = viewBodies(sql);
   const d = flat(v.get('V_UNITKA_CANCEL_CLASS_DAILY') ?? '');
-  it('ровно две вью, только SELECT, только wb_raw / wb_mart (изоляция маркетплейсов)', () => {
-    expect([...v.keys()].sort()).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE']);
+  it('четыре вью, только SELECT, только wb_raw / wb_mart (изоляция маркетплейсов)', () => {
+    expect([...v.keys()].sort()).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
     expect(code(sql)).not.toMatch(/\b(CREATE\s+(OR\s+REPLACE\s+)?(TABLE|PROCEDURE|FUNCTION)|INSERT\s+INTO|UPDATE\s+`|DELETE\s+FROM|MERGE\s+|TRUNCATE|DROP\s+)/i);
     for (const body of v.values()) {
       expect(body).not.toMatch(/evetis_ref|ozon_/i);
@@ -64,11 +65,16 @@ describe('SQL: слой классов отмен (cancel_class_v1.sql)', () => 
     expect(e).toContain('IFNULL(e.logistics_legs, 0) > 0 AS has_logistics');
     expect(e).toContain("SELECT DATE '2026-09-04' AS funnel_api_from");
   });
-  it('зрелость = сроку отказов (46), окончательный слой финотчёта', () => {
+  it('зрелость = непрерывное покрытие окончательным финотчётом на 46 суток (исполнение — tools/tests/test_unitka_cancel_maturity.py)', () => {
     expect(REFUSAL_MATURITY_DAYS).toBe(46);
     expect(d).toContain(`SELECT DATE '2026-09-04' AS funnel_api_from, ${REFUSAL_MATURITY_DAYS} AS maturity_days`);
-    expect(d).toContain("MAX(IF(finance_status = 'FINAL', _rr_date, NULL)) AS finance_final_through");
-    expect(d).toContain("WHEN DATE_DIFF(ft.finance_final_through, a.d, DAY) < cfg.maturity_days THEN 'IMMATURE'");
+    expect(flat(v.get('V_UNITKA_CANCEL_MATURITY')!)).toContain(`DATE_ADD(order_date, INTERVAL ${REFUSAL_MATURITY_DAYS} DAY) AS e`);
+    const iv = flat(v.get('V_UNITKA_FINANCE_FINAL_INTERVALS')!);
+    expect(iv).toContain("WHERE report_period = 'WEEKLY' AND report_type = 1 AND status = 'COMPLETE' AND date_from IS NOT NULL AND date_to IS NOT NULL");
+    expect(iv).toContain('WHERE weekly_final = TRUE AND report_type IN (1, 2)');
+    expect(iv).toContain('HAVING COUNT(DISTINCT w.report_type) = 2');
+    expect(d).toContain("WHEN NOT IFNULL(mt.mature, FALSE) THEN 'IMMATURE'");
+    expect(d).not.toContain('_rr_date');                                      // «последний FINAL _rr_date» больше не правило
   });
   it('места в Q: воронка минус заказы без отмены и доказанные заказы вне Orders API — это не S = MIN(S, Q)', () => {
     expect(d).toContain('j.funnel_orders - j.kept_qty - j.refusal_counted_qty - j.sold_not_in_api_qty AS room');
@@ -101,10 +107,10 @@ describe('SQL: обе вью фактов берут S из класса отм�
     expect(flat(read('sql/unitka/store_pnl_v1.sql'))).toContain(
       'SUM((orders - IFNULL(void_cancels, 0)) * logistics_per_unit + (cancels - IFNULL(void_cancels, 0)) * reverse_leg_rate) logistics_sku_rub');
   });
-  it('откат: прежние тела трёх вью и снятие двух новых', () => {
+  it('откат: прежние тела трёх вью и снятие четырёх новых (потребители — раньше источников)', () => {
     const rb = code(read('sql/unitka/cancel_class_v1_rollback.sql'));
-    expect(rb).toContain('DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY`');
-    expect(rb).toContain('DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_EVIDENCE`');
+    const drops = [...rb.matchAll(/DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986\.wb_mart\.(\w+)`/g)].map((m) => m[1]);
+    expect(drops).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
     for (const name of ['V_UNITKA_DAILY_FACT', 'V_UNITKA_RECON_FACT', 'V_WB_STORE_PNL_MONTHLY']) {
       const body = flat((viewBodies(rb).get(name) ?? '').split(/;\s*\n/)[0]!);
       expect(body, name).not.toContain('V_UNITKA_CANCEL_CLASS_DAILY');
@@ -158,7 +164,7 @@ describe('заметка S: причина, даты, srid, источник', (
     expect(a.startsWith(`${CANCEL_NOTE_MARKER} 2026-10-18: S 0 → 1`)).toBe(true);
     expect(a).toContain('поправка W +1·(AF+REVERSE_LEG_RATE)');
     expect(a).toContain('srid-void-1 (отмена 2026-10-18)');
-    expect(a).toContain('окончательном финотчёте по 2026-12-13 (зрелость 46 суток — с 2026-12-03)');
+    expect(a).toContain('финотчёт окончателен непрерывно с 2026-10-18 по 2026-12-03 (46 суток; недели FINANCE_WEEK_STATUS, отчёты FINANCE_REPORT_LOADS), последний окончательный отчёт — по 2026-12-13');
     expect(a).toContain('wb_mart.V_UNITKA_CANCEL_CLASS_DAILY');
     expect(b.startsWith(`${CANCEL_NOTE_MARKER} 2026-10-24: S 1 → 0`)).toBe(true);
     expect(b).toContain('1 шт. без логистики в воронке нет');
@@ -228,17 +234,22 @@ describe('Store P&L: V из формулы W, модель без плеч от�
 
 const TOP = 769;                                         // «Октябрь 2026» в живой книге
 const RU = (f: string): string => toLocaleFormula(f, 'SEMICOLON');
-const BLOCK = { 252442517: 13, 535580776: 277 } as const;   // слоты живой книги: M и JQ
-const ROWS = { 252442517: 794, 535580776: 788 } as const;
-/** Ячейки строк: Q, S, X, AG, Y, AI, AF (форма живых суток, деньги синтетические). */
+const BLOCK = { 252442517: 13, 535580776: 277, 952068582: 469 } as const;   // слоты живой книги: M, JQ, RA
+const ROWS = { 252442517: 794, 535580776: 788, 952068582: 797 } as const;
+/** Ячейки строк (форма живых суток, деньги синтетические): AE = цена·(1 − комиссия), AI = AE − AF − налог − COGS. */
 const LIVE = {
-  252442517: { q: 0, s: 1, x: 0, ag: 20, y: 0, ai: 40, af: 55, date: '2026-10-24' },
-  535580776: { q: 3, s: 0, x: 400, ag: 15, y: 0, ai: 120, af: 50, date: '2026-10-18' },
+  252442517: { q: 0, s: 1, x: 0, ag: 20, y: 0, ai: 40, af: 55, price: 200, comm: 0.5, tax: 4, date: '2026-10-24' },
+  535580776: { q: 3, s: 0, x: 400, ag: 15, y: 0, ai: 120, af: 50, price: 600, comm: 0.45, tax: 12, date: '2026-10-18' },
+  952068582: { q: 1, s: 1, x: 10, ag: 5, y: 0, ai: 300, af: 57, price: 1300, comm: 0.45, tax: 26, date: '2026-10-27' },
 } as const;
+type Nm = keyof typeof BLOCK;
 
 const colNum = (s: string): number => [...s].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
 
-/** Книга: значения, формулы, заметки; W считается формулой строки (с поправкой) при каждом чтении. */
+/**
+ * Книга-секция «Октябрь 2026» (769..802): значения, формулы, заметки. W и итог сводки I считаются формулой при чтении,
+ * как в Sheets. structureWrite применяет пакет updateCells ЦЕЛИКОМ или (failNext) не применяет вовсе — как batchUpdate.
+ */
 class Book implements Partial<SheetsGateway> {
   v = new Map<string, CellValue>();
   f = new Map<string, string>();
@@ -246,19 +257,29 @@ class Book implements Partial<SheetsGateway> {
   rev = REV;
   writes: Array<{ data: WriteRange[]; opt: string }> = [];
   structures: StructureRequest[][] = [];
+  failNext = false;
   constructor(public readonly ro = false) {
     this.v.set(`${TOP}:1`, 'Октябрь 2026');
+    this.v.set(`${TOP + 1}:13`, 'Дата');
+    for (let i = 0; i < 31; i++) {
+      const r = TOP + 2 + i, serial = isoToSerial(`2026-10-${String(i + 1).padStart(2, '0')}`);
+      this.v.set(`${r}:2`, serial);
+      for (const start of Object.values(BLOCK)) this.v.set(`${r}:${start + OFFSET.date}`, serial);
+    }
     for (const [nm, start] of Object.entries(BLOCK)) {
-      const l = LIVE[Number(nm) as keyof typeof LIVE];
-      const r = ROWS[Number(nm) as keyof typeof ROWS];
+      const l = LIVE[Number(nm) as Nm], r = ROWS[Number(nm) as Nm];
       this.v.set(`${TOP}:${start}`, `${nm} блок`);
       const put = (off: number, x: CellValue): void => { this.v.set(`${r}:${start + off}`, x); };
-      put(OFFSET.date, isoToSerial(l.date)); put(OFFSET.orders, l.q); put(OFFSET.cancels, l.s); put(OFFSET.adsIn, l.x);
-      put(OFFSET.storage, l.ag); put(OFFSET.adsOut, l.y); put(OFFSET.unitProfit, l.ai); put(OFFSET.logistics, l.af);
+      put(OFFSET.orders, l.q); put(OFFSET.cancels, l.s); put(OFFSET.adsIn, l.x); put(OFFSET.storage, l.ag); put(OFFSET.adsOut, l.y);
+      put(OFFSET.unitProfit, l.ai); put(OFFSET.logistics, l.af); put(OFFSET.price, l.price); put(OFFSET.commission, l.comm);
+      put(OFFSET.priceMinusComm, l.price * (1 - l.comm)); put(OFFSET.tax, l.tax);
       this.f.set(`${r}:${start + OFFSET.profitAll}`, RU(profitAllFormula(start, r)));
     }
   }
   private value(r: number, c: number): CellValue {
+    if (c === 9 && r >= TOP + 2 && r <= TOP + 32) {                       // сводка I = Σ W блоков строки
+      return Object.values(BLOCK).reduce((t, st) => t + (Number(this.value(r, st + OFFSET.profitAll)) || 0), 0);
+    }
     const f = this.f.get(`${r}:${c}`);
     if (f) {
       const start = c - OFFSET.profitAll;
@@ -268,7 +289,7 @@ class Book implements Partial<SheetsGateway> {
     }
     return this.v.get(`${r}:${c}`) ?? '';
   }
-  w(nm: keyof typeof BLOCK): number { return this.value(ROWS[nm], BLOCK[nm] + OFFSET.profitAll) as number; }
+  w(nm: Nm): number { return this.value(ROWS[nm], BLOCK[nm] + OFFSET.profitAll) as number; }
   private rect(range: string) {
     const m = /!\$?([A-Z]+)(\d+):\$?([A-Z]+)(\d+)$/.exec(range)!;
     return { r1: Number(m[2]), r2: Number(m[4]), c1: colNum(m[1]!), c2: colNum(m[3]!) };
@@ -285,24 +306,26 @@ class Book implements Partial<SheetsGateway> {
     const { r1, r2, c1, c2 } = this.rect(range);
     return Array.from({ length: r2 - r1 + 1 }, (_, i) => Array.from({ length: c2 - c1 + 1 }, (_, j) => this.f.get(`${r1 + i}:${c1 + j}`) ?? this.value(r1 + i, c1 + j)));
   }
+  async readFormulasBatch(ranges: string[]): Promise<CellValue[][][]> { return Promise.all(ranges.map((r) => this.readFormulas(r))); }
   async readNotes(_n: string, cells: ReadonlyArray<{ row: number; col: number }>): Promise<Map<string, string>> {
     return new Map(cells.filter((c) => this.notes.has(noteKey(c.row, c.col))).map((c) => [noteKey(c.row, c.col), this.notes.get(noteKey(c.row, c.col))!]));
   }
   async batchWrite(data: WriteRange[], opt = 'RAW'): Promise<number> {
-    if (this.ro) throw new Error('403 readonly');
     this.writes.push({ data, opt });
-    for (const d of data) {
-      const { r1, c1 } = this.rect(d.range); const x = d.values[0]![0]!;
-      if (opt === 'USER_ENTERED' && typeof x === 'string' && x.startsWith('=')) this.f.set(`${r1}:${c1}`, x);
-      else { this.f.delete(`${r1}:${c1}`); this.v.set(`${r1}:${c1}`, x); }
-    }
-    return data.length;
+    throw new Error('unitka-cancel-restore обязан писать одним batchUpdate, не values API');
   }
   async structureWrite(req: StructureRequest[]): Promise<number> {
     if (this.ro) throw new Error('403 readonly');
     this.structures.push(req);
-    for (const r of req as Array<{ repeatCell: { range: { startRowIndex: number; startColumnIndex: number }; cell: { note: string } } }>) {
-      this.notes.set(noteKey(r.repeatCell.range.startRowIndex + 1, r.repeatCell.range.startColumnIndex + 1), r.repeatCell.cell.note);
+    if (this.failNext) { this.failNext = false; throw new Error('502 Bad Gateway'); }   // пакет не применён целиком
+    for (const q of req as Array<{ updateCells: { range: { sheetId: number; startRowIndex: number; startColumnIndex: number }; rows: Array<{ values: Array<{ userEnteredValue?: { numberValue?: number; formulaValue?: string }; note?: string }> }>; fields: string } }>) {
+      const r = q.updateCells.range.startRowIndex + 1, c = q.updateCells.range.startColumnIndex + 1;
+      const cell = q.updateCells.rows[0]!.values[0]!;
+      for (const field of q.updateCells.fields.split(',')) {
+        if (field === 'note') this.notes.set(noteKey(r, c), cell.note ?? '');
+        if (field === 'userEnteredValue' && cell.userEnteredValue?.formulaValue !== undefined) this.f.set(`${r}:${c}`, cell.userEnteredValue.formulaValue);
+        if (field === 'userEnteredValue' && cell.userEnteredValue?.numberValue !== undefined) { this.f.delete(`${r}:${c}`); this.v.set(`${r}:${c}`, cell.userEnteredValue.numberValue); }
+      }
     }
     return req.length;
   }
@@ -316,29 +339,51 @@ const bqRow = (r: CancelClassRow): Record<string, unknown> => ({
   cancel_log_srids: r.logSrids.join(',') || null, cancel_nolog_srids: r.nologSrids.join(','), cancel_nolog_dates: r.nologCancelDates.join(','),
   finance_final_through: { value: r.financeFinalThrough }, mature_on: { value: r.matureOn },
 });
+/** Как вью: IMMATURE-сутки без изменения листа запрос не возвращает (WHERE sheet_change_required OR ANOMALY). */
 const runner = (rows: CancelClassRow[], windowFrom = '2026-11-09') => ({
   projectId: 'p',
   query: async (sql: string) => {
-    if (sql.includes('V_UNITKA_CANCEL_CLASS_DAILY')) return rows.map(bqRow);
+    if (sql.includes('V_UNITKA_CANCEL_CLASS_DAILY')) return rows.filter((r) => r.sheetChangeRequired || r.status.startsWith('ANOMALY')).map(bqRow);
     if (sql.includes('V_UNITKA_RECON_WINDOW')) return [{ last_closed_date: { value: '2026-12-13' }, window_from: { value: windowFrom }, window_to: { value: '2026-12-13' }, window_days: 35, reconciliation_epoch: { value: '2026-09-01' } }];
     throw new Error(`неожиданный запрос: ${sql.slice(0, 80)}`);
   },
 });
+type Ev = Array<{ event: string; data: Record<string, unknown> }>;
 function logger() {
-  const events: Array<{ event: string; data: Record<string, unknown> }> = [];
-  const l = { info: (event: string, data: Record<string, unknown>) => events.push({ event, data }), warn() {}, error() {}, debug() {}, child() { return l; } };
+  const events: Ev = [];
+  const push = (event: string, data: Record<string, unknown>) => events.push({ event, data });
+  const l = { info: push, warn: push, error: push, debug() {}, child() { return l; } };
   return { l: l as unknown as Logger, events };
 }
-const run = (book: Book, env: Record<string, string>, rows = [ROW_1810, ROW_2410], windowFrom?: string) => {
+const run = (book: Book, env: Record<string, string>, rows: CancelClassRow[] = [ROW_1810, ROW_2410], windowFrom?: string) => {
   const lg = logger();
   const ctx = { config: loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', GIT_SHA: 't', UNITKA_SPREADSHEET_ID: 'ssid', UNITKA_SHEET_NAME: 'WB_Юнит_2025', ...env }),
     logger: lg.l, logicalPeriod: 'p', targetDate: 'p', runId: 'r' } as LoaderContext;
   const deps = { makeSheets: () => book as unknown as SheetsGateway, makeRunner: () => runner(rows, windowFrom), now: () => new Date('2026-12-14T08:00:00Z') } as unknown as UnitkaDeps;
   return { promise: unitkaCancelRestoreLoader(ctx, deps), events: lg.events };
 };
-const planOf = (events: Array<{ event: string; data: Record<string, unknown> }>) => events.find((e) => e.event === 'unitka_cancel_restore_plan')!.data;
+const planOf = (events: Ev) => events.find((e) => e.event === 'unitka_cancel_restore_plan')!.data;
+async function planDigest(rows: CancelClassRow[] = [ROW_1810, ROW_2410]): Promise<{ digest: string; manifest: string }> {
+  const p = run(new Book(true), {}, rows);
+  await p.promise;
+  return { digest: String(planOf(p.events).manifest_digest), manifest: String(planOf(p.events).manifest_b64) };
+}
+const WRITE = (digest: string, extra: Record<string, string> = {}) => ({ UNITKA_CANCEL_RESTORE_WRITE: '1', UNITKA_CANCEL_RESTORE_DIGEST: digest, ...extra });
+const ANOMALY: CancelClassRow = { ...ROW_2410, nmId: 438775617, date: '2026-10-09', status: 'ANOMALY_ABSENT_WITH_LOGISTICS', cancelLogQty: 1, cancelNologQty: 0, nologAbsentQty: 0,
+  legacyCancels: 1, finalCancels: 0, sheetChangeRequired: false, logSrids: ['srid-log-1'], nologSrids: [], nologCancelDates: [] };
 
-describe('unitka-cancel-restore: сценарии октября на живых значениях', () => {
+/** Снимок Store P&L из книги так, как его строит загрузчик: значения A1:… + формулы только колонок W. */
+async function storePnl(book: Book) {
+  const meta = await book.readSheetMeta();
+  const [grid] = await book.readValues([`'WB_Юнит_2025'!A1:${colA1(meta.columnCount)}${TOP + 33}`]);
+  const cols = profitAllColumns(meta.columnCount);
+  const formulas = formulaGridFromColumns(cols, await book.readFormulasBatch(cols.map((c) => `'WB_Юнит_2025'!${colA1(c)}1:${colA1(c)}${TOP + 33}`)));
+  const p = parseUnitkaComponents(grid!, '2026-10-31', REV, '2026-10-01', formulas, 'SEMICOLON');
+  const row = (nm: Nm) => p.rows.find((r) => r.nm_id === nm && r.date_msk === LIVE[nm].date)!;
+  return { p, row, profit: p.months['2026-10']!.profit, gapAbs: p.months['2026-10']!.modelGapAbs };
+}
+
+describe('unitka-cancel-restore: сценарии октября', () => {
   it('зарегистрирован; запись — только prod + флаг + без DRY_RUN', () => {
     expect(LOADERS['unitka-cancel-restore']).toBeDefined();
     expect(cancelRestoreWriteAllowed({ environment: 'prod', unitkaCancelRestoreWrite: true })).toBe(true);
@@ -356,54 +401,74 @@ describe('unitka-cancel-restore: сценарии октября на живых
     expect(p.expected_delta_w_total).toBe(5);
     expect(p.rows).toEqual(['2026-10-18 535580776 JW788: S 0 → 1, V 1', '2026-10-24 252442517 S794: S 1 → 0, V 0']);
     expect(p.refusals).toEqual([]);
-    expect(book.writes).toHaveLength(0);
+    expect(book.structures).toHaveLength(0);
   });
 
   it('ЗАПИСЬ: без отпечатка просмотренного плана — отказ до записи', async () => {
     const book = new Book();
-    await expect(run(book, { UNITKA_CANCEL_RESTORE_WRITE: '1', UNITKA_CANCEL_RESTORE_DIGEST: 'deadbeef' }).promise)
-      .rejects.toMatchObject({ code: 'CANCEL_RESTORE_DIGEST_MISMATCH' });
-    expect(book.writes).toHaveLength(0);
+    await expect(run(book, WRITE('deadbeef')).promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_DIGEST_MISMATCH' });
     expect(book.structures).toHaveLength(0);
   });
 
-  it('ЗАПИСЬ по отпечатку: S, формула W, заметки; перечитывание; повтор — без записей; откат возвращает всё', async () => {
+  it('BLOCKER 3 — ОДИН batchUpdate: S+заметка и W обеих суток в одном пакете, только ячейки манифеста; values API не используется', async () => {
     const book = new Book();
-    const w0 = { a: book.w(535580776), b: book.w(252442517) };
-    const plan = run(new Book(true), {});
-    await plan.promise;
-    const digest = String(planOf(plan.events).manifest_digest);
-    const { promise, events } = run(book, { UNITKA_CANCEL_RESTORE_WRITE: '1', UNITKA_CANCEL_RESTORE_DIGEST: digest });
-    await expect(promise).resolves.toMatchObject({ rowsLoaded: 5 });
-    expect(events.find((e) => e.event === 'unitka_cancel_restore_done')!.data.verify_failed).toBe(0);
-    // ровно три ячейки на сутки: S (RAW), W (формула, только где V > 0), заметка S
-    expect(book.writes.map((w) => [w.opt, w.data.map((d) => d.range)])).toEqual([
-      ['RAW', ["'WB_Юнит_2025'!JW788:JW788", "'WB_Юнит_2025'!S794:S794"]],
-      ['USER_ENTERED', ["'WB_Юнит_2025'!KA788:KA788"]],
+    const { digest } = await planDigest();
+    const { promise, events } = run(book, WRITE(digest));
+    await expect(promise).resolves.toMatchObject({ rowsLoaded: 3 });
+    expect(book.writes).toHaveLength(0);
+    expect(book.structures).toHaveLength(1);
+    const cells = (book.structures[0] as Array<{ updateCells: { range: { sheetId: number; startRowIndex: number; startColumnIndex: number }; fields: string } }>)
+      .map((q) => [q.updateCells.range.sheetId, colA1(q.updateCells.range.startColumnIndex + 1) + (q.updateCells.range.startRowIndex + 1), q.updateCells.fields]);
+    expect(cells).toEqual([
+      [739487431, 'JW788', 'userEnteredValue,note'], [739487431, 'KA788', 'userEnteredValue'], [739487431, 'S794', 'userEnteredValue,note'],
     ]);
-    expect(book.f.get(`788:${277 + OFFSET.profitAll}`)).toBe(RU(profitAllFormula(277, 788, 1)));
-    expect(book.notes.get(noteKey(788, 277 + OFFSET.cancels))!.startsWith(`${CANCEL_NOTE_MARKER} 2026-10-18`)).toBe(true);
-    expect(book.notes.get(noteKey(794, 13 + OFFSET.cancels))!.startsWith(`${CANCEL_NOTE_MARKER} 2026-10-24`)).toBe(true);
-    // приёмка: −AI / +(AI+AF+REV), по перечитанным W
-    const d1 = book.w(535580776) - w0.a, d2 = book.w(252442517) - w0.b;
-    expect(d1).toBeCloseTo(-120, 9);
-    expect(d2).toBeCloseTo(40 + 55 + REV, 9);
-    expect(d1 + d2).toBeCloseTo(5, 9);
-    expect(d1).not.toBeCloseTo(-(120 + 50 + REV), 1);                        // не стандартное списание отмены
+    expect(events.find((e) => e.event === 'unitka_cancel_restore_done')!.data.verify_failed).toBe(0);
+  });
 
-    // повтор: всё уже «после» — план тот же, записей нет
-    const again = run(book, { UNITKA_CANCEL_RESTORE_WRITE: '1', UNITKA_CANCEL_RESTORE_DIGEST: digest });
-    await expect(again.promise).resolves.toMatchObject({ rowsLoaded: 0 });
-    expect(planOf(again.events).already_applied).toBe(2);
+  it('BLOCKER 3 — сбой пакета: исход неизвестен → перечитывание, состояние ALL_BEFORE, повтора нет', async () => {
+    const book = new Book();
+    const { digest } = await planDigest();
+    const w0 = book.w(535580776);
+    book.failNext = true;
+    const r = run(book, WRITE(digest));
+    await expect(r.promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_UNKNOWN_OUTCOME' });
+    expect(book.structures).toHaveLength(1);                                  // одна попытка, без повтора
+    expect(r.events.find((e) => e.event === 'unitka_cancel_restore_unknown_outcome')!.data.state).toBe('ALL_BEFORE');
+    expect(book.w(535580776)).toBe(w0);                                        // лист не изменён ни в одной ячейке
+    // Store P&L видит прежний полный снимок: V = 0, невязка 0
+    const s = await storePnl(book);
+    expect([s.row(535580776).void_cancels, s.gapAbs < 1e-9]).toEqual([0, true]);
+  });
 
-    // откат по манифесту: прежние S, канон W, прежние (пустые) заметки; W — до копейки
-    const manifest = String(planOf(plan.events).manifest_b64);
-    const rb = run(book, { UNITKA_CANCEL_RESTORE_DIRECTION: 'rollback', UNITKA_CANCEL_RESTORE_MANIFEST: manifest, UNITKA_CANCEL_RESTORE_WRITE: '1', UNITKA_CANCEL_RESTORE_DIGEST: digest });
-    await expect(rb.promise).resolves.toMatchObject({ rowsFetched: 2 });
-    expect(book.w(535580776)).toBeCloseTo(w0.a, 9);
-    expect(book.w(252442517)).toBeCloseTo(w0.b, 9);
-    expect(profitAllVoidQty(book.f.get(`788:${277 + OFFSET.profitAll}`), 277, 788, 'SEMICOLON')).toBe(0);
-    expect(book.notes.get(noteKey(788, 277 + OFFSET.cancels))).toBe('');
+  it('BLOCKER 3 — запрос вне ячеек манифеста или чужого листа не уходит', async () => {
+    const plan = planCancelRestore({ rows: [ROW_1810], live: new Map([['535580776|2026-10-18', liveRow(535580776)]]), missing: [], windowFrom: '2026-11-09', reverseLegRate: REV, style: 'SEMICOLON' });
+    const req = cancelWriteRequests(739487431, plan.cells, new Map([['535580776|2026-10-18', liveRow(535580776)]]), 'after');
+    expect(() => assertConfined(req, 739487431, plan.cells)).not.toThrow();
+    expect(() => assertConfined(req, 1, plan.cells)).toThrow(expect.objectContaining({ code: 'CANCEL_RESTORE_NOT_CONFINED' }));
+    const foreign = [...req, { updateCells: { range: { sheetId: 739487431, startRowIndex: 787, endRowIndex: 788, startColumnIndex: 287, endColumnIndex: 288 }, rows: [], fields: 'userEnteredValue' } }];
+    expect(() => assertConfined(foreign, 739487431, plan.cells)).toThrow(expect.objectContaining({ code: 'CANCEL_RESTORE_NOT_CONFINED' }));
+    expect(() => assertConfined([{ deleteDimension: {} }], 739487431, plan.cells)).toThrow(expect.objectContaining({ code: 'CANCEL_RESTORE_NOT_CONFINED' }));
+  });
+
+  it('BLOCKER 2 — корректная строка + новая ANOMALY: запись остановлена ДО первой записи; принятая поимённо — запись идёт', async () => {
+    const rows = [ROW_1810, ANOMALY];
+    const { digest } = await planDigest(rows);
+    const book = new Book();
+    const r = run(book, WRITE(digest), rows);
+    await expect(r.promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_ANOMALY' });
+    expect(book.structures).toHaveLength(0);
+    expect(planOf(r.events).anomalies_unaccepted).toEqual(['438775617|2026-10-09|ANOMALY_ABSENT_WITH_LOGISTICS']);
+    // аномалия входит в отпечаток: тот же план без неё — другой отпечаток
+    expect((await planDigest([ROW_1810])).digest).not.toBe(digest);
+    // поимённое принятие владельцем
+    const ok = run(book, WRITE(digest, { UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES: '438775617|2026-10-09|ANOMALY_ABSENT_WITH_LOGISTICS' }), rows);
+    await expect(ok.promise).resolves.toMatchObject({ rowsLoaded: 2 });
+    // аномалия, появившаяся ПОСЛЕ просмотра плана: отпечаток другой — запись невозможна
+    const fresh = new Book();
+    const { digest: d0 } = await planDigest([ROW_1810]);
+    await expect(run(fresh, WRITE(d0, { UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES: '438775617|2026-10-09|ANOMALY_ABSENT_WITH_LOGISTICS' }), rows).promise)
+      .rejects.toMatchObject({ code: 'CANCEL_RESTORE_DIGEST_MISMATCH' });
+    expect(fresh.structures).toHaveLength(0);
   });
 
   it('DRIFT: S изменён вручную, заметка владельца, формула W правлена — отказ ДО записи', async () => {
@@ -418,7 +483,7 @@ describe('unitka-cancel-restore: сценарии октября на живых
       const r = run(book, {});
       await expect(r.promise, name).rejects.toMatchObject({ code: 'CANCEL_RESTORE_DRIFT' });
       expect((planOf(r.events).refusals as string[]).join(' | '), name).toMatch(msg);
-      expect(book.writes, name).toHaveLength(0);
+      expect(book.structures, name).toHaveLength(0);
     }
   });
 
@@ -427,40 +492,86 @@ describe('unitka-cancel-restore: сценарии октября на живых
     await expect(r.promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_DRIFT' });
     expect((planOf(r.events).refusals as string[])[0]).toMatch(/внутри окна сверки/);
   });
+});
 
-  it('аномалии класса — только журнал, лист не меняется', async () => {
-    const anomaly: CancelClassRow = { ...ROW_2410, status: 'ANOMALY_ABSENT_WITH_LOGISTICS', cancelLogQty: 1, cancelNologQty: 0, nologAbsentQty: 0, legacyCancels: 1, finalCancels: 0, sheetChangeRequired: false, logSrids: ['eA.x'], nologSrids: [], nologCancelDates: [] };
-    const r = run(new Book(true), {}, [anomaly]);
+describe('жизненный цикл: IMMATURE → FINAL → восстановление → Store P&L → откат', () => {
+  it('приёмка: −AI / +(AI+AF+REV), невязка модели 0 на каждом шаге, откат возвращает снимок до копейки', async () => {
+    const book = new Book();
+    const s0 = await storePnl(book);
+    expect(s0.gapAbs).toBeLessThan(1e-9);
+
+    // 1. IMMATURE: финотчёт ещё не покрывает горизонт — вью не просит менять лист, план пуст, записей нет
+    const immature = [ROW_1810, ROW_2410].map((r) => ({ ...r, status: 'IMMATURE', sheetChangeRequired: false, finalCancels: r.legacyCancels, voidQty: 0 }));
+    const i = run(book, {}, immature);
+    await expect(i.promise).resolves.toMatchObject({ rowsLoaded: 0 });
+    expect(planOf(i.events).cells).toBe(0);
+    expect(book.structures).toHaveLength(0);
+
+    // 2. FINAL → план → ACK (отпечаток) → запись
+    const { digest, manifest } = await planDigest();
+    await expect(run(book, WRITE(digest)).promise).resolves.toMatchObject({ rowsLoaded: 3 });
+    const d1 = book.w(535580776) - (s0.row(535580776).profit), d2 = book.w(252442517) - (s0.row(252442517).profit);
+    expect(d1).toBeCloseTo(-120, 9);                                          // −AI
+    expect(d2).toBeCloseTo(40 + 55 + REV, 9);                                 // +(AI + AF + REV)
+
+    // 3. Store P&L на восстановленном листе: V из формулы W, невязка 0, вклад месяца = Σ ΔW
+    const s1 = await storePnl(book);
+    expect(s1.row(535580776).void_cancels).toBe(1);
+    expect(s1.row(252442517).cancels).toBe(0);
+    expect(s1.gapAbs).toBeLessThan(1e-9);
+    expect(s1.profit - s0.profit).toBeCloseTo(d1 + d2, 9);
+
+    // 4. Откат по манифесту плана → снимок Store P&L равен исходному
+    await expect(run(book, { UNITKA_CANCEL_RESTORE_DIRECTION: 'rollback', UNITKA_CANCEL_RESTORE_MANIFEST: manifest, ...WRITE(digest) }).promise).resolves.toMatchObject({ rowsLoaded: 3 });
+    const s2 = await storePnl(book);
+    expect(s2.p.rows).toEqual(s0.p.rows);
+    expect(book.notes.get(noteKey(788, 277 + OFFSET.cancels))).toBe('');
+    expect(book.structures).toHaveLength(2);                                  // запись и откат — по одному пакету
+  });
+
+  it('кандидат 27.10 / 952068582: S остаётся 1, поправка V = 1 ⇒ ΔW = +(AF+REV), только формула W и заметка', async () => {
+    const cand: CancelClassRow = { ...ROW_1810, nmId: 952068582, date: '2026-10-27', funnelOrders: 1, keptQty: 0, room: 1, legacyCancels: 1, finalCancels: 1,
+      voidQty: 1, nologInQ: 1, nologSrids: ['srid-cand-1'], nologCancelDates: ['2026-11-02'], matureOn: '2026-12-12' };
+    const book = new Book();
+    const w0 = book.w(952068582);
+    const { digest } = await planDigest([cand]);
+    await expect(run(book, WRITE(digest), [cand]).promise).resolves.toMatchObject({ rowsLoaded: 2 });
+    expect(book.w(952068582) - w0).toBeCloseTo(57 + REV, 9);
+    expect(book.notes.get(noteKey(797, 469 + OFFSET.cancels))!.startsWith(`${CANCEL_NOTE_MARKER} 2026-10-27: S 1 → 1`)).toBe(true);
+    const s = await storePnl(book);
+    expect([s.row(952068582).cancels, s.row(952068582).void_cancels, s.gapAbs < 1e-9]).toEqual([1, 1, true]);
+    // пока кандидат незрел (до 12.12), вью его не отдаёт — план пуст
+    const r = run(new Book(true), {}, [{ ...cand, status: 'IMMATURE', sheetChangeRequired: false, voidQty: 0, finalCancels: 1 }]);
     await expect(r.promise).resolves.toMatchObject({ rowsLoaded: 0 });
-    expect(planOf(r.events).anomalies).toEqual([expect.stringMatching(/ANOMALY_ABSENT_WITH_LOGISTICS/)]);
     expect(planOf(r.events).cells).toBe(0);
   });
 });
 
+function liveRow(nm: Nm, o: Partial<LiveRow> = {}): LiveRow {
+  const l = LIVE[nm], r = ROWS[nm], s = BLOCK[nm];
+  return { nmId: nm, date: l.date, month: '2026-10', row: r, blockStart: s, dateSerial: isoToSerial(l.date), s: l.s,
+    wFormula: RU(profitAllFormula(s, r)), w: 0, note: '', q: l.q, x: l.x, ag: l.ag, y: l.y, ai: l.ai, af: l.af, ...o };
+}
+
 describe('манифест и перечитывание — чистые функции', () => {
-  const live = (nm: 252442517 | 535580776, o: Partial<LiveRow> = {}): LiveRow => {
-    const l = LIVE[nm], r = ROWS[nm], s = BLOCK[nm];
-    return { nmId: nm, date: l.date, month: '2026-10', row: r, blockStart: s, dateSerial: isoToSerial(l.date), s: l.s,
-      wFormula: RU(profitAllFormula(s, r)), w: 0, note: '', q: l.q, x: l.x, ag: l.ag, y: l.y, ai: l.ai, af: l.af, ...o };
-  };
-  const plan = () => planCancelRestore({ rows: [ROW_1810, ROW_2410], live: new Map([[`535580776|2026-10-18`, live(535580776)], [`252442517|2026-10-24`, live(252442517)]]),
-    missing: [], windowFrom: '2026-11-09', reverseLegRate: REV, style: 'SEMICOLON' });
-  it('отпечаток не зависит от REVERSE_LEG_RATE (суточное обновление WY737 не ломает просмотренный план)', () => {
-    const book = { spreadsheetId: 's', sheetId: 1, sheetName: 'n', style: 'SEMICOLON' as const, financeFinalThrough: '2026-12-13' };
+  const live = () => new Map([['535580776|2026-10-18', liveRow(535580776)], ['252442517|2026-10-24', liveRow(252442517)]]);
+  const plan = (rev = REV) => planCancelRestore({ rows: [ROW_1810, ROW_2410], live: live(), missing: [], windowFrom: '2026-11-09', reverseLegRate: rev, style: 'SEMICOLON' });
+  const book = { spreadsheetId: 's', sheetId: 1, sheetName: 'n', style: 'SEMICOLON' as const, financeFinalThrough: '2026-12-13' };
+  it('отпечаток не зависит от REVERSE_LEG_RATE (суточное обновление WY737 не ломает просмотренный план), но включает аномалии', () => {
     const a = buildCancelManifest(plan().cells, book);
-    const b = buildCancelManifest(planCancelRestore({ ...{ rows: [ROW_1810, ROW_2410], live: new Map([[`535580776|2026-10-18`, live(535580776)], [`252442517|2026-10-24`, live(252442517)]]), missing: [], windowFrom: '2026-11-09', style: 'SEMICOLON' as const }, reverseLegRate: 31.5 }).cells, book);
-    expect(a.digest).toBe(b.digest);
+    expect(buildCancelManifest(plan(31.5).cells, book).digest).toBe(a.digest);
+    expect(buildCancelManifest(plan().cells, { ...book, anomalies: ['1|2026-10-09|ANOMALY_FUNNEL_BELOW_API'] }).digest).not.toBe(a.digest);
     const parsed = parseCancelManifest(encodeCancelManifest(a));
     expect('error' in parsed ? parsed.error : parsed.digest).toBe(a.digest);
     const tampered = JSON.parse(JSON.stringify(a)); tampered.cells[0].after.s = 5;
     expect(parseCancelManifest(JSON.stringify(tampered))).toEqual({ error: expect.stringMatching(/отпечаток/) });
   });
-  it('перечитывание ловит каждое расхождение: S, формулу, заметку, W ≠ модели', () => {
+  it('перечитывание ловит каждое расхождение: S, формулу, заметку, W ≠ модели; состояние неизвестного исхода', () => {
     const cells = plan().cells;
     const after = (o: Partial<LiveRow> = {}) => {
       const c = cells[0]!;
-      const l = live(535580776, { s: c.after.s, wFormula: c.after.wFormula, note: c.after.note, ...o });
-      return new Map([[`535580776|2026-10-18`, { ...l, w: o.w ?? modelW(l, 1, REV) }]]);
+      const l = liveRow(535580776, { s: c.after.s, wFormula: c.after.wFormula, note: c.after.note, ...o });
+      return new Map([['535580776|2026-10-18', { ...l, w: o.w ?? modelW(l, 1, REV) }]]);
     };
     expect(verifyCancelCells([cells[0]!], after(), 'after', REV, 'SEMICOLON')).toEqual([]);
     expect(verifyCancelCells([cells[0]!], after({ s: 0 }), 'after', REV, 'SEMICOLON').join()).toMatch(/S 0 ≠ 1/);
@@ -468,6 +579,10 @@ describe('манифест и перечитывание — чистые фун
     expect(verifyCancelCells([cells[0]!], after({ note: 'x' }), 'after', REV, 'SEMICOLON').join()).toMatch(/заметка/);
     expect(verifyCancelCells([cells[0]!], after({ w: 1 }), 'after', REV, 'SEMICOLON').join()).toMatch(/≠ модели/);
     expect(rollbackDrift([cells[0]!], after({ s: 7 }), 'SEMICOLON').join()).toMatch(/ни до/);
+    expect(outcomeState([cells[0]!], after(), 'SEMICOLON')).toBe('ALL_AFTER');
+    expect(outcomeState([cells[0]!], live(), 'SEMICOLON')).toBe('ALL_BEFORE');
+    expect(outcomeState([cells[0]!], after({ wFormula: RU(profitAllFormula(277, 788)) }), 'SEMICOLON')).toBe('MIXED');
+    expect(unacceptedAnomalies(['a', 'b'], [' a '])).toEqual(['b']);
   });
 });
 

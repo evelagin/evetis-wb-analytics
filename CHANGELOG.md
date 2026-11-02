@@ -12,6 +12,11 @@ OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверк
 - **Формула W.** Строка с отменой без логистики в Q получает поправку `+V*(AF+REVERSE_LEG_RATE)` в конце формулы. Колонки листа не меняются. Шаблон месяца, QA и Store P&L распознают поправку строго.
 - **Снимок Store P&L.** В конец схемы `wb_ops.UNITKA_SKU_COMPONENTS_DAILY` (и `__STAGE`) добавлена колонка `void_cancels INT64` (Terraform). `V_WB_STORE_PNL_MONTHLY` считает логистику модели без плеч таких отмен.
 - **Загрузчик** `unitka-cancel-restore`: план и манифест, запись только по отпечатку и OWNER ACK, перечитывание, откат.
+- **Аудит PR #394:**
+  - зрелость — непрерывное покрытие окончательным финотчётом по реестру `FINANCE_REPORT_LOADS` × `FINANCE_WEEK_STATUS` (вью `V_UNITKA_FINANCE_FINAL_INTERVALS`, `V_UNITKA_CANCEL_MATURITY`);
+  - непринятая аномалия останавливает запись;
+  - запись — один атомарный `batchUpdate`;
+  - Store P&L читает формулы только колонок W.
 - **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
 
 ## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)

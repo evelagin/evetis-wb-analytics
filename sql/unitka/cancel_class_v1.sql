@@ -29,8 +29,16 @@
 --   * отмена БЕЗ логистики вне Q     → не входит в S: вклад 0;
 --   * отмена С логистикой вне Q      → на листе не представима (нужен вклад −AF − REV без −AI): ANOMALY, лист не меняется.
 --
--- Зрелость (решение владельца 02.11.2026): отсутствие логистики доказано только окончательным (недельным) слоем
--- финотчёта, покрывающим ≥ 46 суток от даты заказа — тот же срок, что у отказов (refusals_v1.sql, REFUSAL_MATURITY_DAYS).
+-- Зрелость (решение владельца 02.11.2026; уточнение аудита PR #394): отсутствие логистики доказано только окончательным
+-- финотчётом, НЕПРЕРЫВНО покрывающим все сутки [дата заказа, дата заказа + 46] — тот же срок, что у отказов
+-- (refusals_v1.sql, REFUSAL_MATURITY_DAYS). «Последний FINAL _rr_date» покрытия не доказывает: пропущенная неделя
+-- в середине горизонта давала бы ложную зрелость. Покрытие строится из реестра финотчёта (§0):
+--   интервал = загруженный недельный отчёт типа 1 (FINANCE_REPORT_LOADS, COMPLETE, обе даты заданы), чья неделя
+--   окончательна по ОБОИМ типам отчёта 1 и 2 (FINANCE_WEEK_STATUS.weekly_final = TRUE);
+--   неделя, разрезанная границей месяца, — два интервала одной недели (28–30.09 и 01–04.10), оба обязаны быть;
+--   сутки зрелы ⇔ начало и конец горизонта внутри интервалов и у каждого интервала, кончающегося внутри горизонта,
+--   есть интервал со следующего дня (разрыва нет).
+-- NULL, пропуск недели, неизвестный тип или статус, незагруженная половина разрезанной недели → IMMATURE, никогда FINAL.
 -- До зрелости класс IMMATURE: S прежний (legacy_cancels), поправки нет. Зрелый день всегда старше окна сверки
 -- (35 суток), поэтому суточный писатель и сверка его не достигают: лист меняет только адресное восстановление
 -- (загрузчик unitka-cancel-restore) по манифесту и OWNER ACK.
@@ -38,6 +46,50 @@
 -- Начало — 2026-09-04: первый день счётчика Q из воронки API (01–03.09 — XLSX-бэкфилл со своими отменами).
 -- Только SELECT, только wb_raw / wb_mart.
 -- ============================================================================
+
+-- ─── 0a. Интервалы окончательного финотчёта (реестр загрузок × статус недель) ──────────────────────
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_FINANCE_FINAL_INTERVALS` AS
+WITH l AS (
+  SELECT date_from, date_to, report_id
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.FINANCE_REPORT_LOADS`
+  WHERE report_period = 'WEEKLY' AND report_type = 1 AND status = 'COMPLETE'
+    AND date_from IS NOT NULL AND date_to IS NOT NULL AND date_from <= date_to
+),
+w AS (
+  SELECT week_start, report_type
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.FINANCE_WEEK_STATUS`
+  WHERE weekly_final = TRUE AND report_type IN (1, 2) AND week_start IS NOT NULL
+)
+SELECT l.date_from, l.date_to, l.report_id
+FROM l
+JOIN w ON w.week_start <= l.date_from AND l.date_to < DATE_ADD(w.week_start, INTERVAL 7 DAY)
+GROUP BY l.date_from, l.date_to, l.report_id
+HAVING COUNT(DISTINCT w.report_type) = 2;
+
+-- ─── 0b. Зрелость суток заказа: окончательный финотчёт непрерывно на [d, d + 46] ─────────────────
+-- Только агрегаты по CROSS JOIN (BigQuery не исполняет NOT EXISTS с неравенством). Нет ни одного интервала —
+-- строк нет вовсе, и класс суток остаётся IMMATURE (LEFT JOIN даёт NULL → не зрело).
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_MATURITY` AS
+WITH x AS (
+  SELECT DISTINCT order_date AS d, DATE_ADD(order_date, INTERVAL 46 DAY) AS e
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`
+  WHERE is_cancel AND order_date >= DATE '2026-09-04'
+),
+i AS (SELECT date_from AS f, date_to AS t FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_FINANCE_FINAL_INTERVALS`),
+n AS (
+  -- у интервала есть продолжение: другой интервал покрывает следующий за его концом день
+  SELECT a.f, a.t, COUNTIF(b.f <= DATE_ADD(a.t, INTERVAL 1 DAY) AND DATE_ADD(a.t, INTERVAL 1 DAY) <= b.t) > 0 AS has_next
+  FROM i a CROSS JOIN i b
+  GROUP BY a.f, a.t
+)
+SELECT
+  x.d                                                                    AS order_date,
+  x.e                                                                    AS mature_on,
+  COUNTIF(n.f <= x.d AND x.d <= n.t) > 0                                 AS start_covered,
+  COUNTIF(n.f <= x.e AND x.e <= n.t) > 0                                 AS end_covered,
+  COUNTIF(n.t >= x.d AND n.t < x.e AND NOT n.has_next) = 0               AS no_gap
+FROM x CROSS JOIN n
+GROUP BY x.d, x.e;
 
 -- ─── 1. Отменённые заказы Orders API по srid: логистика из финотчёта ─────────────────────────────
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_EVIDENCE` AS
@@ -68,8 +120,11 @@ WITH cfg AS (
   SELECT DATE '2026-09-04' AS funnel_api_from, 46 AS maturity_days
 ),
 ft AS (
-  SELECT MAX(IF(finance_status = 'FINAL', _rr_date, NULL)) AS finance_final_through
-  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
+  SELECT MAX(date_to) AS finance_final_through FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_FINANCE_FINAL_INTERVALS`
+),
+mt AS (
+  SELECT order_date AS d, IFNULL(start_covered AND end_covered AND no_gap, FALSE) AS mature
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_MATURITY`
 ),
 fu AS (
   SELECT nm_id, date_msk AS d, MAX(orders_count) AS funnel_orders
@@ -129,12 +184,13 @@ c AS (
          ft.finance_final_through,
          CASE
            WHEN a.funnel_orders IS NULL                                            THEN 'NO_FUNNEL'
-           WHEN DATE_DIFF(ft.finance_final_through, a.d, DAY) < cfg.maturity_days  THEN 'IMMATURE'
+           WHEN NOT IFNULL(mt.mature, FALSE)                                      THEN 'IMMATURE'
            WHEN a.room < 0                                                         THEN 'ANOMALY_FUNNEL_BELOW_API'
            WHEN a.cancel_log_qty > a.log_in_q                                      THEN 'ANOMALY_ABSENT_WITH_LOGISTICS'
            ELSE 'FINAL'
          END                                                                                                AS cancel_class_status
   FROM a CROSS JOIN ft CROSS JOIN cfg
+  LEFT JOIN mt ON mt.d = a.d
 )
 SELECT
   nm_id,

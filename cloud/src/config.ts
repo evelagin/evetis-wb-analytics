@@ -253,6 +253,8 @@ export interface Config {
   unitkaCancelRestoreDigest: string;
   /** Откат: манифест (manifest_b64 из журнала) — UNITKA_CANCEL_RESTORE_MANIFEST. */
   unitkaCancelRestoreManifest: string;
+  /** Поимённо принятые владельцем аномалии класса (nmID|дата|статус через запятую) — UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES. */
+  unitkaCancelRestoreAcceptedAnomalies: string[];
 }
 
 type Env = Record<string, string | undefined>;
@@ -330,7 +332,7 @@ function calendarConfig(env: Env): Pick<Config, 'unitkaMonthPrepWindowDays' | 'u
 }
 
 /** unitka-cancel-restore: мягкий разбор, опечатка не роняет суточный Engine. */
-function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirection' | 'unitkaCancelRestoreDirectionInvalid' | 'unitkaCancelRestoreWrite' | 'unitkaCancelRestoreDigest' | 'unitkaCancelRestoreManifest'> {
+function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirection' | 'unitkaCancelRestoreDirectionInvalid' | 'unitkaCancelRestoreWrite' | 'unitkaCancelRestoreDigest' | 'unitkaCancelRestoreManifest' | 'unitkaCancelRestoreAcceptedAnomalies'> {
   const dir = (env.UNITKA_CANCEL_RESTORE_DIRECTION ?? '').trim().toLowerCase();
   const known = dir === 'apply' || dir === 'rollback';
   return {
@@ -339,6 +341,7 @@ function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirecti
     unitkaCancelRestoreWrite: (env.UNITKA_CANCEL_RESTORE_WRITE ?? '').trim() === '1',
     unitkaCancelRestoreDigest: (env.UNITKA_CANCEL_RESTORE_DIGEST ?? '').trim().toLowerCase(),
     unitkaCancelRestoreManifest: (env.UNITKA_CANCEL_RESTORE_MANIFEST ?? '').trim(),
+    unitkaCancelRestoreAcceptedAnomalies: (env.UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES ?? '').split(',').map((x) => x.trim()).filter(Boolean),
   };
 }
 
