@@ -58,6 +58,8 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `analytics_share.profitability_daily` | GENERIC_DERIVED | сутки заказа × SKU | вклад до/после себестоимости; только при полных начислениях с суток заказа |
 | `analytics_share.store_costs_daily` | GENERIC_DERIVED | сутки × класс × уровень | начисления вне доставленных заказов (магазин, отмены, вне истории) |
 | `analytics_share.data_coverage` | GENERIC_DERIVED | сущность × сутки | полнота: «ноль» против «нет данных» |
+| `analytics_share.inventory_cover` | GENERIC_DERIVED | SKU (последний снимок) | запас в днях: остаток ÷ чистые заказы за 14 полных суток; статусы остатков и скорости (T6) |
+| `analytics_share.data_freshness` | GENERIC_DERIVED | сущность | свежесть: последние полные сутки, отставание, дни по статусам за 30 суток; неоценённая сущность — UNKNOWN (T6) |
 
 ## 3. Экономика: что считается и чего не придумывается
 

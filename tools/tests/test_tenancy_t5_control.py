@@ -295,7 +295,7 @@ def test_t5_views_are_tenant_ops_only_and_share_is_not_extended():
     names = [(o["dataset"], o["name"]) for o in pkg["objects"]]
     assert ("tenant_ops", "V_CAPABILITY_CURRENT") in names and ("tenant_ops", "V_TENANT_STATE_AUDIT") in names
     counts = {ds: sum(1 for d, _n in names if d == ds) for ds in ("ozon_mart", "tenant_ops", "analytics_share")}
-    assert counts == {"ozon_mart": 13, "tenant_ops": 10, "analytics_share": 9} and len(names) == 32
+    assert counts == {"ozon_mart": 13, "tenant_ops": 10, "analytics_share": 11} and len(names) == 34
     for n in ("V_CAPABILITY_CURRENT", "V_TENANT_STATE_AUDIT"):
         sql = (HS.PACKAGE_DIR / "tenant_ops" / f"{n}.sql").read_text(encoding="utf-8")
         refs = set(re.findall(r"`__tenant__\.(\w+)\.(\w+)`", sql))

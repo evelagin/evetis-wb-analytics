@@ -423,11 +423,31 @@ BEGIN
       FROM b
     ) = 0 AS 'SKU_V2 S5: нарушено тождество (цепочка, нетто, сбор, когорта, логистика, NULL, вклад)';
     -- S6 независимое повторное чтение источников (итоги по универсуму; по одному источнику на запрос)
+    -- Хранение. Календарь SKU (spine = MART_SKU_DAILY) начинается с первого события MART, а платное хранение —
+    -- с приёмки на склад WB, т. е. может начаться раньше (28.10.2026: nm 909951444, 17.10, 2,2542 ₽ при календаре
+    -- с 18.10). Такая сумма не теряется: она в хранении уровня счёта Executive (мост l2/l3) и в
+    -- V_SKU_PERFORMANCE_V2_STORAGE_UNATTRIBUTED. Поэтому две точные проверки вместо одной итоговой:
+    --   (а) на парах (day, nm_id) слоя хранение = отчёт платного хранения;
+    --   (б) вне слоя допустимо только хранение SKU-дня ДО первого дня календаря SKU и без единого другого события
+    --       (заказ, выкуп/возврат, строка финотчёта, реклама) — независимый от календаря признак «товар только
+    --       принят на склад». Выпавший SKU-день внутри календаря или в его начале (дыра MART) роняет сборку.
     ASSERT (SELECT ROUND(SUM(storage_sku_rub), 6) FROM b)
          = (SELECT ROUND(SUM(s.storage_rub_exact), 6) FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` s
             JOIN (SELECT DISTINCT date_msk FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_COVERAGE` WHERE status = 'OK') c USING (date_msk)
-            WHERE s.nm_id IN (SELECT nm_id FROM b) AND s.date_msk <= (SELECT MAX(day) FROM b))
+            JOIN (SELECT day, nm_id FROM b) k ON k.day = s.date_msk AND k.nm_id = s.nm_id)
       AS 'SKU_V2 S6: хранение по SKU разошлось с отчётом платного хранения';
+    ASSERT (SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` s
+            JOIN (SELECT DISTINCT date_msk FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_COVERAGE` WHERE status = 'OK') c USING (date_msk)
+            JOIN (SELECT nm_id, MIN(day) AS first_day FROM b GROUP BY nm_id) f ON f.nm_id = s.nm_id
+            LEFT JOIN (SELECT day, nm_id FROM b) k ON k.day = s.date_msk AND k.nm_id = s.nm_id
+            LEFT JOIN (SELECT order_date AS day, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS`
+                       UNION DISTINCT SELECT sale_date, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_SALES`
+                       UNION DISTINCT SELECT finance_date, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_FINANCE` WHERE nm_id > 0
+                       UNION DISTINCT SELECT date, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ADS_SKU_DAILY`) ev
+              ON ev.day = s.date_msk AND ev.nm_id = s.nm_id
+            WHERE k.nm_id IS NULL AND s.date_msk <= (SELECT MAX(day) FROM b)
+              AND (s.date_msk >= f.first_day OR ev.nm_id IS NOT NULL)) = 0
+      AS 'SKU_V2 S6: хранение SKU внутри его календаря не попало в слой';
     ASSERT (SELECT SUM(credited_for_goods_rub) FROM b)
          = (SELECT SUM(IF(p.supplier_oper_name = 'Возврат', -1, 1) * p.for_pay_rub)
             FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_PRICE_COMPONENTS` p
@@ -606,6 +626,39 @@ SELECT
                                                                                       AS residual_pre_cogs_rub,
   IF(executive_result_after_cogs_rub IS NOT NULL, executive_cogs_rub - sku_cogs_rub, NULL) AS cogs_difference_rub
 FROM j;
+
+-- ── §5b. Хранение вне строк слоя (явный учёт, а не потеря) ───────────────────
+--    Строки отчёта платного хранения (покрытые сутки), которых нет в SKU_PERFORMANCE_V2_DAILY, с причиной.
+--    BEFORE_SKU_CALENDAR — хранение до первого события SKU в MART (допустимо, S6 б);
+--    NM_OUTSIDE_SKU_UNIVERSE — артикул вне активного справочника; AFTER_LAYER_WINDOW — новее окна сборки;
+--    MISSING_SKU_DAY — внутри календаря SKU (S6 б не допускает; появится только при пересборке из чужого кода).
+--    Деньги из этого view входят в хранение уровня счёта Executive (V_SKU_PERFORMANCE_V2_EXEC_BRIDGE_DAILY, l3).
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_SKU_PERFORMANCE_V2_STORAGE_UNATTRIBUTED`
+OPTIONS (description = 'SKU Performance V2 · хранение из отчёта платного хранения вне строк слоя day × SKU, с причиной. Не потеря: входит в хранение уровня счёта Executive.')
+AS
+WITH ok AS (
+  SELECT DISTINCT date_msk FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_COVERAGE` WHERE status = 'OK'
+),
+s AS (
+  SELECT date_msk AS day, nm_id, SUM(storage_rub_exact) AS storage_rub
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_STORAGE_DAILY` JOIN ok USING (date_msk)
+  GROUP BY 1, 2
+),
+l AS (SELECT day, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY`),
+r AS (SELECT nm_id, MIN(day) AS sku_first_day FROM l GROUP BY nm_id),
+w AS (SELECT MAX(day) AS layer_through FROM l)
+SELECT
+  s.day, s.nm_id, s.storage_rub,
+  CASE WHEN r.nm_id IS NULL             THEN 'NM_OUTSIDE_SKU_UNIVERSE'
+       WHEN s.day < r.sku_first_day     THEN 'BEFORE_SKU_CALENDAR'
+       WHEN s.day > w.layer_through     THEN 'AFTER_LAYER_WINDOW'
+       ELSE                                  'MISSING_SKU_DAY' END AS reason,
+  r.sku_first_day, w.layer_through
+FROM s
+CROSS JOIN w
+LEFT JOIN l USING (day, nm_id)
+LEFT JOIN r ON r.nm_id = s.nm_id
+WHERE l.nm_id IS NULL;
 
 
 -- ── §6. Период + предыдущее сопоставимое окно (для Portfolio и SKU Detail) ────

@@ -7,6 +7,30 @@ ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon пока
 двухнедельной давности. Колонки не меняются; манифест — новый хеш тела, `pending_deploy`. Тест сверяет порог с DRO-1.
 План — `docs/ops/PROMO_OBSERVABILITY_STALE_DEPLOY_2026-10-28.md`.
 
+## 2026-10-28 — SKU Performance V2: S6 хранения по парам SKU-дня, без потери денег (НЕ развёрнуто)
+
+Инцидент: `sp_build_sku_performance_v2_daily` падает каждый час с 19.10.2026 04:20 UTC (154 сборки) на
+«SKU_V2 S6: хранение по SKU разошлось с отчётом платного хранения»; слой заморожен на 15.10. Причина — nm 909951444:
+платное хранение с 17.10 (2,2542 ₽, приёмка на склад), а календарь SKU в `MART_SKU_DAILY` — с первого события 18.10.
+Прежняя S6 сравнивала Σ слоя с Σ отчёта по всем дням окна без привязки к парам.
+
+- `sql/dash/sku_performance_v2_daily_v1.sql`, процедура: S6 хранения — две точные проверки без допуска:
+  (а) Σ слоя = Σ отчёта на парах (day, nm_id) слоя; (б) вне слоя допустимо только хранение SKU-дня до календаря SKU
+  и без единого другого события (заказ, продажа, строка финотчёта с nm, реклама). Дыра внутри или в начале календаря
+  по-прежнему роняет сборку. Остальные проверки S1–S6 не менялись.
+- Новый view `wb_mart.V_SKU_PERFORMANCE_V2_STORAGE_UNATTRIBUTED`: хранение вне строк слоя с причиной
+  (`BEFORE_SKU_CALENDAR` / `NM_OUTSIDE_SKU_UNIVERSE` / `AFTER_LAYER_WINDOW` / `MISSING_SKU_DAY`). Деньги не теряются:
+  они в хранении уровня счёта Executive (мост l2/l3). Колонки `SKU_PERFORMANCE_V2_DAILY` не меняются.
+- Live-реплей (SELECT): отчёт 6 740,055267 ₽ = пары слоя 6 737,801067 + до календаря 2,2542; дыр 0; прежняя S6 — FAIL,
+  новая (а) и (б) — PASS; искусственная дыра 20.10 — (б) FAIL.
+- Тест `tools/tests/test_sku_performance_v2_s6_storage.py`: настоящие ASSERT из файла на SQLite-фикстурах (11 случаев).
+
+## 2026-10-28 — Юнитка: минимальное включение оповещений к переходу месяца (НЕ применено)
+
+`infra/terraform/unitka_monitoring.tf`: `enabled` у heartbeat — по писателю (ON только LCD WB и LCD Ozon, P&L — OFF);
+`unitka_writers_failed` — ON (создаётся этим apply: 21.10 метрика создавалась в ту же секунду). Остальные политики
+не меняются. Порядок, targeted plan с точным составом и проверка доставки — `docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md`.
+
 ## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
 
 Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.
@@ -25,6 +49,27 @@ ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon пока
 - Живые срезы (read-only): LCD 25.10 — побайтно как прежде; LCD 26.10 — 554 = 503 + 52 − 2 + 0 + 1, прямая магазина
   57,3994 → 57,1245, SKU 252442517 58,9316 → 57,6000, обратная без изменений; LCD 23.08 (аналог 25.07) — проходит;
   LCD 25.07 по-прежнему отклоняется (плечо 29.06 из слоя LEGACY без bonusTypeName — не доказано).
+
+## 2026-10-26 — T6: клиентский отчёт поверх analytics_share арендатора (НЕ развёрнуто, доступ не выдан)
+
+Подробно — `docs/tenancy/CLIENT_BI_T6.md`.
+- `sql/tenant/ozon/analytics_share`: колонки `offer_id`, `ozon_name` (из `DIM_OZON_PRODUCT`) после `product_name` в
+  `orders`, `sku_daily`, `inventory_current`, `profitability_daily`; существующие колонки не меняются.
+- Новые вью `inventory_cover` (запас в днях со статусами остатков и скорости) и `data_freshness` (свежесть всех
+  сущностей; неоценённая сущность и незагруженный сегодняшний день — UNKNOWN). Пакет: 34 объекта.
+- `tools/client_bi/report.py` — спецификация отчёта Looker Studio (5 разделов), ссылка Linking API, проверка
+  изоляции от имени клиента; `tools/client_bi/preview.py` — локальный предпросмотр вне репозитория.
+## 2026-10-21 — UNITKA мониторинг: имена политики конфигурации ≤ 100 байт (достройка #368, НЕ применено)
+
+Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 heartbeat-политики (выключены), но не создал 4 политики:
+- `unitka_writer_config` — `display_name must not be more than 100 characters`: предел считается в байтах UTF-8, имя
+  политики было 107 байт, условия — 101;
+- `unitka_writers_failed`, `unitka_publication_blocked`, `unitka_owner_attention` — `PromQL metric(s) are invalid`:
+  политика создавалась в ту же секунду, что и её метрика; запросы корректны (PromQL API — success), не меняются.
+
+Изменение — только имена политики и условия `unitka_writer_config`. Новый тест: display_name всех политик и условий
+во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
+и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
 
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 

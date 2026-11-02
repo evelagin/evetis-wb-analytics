@@ -7,7 +7,7 @@
 CREATE OR REPLACE VIEW `__tenant__.analytics_share.profitability_daily`
 OPTIONS(description = 'Экономика доставленных заказов: товар × сутки заказа (Москва). Выручка продавца, комиссия и расходы Ozon со знаком Ozon, результат до и после себестоимости — только при полных данных; статусы полноты.')
 AS
-SELECT e.order_date_msk AS sales_date, e.sku, e.internal_sku, d.product_name, e.delivered_units,
+SELECT e.order_date_msk AS sales_date, e.sku, e.internal_sku, d.product_name, d.offer_id, d.ozon_name, e.delivered_units,
   e.seller_revenue_rub, e.commission_rub, e.logistics_rub, e.acquiring_rub, e.return_logistics_rub,
   e.promotion_rub, e.other_costs_rub, e.unclassified_rub, e.unsettled_postings, e.postings_with_return_costs,
   IF(w.status = 'COMPLETE', e.contribution_pre_cogs_rub, NULL) AS contribution_pre_cogs_rub,
