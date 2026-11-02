@@ -15,6 +15,11 @@
   (`/v2/actions/products|candidates` — last_id; `/v2/actions/auto-add/products/list|candidates` — offset, обязательная
   `auto_add_date`; ответ без обёртки `result`; цены Money `{amount, currency}` → `_money()`; у auto-add/candidates
   идентификатор товара `id`; `add_mode` bool → `'true'/'false'`). `/v1/actions` (список акций) не меняется.
+- Полнота пагинации (C4, 02.11.2026): живая проба C3 показала, что `total` — число товаров по всем страницам, а
+  `last_id` непуст и на пустой странице. Сбор `/v2/actions/products|candidates` и автодобавления сверяет собранное
+  с `total` (и уникальность id): короткая страница, пустой/повторный `last_id`, сдвиг offset, отсутствие `total` —
+  `PromoPaginationIncomplete` → этап FAILED → снимок PARTIAL, а не ложный COMPLETE. Первая страница — `last_id: ""`,
+  как в пробе.
 - Без `_money()` ответ v2 молча дал бы NULL во всех ценах — это ловят тесты `test_promo_observer.py` (Money, обе
   пагинации, null-Money, отсутствие дрейфа схемы).
 - Вне образа: тесты promo, read-only проба `tools/ozon/promo_v2_probe.py` + тест, `.github/workflows/ci.yml` (пины
@@ -31,7 +36,7 @@
 ## Release gates (`pipelines/ozon/release_gate_evetis.sh`)
 G1 база · G2 в образе изменён только promo.py · G3 состав файлов образа = база (нет модулей арендатора) ·
 G4 нет мутирующих путей/ПДн · G5 офлайн-тесты Ozon · G6 исходник Cloud Build = git archive HEAD (после сборки).
-28.10: G1–G5 OK (165 passed, 1 skipped); G6 — после сборки. Выпуск — только с зелёными G1–G6 и CI на том же
+28.10: G1–G5 OK (165 passed, 1 skipped); 02.11 после правки пагинации — 177 passed, 1 skipped; G6 — после сборки. Выпуск — только с зелёными G1–G6 и CI на том же
 коммите, что собирается.
 
 ## Порядок выпуска (каждый шаг — отдельный OWNER ACK)

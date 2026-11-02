@@ -96,6 +96,15 @@ class PromoHttpError(RuntimeError):
         self.path, self.code, self.text = path, code, text
 
 
+class PromoPaginationIncomplete(RuntimeError):
+    """Собрано не столько уникальных товаров, сколько объявил total, или total в ответе нет.
+
+    Остановка по короткой странице, пустому или повторному last_id и сдвиг offset между
+    страницами (дубль + пропуск при том же числе строк) иначе выдали бы неполный список за
+    полный. Этап становится FAILED, снимок — PARTIAL, а не COMPLETE.
+    """
+
+
 class PromoPartial(RuntimeError):
     """Часть независимых этапов не собрана. Собранное записано, манифест PARTIAL.
 
@@ -236,6 +245,17 @@ def _resolve(by_pid, by_offer, product_id, offer_id):
     return None, "UNRESOLVED"
 
 
+def _complete(path, action_id, out, total, key):
+    """Полнота постраничного сбора: total Ozon = число собранных уникальных товаров (live: total — по всем страницам)."""
+    if not isinstance(total, int) or isinstance(total, bool):
+        raise PromoPaginationIncomplete(f"{path} action_id={action_id}: в ответе нет целого total — полноту не доказать")
+    unique = len({key(it) for it in out})
+    if len(out) != total or unique != total:
+        raise PromoPaginationIncomplete(
+            f"{path} action_id={action_id}: собрано {len(out)} (уникальных {unique}) из total={total}")
+    return out
+
+
 def _paged_products(path, action_id):
     """Постраничный сбор products[] с пагинацией last_id.
 
@@ -244,10 +264,8 @@ def _paged_products(path, action_id):
     """
     out, last_id = [], ""
     for _ in range(MAX_PAGES):
-        body = {"action_id": action_id, "limit": PAGE_LIMIT}
-        if last_id:
-            body["last_id"] = last_id
-        code, r = promo_call(path, body)
+        # Первая страница — last_id "" (форма, подтверждённая живой пробой C3 02.11.2026).
+        code, r = promo_call(path, {"action_id": action_id, "limit": PAGE_LIMIT, "last_id": last_id})
         if code != 200:
             raise PromoHttpError(path, code, str(r)[:200], action_id)
         res = r.get("result", r) or {}
@@ -255,7 +273,7 @@ def _paged_products(path, action_id):
         out.extend(items)
         nxt = res.get("last_id") or ""
         if len(items) < PAGE_LIMIT or not nxt or nxt == last_id:
-            return out
+            return _complete(path, action_id, out, res.get("total"), lambda it: it.get("id"))
         last_id = nxt
     raise RuntimeError(f"{path} action_id={action_id}: упор в потолок страниц")
 
@@ -272,7 +290,8 @@ def _paged_auto_add(path, action_id, auto_add_date):
         items = res.get("products") or []
         out.extend(items)
         if len(items) < PAGE_LIMIT:
-            return out
+            return _complete(path, action_id, out, res.get("total"),
+                             lambda it: it.get("product_id") if it.get("product_id") is not None else it.get("id"))
         offset += PAGE_LIMIT
     raise RuntimeError(f"{path} action_id={action_id}: упор в потолок страниц")
 

@@ -89,8 +89,8 @@ def route(overrides=None):
             return 200, {"result": ACTIONS}
         if path == P_PRODUCTS:
             aid = body["action_id"]
-            return 200, {"result": {"products": [PARTICIPANT] if aid == 1977747 else [],
-                                    "total": 1, "last_id": ""}}
+            items = [PARTICIPANT] if aid == 1977747 else []
+            return 200, {"result": {"products": items, "total": len(items), "last_id": ""}}
         if path == P_CANDIDATES:
             return 200, {"result": {"products": [CANDIDATE], "total": 1, "last_id": ""}}
         if path == P_AUTO_LIST:
@@ -504,8 +504,8 @@ def route_v2(overrides=None):
         if path == P_ACTIONS:
             return 200, {"result": ACTIONS}                      # список акций остаётся v1
         if path == P_PRODUCTS:
-            return 200, {"products": [V2_PARTICIPANT] if body["action_id"] == 1977747 else [],
-                         "total": 1, "last_id": ""}
+            items = [V2_PARTICIPANT] if body["action_id"] == 1977747 else []
+            return 200, {"products": items, "total": len(items), "last_id": ""}
         if path == P_CANDIDATES:
             return 200, {"products": [dict(V2_PARTICIPANT, id=2875763373)], "total": 1, "last_id": ""}
         if path == P_AUTO_LIST:
@@ -571,7 +571,8 @@ def test_v2_products_paginate_by_string_last_id(promo_mod, monkeypatch):
         lid = body.get("last_id", "")
         seen.append(lid)
         nxt, n = pages[lid]
-        return 200, {"products": [dict(V2_PARTICIPANT, id=i) for i in range(n)], "total": 203, "last_id": nxt}
+        base = {"": 0, "p1": 100, "p2": 200}[lid]
+        return 200, {"products": [dict(V2_PARTICIPANT, id=base + i) for i in range(n)], "total": 203, "last_id": nxt}
 
     monkeypatch.setattr(promo_mod, "promo_call", call)
     assert len(promo_mod._paged_products(P_PRODUCTS, 1)) == 203
@@ -585,7 +586,7 @@ def test_v2_auto_add_paginates_by_offset(promo_mod, monkeypatch):
         offsets.append(body["offset"])
         assert body["limit"] == promo_mod.PAGE_LIMIT and body["auto_add_date"] == "2026-10-01T21:00:00Z"
         n = promo_mod.PAGE_LIMIT if body["offset"] < 200 else 7
-        return 200, {"products": [V2_AUTO_LIST] * n, "total": 207}
+        return 200, {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i) for i in range(n)], "total": 207}
 
     monkeypatch.setattr(promo_mod, "promo_call", call)
     assert len(promo_mod._paged_auto_add(P_AUTO_LIST, 1, "2026-10-01T21:00:00Z")) == 207
@@ -599,3 +600,92 @@ def test_v2_empty_money_is_null_not_zero(promo_mod, captured, monkeypatch):
     promo_mod.promo("run-1", "ts", None, None)
     r = [x for x in rows_of(captured, promo_mod.TBL_PRODUCTS) if x["membership"] == "PARTICIPATING"][0]
     assert (r["price_rub"], r["action_price_rub"], r["max_action_price_rub"]) == (None, None, None)
+
+
+# ───────────────── полнота пагинации v2 (C4, 02.11.2026): total — по всем страницам (живая проба C3)
+def _pages(seq):
+    """Транспорт по очереди страниц: [(items, total, last_id)], тела запросов — в seen."""
+    seen, it = [], iter(seq)
+
+    def call(path, body=None):
+        seen.append(dict(body))
+        items, total, lid = next(it)
+        r = {"products": items, "last_id": lid}
+        if total is not None:
+            r["total"] = total
+        return 200, r
+    return call, seen
+
+
+def _prods(a, b):
+    return [dict(V2_PARTICIPANT, id=i) for i in range(a, b)]
+
+
+def test_v2_products_first_page_sends_empty_last_id_like_probe(promo_mod, monkeypatch):
+    call, seen = _pages([(_prods(0, 3), 3, "x")])
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    assert len(promo_mod._paged_products(P_PRODUCTS, 1)) == 3
+    assert seen == [{"action_id": 1, "limit": promo_mod.PAGE_LIMIT, "last_id": ""}]
+
+
+@pytest.mark.parametrize("seq", [
+    [(_prods(0, 40), 120, "p1")],                                   # короткая страница до total
+    [(_prods(0, 100), 150, "")],                                    # полная страница, пустой last_id
+    [(_prods(0, 100), 250, "p1"), (_prods(100, 200), 250, "p1")],   # повторный last_id
+    [(_prods(0, 3), None, "")],                                     # total нет
+    [(_prods(0, 3), 2, "")],                                        # собрано больше total
+    [(_prods(0, 100), 199, "p1"), (_prods(99, 198), 199, "p2")],    # дубль и пропуск при равном числе
+], ids=["short_page", "empty_last_id", "repeated_last_id", "no_total", "over_total", "dup_and_gap"])
+def test_v2_products_incomplete_pagination_raises(promo_mod, monkeypatch, seq):
+    call, _ = _pages(seq)
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    with pytest.raises(promo_mod.PromoPaginationIncomplete):
+        promo_mod._paged_products(P_PRODUCTS, 1)
+
+
+def test_v2_products_page_ceiling_still_fails(promo_mod, monkeypatch):
+    monkeypatch.setattr(promo_mod, "MAX_PAGES", 2)
+    call, _ = _pages([(_prods(0, 100), 500, "p1"), (_prods(100, 200), 500, "p2")])
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    with pytest.raises(RuntimeError, match="потолок"):
+        promo_mod._paged_products(P_PRODUCTS, 1)
+
+
+@pytest.mark.parametrize("pages, total", [
+    ([100, 30], 207),       # короткая страница до total
+    ([3], None),            # total нет
+], ids=["short_page", "no_total"])
+def test_v2_auto_add_incomplete_pagination_raises(promo_mod, monkeypatch, pages, total):
+    it = iter(pages)
+
+    def call(path, body=None):
+        r = {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i) for i in range(next(it))]}
+        if total is not None:
+            r["total"] = total
+        return 200, r
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    with pytest.raises(promo_mod.PromoPaginationIncomplete):
+        promo_mod._paged_auto_add(P_AUTO_LIST, 1, "2026-10-01T21:00:00Z")
+
+
+def test_v2_auto_add_offset_shift_duplicate_is_incomplete(promo_mod, monkeypatch):
+    # список сдвинулся между страницами: товар 99 пришёл дважды, товар 100 потерян — число строк = total
+    pages = {0: list(range(0, 100)), 100: list(range(99, 106))}
+    monkeypatch.setattr(promo_mod, "promo_call", lambda path, body=None: (200, {
+        "products": [dict(V2_AUTO_CAND, id=i) for i in pages[body["offset"]]], "total": 107}))
+    with pytest.raises(promo_mod.PromoPaginationIncomplete, match="уникальных 106"):
+        promo_mod._paged_auto_add(P_AUTO_CAND, 1, "2026-10-01T21:00:00Z")
+
+
+def test_incomplete_pagination_is_partial_not_complete(promo_mod, manifest_sql, monkeypatch):
+    """Неполная пагинация участников не даёт ложного COMPLETE: этап FAILED, строки этапа не пишутся."""
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2({
+        P_PRODUCTS: (200, {"products": [V2_PARTICIPANT], "total": 9, "last_id": ""})}))
+    with pytest.raises(promo_mod.PromoPartial, match="products_participating=FAILED\\(PromoPaginationIncomplete\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"CANDIDATE"}
+    up = _final_update(sqls)
+    assert "status='PARTIAL'" in up and "status='COMPLETE'" not in up
+    assert "products_participating=NULL" in up
