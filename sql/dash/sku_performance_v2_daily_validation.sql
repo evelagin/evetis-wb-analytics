@@ -86,13 +86,74 @@ SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_
 ) AS 'V4.cogs: себестоимость ≠ V_MART_SKU_DAILY_COGS';
 
 -- V4.cohort
+-- Сверка с методикой когорты Executive V2 (V_DASH_BUYOUT_COHORT_DAILY) на продажах, загруженных до старта сборки
+-- слоя. Живую вью сравнивать нельзя: продажа, пришедшая между сборкой и проверкой, разрешает заказ только в ней
+-- (29.10.2026: nm 535581674, заказ 19.10, загрузка 15:22:59Z при старте сборки 15:20:30Z). Допуска нет: любое
+-- расхождение со срезом — FAIL. Что методика среза = живой вью, доказывает V4.cohort_method.
 ASSERT (
 SELECT COUNT(*) FROM (
   SELECT t.day, SUM(t.cohort_orders) o, SUM(t.cohort_buyout_orders) b, SUM(t.cohort_cancelled_orders) c, SUM(t.cohort_unresolved_orders) u, SUM(t.cohort_conflict_orders) x
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY` t WHERE t.orders_covered GROUP BY t.day) s
-  JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_DASH_BUYOUT_COHORT_DAILY` e ON e.cohort_date = s.day
+  JOIN (SELECT o.order_date AS cohort_date, COUNT(*) AS cohort_orders,
+         COUNTIF(o.sale_events > 0 AND NOT o.is_cancel) AS buyout_orders,
+         COUNTIF(o.sale_events = 0 AND o.is_cancel)     AS cancelled_orders,
+         COUNTIF(o.sale_events = 0 AND NOT o.is_cancel) AS unresolved_orders,
+         COUNTIF(o.sale_events > 0 AND o.is_cancel)     AS conflict_orders
+  FROM (
+    SELECT fo.order_date, fo.is_cancel, IFNULL(sr.sale_events, 0) AS sale_events
+    FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS` fo
+    LEFT JOIN (
+      SELECT NULLIF(TRIM(srid), '') AS srid, COUNTIF(NOT is_return) AS sale_events
+      FROM (
+        SELECT srid, is_return, ROW_NUMBER() OVER (
+                 PARTITION BY sale_id
+                 ORDER BY SAFE_CAST(REPLACE(last_change_date, 'T', ' ') AS TIMESTAMP) DESC,
+                          SAFE_CAST(loaded_at AS TIMESTAMP) DESC, load_id DESC) AS rn
+        FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_SALES_RETURNS`
+        WHERE source_api = 'WB_API_SALES' AND sale_id IS NOT NULL AND TRIM(sale_id) <> ''
+          AND processed_status <> 'MISSING_EVENT_KEY'
+          -- Срез на старт сборки, давшей слой: строки продаж, пришедшие позже, слой видеть не мог (гонка 29.10).
+          AND PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', loaded_at, 'Europe/Moscow')
+              <= (SELECT MAX(started_at) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_BUILD_LOG` WHERE status = 'SUCCESS'))
+      WHERE rn = 1 AND NULLIF(TRIM(srid), '') IS NOT NULL
+      GROUP BY 1) sr ON sr.srid = fo.order_srid
+    WHERE fo.nm_id IN (SELECT nm_id FROM `project-fa311fc0-4d87-4781-986.wb_raw.REF_SKU_MASTER` WHERE marketplace = 'WB' AND active AND nm_id IS NOT NULL)
+  ) o
+  GROUP BY o.order_date) e ON e.cohort_date = s.day
   WHERE s.o <> e.cohort_orders OR s.b <> e.buyout_orders OR s.c <> e.cancelled_orders OR s.u <> e.unresolved_orders OR s.x <> e.conflict_orders) = (0
 ) AS 'V4.cohort: Σ когорт по SKU ≠ когорта Executive V2 по суткам';
+
+-- V4.cohort_method
+-- Та же методика без среза = живая V_DASH_BUYOUT_COHORT_DAILY по всем суткам и всем исходам (один запрос — один снимок).
+ASSERT (
+SELECT COUNT(*) FROM (SELECT o.order_date AS cohort_date, COUNT(*) AS cohort_orders,
+         COUNTIF(o.sale_events > 0 AND NOT o.is_cancel) AS buyout_orders,
+         COUNTIF(o.sale_events = 0 AND o.is_cancel)     AS cancelled_orders,
+         COUNTIF(o.sale_events = 0 AND NOT o.is_cancel) AS unresolved_orders,
+         COUNTIF(o.sale_events > 0 AND o.is_cancel)     AS conflict_orders
+  FROM (
+    SELECT fo.order_date, fo.is_cancel, IFNULL(sr.sale_events, 0) AS sale_events
+    FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_ORDERS` fo
+    LEFT JOIN (
+      SELECT NULLIF(TRIM(srid), '') AS srid, COUNTIF(NOT is_return) AS sale_events
+      FROM (
+        SELECT srid, is_return, ROW_NUMBER() OVER (
+                 PARTITION BY sale_id
+                 ORDER BY SAFE_CAST(REPLACE(last_change_date, 'T', ' ') AS TIMESTAMP) DESC,
+                          SAFE_CAST(loaded_at AS TIMESTAMP) DESC, load_id DESC) AS rn
+        FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_SALES_RETURNS`
+        WHERE source_api = 'WB_API_SALES' AND sale_id IS NOT NULL AND TRIM(sale_id) <> ''
+          AND processed_status <> 'MISSING_EVENT_KEY')
+      WHERE rn = 1 AND NULLIF(TRIM(srid), '') IS NOT NULL
+      GROUP BY 1) sr ON sr.srid = fo.order_srid
+    WHERE fo.nm_id IN (SELECT nm_id FROM `project-fa311fc0-4d87-4781-986.wb_raw.REF_SKU_MASTER` WHERE marketplace = 'WB' AND active AND nm_id IS NOT NULL)
+  ) o
+  GROUP BY o.order_date) r
+  FULL JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_DASH_BUYOUT_COHORT_DAILY` e USING (cohort_date)
+  WHERE r.cohort_orders IS DISTINCT FROM e.cohort_orders OR r.buyout_orders IS DISTINCT FROM e.buyout_orders
+     OR r.cancelled_orders IS DISTINCT FROM e.cancelled_orders OR r.unresolved_orders IS DISTINCT FROM e.unresolved_orders
+     OR r.conflict_orders IS DISTINCT FROM e.conflict_orders) = (0
+) AS 'V4.cohort_method: методика среза когорты ≠ V_DASH_BUYOUT_COHORT_DAILY';
 
 -- V5.chain
 ASSERT (
@@ -309,6 +370,36 @@ SELECT LOGICAL_AND(data_status = 'FINAL') FROM `project-fa311fc0-4d87-4781-986.w
 ) AS 'V9.final_window_is_final: окончательный период не FINAL';
 
 -- V9.provisional_window
+-- Окно из данных, а не из дат: от первых неокончательных суток слоя до последних. Прежнее окно
+-- 01–17.09.2026 стало окончательным 22.09 (UBR-011) и падало на любом слое. Нет ни одних предварительных суток
+-- (недельный отчёт закрыл всё) — окна нет, проверять нечего; окончательную сторону держит V9.final_window_is_final.
 ASSERT (
-SELECT LOGICAL_AND(data_status <> 'FINAL') FROM `project-fa311fc0-4d87-4781-986.wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`(DATE '2026-09-01', DATE '2026-09-17') WHERE is_portfolio_total
+SELECT (SELECT COUNTIF(NOT IFNULL(finance_is_final, FALSE)) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY`) = 0
+    OR (SELECT LOGICAL_AND(data_status <> 'FINAL') FROM `project-fa311fc0-4d87-4781-986.wb_mart.TVF_SKU_PERFORMANCE_V2_PERIOD`(
+          (SELECT MIN(day) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY` WHERE NOT IFNULL(finance_is_final, FALSE)),
+          (SELECT MAX(day) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY`)) WHERE is_portfolio_total)
 ) AS 'V9.provisional_window: окно с предварительными сутками помечено FINAL';
+
+-- V10.price_pairs
+-- Цены набора на парах слоя = независимый пересчёт RAW_WB_PRICES (prod, цена продавца задана).
+ASSERT (
+SELECT COUNT(*) FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY` t
+  LEFT JOIN (SELECT DATE(observed_at, 'Europe/Moscow') AS day, nm_id, COUNT(*) n,
+                    MIN(seller_effective_price) mn, MAX(seller_effective_price) mx
+             FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PRICES` WHERE environment = 'prod' AND seller_effective_price IS NOT NULL
+             GROUP BY 1, 2) p USING (day, nm_id)
+  WHERE IFNULL(t.set_price_observations, 0) <> IFNULL(p.n, 0)
+     OR t.set_seller_price_min_rub IS DISTINCT FROM p.mn OR t.set_seller_price_max_rub IS DISTINCT FROM p.mx) = (0
+) AS 'V10.price_pairs: цены набора по SKU-дню ≠ RAW_WB_PRICES';
+
+-- V10.price_calendar
+-- Наблюдение цены вне строк слоя допустимо только до первого дня календаря SKU (товар выставлен, событий ещё нет)
+-- или после окна сборки. Внутри календаря SKU цена выпасть не может. 29.10.2026: 909951444 — 41 сутки
+-- 07.09–17.10 (2 907 наблюдений, ≈ 71 в сутки) до первого события 18.10; календарь MART начинается с него.
+ASSERT (
+SELECT COUNT(*) FROM (SELECT DISTINCT DATE(observed_at, 'Europe/Moscow') AS day, nm_id
+                      FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_PRICES` WHERE environment = 'prod' AND seller_effective_price IS NOT NULL) p
+  JOIN (SELECT nm_id, MIN(day) AS first_day, MAX(day) AS last_day FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY` GROUP BY nm_id) f USING (nm_id)
+  LEFT JOIN (SELECT day, nm_id FROM `project-fa311fc0-4d87-4781-986.wb_mart.SKU_PERFORMANCE_V2_DAILY`) k USING (day, nm_id)
+  WHERE k.nm_id IS NULL AND p.day BETWEEN f.first_day AND f.last_day) = (0
+) AS 'V10.price_calendar: наблюдение цены внутри календаря SKU выпало из слоя';
