@@ -434,6 +434,19 @@ export class UnitkaBq {
     });
   }
 
+  /**
+   * wb_mart.V_UNITKA_CANCEL_SHEET_DRIFT: сутки, где лист (последний снимок Store P&L) расходится с текущим классом отмен.
+   * Возвращает описания «nmID дата: лист S/V, класс S/V (статус)». Пусто — расхождений нет.
+   */
+  async cancelSheetDrift(): Promise<string[]> {
+    const rows = await this.runner.query(
+      `SELECT nm_id, date_msk, sheet_cancels, sheet_void, cancel_class_status, effective_cancels, effective_void_qty, snapshot_id
+       FROM ${this.fqn(this.martDataset, 'V_UNITKA_CANCEL_SHEET_DRIFT')} WHERE drift_status = 'RESTORED_DRIFT' ORDER BY date_msk, nm_id`,
+    );
+    return rows.map((r) => `${String(r.nm_id)} ${String(date(r.date_msk))}: лист S ${String(r.sheet_cancels)}/V ${String(r.sheet_void)}, класс `
+      + `${r.cancel_class_status === null || r.cancel_class_status === undefined ? 'нет строки' : `S ${String(r.effective_cancels)}/V ${String(r.effective_void_qty)} (${String(r.cancel_class_status)})`}, снимок ${String(r.snapshot_id)}`);
+  }
+
   /* ── Слой сверки (sql/unitka/reconcile_v1.sql). Читается ТОЛЬКО при UNITKA_RECONCILE_MODE = observe | write. ── */
 
   /** Окно сверки: [window_from, window_to] ⊂ 35 календарных дней до LCD, не раньше нижней границы сверки. */

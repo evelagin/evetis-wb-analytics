@@ -16,7 +16,8 @@ OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверк
   - зрелость — непрерывное покрытие окончательным финотчётом по реестру `FINANCE_REPORT_LOADS` × `FINANCE_WEEK_STATUS` (вью `V_UNITKA_FINANCE_FINAL_INTERVALS`, `V_UNITKA_CANCEL_MATURITY`);
   - непринятая аномалия останавливает запись;
   - запись — один атомарный `batchUpdate`;
-  - Store P&L читает формулы только колонок W.
+  - Store P&L читает формулы только колонок W;
+  - повторный аудит: в отпечатке манифеста ставка обратного плеча и ожидаемые ΔW (`CANCEL_RESTORE_FINANCIAL_DRIFT`); детектор `V_UNITKA_CANCEL_SHEET_DRIFT` (лист против класса, событие `unitka_cancel_class_drift`).
 - **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
 
 ## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)

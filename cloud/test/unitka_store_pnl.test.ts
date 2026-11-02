@@ -291,7 +291,7 @@ describe('Phase C — план вкладки «WB Магазин P&L»', () => 
   });
 });
 
-function deps(pnl: PnlRow[] = [pnlRow()]) {
+function deps(pnl: PnlRow[] = [pnlRow()], drift: () => Promise<Array<Record<string, unknown>>> = async () => []) {
   const calls: { appended: number; snapshotId?: string; lcd?: string; ranges?: string[]; metaAnchor?: boolean; readonly?: boolean; formulasRead?: number; formulaRanges?: string[]; writes: string[]; requests: unknown[] } = { appended: 0, writes: [], requests: [] };
   const d: StorePnlDeps = {
     now: () => new Date('2026-10-09T07:40:00Z'),
@@ -319,6 +319,7 @@ function deps(pnl: PnlRow[] = [pnlRow()]) {
       appendSnapshot: async (rows, m) => { calls.appended = rows.length; calls.snapshotId = m.snapshotId; calls.lcd = m.lcd; },
       readPnl: async () => pnl,
       readNewOperations: async () => [],
+      readCancelDrift: drift,
     }),
   };
   return { d, calls };
@@ -338,6 +339,24 @@ describe('Phase C — загрузчик unitka-store-pnl', () => {
     expect(r).toEqual({ rowsFetched: 153, rowsLoaded: 153 });
     expect(calls).toMatchObject({ appended: 153, snapshotId: '20261009T074000000Z', lcd: '2026-09-30', metaAnchor: false });
     expect(calls.ranges).toEqual(["'WB_Юнит_2025'!A1:BH10", 'LAST_CLOSED_DATE', 'REVERSE_LEG_RATE']);
+  });
+
+  it('формулы читаются только по колонкам W блоков (одним пакетом), а не по всей книге', async () => {
+    const { d, calls } = deps();
+    await unitkaStorePnlLoader(ctx(), d);
+    expect(calls.formulasRead).toBe(1);
+    expect(calls.formulaRanges).toEqual(["'WB_Юнит_2025'!W1:W10", "'WB_Юнит_2025'!AU1:AU10"]);   // слоты 0 и 1 при ширине 60
+  });
+
+  it('детектор классов отмен: расхождение — событие unitka_cancel_class_drift, ошибка детектора — _unknown; публикация не блокируется', async () => {
+    const events: string[] = [];
+    const logger = Object.assign(new Logger({}, 'error'), { warn: (e: string) => { events.push(e); } });
+    const withLogger = (): LoaderContext => ({ ...ctx(), logger } as LoaderContext);
+    const drift = [{ nm_id: 535580776, date_msk: '2026-10-18', sheet_cancels: 1, sheet_void: 1, cancel_class_status: 'FINAL', effective_cancels: 1, effective_void_qty: 0 }];
+    await expect(unitkaStorePnlLoader(withLogger(), deps(undefined, async () => drift).d)).resolves.toEqual({ rowsFetched: 153, rowsLoaded: 153 });
+    expect(events).toContain('unitka_cancel_class_drift');
+    await expect(unitkaStorePnlLoader(withLogger(), deps(undefined, async () => { throw new Error('Not found: V_UNITKA_CANCEL_SHEET_DRIFT'); }).d)).resolves.toMatchObject({ rowsLoaded: 153 });
+    expect(events).toContain('unitka_cancel_class_drift_unknown');
   });
 
   it('только prod и только домен WB', async () => {

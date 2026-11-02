@@ -17,6 +17,13 @@
  *   манифеста, пересчитанного из живого листа в момент записи (пишется ровно просмотренный план).
  *   ОТКАТ: UNITKA_CANCEL_RESTORE_DIRECTION=rollback + UNITKA_CANCEL_RESTORE_MANIFEST (+ отпечаток при записи).
  * Каждое поле ячейки (S, формула W, заметка) обязано быть «до» или «после» манифеста; иное — DRIFT, отказ ДО записи.
+ * ФИНАНСОВЫЙ ОТПЕЧАТОК (аудит PR #394, п. 1): в манифест и его отпечаток входят REVERSE_LEG_RATE и ожидаемое ΔW каждых
+ * суток. Ставка обновляется суточным Engine (07:00Z), поэтому план и запись — в одни сутки Engine; иная ставка или ΔW
+ * в момент записи — другой отпечаток, отказ до записи (с просмотренным манифестом — CANCEL_RESTORE_FINANCIAL_DRIFT с
+ * указанием, что изменилось). Перечитывание сверяет фактическое изменение W с утверждённым ΔW.
+ * ДЕТЕКТОР (п. 2): wb_mart.V_UNITKA_CANCEL_SHEET_DRIFT — лист (последний снимок Store P&L) против текущего класса по всем
+ * зрелым суткам; RESTORED_DRIFT (например, поздняя логистика у восстановленной отмены) — событие
+ * unitka_cancel_class_drift и отказ любого плана восстановления. Автоматического отката нет: решение владельца.
  * Аномалии класса (ANOMALY_*) входят в отпечаток манифеста; ЗАПИСЬ при аномалии, не принятой владельцем поимённо
  * (UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES = «nmID|дата|статус,…»), — отказ CANCEL_RESTORE_ANOMALY до первой записи.
  * АТОМАРНОСТЬ (аудит PR #394): все поля всех суток — ОДИН spreadsheets.batchUpdate из updateCells (S: значение и заметка,
@@ -89,12 +96,16 @@ export interface CancelFieldState { s: number; wFormula: string; note: string }
 export interface CancelManifestCell {
   date: string; nmId: number; month: string; row: number; sCol: number; wCol: number; sA1: string; wA1: string; blockStart: number;
   legacyCancels: number; finalCancels: number; voidQty: number;
+  /** Ожидаемое изменение W, ₽ (до копеек) при ставке манифеста — входит в отпечаток. */
+  expectedDeltaW: number;
   before: CancelFieldState; after: CancelFieldState;
 }
 export interface CancelManifest {
   kind: typeof CANCEL_MANIFEST_KIND; version: number;
   spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle;
   financeFinalThrough: string;
+  /** REVERSE_LEG_RATE в момент плана — входит в отпечаток: ΔW 24.10-типа от неё зависит. */
+  reverseLegRate: number;
   cells: CancelManifestCell[];
   /** Аномалии класса на момент плана (ключ nmID|дата|статус): просмотренный отпечаток фиксирует и их. */
   anomalies: string[];
@@ -103,7 +114,7 @@ export interface CancelManifest {
 
 const sha = (v: unknown): string => createHash('sha256').update(canonicalJson(v)).digest('hex');
 
-export function buildCancelManifest(cells: readonly CancelManifestCell[], a: { spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle; financeFinalThrough: string; anomalies?: readonly string[] }): CancelManifest {
+export function buildCancelManifest(cells: readonly CancelManifestCell[], a: { spreadsheetId: string; sheetId: number; sheetName: string; style: FormulaStyle; financeFinalThrough: string; reverseLegRate: number; anomalies?: readonly string[] }): CancelManifest {
   const body: Omit<CancelManifest, 'digest'> = { kind: CANCEL_MANIFEST_KIND, version: CANCEL_MANIFEST_VERSION, ...a, anomalies: [...(a.anomalies ?? [])].sort(), cells: [...cells] };
   return { ...body, digest: sha(body) };
 }
@@ -121,7 +132,8 @@ export function parseCancelManifest(raw: string): CancelManifest | { error: stri
     obj = JSON.parse(text.startsWith('{') ? text : gunzipSync(Buffer.from(text.replace(/^gz\./, ''), 'base64url')).toString('utf8'));
   } catch { return { error: 'манифест восстановления отмен не разбирается' }; }
   const m = obj as Partial<CancelManifest> | null;
-  if (!m || m.kind !== CANCEL_MANIFEST_KIND || m.version !== CANCEL_MANIFEST_VERSION || !Array.isArray(m.cells) || !Array.isArray(m.anomalies) || typeof m.digest !== 'string') {
+  if (!m || m.kind !== CANCEL_MANIFEST_KIND || m.version !== CANCEL_MANIFEST_VERSION || !Array.isArray(m.cells) || !Array.isArray(m.anomalies)
+    || typeof m.reverseLegRate !== 'number' || typeof m.digest !== 'string') {
     return { error: 'вид, версия или поля манифеста восстановления отмен' };
   }
   const { digest, ...body } = m as CancelManifest;
@@ -249,19 +261,36 @@ export function planCancelRestore(a: {
       note: l.note === after.note ? refusalSectionOf(l.note) : before.note,
     };
     if (sState === 'AFTER' && wState === 'AFTER' && l.note === after.note) alreadyApplied++;
+    const ai = asNumber(l.ai), af = asNumber(l.af);
+    const deltaW = Math.round((-(r.finalCancels - r.legacyCancels) * (ai + af + a.reverseLegRate) + r.voidQty * (af + a.reverseLegRate)) * 100) / 100;
     cells.push({
       date: r.date, nmId: r.nmId, month: l.month, row: l.row, sCol: l.blockStart + OFFSET.cancels, wCol: l.blockStart + OFFSET.profitAll,
-      sA1, wA1, blockStart: l.blockStart, legacyCancels: r.legacyCancels, finalCancels: r.finalCancels, voidQty: r.voidQty, before: orig, after,
+      sA1, wA1, blockStart: l.blockStart, legacyCancels: r.legacyCancels, finalCancels: r.finalCancels, voidQty: r.voidQty, expectedDeltaW: deltaW,
+      before: orig, after,
     });
-    const ai = asNumber(l.ai), af = asNumber(l.af);
-    expectedDeltaW.push({ date: r.date, nmId: r.nmId,
-      deltaW: Math.round((-(r.finalCancels - r.legacyCancels) * (ai + af + a.reverseLegRate) + r.voidQty * (af + a.reverseLegRate)) * 100) / 100 });
+    expectedDeltaW.push({ date: r.date, nmId: r.nmId, deltaW });
   }
   return { cells, alreadyApplied, refusals, anomalies, anomalyKeys, expectedDeltaW };
 }
 
 /** Ключ аномалии для поимённого принятия владельцем. */
 export const anomalyKey = (r: Pick<CancelClassRow, 'nmId' | 'date' | 'status'>): string => `${r.nmId}|${r.date}|${r.status}`;
+
+/**
+ * Чем финансово отличается план момента записи от просмотренного манифеста: ставка обратного плеча, состав суток, ΔW.
+ * Пустой список — финансовых отличий нет (отпечаток мог разойтись по иной причине: лист, заметки, аномалии).
+ */
+export function financialDrift(reviewed: CancelManifest, now: CancelManifest): string[] {
+  const out: string[] = [];
+  if (Math.abs(reviewed.reverseLegRate - now.reverseLegRate) > 1e-9) out.push(`REVERSE_LEG_RATE ${reviewed.reverseLegRate} → ${now.reverseLegRate}`);
+  const was = new Map(reviewed.cells.map((c) => [`${c.nmId}|${c.date}`, c.expectedDeltaW]));
+  const is = new Map(now.cells.map((c) => [`${c.nmId}|${c.date}`, c.expectedDeltaW]));
+  for (const k of new Set([...was.keys(), ...is.keys()])) {
+    const a = was.get(k), b = is.get(k);
+    if (a === undefined || b === undefined || Math.abs(a - b) >= 0.005) out.push(`${k}: ΔW ${a ?? '—'} → ${b ?? '—'}`);
+  }
+  return out;
+}
 
 /** Аномалии, не принятые владельцем поимённо: любая — запись запрещена. */
 export function unacceptedAnomalies(keys: readonly string[], accepted: readonly string[]): string[] {
@@ -362,6 +391,19 @@ async function writeAtomic(
   }
 }
 
+/** Фактическое изменение W записанных суток против утверждённого ΔW (допуск 1 копейка). */
+export function verifyDeltaW(cells: readonly CancelManifestCell[], wBefore: ReadonlyMap<string, number>, after: ReadonlyMap<string, LiveRow>): string[] {
+  const bad: string[] = [];
+  for (const c of cells) {
+    const k = `${c.nmId}|${c.date}`;
+    const b = wBefore.get(k);
+    if (b === undefined) continue;                                          // сутки уже стояли «после» — не писались
+    const w = asNumber(after.get(k)?.w ?? null);
+    if (!Number.isFinite(w) || Math.abs(w - b - c.expectedDeltaW) > 0.01) bad.push(`${c.wA1}: ΔW ${(w - b).toFixed(2)} ≠ утверждённому ${c.expectedDeltaW.toFixed(2)}`);
+  }
+  return bad;
+}
+
 /** Состояние поля относительно манифеста при откате: каждое поле «до» или «после», иначе DRIFT. */
 export function rollbackDrift(cells: readonly CancelManifestCell[], live: ReadonlyMap<string, LiveRow>, style: FormulaStyle): string[] {
   const out: string[] = [];
@@ -415,12 +457,15 @@ export async function unitkaCancelRestoreLoader(ctx: LoaderContext, deps: Unitka
   }
 
   const bq = new UnitkaBq(deps.makeRunner(ctx), config.unitkaMartDataset, config.unitkaOpsDataset, config.unitkaRunsTable);
-  const [rows, window] = await Promise.all([bq.cancelClassRows(), bq.reconWindow()]);
+  const [rows, window, drift] = await Promise.all([bq.cancelClassRows(), bq.reconWindow(), bq.cancelSheetDrift()]);
+  // Детектор: лист уже расходится с классом (поздняя логистика после восстановления и т. п.) — событие и отказ плана.
+  if (drift.length) log.error('unitka_cancel_class_drift', { rows: drift.length, sample: drift.slice(0, 20) });
   const keys = rows.filter((r) => r.status === 'FINAL' && r.sheetChangeRequired);
   const { rows: live, missing } = await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, keys);
   const plan = planCancelRestore({ rows, live, missing, windowFrom: window.from, reverseLegRate: rev, style });
+  for (const d of drift) plan.refusals.push(`${d}: лист расходится с текущим классом отмен (V_UNITKA_CANCEL_SHEET_DRIFT) — решение владельца`);
   const fft = rows.reduce((m, r) => (r.financeFinalThrough > m ? r.financeFinalThrough : m), '');
-  const manifest = buildCancelManifest(plan.cells, { ...book, style, financeFinalThrough: fft, anomalies: plan.anomalyKeys });
+  const manifest = buildCancelManifest(plan.cells, { ...book, style, financeFinalThrough: fft, reverseLegRate: rev, anomalies: plan.anomalyKeys });
   const unaccepted = unacceptedAnomalies(plan.anomalyKeys, config.unitkaCancelRestoreAcceptedAnomalies ?? []);
   log.info('unitka_cancel_restore_plan', {
     manifest_digest: manifest.digest, manifest_b64: encodeCancelManifest(manifest), cells: plan.cells.length, already_applied: plan.alreadyApplied,
@@ -437,11 +482,23 @@ export async function unitkaCancelRestoreLoader(ctx: LoaderContext, deps: Unitka
     throw new LoaderError(`аномалии класса отмен не приняты владельцем: ${unaccepted.join(', ')} — запись остановлена`, 'CANCEL_RESTORE_ANOMALY');
   }
   if (config.unitkaCancelRestoreDigest !== manifest.digest) {
-    throw new LoaderError(`UNITKA_CANCEL_RESTORE_DIGEST «${config.unitkaCancelRestoreDigest ?? ''}» ≠ отпечатку плана ${manifest.digest}: лист или источник изменились после просмотра`, 'CANCEL_RESTORE_DIGEST_MISMATCH');
+    // Просмотренный манифест (необязательно) называет, ЧТО изменилось: ставка или ΔW — финансовый дрейф.
+    const reviewed = config.unitkaCancelRestoreManifest ? parseCancelManifest(config.unitkaCancelRestoreManifest) : null;
+    const fin = reviewed && !('error' in reviewed) && reviewed.digest === config.unitkaCancelRestoreDigest ? financialDrift(reviewed, manifest) : [];
+    if (fin.length) {
+      throw new LoaderError(`финансовый эффект изменился после утверждения плана: ${fin.join('; ')} — нужен новый план и ACK`, 'CANCEL_RESTORE_FINANCIAL_DRIFT');
+    }
+    throw new LoaderError(`UNITKA_CANCEL_RESTORE_DIGEST «${config.unitkaCancelRestoreDigest ?? ''}» ≠ отпечатку плана ${manifest.digest}: лист, ставка или источник изменились после просмотра`, 'CANCEL_RESTORE_DIGEST_MISMATCH');
+  }
+  // W до записи — только у суток, которые ещё не «после» целиком: с ними сверяется утверждённое ΔW.
+  const wBefore = new Map<string, number>();
+  for (const c of plan.cells) {
+    const l = live.get(`${c.nmId}|${c.date}`)!;
+    if (outcomeState([c], live, style) === 'ALL_BEFORE') wBefore.set(`${c.nmId}|${c.date}`, asNumber(l.w));
   }
   const written = await writeAtomic(sheets, sheetName, meta, plan.cells, live, 'after', style, log);
   const after = (await readLiveRows(sheets, sheetName, meta.rowCount, meta.columnCount, plan.cells)).rows;
-  const bad = verifyCancelCells(plan.cells, after, 'after', rev, style);
+  const bad = [...verifyCancelCells(plan.cells, after, 'after', rev, style), ...verifyDeltaW(plan.cells, wBefore, after)];
   log.info('unitka_cancel_restore_done', { manifest_digest: manifest.digest, cells: plan.cells.length, written, verify_failed: bad.length, sample: bad.slice(0, 10) });
   if (bad.length) throw new LoaderError(`после восстановления ${bad.length} расхождений: ${bad.slice(0, 5).join('; ')}`, 'CANCEL_RESTORE_VERIFY_FAILED');
   return { rowsFetched: rows.length, rowsLoaded: written };

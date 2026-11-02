@@ -141,6 +141,33 @@ QA не ослаблены. Проверки, добавленные этим PR
 
   Если перечитывание показало `ALL_AFTER`, это значит, что пакет применён: следующий план покажет `already_applied`. `ALL_BEFORE` значит, что пакет не применён. Решение о повторе — за владельцем.
 
+**П. 1 повторного аудита — финансовый отпечаток.**
+- В манифест и его отпечаток входят `REVERSE_LEG_RATE` и ожидаемое ΔW каждых суток (до копеек).
+- Ставку обновляет суточный Engine в 07:00Z, поэтому план и запись делаются в одни сутки Engine.
+- Другая ставка или другое ΔW в момент записи дают другой отпечаток, и запись отказывает до первой записи:
+  - с просмотренным манифестом (`UNITKA_CANCEL_RESTORE_MANIFEST`) — `CANCEL_RESTORE_FINANCIAL_DRIFT` с названием изменения (ставка «было → стало», строки ΔW);
+  - без манифеста — `CANCEL_RESTORE_DIGEST_MISMATCH`.
+- Перечитывание сверяет фактическое изменение W записанных суток с утверждённым ΔW (допуск 1 копейка).
+
+**П. 2 повторного аудита — поздние финансовые корректировки.**
+- Вью `V_UNITKA_CANCEL_SHEET_DRIFT` сравнивает лист (последний снимок Store P&L: S и `void_cancels`) с текущим классом.
+- Сравниваются ВСЕ сутки класса вне окна сверки и все строки снимка с V > 0, независимо от `sheet_change_required`.
+- Статусы:
+  - `OK` — лист совпадает с классом;
+  - `PENDING_RESTORE` — FINAL ждёт восстановления;
+  - `RESTORED_DRIFT` — всё остальное.
+- Что относится к `RESTORED_DRIFT`:
+  - поздняя логистика у восстановленной отмены (на листе V 1, класс «с логистикой»);
+  - плечи у отмены вне Q (ANOMALY, строка больше не требует изменения);
+  - откат реестра финотчёта (IMMATURE);
+  - V на листе без строки класса.
+- Снимка нет вовсе — fail-closed: судятся все сутки класса.
+- Кто и как реагирует:
+  - `unitka-cancel-restore` — при любом `RESTORED_DRIFT` событие `unitka_cancel_class_drift` и отказ плана и записи;
+  - `unitka-store-pnl` (ежедневно, после снимка) — событие `unitka_cancel_class_drift`. Публикацию оно не останавливает: чистый результат магазина считается сверху вниз по финотчёту. Ошибка детектора — событие `unitka_cancel_class_drift_unknown`.
+- Автоматического отката нет — решение владельца.
+- Исполнение на SQLite: `tools/tests/test_unitka_cancel_maturity.py`. Production 02.11: 25 суток вне окна, все `OK`.
+
 **PERFORMANCE.** Замер на тестовой копии книги (`1HTgd__…`, 803 × 623), только чтение, по 3 прогона:
 
 | Вариант чтения формул | Время | Объём |
@@ -174,12 +201,39 @@ Store P&L читает только колонки W.
 
 ## 8. Выпуск — два отдельных OWNER ACK
 
+### Контроль порядка (только планирование, 02.11.2026)
+
+**Terraform.** Адресный plan (`-lock=false`, без apply) по `google_bigquery_table.store_pnl_snapshot` и `store_pnl_snapshot_stage`: **0 to add, 2 to change (in-place), 0 to destroy**.
+- Единственное содержательное изменение — колонка `void_cancels INT64` в конце обеих схем.
+- Строки `INTEGER → INT64` и `FLOAT → FLOAT64` — синонимы типов BigQuery. Провайдер выводит всю схему, когда в ней есть хоть одно изменение. Тот же адресный plan на `origin/main` даёт «No changes».
+
+**DDL** — `bq query --dry_run` каждого оператора (ничего не исполнено):
+
+| № | Оператор | dry-run сейчас | Зависит от |
+|---|---|---|---|
+| 01 | `V_UNITKA_FINANCE_FINAL_INTERVALS` | validated | — |
+| 02 | `V_UNITKA_CANCEL_MATURITY` | Not found 01 | 01 |
+| 03 | `V_UNITKA_CANCEL_EVIDENCE` | validated | — |
+| 04 | `V_UNITKA_CANCEL_CLASS_DAILY` | Not found 03 | 01–03 |
+| 05 | `V_UNITKA_CANCEL_SHEET_DRIFT` | Not found 04 | 04 + Terraform-колонка |
+| 06 | `V_UNITKA_DAILY_FACT` | Not found 04 | 04 |
+| 07 | `V_UNITKA_RECON_FACT` | Not found 04 | 04 |
+| 08 | `V_WB_STORE_PNL_MONTHLY` | `void_cancels` not found | Terraform-колонка |
+
+Тела всех восьми скомпилированы и исполнены на production как SELECT с подстановкой зависимостей.
+
+Порядок выпуска: **Terraform → DDL 01…08 → образ**. Образ читает новые колонки и вью, поэтому идёт последним. Откат — в обратном порядке.
+
 ### ACK 1 — код и DDL (поведение листа не меняется)
 
 1. Перед merge в общий `main` написать Heldi. Затем merge (PR #394).
 2. Terraform: targeted plan по `google_bigquery_table.store_pnl_snapshot` и `store_pnl_snapshot_stage`. Ожидается 2 update in-place (NULLABLE-колонка в конец), 0 add, 0 destroy. Apply только после просмотра плана.
 3. DDL BigQuery, по одному оператору, по порядку. После каждого шага — паритет:
-   1. `cancel_class_v1.sql`, четыре вью. Проверки: интервалы непрерывны с 13.07; зрелы заказы по 15.09 (16 FINAL, 0 изменений); аномалий 0.
+   1. `cancel_class_v1.sql`, пять вью (01–05). Проверки:
+      - интервалы непрерывны с 13.07;
+      - зрелы заказы по 15.09: 16 FINAL, 0 изменений;
+      - аномалий 0;
+      - детектор: все сутки вне окна `OK`.
    2. `V_UNITKA_DAILY_FACT` (из `engine_v1_views.sql`) и `V_UNITKA_RECON_FACT` (из `reconcile_v1.sql`). Строки совпадают с прежними (25/25, 875/875), FINAL в окне 0.
    3. `V_WB_STORE_PNL_MONTHLY` (из `store_pnl_v1.sql`) — только после Terraform-колонки (п. 2). Месяцы совпадают, невязка 0.
 4. Образ из merge-коммита. Digest обновить ТОЛЬКО у `unitka-engine-prod` и `unitka-store-pnl-prod`. До этого — квалификация разницы `cloud/src` между боевыми коммитами (c40c7e4 / 719d78f) и merge-коммитом.
@@ -196,7 +250,7 @@ Store P&L читает только колонки W.
 
 **Откат ACK 1** — в обратном порядке:
 1. Образы: прежние digest (`unitka-engine-prod` d2d4972c, `unitka-store-pnl-prod` 50c17868).
-2. `cancel_class_v1_rollback.sql`: прежние тела трёх вью, затем `DROP` четырёх новых.
+2. `cancel_class_v1_rollback.sql`: прежние тела трёх вью, затем `DROP` пяти новых.
 3. Колонка `void_cancels` остаётся: она NULL-able и прежними вью не читается.
 
 ### ACK 2 — восстановление истории (не раньше 09.12.2026: оба дня созрели и реестр финотчёта покрывает горизонт; 18.10 — с 03.12)
@@ -213,11 +267,11 @@ Store P&L читает только колонки W.
    - `expected_delta_w`;
    - `refusals` = [];
    - `anomalies` / `anomalies_unaccepted` = [].
-2. **Владелец сверяет** план с приёмкой (§9) и даёт ACK с отпечатком.
-3. **Запись** — вне часа Engine (07:00Z, 09:30Z) и Store P&L (10:00Z):
+2. **Владелец сверяет** план с приёмкой (§9), ставку `reverse_leg_rate` и `expected_delta_w`, а также детектор (`unitka_cancel_class_drift` отсутствует). ACK даётся с отпечатком.
+3. **Запись** — в те же сутки Engine, что и план (до следующего 07:00Z), вне часа Engine (07:00Z, 09:30Z) и Store P&L (10:00Z). Просмотренный манифест передаётся тоже:
 
    ```
-   --update-env-vars UNITKA_CANCEL_RESTORE_WRITE=1,UNITKA_CANCEL_RESTORE_DIGEST=<digest>
+   --update-env-vars UNITKA_CANCEL_RESTORE_WRITE=1,UNITKA_CANCEL_RESTORE_DIGEST=<digest>,UNITKA_CANCEL_RESTORE_MANIFEST=<manifest_b64>
    ```
 
    Отпечаток пересчитывается из живого листа в момент записи. Изменилось хоть одно поле или аномалия — отказ без записи. Запись — один атомарный пакет.
@@ -237,8 +291,9 @@ Store P&L читает только колонки W.
 - `refusals` ≠ 0;
 - непринятая аномалия (`CANCEL_RESTORE_ANOMALY`);
 - ΔW плана расходится с приёмкой;
-- `CANCEL_RESTORE_DIGEST_MISMATCH`;
-- `verify_failed` > 0;
+- `CANCEL_RESTORE_DIGEST_MISMATCH` или `CANCEL_RESTORE_FINANCIAL_DRIFT` — нужен новый план и ACK;
+- `unitka_cancel_class_drift` (детектор);
+- `verify_failed` > 0, включая фактическое ΔW ≠ утверждённому;
 - `CANCEL_RESTORE_UNKNOWN_OUTCOME` — только перечитывание и решение владельца, повтора нет.
 
 ## 9. Приёмка (ACK владельца, 02.11.2026)

@@ -145,6 +145,19 @@ export class StorePnlBq {
     return rows as PnlRow[];
   }
 
+  /**
+   * Детектор классов отмен (sql/unitka/cancel_class_v1.sql): сутки, где только что записанный снимок листа расходится с
+   * текущим классом (RESTORED_DRIFT). Читается ПОСЛЕ добавления снимка — вью берёт последний snapshot_id.
+   */
+  async readCancelDrift(): Promise<Array<Record<string, unknown>>> {
+    const [rows] = await this.bq.query({
+      query: `SELECT nm_id, CAST(date_msk AS STRING) date_msk, sheet_cancels, sheet_void, cancel_class_status, effective_cancels, effective_void_qty
+              FROM ${this.fqn(this.martDataset, 'V_UNITKA_CANCEL_SHEET_DRIFT')} WHERE drift_status = 'RESTORED_DRIFT' ORDER BY date_msk, nm_id`,
+      location: this.location,
+    });
+    return rows as Array<Record<string, unknown>>;
+  }
+
   async readNewOperations(): Promise<NewOperationRow[]> {
     const [rows] = await this.bq.query({
       query: `SELECT supplier_oper_name, treatment, rows_n, last_seen FROM ${this.fqn(this.martDataset, NEW_OPS_VIEW)} ORDER BY last_seen DESC`,

@@ -153,3 +153,56 @@ def test_class_view_treats_missing_or_null_maturity_as_immature():
     assert "WHEN NOT IFNULL(mt.mature, FALSE) THEN 'IMMATURE'" in d
     assert "_rr_date" not in d                                                    # прежнее правило удалено
     assert "DATE_ADD(order_date, INTERVAL 46 DAY)" in re.sub(r"\s+", " ", V["V_UNITKA_CANCEL_MATURITY"])
+
+
+# ─── Детектор V_UNITKA_CANCEL_SHEET_DRIFT (аудит PR #394, п. 2) ──────────────────────────────────────────────────
+def drift(snapshot, classes, window_from="2026-11-09"):
+    body = (V["V_UNITKA_CANCEL_SHEET_DRIFT"]
+            .replace(f"`{P}.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`", "snap_tbl")
+            .replace(f"`{P}.wb_mart.V_UNITKA_RECON_WINDOW`", "recon_window")
+            .replace(f"`{P}.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY`", "class_tbl"))
+    sql = sqlglot.transpile(body, read="bigquery", write="sqlite")[0]
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE snap_tbl (snapshot_id TEXT, lcd TEXT, date_msk TEXT, nm_id INTEGER, cancels REAL, void_cancels INTEGER)")
+    db.execute("CREATE TABLE recon_window (window_from TEXT)")
+    db.execute("CREATE TABLE class_tbl (nm_id INTEGER, date_msk TEXT, cancel_class_status TEXT, legacy_cancels INTEGER,"
+               " effective_cancels INTEGER, effective_void_qty INTEGER, sheet_change_required INTEGER)")
+    db.executemany("INSERT INTO snap_tbl VALUES ('s2', '2026-12-13', ?, ?, ?, ?)", snapshot)
+    db.execute("INSERT INTO recon_window VALUES (?)", (window_from,))
+    db.executemany("INSERT INTO class_tbl VALUES (?, ?, ?, ?, ?, ?, ?)", classes)
+    cur = db.execute(f"SELECT nm_id, date_msk, drift_status FROM ({sql}) ORDER BY date_msk, nm_id")
+    return {(r[0], r[1]): r[2] for r in cur.fetchall()}
+
+
+A, B, C = 535580776, 252442517, 952068582
+
+
+def test_drift_detector_pending_ok_and_late_logistics_after_restore():
+    classes = [
+        (A, "2026-10-18", "FINAL", 0, 1, 1, 1),               # 18.10: отмена без логистики в Q — S 1, V 1
+        (B, "2026-10-24", "FINAL", 1, 0, 0, 1),               # 24.10: отмена вне Q — S 0
+        (C, "2026-10-27", "IMMATURE", 1, 1, 0, 0),            # кандидат: незрел, лист прежний
+    ]
+    before = [("2026-10-18", A, 0, 0), ("2026-10-24", B, 1, 0), ("2026-10-27", C, 1, 0)]
+    assert drift(before, classes) == {(A, "2026-10-18"): "PENDING_RESTORE", (B, "2026-10-24"): "PENDING_RESTORE", (C, "2026-10-27"): "OK"}
+    restored = [("2026-10-18", A, 1, 1), ("2026-10-24", B, 0, 0), ("2026-10-27", C, 1, 0)]
+    assert set(drift(restored, classes).values()) == {"OK"}
+    # поздняя логистика: 18.10 теперь «с логистикой в Q» (S 1, V 0); 24.10 получил плечи вне Q — ANOMALY и
+    # sheet_change_required = FALSE; восстановленный лист с обоими расходится — детектор их видит
+    late = [(A, "2026-10-18", "FINAL", 0, 1, 0, 1), (B, "2026-10-24", "ANOMALY_ABSENT_WITH_LOGISTICS", 1, 1, 0, 0), classes[2]]
+    assert drift(restored, late) == {(A, "2026-10-18"): "RESTORED_DRIFT", (B, "2026-10-24"): "RESTORED_DRIFT", (C, "2026-10-27"): "OK"}
+
+
+def test_drift_detector_missing_snapshot_row_maturity_regression_orphan_v_and_window():
+    restored = [("2026-10-18", A, 1, 1)]
+    # реестр финотчёта откатился: класс снова IMMATURE (прежний S 0, V 0), а лист восстановлен — расхождение
+    assert drift(restored, [(A, "2026-10-18", "IMMATURE", 0, 0, 0, 0)]) == {(A, "2026-10-18"): "RESTORED_DRIFT"}
+    # нет строки снимка (все величины суток нулевые) = на листе S 0, V 0: против ANOMALY с прежним S 1 — расхождение
+    other = [("2026-10-25", B, 0, 0)]
+    assert drift(other, [(B, "2026-10-24", "ANOMALY_ABSENT_WITH_LOGISTICS", 1, 1, 0, 0)])[(B, "2026-10-24")] == "RESTORED_DRIFT"
+    # снимка нет вовсе — fail-closed: сутки класса всё равно судятся (лист 0/0), молчаливого «расхождений нет» не бывает
+    assert drift([], [(B, "2026-10-24", "ANOMALY_ABSENT_WITH_LOGISTICS", 1, 1, 0, 0)]) == {(B, "2026-10-24"): "RESTORED_DRIFT"}
+    # поправка V на листе без строки класса — расхождение
+    assert drift([("2026-10-20", 909951444, 1, 1)], []) == {(909951444, "2026-10-20"): "RESTORED_DRIFT"}
+    # сутки окна сверки ведёт писатель: детектор их не судит
+    assert drift([("2026-10-18", A, 2, 0)], [(A, "2026-10-18", "IMMATURE", 0, 0, 0, 0)], window_from="2026-10-10") == {}

@@ -55,7 +55,7 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 export interface StorePnlDeps {
   makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'readFormulasBatch' | 'structureWrite' | 'readSheetStructure'>
     & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes' | 'readSheetsList'>;
-  makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
+  makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations' | 'readCancelDrift'>;
   now: () => Date;
 }
 
@@ -115,6 +115,15 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
 
   await bq.appendSnapshot(parsed.rows, snap, `store_pnl_${snap.snapshotId}_${randomUUID().replace(/-/g, '').slice(0, 8)}`);
   logger.info('store_pnl_snapshot_appended', { snapshotId: snap.snapshotId, rows: parsed.rows.length, lcd });
+  // Детектор классов отмен: лист против текущего класса (поздняя логистика у восстановленной отмены и т. п.). Публикацию
+  // не останавливает — чистый результат магазина считается сверху вниз по финотчёту, — но владелец получает событие;
+  // восстановление (unitka-cancel-restore) при любом расхождении отказывает. Детектор не исполнился — тоже событие.
+  try {
+    const drift = await bq.readCancelDrift();
+    if (drift.length) logger.warn('unitka_cancel_class_drift', { snapshotId: snap.snapshotId, rows: drift.length, sample: drift.slice(0, 20) });
+  } catch (e) {
+    logger.warn('unitka_cancel_class_drift_unknown', { snapshotId: snap.snapshotId, error: e instanceof Error ? e.message : String(e) });
+  }
 
   const pnl = await bq.readPnl();
   const plan = buildTabPlan(pnl);

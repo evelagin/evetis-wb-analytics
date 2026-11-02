@@ -19,6 +19,7 @@ import { CANCEL_NOTE_MARKER, REFUSAL_NOTE_MARKER, planRefusalNotes, noteKey } fr
 import {
   cancelNoteText, planCancelRestore, modelW, verifyCancelCells, buildCancelManifest, encodeCancelManifest, parseCancelManifest,
   rollbackDrift, unitkaCancelRestoreLoader, cancelRestoreWriteAllowed, cancelWriteRequests, assertConfined, outcomeState, unacceptedAnomalies,
+  financialDrift, verifyDeltaW,
   type LiveRow,
 } from '../src/loaders/unitka/cancel_restore.js';
 import { UnitkaBq, type CancelClassRow, type FactRow } from '../src/loaders/unitka/bq.js';
@@ -51,13 +52,15 @@ describe('SQL: слой классов отмен (cancel_class_v1.sql)', () => 
   const sql = read('sql/unitka/cancel_class_v1.sql');
   const v = viewBodies(sql);
   const d = flat(v.get('V_UNITKA_CANCEL_CLASS_DAILY') ?? '');
-  it('четыре вью, только SELECT, только wb_raw / wb_mart (изоляция маркетплейсов)', () => {
-    expect([...v.keys()].sort()).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
+  it('пять вью, только SELECT, только домен WB; снимок wb_ops — только у детектора (изоляция маркетплейсов)', () => {
+    expect([...v.keys()].sort()).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_CANCEL_SHEET_DRIFT', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
     expect(code(sql)).not.toMatch(/\b(CREATE\s+(OR\s+REPLACE\s+)?(TABLE|PROCEDURE|FUNCTION)|INSERT\s+INTO|UPDATE\s+`|DELETE\s+FROM|MERGE\s+|TRUNCATE|DROP\s+)/i);
-    for (const body of v.values()) {
+    for (const [name, body] of v) {
       expect(body).not.toMatch(/evetis_ref|ozon_/i);
-      for (const m of body.matchAll(/`project-fa311fc0-4d87-4781-986\.(\w+)\./g)) expect(['wb_raw', 'wb_mart']).toContain(m[1]);
+      const allowed = name === 'V_UNITKA_CANCEL_SHEET_DRIFT' ? ['wb_raw', 'wb_mart', 'wb_ops'] : ['wb_raw', 'wb_mart'];
+      for (const m of body.matchAll(/`project-fa311fc0-4d87-4781-986\.(\w+)\./g)) expect(allowed, name).toContain(m[1]);
     }
+    expect(flat(v.get('V_UNITKA_CANCEL_SHEET_DRIFT')!)).toContain('wb_ops.UNITKA_SKU_COMPONENTS_DAILY');
   });
   it('логистика отмены — финотчёт по srid (тот же класс, что у отказов); начало — первый день воронки API', () => {
     const e = flat(v.get('V_UNITKA_CANCEL_EVIDENCE')!);
@@ -107,10 +110,10 @@ describe('SQL: обе вью фактов берут S из класса отм�
     expect(flat(read('sql/unitka/store_pnl_v1.sql'))).toContain(
       'SUM((orders - IFNULL(void_cancels, 0)) * logistics_per_unit + (cancels - IFNULL(void_cancels, 0)) * reverse_leg_rate) logistics_sku_rub');
   });
-  it('откат: прежние тела трёх вью и снятие четырёх новых (потребители — раньше источников)', () => {
+  it('откат: прежние тела трёх вью и снятие пяти новых (потребители — раньше источников)', () => {
     const rb = code(read('sql/unitka/cancel_class_v1_rollback.sql'));
     const drops = [...rb.matchAll(/DROP VIEW IF EXISTS `project-fa311fc0-4d87-4781-986\.wb_mart\.(\w+)`/g)].map((m) => m[1]);
-    expect(drops).toEqual(['V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
+    expect(drops).toEqual(['V_UNITKA_CANCEL_SHEET_DRIFT', 'V_UNITKA_CANCEL_CLASS_DAILY', 'V_UNITKA_CANCEL_EVIDENCE', 'V_UNITKA_CANCEL_MATURITY', 'V_UNITKA_FINANCE_FINAL_INTERVALS']);
     for (const name of ['V_UNITKA_DAILY_FACT', 'V_UNITKA_RECON_FACT', 'V_WB_STORE_PNL_MONTHLY']) {
       const body = flat((viewBodies(rb).get(name) ?? '').split(/;\s*\n/)[0]!);
       expect(body, name).not.toContain('V_UNITKA_CANCEL_CLASS_DAILY');
@@ -340,9 +343,11 @@ const bqRow = (r: CancelClassRow): Record<string, unknown> => ({
   finance_final_through: { value: r.financeFinalThrough }, mature_on: { value: r.matureOn },
 });
 /** Как вью: IMMATURE-сутки без изменения листа запрос не возвращает (WHERE sheet_change_required OR ANOMALY). */
+let DRIFT: Array<Record<string, unknown>> = [];                             // строки V_UNITKA_CANCEL_SHEET_DRIFT (RESTORED_DRIFT)
 const runner = (rows: CancelClassRow[], windowFrom = '2026-11-09') => ({
   projectId: 'p',
   query: async (sql: string) => {
+    if (sql.includes('V_UNITKA_CANCEL_SHEET_DRIFT')) return DRIFT;
     if (sql.includes('V_UNITKA_CANCEL_CLASS_DAILY')) return rows.filter((r) => r.sheetChangeRequired || r.status.startsWith('ANOMALY')).map(bqRow);
     if (sql.includes('V_UNITKA_RECON_WINDOW')) return [{ last_closed_date: { value: '2026-12-13' }, window_from: { value: windowFrom }, window_to: { value: '2026-12-13' }, window_days: 35, reconciliation_epoch: { value: '2026-09-01' } }];
     throw new Error(`неожиданный запрос: ${sql.slice(0, 80)}`);
@@ -471,6 +476,52 @@ describe('unitka-cancel-restore: сценарии октября', () => {
     expect(fresh.structures).toHaveLength(0);
   });
 
+  it('п. 1 — ставка обратного плеча изменилась между PLAN и WRITE: отказ до записи; с просмотренным манифестом — FINANCIAL_DRIFT', async () => {
+    const { digest, manifest } = await planDigest();                            // план при REVERSE_LEG_RATE = 30
+    const book = new Book();
+    book.rev = 31;                                                              // суточный Engine обновил ставку
+    await expect(run(book, WRITE(digest)).promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_DIGEST_MISMATCH' });
+    const r = run(book, WRITE(digest, { UNITKA_CANCEL_RESTORE_MANIFEST: manifest }));
+    await expect(r.promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_FINANCIAL_DRIFT', message: expect.stringMatching(/REVERSE_LEG_RATE 30 → 31.*252442517\|2026-10-24: ΔW 125 → 126/) });
+    expect(book.structures).toHaveLength(0);
+    // 18.10 (−AI) от ставки не зависит, 24.10 (+(AI+AF+REV)) — зависит: финансовый дрейф назван по строке
+    expect(String((await r.promise.catch((e: Error) => e)).message)).not.toMatch(/535580776\|2026-10-18: ΔW/);
+    // новый план при новой ставке и новый ACK — запись идёт, фактическое ΔW = утверждённому
+    const p2 = run(Object.assign(new Book(true), { rev: 31 }), {});
+    await p2.promise;
+    const d2 = String(planOf(p2.events).manifest_digest);
+    expect(d2).not.toBe(digest);
+    const ok = run(book, WRITE(d2));
+    await expect(ok.promise).resolves.toMatchObject({ rowsLoaded: 3 });
+    expect(ok.events.find((e) => e.event === 'unitka_cancel_restore_done')!.data.verify_failed).toBe(0);
+  });
+
+  it('п. 2 — поздняя логистика после восстановления: детектор называет сутки, событие владельцу, любой план отказывает без записи', async () => {
+    const book = new Book();
+    const { digest } = await planDigest();
+    await expect(run(book, WRITE(digest)).promise).resolves.toMatchObject({ rowsLoaded: 3 });   // 18.10 восстановлены: S 1, V 1
+    // в финотчёт пришли плечи 18.10: класс теперь «с логистикой в Q» — S 1, V 0. 24.10 получил плечи — ANOMALY,
+    // и строка больше НЕ требует изменения листа (sheet_change_required = FALSE): её видит только детектор.
+    const late: CancelClassRow[] = [
+      { ...ROW_1810, cancelLogQty: 1, cancelNologQty: 0, logInQ: 1, nologInQ: 0, voidQty: 0, finalCancels: 1, logSrids: ['srid-void-1'], nologSrids: [], nologCancelDates: [] },
+      { ...ANOMALY, nmId: 252442517, date: '2026-10-24' },
+    ];
+    DRIFT = [
+      { nm_id: 535580776, date_msk: { value: '2026-10-18' }, sheet_cancels: 1, sheet_void: 1, cancel_class_status: 'FINAL', effective_cancels: 1, effective_void_qty: 0, snapshot_id: 's2' },
+      { nm_id: 252442517, date_msk: { value: '2026-10-24' }, sheet_cancels: 0, sheet_void: 0, cancel_class_status: 'ANOMALY_ABSENT_WITH_LOGISTICS', effective_cancels: 1, effective_void_qty: 0, snapshot_id: 's2' },
+    ];
+    try {
+      const writesBefore = book.structures.length;
+      const r = run(book, WRITE(digest, { UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES: '252442517|2026-10-24|ANOMALY_ABSENT_WITH_LOGISTICS' }), late);
+      await expect(r.promise).rejects.toMatchObject({ code: 'CANCEL_RESTORE_DRIFT' });
+      expect(r.events.find((e) => e.event === 'unitka_cancel_class_drift')!.data.rows).toBe(2);
+      const refusals = (planOf(r.events).refusals as string[]).join(' | ');
+      expect(refusals).toMatch(/535580776 2026-10-18: лист S 1\/V 1, класс S 1\/V 0 \(FINAL\)/);
+      expect(refusals).toMatch(/252442517 2026-10-24: лист S 0\/V 0, класс S 1\/V 0 \(ANOMALY_ABSENT_WITH_LOGISTICS\)/);
+      expect(book.structures.length).toBe(writesBefore);                    // автоматического отката нет
+    } finally { DRIFT = []; }
+  });
+
   it('DRIFT: S изменён вручную, заметка владельца, формула W правлена — отказ ДО записи', async () => {
     const cases: Array<[string, (b: Book) => void, RegExp]> = [
       ['S', (b) => b.v.set(`794:${13 + OFFSET.cancels}`, 2), /S S794 = 2/],
@@ -557,10 +608,14 @@ describe('манифест и перечитывание — чистые фун
   const live = () => new Map([['535580776|2026-10-18', liveRow(535580776)], ['252442517|2026-10-24', liveRow(252442517)]]);
   const plan = (rev = REV) => planCancelRestore({ rows: [ROW_1810, ROW_2410], live: live(), missing: [], windowFrom: '2026-11-09', reverseLegRate: rev, style: 'SEMICOLON' });
   const book = { spreadsheetId: 's', sheetId: 1, sheetName: 'n', style: 'SEMICOLON' as const, financeFinalThrough: '2026-12-13' };
-  it('отпечаток не зависит от REVERSE_LEG_RATE (суточное обновление WY737 не ломает просмотренный план), но включает аномалии', () => {
-    const a = buildCancelManifest(plan().cells, book);
-    expect(buildCancelManifest(plan(31.5).cells, book).digest).toBe(a.digest);
-    expect(buildCancelManifest(plan().cells, { ...book, anomalies: ['1|2026-10-09|ANOMALY_FUNNEL_BELOW_API'] }).digest).not.toBe(a.digest);
+  it('отпечаток фиксирует REVERSE_LEG_RATE, ожидаемые ΔW и аномалии; финансовый дрейф называет ставку и строки', () => {
+    const a = buildCancelManifest(plan().cells, { ...book, reverseLegRate: REV });
+    const b = buildCancelManifest(plan(31.5).cells, { ...book, reverseLegRate: 31.5 });
+    expect(b.digest).not.toBe(a.digest);
+    expect(a.cells.map((c) => c.expectedDeltaW)).toEqual([-120, 125]);
+    expect(financialDrift(a, b)).toEqual(['REVERSE_LEG_RATE 30 → 31.5', '252442517|2026-10-24: ΔW 125 → 126.5']);
+    expect(financialDrift(a, a)).toEqual([]);
+    expect(buildCancelManifest(plan().cells, { ...book, reverseLegRate: REV, anomalies: ['1|2026-10-09|ANOMALY_FUNNEL_BELOW_API'] }).digest).not.toBe(a.digest);
     const parsed = parseCancelManifest(encodeCancelManifest(a));
     expect('error' in parsed ? parsed.error : parsed.digest).toBe(a.digest);
     const tampered = JSON.parse(JSON.stringify(a)); tampered.cells[0].after.s = 5;
@@ -583,6 +638,11 @@ describe('манифест и перечитывание — чистые фун
     expect(outcomeState([cells[0]!], live(), 'SEMICOLON')).toBe('ALL_BEFORE');
     expect(outcomeState([cells[0]!], after({ wFormula: RU(profitAllFormula(277, 788)) }), 'SEMICOLON')).toBe('MIXED');
     expect(unacceptedAnomalies(['a', 'b'], [' a '])).toEqual(['b']);
+    // фактическое изменение W против утверждённого ΔW: только для записанных суток (W «до» известен)
+    const w0 = modelW(liveRow(535580776), 0, REV);
+    expect(verifyDeltaW([cells[0]!], new Map([['535580776|2026-10-18', w0]]), after())).toEqual([]);
+    expect(verifyDeltaW([cells[0]!], new Map([['535580776|2026-10-18', w0 + 1]]), after()).join()).toMatch(/≠ утверждённому -120.00/);
+    expect(verifyDeltaW([cells[0]!], new Map(), after({ w: 999 }))).toEqual([]);
   });
 });
 

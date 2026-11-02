@@ -219,3 +219,59 @@ SELECT
   finance_final_through,
   mature_on
 FROM c;
+
+-- ─── 3. Детектор: лист (последний снимок Store P&L) против текущего класса отмен ─────────────────
+-- Аудит PR #394, п. 2: восстановленные сутки могут разойтись с классом позже — в финотчёт пришла поздняя логистика
+-- (V = 1 на листе, а класс уже «с логистикой»), заказ отмены вне Q получил плечи (ANOMALY), реестр финотчёта
+-- откатился (IMMATURE). Строка при этом может больше не требовать изменения (sheet_change_required = FALSE).
+-- Поэтому сравниваются ВСЕ сутки с классом вне окна сверки (зрелые лежат там всегда) и все строки снимка с V > 0:
+--   OK               — лист = эффективному классу (FINAL → итоговый S и V; иначе прежний S и V = 0);
+--   PENDING_RESTORE  — класс FINAL требует изменения, лист ещё в прежнем состоянии (ждёт unitka-cancel-restore);
+--   RESTORED_DRIFT   — всё остальное: лист расходится с классом. Отката нет — только событие и отказ восстановления.
+-- Сутки без строки снимка: снимок пропускает только полностью нулевые SKU-сутки (заказы, W, реклама, хранение = 0),
+-- а при S > 0 или V > 0 W не нулевой — значит такие сутки на листе S = 0, V = 0.
+CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_SHEET_DRIFT` AS
+WITH snap AS (
+  SELECT date_msk, nm_id, snapshot_id, CAST(cancels AS INT64) AS cancels, IFNULL(void_cancels, 0) AS void_cancels
+  FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`
+  WHERE snapshot_id = (SELECT MAX(snapshot_id) FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`)
+    AND date_msk >= DATE '2026-09-04'
+),
+lim AS (
+  SELECT (SELECT MAX(snapshot_id) FROM snap) AS snapshot_id,
+         (SELECT MAX(lcd) FROM `project-fa311fc0-4d87-4781-986.wb_ops.UNITKA_SKU_COMPONENTS_DAILY`
+           WHERE snapshot_id = (SELECT MAX(snapshot_id) FROM snap)) AS snapshot_lcd,
+         (SELECT window_from FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_RECON_WINDOW`) AS window_from
+),
+cc AS (
+  SELECT c.* FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY` c, lim
+  -- снимка нет вовсе (NULL) — fail-closed: судятся все сутки класса вне окна (лист считается S 0, V 0), а не ни одни
+  WHERE c.date_msk < lim.window_from AND c.date_msk <= IFNULL(lim.snapshot_lcd, c.date_msk)
+),
+keys AS (
+  SELECT nm_id, date_msk FROM cc
+  UNION DISTINCT
+  SELECT s.nm_id, s.date_msk FROM snap s WHERE s.void_cancels > 0
+),
+j AS (
+  SELECT
+    k.nm_id, k.date_msk,
+    IFNULL(s.cancels, 0) AS sheet_cancels, IFNULL(s.void_cancels, 0) AS sheet_void, s.snapshot_id IS NOT NULL AS in_snapshot,
+    cc.cancel_class_status, cc.legacy_cancels, cc.effective_cancels, cc.effective_void_qty, cc.sheet_change_required
+  FROM keys k
+  LEFT JOIN snap s ON s.nm_id = k.nm_id AND s.date_msk = k.date_msk
+  LEFT JOIN cc ON cc.nm_id = k.nm_id AND cc.date_msk = k.date_msk
+)
+SELECT
+  j.*,
+  lim.snapshot_id,
+  lim.snapshot_lcd,
+  lim.window_from,
+  CASE
+    WHEN j.cancel_class_status IS NULL                                                     THEN 'RESTORED_DRIFT'
+    WHEN j.sheet_cancels = j.effective_cancels AND j.sheet_void = j.effective_void_qty      THEN 'OK'
+    WHEN j.cancel_class_status = 'FINAL' AND j.sheet_change_required
+         AND j.sheet_cancels = j.legacy_cancels AND j.sheet_void = 0                       THEN 'PENDING_RESTORE'
+    ELSE 'RESTORED_DRIFT'
+  END AS drift_status
+FROM j CROSS JOIN lim;
