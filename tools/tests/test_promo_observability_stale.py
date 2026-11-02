@@ -53,3 +53,43 @@ def test_marketplace_without_any_valid_observation_is_reported_not_dropped():
     assert order[:3] == ["NOT_PROVIDED_BY_SOURCE", "NO_VALID_OBSERVATION", "STALE"]
     (cond, _), = [(c, s) for c, s in case_branches() if s == "NO_VALID_OBSERVATION"]
     assert cond == "observed_at IS NULL"   # иначе NULL-возраст проваливался бы в NO_UNITS_IN_LATEST_OBSERVATION
+
+
+# Таблица истинности на настоящем CASE из файла (SQLite): статус фикстуры FXO теперь всегда STALE (снимки 01.01.2026),
+# поэтому ветки свежего снимка, включая PARTIALLY_OBSERVED, проверяются здесь.
+def capability_status(rows: list[tuple]) -> list[str]:
+    import sqlite3
+    case = VIEW[VIEW.index("  CASE\n"):VIEW.index("END AS capability_status")] + "END"
+    case = case.replace("TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, MINUTE)", "age_minutes")
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE caps (source_provides_capability, observed_at, age_minutes, units_total, "
+               "units_established, units_not_observable)")
+    db.executemany("INSERT INTO caps VALUES (?, ?, ?, ?, ?, ?)", rows)
+    return [r[0] for r in db.execute(f"SELECT {case} FROM caps ORDER BY rowid")]
+
+
+def test_capability_status_truth_table():
+    obs = "2026-11-02T06:00:00Z"
+    cases = [  # (источник, снимок, возраст, всего, установлено, не наблюдаемо) → статус
+        ((0, None, None, 0, 0, 0), "NOT_PROVIDED_BY_SOURCE"),
+        ((0, obs, 20000, 5, 0, 5), "NOT_PROVIDED_BY_SOURCE"),   # отсутствие источника от возраста не зависит
+        ((1, None, None, 0, 0, 0), "NO_VALID_OBSERVATION"),
+        ((1, obs, 781, 10, 10, 0), "STALE"),
+        ((1, obs, 19956, 10, 4, 0), "STALE"),                   # частичный старый снимок — не «частично наблюдаемо»
+        ((1, obs, 19956, 0, 0, 0), "STALE"),                    # старый пустой снимок — не «нет единиц сейчас»
+        ((1, obs, 19956, 10, 0, 10), "STALE"),
+        ((1, obs, 780, 10, 10, 0), "OBSERVED"),                 # граница = FAIL DRO-1 включительно свежая
+        ((1, obs, 60, 0, 0, 0), "NO_UNITS_IN_LATEST_OBSERVATION"),
+        ((1, obs, 60, 10, 0, 10), "NOT_OBSERVABLE"),
+        ((1, obs, 60, 10, 4, 0), "PARTIALLY_OBSERVED"),
+        ((1, obs, 60, 10, 0, 6), "PARTIALLY_OBSERVED"),         # ничего не установлено, но не всё ненаблюдаемо
+    ]
+    assert capability_status([r for r, _ in cases]) == [s for _, s in cases]
+
+
+def test_partial_or_failed_snapshot_never_becomes_latest():
+    # Последний снимок берётся из истории годных снимков; PARTIAL/FAILED туда не попадают ни у одной площадки.
+    assert "FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_PROMO_OBSERVATION_HISTORY`" in VIEW
+    for path in ("sql/current/ozon_mart/V_OZON_PROMO_OBSERVATION_HISTORY.sql",
+                 "sql/promotions/pr_promo2/wb_mart/V_WB_PROMO_OBSERVATION_HISTORY.sql"):
+        assert "WHERE m.status IN ('COMPLETE', 'REUSED')" in (ROOT / path).read_text(encoding="utf-8"), path
