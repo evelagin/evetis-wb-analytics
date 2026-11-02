@@ -55,7 +55,7 @@ AUTO_SCHEDULED = {"product_id": 1563818723, "offer_id": "305101272", "sku": 1991
                   "min_action_quantity": 0, "quantity_to_auto_add": 0,
                   "currency": "RUB", "add_mode": "AUTO"}
 
-AUTO_ELIGIBLE = {"product_id": 1563818723, "offer_id": "305101272", "sku": 1991772098,
+AUTO_ELIGIBLE = {"id": 1563818723, "product_id": 1563818723, "offer_id": "305101272", "sku": 1991772098,
                  "name": "Товар", "price": 1287, "base_price": 3225,
                  "max_discount_price": 1044, "min_seller_price": 1287,
                  "marketplace_seller_price": 1287, "action_price_to_auto_add": 1044,
@@ -286,9 +286,9 @@ def test_unknown_source_field_is_visible_not_lost(promo_mod, captured, monkeypat
 
 def test_page_ceiling_fails_loudly(promo_mod, monkeypatch):
     """Упор в потолок страниц роняет сущность, а не обрезает данные молча."""
-    full = [dict(PARTICIPANT, id=i) for i in range(promo_mod.PAGE_LIMIT)]
+    full = [dict(PARTICIPANT, id=i + 1) for i in range(promo_mod.PAGE_LIMIT)]
     monkeypatch.setattr(promo_mod, "promo_call",
-                        lambda path, body=None: (200, {"result": {"products": full,
+                        lambda path, body=None: (200, {"result": {"products": full, "total": 10 ** 6,
                                                                   "last_id": f"x{body.get('last_id','')}"}}))
     with pytest.raises(RuntimeError, match="потолок страниц"):
         promo_mod._paged_products(P_PRODUCTS, 1)
@@ -571,7 +571,7 @@ def test_v2_products_paginate_by_string_last_id(promo_mod, monkeypatch):
         lid = body.get("last_id", "")
         seen.append(lid)
         nxt, n = pages[lid]
-        base = {"": 0, "p1": 100, "p2": 200}[lid]
+        base = {"": 1, "p1": 101, "p2": 201}[lid]
         return 200, {"products": [dict(V2_PARTICIPANT, id=base + i) for i in range(n)], "total": 203, "last_id": nxt}
 
     monkeypatch.setattr(promo_mod, "promo_call", call)
@@ -586,7 +586,7 @@ def test_v2_auto_add_paginates_by_offset(promo_mod, monkeypatch):
         offsets.append(body["offset"])
         assert body["limit"] == promo_mod.PAGE_LIMIT and body["auto_add_date"] == "2026-10-01T21:00:00Z"
         n = promo_mod.PAGE_LIMIT if body["offset"] < 200 else 7
-        return 200, {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i) for i in range(n)], "total": 207}
+        return 200, {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i + 1) for i in range(n)], "total": 207}
 
     monkeypatch.setattr(promo_mod, "promo_call", call)
     assert len(promo_mod._paged_auto_add(P_AUTO_LIST, 1, "2026-10-01T21:00:00Z")) == 207
@@ -618,7 +618,7 @@ def _pages(seq):
 
 
 def _prods(a, b):
-    return [dict(V2_PARTICIPANT, id=i) for i in range(a, b)]
+    return [dict(V2_PARTICIPANT, id=i + 1) for i in range(a, b)]
 
 
 def test_v2_products_first_page_sends_empty_last_id_like_probe(promo_mod, monkeypatch):
@@ -659,7 +659,7 @@ def test_v2_auto_add_incomplete_pagination_raises(promo_mod, monkeypatch, pages,
     it = iter(pages)
 
     def call(path, body=None):
-        r = {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i) for i in range(next(it))]}
+        r = {"products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i + 1) for i in range(next(it))]}
         if total is not None:
             r["total"] = total
         return 200, r
@@ -669,11 +669,11 @@ def test_v2_auto_add_incomplete_pagination_raises(promo_mod, monkeypatch, pages,
 
 
 def test_v2_auto_add_offset_shift_duplicate_is_incomplete(promo_mod, monkeypatch):
-    # список сдвинулся между страницами: товар 99 пришёл дважды, товар 100 потерян — число строк = total
-    pages = {0: list(range(0, 100)), 100: list(range(99, 106))}
+    # список сдвинулся между страницами: товар 100 пришёл дважды, товар 107 потерян — число строк = total
+    pages = {0: list(range(1, 101)), 100: list(range(100, 107))}
     monkeypatch.setattr(promo_mod, "promo_call", lambda path, body=None: (200, {
         "products": [dict(V2_AUTO_CAND, id=i) for i in pages[body["offset"]]], "total": 107}))
-    with pytest.raises(promo_mod.PromoPaginationIncomplete, match="уникальных 106"):
+    with pytest.raises(promo_mod.PromoPaginationIncomplete, match="повторяется после нормализации"):
         promo_mod._paged_auto_add(P_AUTO_CAND, 1, "2026-10-01T21:00:00Z")
 
 
@@ -689,3 +689,120 @@ def test_incomplete_pagination_is_partial_not_complete(promo_mod, manifest_sql, 
     up = _final_update(sqls)
     assert "status='PARTIAL'" in up and "status='COMPLETE'" not in up
     assert "products_participating=NULL" in up
+
+
+# ───────────── S-1: total стабилен между страницами (C4″, 02.11.2026)
+@pytest.mark.parametrize("seq", [
+    [(_prods(0, 100), 150, "p1"), (_prods(100, 150), 151, "")],    # total вырос на второй странице
+    [(_prods(0, 100), 150, "p1"), (_prods(100, 120), 120, "")],    # итог = total последней страницы, но не первой
+    [(_prods(0, 100), 150, "p1"), (_prods(100, 150), None, "")],   # total пропал на второй странице
+    [(_prods(0, 3), True, "")],                                    # bool — не целый total
+    [(_prods(0, 3), "3", "")],                                     # строка — не целый total
+], ids=["grew", "shrank_to_collected", "missing_later", "bool", "string"])
+def test_v2_products_total_must_be_stable_integer(promo_mod, monkeypatch, seq):
+    call, _ = _pages(seq)
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    with pytest.raises(promo_mod.PromoPaginationIncomplete):
+        promo_mod._paged_products(P_PRODUCTS, 1)
+
+
+def test_v2_auto_add_total_change_between_pages(promo_mod, monkeypatch):
+    totals = {0: 130, 100: 129}
+    monkeypatch.setattr(promo_mod, "promo_call", lambda path, body=None: (200, {
+        "products": [dict(V2_AUTO_LIST, product_id=body["offset"] + i + 1)
+                     for i in range(100 if body["offset"] == 0 else 29)], "total": totals[body["offset"]]}))
+    with pytest.raises(promo_mod.PromoPaginationIncomplete, match="total изменился"):
+        promo_mod._paged_auto_add(P_AUTO_LIST, 1, "2026-10-01T21:00:00Z")
+
+
+def test_v2_stable_total_over_pages_is_complete(promo_mod, monkeypatch):
+    call, _ = _pages([(_prods(0, 100), 130, "p1"), (_prods(100, 130), 130, "p2")])
+    monkeypatch.setattr(promo_mod, "promo_call", call)
+    assert [it["id"] for it in promo_mod._paged_products(P_PRODUCTS, 1)] == list(range(1, 131))
+
+
+# ───────────── S-2: идентификаторы товаров по контракту метода (C4″, 02.11.2026)
+def _one(path, item, promo_mod, monkeypatch):
+    monkeypatch.setattr(promo_mod, "promo_call", lambda p, body=None: (200, {"products": [item], "total": 1, "last_id": ""}))
+    if path in (P_PRODUCTS, P_CANDIDATES):
+        return promo_mod._paged_products(path, 1)
+    return promo_mod._paged_auto_add(path, 1, "2026-10-01T21:00:00Z")
+
+
+@pytest.mark.parametrize("bad", [None, "", "abc", 0, -5, "-5", 12.5, "12.5", True, " 7", "9007199254740993"],
+                         ids=["none", "empty", "text", "zero", "negative", "negative_str", "fraction", "fraction_str",
+                              "bool", "space", "beyond_float"])
+@pytest.mark.parametrize("path", [P_PRODUCTS, P_CANDIDATES, P_AUTO_CAND])
+def test_v2_invalid_id_is_rejected(promo_mod, monkeypatch, path, bad):
+    base = V2_AUTO_CAND if path == P_AUTO_CAND else V2_PARTICIPANT
+    with pytest.raises(promo_mod.PromoProductIdInvalid):
+        _one(path, dict(base, id=bad), promo_mod, monkeypatch)
+
+
+@pytest.mark.parametrize("bad", [None, "", 0, -1, 3.5, False], ids=["none", "empty", "zero", "negative", "fraction", "bool"])
+def test_v2_auto_add_list_invalid_product_id_is_rejected(promo_mod, monkeypatch, bad):
+    with pytest.raises(promo_mod.PromoProductIdInvalid):
+        _one(P_AUTO_LIST, dict(V2_AUTO_LIST, product_id=bad), promo_mod, monkeypatch)
+
+
+def test_v2_missing_id_field_per_method_contract(promo_mod, monkeypatch):
+    no_id = {k: v for k, v in V2_PARTICIPANT.items() if k != "id"}
+    with pytest.raises(promo_mod.PromoProductIdInvalid, match="без корректного id"):
+        _one(P_PRODUCTS, no_id, promo_mod, monkeypatch)
+    # auto-add/list: контракт — product_id; id вместо него не принимается
+    list_with_id = dict({k: v for k, v in V2_AUTO_LIST.items() if k != "product_id"}, id=1563818723)
+    with pytest.raises(promo_mod.PromoProductIdInvalid, match="без корректного product_id"):
+        _one(P_AUTO_LIST, list_with_id, promo_mod, monkeypatch)
+    # auto-add/candidates: контракт — id; один product_id не принимается
+    cand_pid_only = dict({k: v for k, v in V2_AUTO_CAND.items() if k != "id"}, product_id=1563818723)
+    with pytest.raises(promo_mod.PromoProductIdInvalid, match="без корректного id"):
+        _one(P_AUTO_CAND, cand_pid_only, promo_mod, monkeypatch)
+
+
+def test_v2_auto_add_candidate_conflicting_product_id_is_rejected(promo_mod, monkeypatch):
+    # запись RAW взяла бы product_id, а контракт метода — id: разные значения → отказ, а не тихая подмена
+    with pytest.raises(promo_mod.PromoProductIdInvalid):
+        _one(P_AUTO_CAND, dict(V2_AUTO_CAND, id=1563818723, product_id=999), promo_mod, monkeypatch)
+
+
+@pytest.mark.parametrize("path", [P_PRODUCTS, P_AUTO_CAND])
+def test_v2_string_and_numeric_id_collision_is_duplicate(promo_mod, monkeypatch, path):
+    base = V2_AUTO_CAND if path == P_AUTO_CAND else V2_PARTICIPANT
+    items = [dict(base, id=1563818723), dict(base, id="1563818723")]
+    monkeypatch.setattr(promo_mod, "promo_call", lambda p, body=None: (200, {"products": items, "total": 2, "last_id": ""}))
+    with pytest.raises(promo_mod.PromoProductIdInvalid, match="повторяется после нормализации"):
+        if path == P_PRODUCTS:
+            promo_mod._paged_products(path, 1)
+        else:
+            promo_mod._paged_auto_add(path, 1, "2026-10-01T21:00:00Z")
+
+
+def test_v2_digit_string_id_is_accepted_and_normalized_like_raw(promo_mod, captured, monkeypatch):
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2({
+        P_PRODUCTS: (200, {"products": [dict(V2_PARTICIPANT, id="1563818723")], "total": 1, "last_id": ""})}))
+    promo_mod.promo("run-1", "ts", None, None)
+    r = [x for x in rows_of(captured, promo_mod.TBL_PRODUCTS) if x["membership"] == "PARTICIPATING"][0]
+    assert r["product_id"] == 1563818723 and r["sku_resolution_status"] == "RESOLVED_BY_PRODUCT_ID"
+
+
+def test_invalid_id_is_partial_not_complete(promo_mod, manifest_sql, monkeypatch):
+    written, sqls = manifest_sql
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2({
+        P_CANDIDATES: (200, {"products": [dict(V2_PARTICIPANT, id=None)], "total": 1, "last_id": ""})}))
+    with pytest.raises(promo_mod.PromoPartial, match="products_candidate=FAILED\\(PromoProductIdInvalid\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    tables = {t: rows for t, rows in written}
+    assert {r["membership"] for r in tables[promo_mod.TBL_PRODUCTS]} == {"PARTICIPATING"}
+    up = _final_update(sqls)
+    assert "status='PARTIAL'" in up and "status='COMPLETE'" not in up and "products_candidate=NULL" in up
+
+
+def test_total_change_is_partial_not_complete(promo_mod, manifest_sql, monkeypatch):
+    written, sqls = manifest_sql
+    pages = iter([({"products": [dict(V2_AUTO_LIST, product_id=i + 1) for i in range(100)], "total": 101}),
+                  ({"products": [], "total": 100})])
+    monkeypatch.setattr(promo_mod, "promo_call", route_v2({P_AUTO_LIST: lambda p, body: (200, next(pages))}))
+    with pytest.raises(promo_mod.PromoPartial, match="auto_add_scheduled=FAILED\\(PromoPaginationIncomplete\\)"):
+        promo_mod.promo("run-1", "ts", None, None)
+    up = _final_update(sqls)
+    assert "status='PARTIAL'" in up and "auto_add_scheduled_rows=NULL" in up

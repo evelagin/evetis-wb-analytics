@@ -50,6 +50,11 @@ ALLOWED_PATHS = (P_ACTIONS, P_PRODUCTS, P_CANDIDATES,
 PAGE_LIMIT = 100                 # контракт Ozon: limit 1..100 у методов акций
 MAX_PAGES = 200                  # 20 000 позиций в одной акции
 
+# Поле идентификатора товара по контракту метода (живая проба C3, 02.11.2026): у auto-add/list — product_id,
+# у остальных трёх — id. Полнота выгрузки доказывается только по корректным уникальным id этого поля.
+ID_FIELD = {P_PRODUCTS: "id", P_CANDIDATES: "id",
+            P_AUTO_ADD_LIST: "product_id", P_AUTO_ADD_CANDIDATES: "id"}
+
 TBL_ACTIONS = "RAW_OZON_PROMO_ACTIONS"
 TBL_PRODUCTS = "RAW_OZON_PROMO_PRODUCTS"
 TBL_AUTO_ADD = "RAW_OZON_PROMO_AUTO_ADD"
@@ -103,6 +108,10 @@ class PromoPaginationIncomplete(RuntimeError):
     страницами (дубль + пропуск при том же числе строк) иначе выдали бы неполный список за
     полный. Этап становится FAILED, снимок — PARTIAL, а не COMPLETE.
     """
+
+
+class PromoProductIdInvalid(PromoPaginationIncomplete):
+    """Товар без корректного идентификатора по контракту метода или дубль после нормализации."""
 
 
 class PromoPartial(RuntimeError):
@@ -245,14 +254,58 @@ def _resolve(by_pid, by_offer, product_id, offer_id):
     return None, "UNRESOLVED"
 
 
-def _complete(path, action_id, out, total, key):
-    """Полнота постраничного сбора: total Ozon = число собранных уникальных товаров (live: total — по всем страницам)."""
+def _item_pid(path, it):
+    """id товара для строки RAW — единственное место выбора поля (запись строк и проверка полноты)."""
+    if path in (P_PRODUCTS, P_CANDIDATES):
+        return _int(it.get("id"))
+    return _int(it.get("product_id") if it.get("product_id") is not None else it.get("id"))
+
+
+def _valid_pid(v):
+    """Положительный целый id, точно представимый после нормализации _int, иначе None.
+
+    Отвергаются None, пустая строка, bool, дробное, отрицательное, ноль, нечисловая строка и число,
+    которое _int (через float) исказил бы.
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, str):
+        if not v.isdigit():
+            return None
+        exact = int(v)
+    elif isinstance(v, int):
+        exact = v
+    elif isinstance(v, float) and v.is_integer():
+        exact = int(v)
+    else:
+        return None
+    n = _int(v)
+    return n if n is not None and n > 0 and n == exact else None
+
+
+def _page_total(path, action_id, res, first_total):
+    """total страницы: целый и тот же, что на первой странице (total — по всем страницам, live C3)."""
+    total = res.get("total")
     if not isinstance(total, int) or isinstance(total, bool):
         raise PromoPaginationIncomplete(f"{path} action_id={action_id}: в ответе нет целого total — полноту не доказать")
-    unique = len({key(it) for it in out})
-    if len(out) != total or unique != total:
+    if first_total is not None and total != first_total:
         raise PromoPaginationIncomplete(
-            f"{path} action_id={action_id}: собрано {len(out)} (уникальных {unique}) из total={total}")
+            f"{path} action_id={action_id}: total изменился между страницами {first_total} → {total}")
+    return total
+
+
+def _complete(path, action_id, out, total):
+    """Полнота постраничного сбора: корректных уникальных id по контракту метода ровно total."""
+    field, ids = ID_FIELD[path], set()
+    for it in out:
+        pid = _valid_pid(it.get(field))
+        if pid is None or _item_pid(path, it) != pid:
+            raise PromoProductIdInvalid(f"{path} action_id={action_id}: товар без корректного {field}")
+        if pid in ids:
+            raise PromoProductIdInvalid(f"{path} action_id={action_id}: {field} повторяется после нормализации")
+        ids.add(pid)
+    if len(out) != total:
+        raise PromoPaginationIncomplete(f"{path} action_id={action_id}: собрано {len(out)} из total={total}")
     return out
 
 
@@ -262,36 +315,37 @@ def _paged_products(path, action_id):
     offset у этих методов помечен Ozon как устаревший, актуален last_id.
     Упор в потолок страниц роняет сущность, а не обрезает данные молча.
     """
-    out, last_id = [], ""
+    out, last_id, total = [], "", None
     for _ in range(MAX_PAGES):
         # Первая страница — last_id "" (форма, подтверждённая живой пробой C3 02.11.2026).
         code, r = promo_call(path, {"action_id": action_id, "limit": PAGE_LIMIT, "last_id": last_id})
         if code != 200:
             raise PromoHttpError(path, code, str(r)[:200], action_id)
         res = r.get("result", r) or {}
+        total = _page_total(path, action_id, res, total)
         items = res.get("products") or []
         out.extend(items)
         nxt = res.get("last_id") or ""
         if len(items) < PAGE_LIMIT or not nxt or nxt == last_id:
-            return _complete(path, action_id, out, res.get("total"), lambda it: it.get("id"))
+            return _complete(path, action_id, out, total)
         last_id = nxt
     raise RuntimeError(f"{path} action_id={action_id}: упор в потолок страниц")
 
 
 def _paged_auto_add(path, action_id, auto_add_date):
     """Постраничный сбор автодобавления. Здесь пагинация по offset (контракт метода)."""
-    out, offset = [], 0
+    out, offset, total = [], 0, None
     for _ in range(MAX_PAGES):
         code, r = promo_call(path, {"action_id": action_id, "auto_add_date": auto_add_date,
                                     "limit": PAGE_LIMIT, "offset": offset})
         if code != 200:
             raise PromoHttpError(path, code, str(r)[:200], action_id)
         res = r.get("result", r) or {}
+        total = _page_total(path, action_id, res, total)
         items = res.get("products") or []
         out.extend(items)
         if len(items) < PAGE_LIMIT:
-            return _complete(path, action_id, out, res.get("total"),
-                             lambda it: it.get("product_id") if it.get("product_id") is not None else it.get("id"))
+            return _complete(path, action_id, out, total)
         offset += PAGE_LIMIT
     raise RuntimeError(f"{path} action_id={action_id}: упор в потолок страниц")
 
@@ -371,7 +425,7 @@ def promo(run_id, ts, _f, _t):
                     continue
                 unknown |= _unknown(items, KNOWN_PRODUCT_FIELDS, "product")
                 for it in items:
-                    pid = _int(it.get("id"))
+                    pid = _item_pid(path, it)
                     sku, status = _resolve(by_pid, by_offer, pid, None)
                     product_rows.append(dict(
                         action_id=aid, membership=membership, product_id=pid,
@@ -411,7 +465,7 @@ def promo(run_id, ts, _f, _t):
                         continue
                     unknown |= _unknown(items, KNOWN_AUTO_ADD_FIELDS, "auto_add")
                     for it in items:
-                        pid = _int(it.get("product_id") if it.get("product_id") is not None else it.get("id"))
+                        pid = _item_pid(path, it)
                         offer = it.get("offer_id")
                         sku, status = _resolve(by_pid, by_offer, pid, offer)
                         auto_rows.append(dict(
