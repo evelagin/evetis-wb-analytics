@@ -37,7 +37,7 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 locals {
-  # Один образ и одна identity на все три расписания: разный только ENTITIES.
+  # Одна identity на все расписания, разный ENTITIES; образ — по таблице ozon_job_images (promo — свой, с 02.11).
   #
   # ⚠️ Это поле под `ignore_changes` (см. lifecycle ниже): Terraform его не
   # применяет, образ продвигается отдельно, как у WB-загрузчиков. Значение
@@ -70,9 +70,33 @@ locals {
   # изменена, поэтому один digest получили все ЧЕТЫРЕ job'а, как требует §4
   # pipelines/ozon/DEPLOYMENT.md. Откат — вернуть предыдущий digest и
   # прокатить тем же циклом gcloud run jobs update.
+  #
+  # 2026-11-02, C5 (OWNER ACK): ozon-runtime-promo ОТДЕЛЁН от общего digest — см. ozon_runtime_promo_image.
+  # daily / fast / weekly остаются на 24e3c6d6 (образ из 08dfb88).
   ozon_runtime_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:24e3c6d6715fa7b73d30b4270f9863d2b8680b4b02d4874ff1ea12b4fd90fa1b"
-  ozon_ingestion_sa  = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
-  ozon_scheduler_sa  = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
+
+  # 2026-11-02, C5: только ozon-runtime-promo → sha256:cae0af75….
+  # Причина: Ozon снял методы акций v1 (/v1/actions/auto-add/products/list — 404 с 26.10, годный снимок
+  # был 14.10). Новый promo.py (методы v2, изоляция этапов, полнота пагинации по total и id) собран НЕ из
+  # main, а из изолированной релизной ветки release/evetis-ozon-runtime-08dfb88-promo @605a34b7: правка
+  # promo.py в main меняет квалификационный хеш Heldi (backfill_core.implementation_hash). Относительно
+  # 08dfb88 в образе изменён только runtime/promo.py.
+  # Провенанс: Cloud Build 3a2899ed-291a-4842-872e-2ac51c19d7a7 (europe-west1), тег 605a34b7, архив
+  # исходника sha256 16d68512…4532 = git archive 605a34b7 pipelines/ozon/runtime; release gates G1–G6 PASS.
+  # Первый штатный слот 02.11 19:00Z: COMPLETE (OZPROMO_prod_202611021900), DRO-1 ozon_promo HEALTHY.
+  # Откат — вернуть promo на ozon_runtime_image тем же gcloud run jobs update (pipelines/ozon/DEPLOYMENT.md §4).
+  ozon_runtime_promo_image = "europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/cloud-run-source-deploy/ozon-runtime-ingest@sha256:cae0af75c1af2272390d5023485d99b3b9fb0a20feafecfd0f2c968b548f03d7"
+
+  # Job → digest. Явная таблица, а не условие: job без строки здесь — ошибка plan, а не тихий общий образ.
+  ozon_job_images = {
+    "ozon-runtime-fast"   = local.ozon_runtime_image
+    "ozon-runtime-daily"  = local.ozon_runtime_image
+    "ozon-runtime-weekly" = local.ozon_runtime_image
+    "ozon-runtime-promo"  = local.ozon_runtime_promo_image
+  }
+
+  ozon_ingestion_sa = "sa-ozon-ingestion@${var.project_id}.iam.gserviceaccount.com"
+  ozon_scheduler_sa = "sa-ozon-scheduler@${var.project_id}.iam.gserviceaccount.com"
 
   ozon_common_env = {
     GCP_PROJECT_ID = var.project_id
@@ -155,7 +179,7 @@ resource "google_cloud_run_v2_job" "ozon_runtime" {
       max_retries = 0
       timeout     = "3600s"
       containers {
-        image = local.ozon_runtime_image
+        image = local.ozon_job_images[each.key]
         dynamic "env" {
           for_each = merge(local.ozon_common_env, { ENTITIES = each.value.entities })
           content {
