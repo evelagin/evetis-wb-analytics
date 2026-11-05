@@ -20,6 +20,23 @@ OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверк
   - повторный аудит: в отпечатке манифеста ставка обратного плеча и ожидаемые ΔW (`CANCEL_RESTORE_FINANCIAL_DRIFT`); детектор `V_UNITKA_CANCEL_SHEET_DRIFT` (лист против класса, событие `unitka_cancel_class_drift`).
 - **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
 
+## 2026-11-02 — Ozon: отдельный digest `ozon-runtime-promo` в Terraform (учёт C5, production не меняется)
+
+После C5 (OWNER ACK 02.11) `ozon-runtime-promo` работает на `sha256:cae0af75…`, а daily / fast / weekly — на
+`sha256:24e3c6d6…`. Terraform описывал один общий `local.ozon_runtime_image` для всех четырёх job'ов и врал бы о promo.
+- `infra/terraform/ozon_ingestion.tf`: `local.ozon_runtime_promo_image` (cae0af75, провенанс: релизная ветка
+  `release/evetis-ozon-runtime-08dfb88-promo` @605a34b7, Cloud Build `3a2899ed-291a-4842-872e-2ac51c19d7a7`, G1–G6 PASS)
+  и явная таблица `local.ozon_job_images` (job → digest); ресурс берёт образ из неё. `ignore_changes` на image сохранён —
+  plan по четырём job'ам: 0 изменений. Scheduler, IAM, env, SA, ресурсы — не менялись.
+- `pipelines/ozon/DEPLOYMENT.md`: §4 — правило «один digest на четыре job'а» заменено на «общий для трёх + свой у promo»,
+  новый §4b с провенансом и откатом.
+- `DEPLOYMENT.md` §4a: окно `finance_accrual` 30 суток отмечено как развёрнутое 22.09 (Gate 9B, замер прогонов 01–02.11 — 30 суток);
+  устаревшее «записать digest, `terraform apply`» заменено разграничением: деплой — `gcloud run jobs update`, фиксация digest —
+  коммит в Terraform (image под `ignore_changes`, apply образ не меняет).
+- `pipelines/ozon/tests/test_deployment_contract.py`: 4 теста соответствия job → digest (6 мутаций Terraform ловятся).
+- `promo.py` из релизной ветки в `main` не переносится; PR #388 остаётся заблокированным. Квалификационные хеши Heldi
+  (`pipelines/ozon/runtime/*`, `tools/tenancy/*`) не затронуты.
+
 ## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)
 
 `evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`: возраст последнего годного снимка > 780 мин (FAIL контракта DRO-1 для
