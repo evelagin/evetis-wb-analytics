@@ -230,27 +230,37 @@ def observe(b, m, stop_hash, *, policy_hash, day, owner_decision_sha256, qualifi
     t0 = when(listing['BFR_' + cert_hash][1])
     for k in SHARD_KINDS:
         if f'BFQ_{shard}_{seq:010d}_{k}' not in listing: fail('CURRENT shard fence absent')
-    if not when(listing[releases[lease_generation]][1]) <= t0 < started or not F.stamp(cert['payload']['fact']['observed_at']) <= t0:
+    released_at = when(listing[releases[lease_generation]][1])
+    if not released_at <= t0 < started or not F.stamp(cert['payload']['fact']['observed_at']) <= t0:
         fail('lease release / certificate / terminal wake order differs')
-    # Nothing after the certificate: only the control claims, this STOP's marker and the qualified
-    # replacement's own release markers (exact 40-hex source in the name) may have been created.
+    # Nothing after the certificate: in tenant_locks only the control claims, this STOP's marker and the
+    # replacement's exact release descriptors; in ref only the replacement's exact handoff/association
+    # markers (the 8 PAUSED-stage markers of a release). Any other new object — a catch-up or FBO
+    # diagnostic authority, a lease, a fence, a record — refuses.
     source = b.c['orchestration']['job']['env']['CONTROLLER_SOURCE_SHA']
+    if source == old['source_sha']: fail('replacement release required')
+    spec = {'BF_SPEC_' + source + '_' + m['hash'] + '_' + z for z in ('PAUSED', 'ENABLED')}
     for n, (_, created) in listing.items():
-        if created is None or when(created) <= t0: continue
-        if n.startswith(tuple(z + m['hash'] + '_' for z in CLAIM_PREFIXES)) or n == 'BFR_' + stop_hash or (source != old['source_sha'] and source in n): continue
+        if created is None: fail('object without creation time')
+        if when(created) <= t0: continue
+        if n.startswith(tuple(z + m['hash'] + '_' for z in CLAIM_PREFIXES)) or n == 'BFR_' + stop_hash or n in spec: continue
         fail('authority after the CURRENT certificate')
+    for n, _labels, created in b.tables.list_tables(b.c['datasets']['ref']):
+        if created is None: fail('object without creation time')
+        if when(created) <= t0 or n == 'BFCURHANDOFF_' + source or n.endswith('_' + m['hash'] + '_' + source): continue
+        fail('owner authority after the CURRENT certificate')
     ledger = f"`{b.c['project_id']}.{b.c['datasets']['tenant_ops']}.BACKFILL_CHECKPOINTS`"
     rows = b.select(f"SELECT backfill_id, entity FROM {ledger} WHERE updated_at>@t0 LIMIT 100", {'t0': ('TIMESTAMP', t0.isoformat())})
     if [(r.get('backfill_id'), r.get('entity')) for r in rows] != [(stop_hash[:16], 'orchestration')]: fail('ledger row after the CURRENT certificate')
     beyond = b.select(f"SELECT COUNT(*) AS n FROM {ledger} WHERE entity!='orchestration' AND lease_generation>@lease", {'lease': ('INT64', lease_generation)})
     if len(beyond) != 1 or beyond[0].get('n') not in (0, '0'): fail('pilot checkpoint beyond the last lease')
-    # No source effect after the certificate: Run executions and the ingestion journal.
+    # No source effect after the lease release (it precedes the certificate): Run executions and the ingestion journal.
     base, _ = BF.resources(b.c)
     for n in (*b.c['marketplaces']['ozon']['jobs'], 'tenant-control', O.JOB):
         xs = BF.execution_inventory(b.request, base + '/jobs/' + n)['executions']
         if any(not z.get('completionTime') for z in xs): fail('active execution')
-        if n != O.JOB and any(F.stamp(z['createTime']) > t0 for z in xs): fail('source execution after the CURRENT certificate')
-    if b.select(f"SELECT ingestion_run_id FROM `{b.journal}` WHERE started_at>@t0 LIMIT 1", {'t0': ('TIMESTAMP', t0.isoformat())}): fail('source journal after the CURRENT certificate')
+        if n != O.JOB and any(F.stamp(z['createTime']) > released_at for z in xs): fail('source execution after the CURRENT lease release')
+    if b.select(f"SELECT ingestion_run_id FROM `{b.journal}` WHERE started_at>@t0 LIMIT 1", {'t0': ('TIMESTAMP', released_at.isoformat())}): fail('source journal after the CURRENT lease release')
     ss = b.request('GET', BF.SCHED_API + '/' + base + '/jobs?pageSize=100')
     if len(ss.get('jobs', [])) != 4 or ss.get('nextPageToken') or any(z['state'] != 'PAUSED' for z in ss['jobs']): fail('owner freeze required')
     if [D.digest(z) for z in SA.unresolved(b, m, records, fresh=True)] != [stop_hash]: fail('other global STOP remains')

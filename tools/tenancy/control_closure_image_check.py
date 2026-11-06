@@ -73,7 +73,10 @@ def fixture():
     roots = {m['hash']: root, POLICY: index, day_root: cycle, shard: sh}
     cid = BF.B.digest(['BOUNDED_PILOT_EXCLUSIVE', c['project_id']])[:16]; objects = {}
 
-    def put(n, labels, desc, created): objects[n] = (labels, desc, created)
+    refs = set()
+    def put(n, labels, desc, created, ref=False):
+        objects[n] = (labels, desc, created)
+        if ref: refs.add(n)
     marks = {D.digest(index[0]): T(21, 9, 29), D.digest(cycle[0]): T(21, 42, 14), D.digest(sh[0]): T(21, 43, 22), D.digest(sh[1]): T(21, 43, 23),
              D.digest(sh[2]): T(21, 55, 10), D.digest(cert): T(21, 55, 24, 234000), D.digest(stop): stopped, D.digest(root[0]): T(1, 0)}
     for rs in roots.values():
@@ -94,6 +97,9 @@ def fixture():
         close = CC.sealed(dict(version=1, claim_hash=claim['hash'], status=status, source_dispatches=dispatches, closed_at=done.isoformat()))
         put(CC.names(m['hash'], gen)[1], {'kind': 'controller_close', 'root': m['hash'][:16]}, D.encoded(close), done)
     put(C.descriptor_name(new['source_sha'], m['hash'], 'PAUSED'), {}, D.encoded(dict(settings=settings, release=new)), NOW - timedelta(hours=1))
+    put('BFCURHANDOFF_' + new['source_sha'], {}, '{}', NOW - timedelta(hours=1), ref=True)          # the replacement's ref markers
+    put('BFRP_AUTH_' + m['hash'] + '_' + new['source_sha'], {}, '{}', NOW - timedelta(hours=1), ref=True)
+    put('SELLER_BINDING', {}, '', T(1, 0), ref=True)                                                 # an older ref table
     base, _ = BF.resources(c)
     ctx = dict(sched='PAUSED', journal_after=[], ledger_after=[{'backfill_id': D.digest(stop)[:16], 'entity': 'orchestration'}], ledger_beyond=0, state=state,
                executions={JOB: [x, dict(name=JOB + '/executions/next', createTime=T(22, 0, 2).isoformat(), completionTime=T(22, 2, 31).isoformat(), succeededCount=1, taskCount=1)],
@@ -119,18 +125,20 @@ def fixture():
 
     def create(ds, n, labels, description):
         if n in objects: return False
-        objects[n] = (labels, description, NOW); effects.append(('marker', n)); return True
+        objects[n] = (labels, description, NOW); effects.append(('marker', n))
+        if ds == c['datasets']['ref']: refs.add(n)
+        return True
 
     def commit(root_hash, kind, seq, payload, now):
         r = rec(root_hash, kind, seq, deepcopy(payload)); target = roots.setdefault(root_hash, [])
         if r not in target: target.append(r); effects.append(('record', kind))
         return D.digest(r)
     tables = SimpleNamespace(get_table=lambda ds, n: objects[n][:2] if n in objects else None,
-                             list_tables=lambda ds, **kw: [(n, v[0], v[2]) for n, v in objects.items()], create_marker=create)
+                             list_tables=lambda ds, **kw: [(n, v[0], v[2]) for n, v in objects.items() if (n in refs) == (ds == c['datasets']['ref'])], create_marker=create)
     store = SimpleNamespace(history=lambda r, **kw: deepcopy(roots.get(r, [])), commit=commit)
     b = SimpleNamespace(c=c, current_execution=None, clock=lambda: NOW, request=request, select=select, tables=tables, store=store,
                         state=lambda d: deepcopy(ctx['state']), journal='mpa-t-client-001.ozon_raw.OZON_INGESTION_RUNS')
-    return SimpleNamespace(m=m, b=b, root=root, roots=roots, sh=sh, cycle=cycle, index=index, cert=cert, objects=objects, effects=effects, stop=stop, ctx=ctx,
+    return SimpleNamespace(m=m, b=b, refs=refs, root=root, roots=roots, sh=sh, cycle=cycle, index=index, cert=cert, objects=objects, effects=effects, stop=stop, ctx=ctx,
                            new=new, old=old, shard=shard, cid=cid, doc=doc, started=started, stopped=stopped, x=x, day_root=day_root)
 
 
@@ -203,6 +211,13 @@ def negatives():
         f.objects['BFR_' + D.digest(r)] = ({}, '', T(21, 59))
     def fence_after_cert(f): f.objects['BFQ_' + '9' * 64 + '_0000000001_DISPATCH_INTENT'] = ({}, '', T(21, 59))
     def foreign_marker_after_cert(f): f.objects['BFDQUEUE_x'] = ({}, '', T(22, 30))
+    def catchup_authority_after_cert(f): f.objects['BFFINCATCHUP_f9e2aa2519fb94a0_02'] = ({}, '', T(23, 0)); f.refs.add('BFFINCATCHUP_f9e2aa2519fb94a0_02')
+    def fbo_token_after_cert(f): f.objects['BFDQUEUE_' + OLD] = ({}, '', T(23, 0)); f.refs.add('BFDQUEUE_' + OLD)
+    def foreign_source_marker(f): f.objects['BF_SPEC_' + 'f' * 40 + '_' + '0' * 64 + '_PAUSED'] = ({}, '', T(23, 0))
+    def undated_object(f): f.objects['BFR_' + '1' * 64] = ({}, '', None)
+    def runtime_between_release_and_cert(f):
+        k = JOB.rsplit('/jobs/', 1)[0] + '/jobs/ozon-runtime-daily'
+        f.ctx['executions'][k] = [dict(name='x', createTime=T(21, 55, 5).isoformat(), completionTime=T(21, 58).isoformat())]
     def ledger_row_after_cert(f): f.ctx['ledger_after'].append({'backfill_id': 'abc', 'entity': 'stocks'})
     def ledger_stop_row_missing(f): f.ctx['ledger_after'] = []
     def pilot_beyond_lease(f): f.ctx['ledger_beyond'] = 1
@@ -223,6 +238,7 @@ def negatives():
             own_closure('MONITORING'), own_closure('STOPPED', 1), own_closure_before_stop, later_claim_dispatched, claim_unclosed, claim_gap,
             lease_beyond, release_beyond, lease_owner_differs, released_after_cert, cert_absent, cert_binding, cert_other_run, cert_after_wake,
             shard_next_intent, shard_not_done, state_changed, day_index_differs, next_plan_record, fence_after_cert, foreign_marker_after_cert,
+            catchup_authority_after_cert, fbo_token_after_cert, foreign_source_marker, undated_object, runtime_between_release_and_cert,
             ledger_row_after_cert, ledger_stop_row_missing, pilot_beyond_lease, runtime_after_cert, runtime_active, journal_after, scheduler_enabled,
             other_stop, stop_outside_execution, unqualified_replacement, descriptor_absent]
 
@@ -272,12 +288,14 @@ def publish_check():
     h = fixture(); p3 = observe(h); writes = []
 
     class Meta:
-        def list_tables(self, ds, **kw): return [(n, v[0], v[2]) for n, v in h.objects.items()]
+        def list_tables(self, ds, **kw): return [(n, v[0], v[2]) for n, v in h.objects.items() if (n in h.refs) == (ds == 'ref')]
         def get_table(self, ds, n): return h.objects[n][:2] if n in h.objects else None
         def create_marker(self, ds, n, labels, description):
             writes.append((ds, n))
             if n in h.objects: return False
-            h.objects[n] = (labels, description, NOW); return True
+            h.objects[n] = (labels, description, NOW)
+            if ds == 'ref': h.refs.add(n)
+            return True
     rows = [dict(plan_hash=r['root_hash'], backfill_id=D.digest(r)[:16], evidence_json=D.encoded(r)) for rs in h.roots.values() for r in rs]
     def write_record(row): writes.append(('tenant_ops', 'BACKFILL_CHECKPOINTS')); rows.append(row)
     def select(c_, sql, params): return [{'evidence_json': r['evidence_json']} for r in rows if r['plan_hash'] == params['root'][1] and ('record' not in params or r['backfill_id'] == params['record'][1])]
