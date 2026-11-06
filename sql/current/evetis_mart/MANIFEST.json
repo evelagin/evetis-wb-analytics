@@ -2047,15 +2047,15 @@
       ],
       "external_dependencies": [],
       "dependency_level": 1,
-      "capture_main_sha": "000b253cc86dfb720b51f61cd46a9322936b5e82",
-      "captured_at": "2026-09-23T21:15:03Z",
+      "capture_main_sha": "3ea1b8a26dd7bbe8b4e2be886c87ebdf11d6641b",
+      "captured_at": "2026-11-02T19:46:40Z",
       "provenance": {
-        "source": "production INFORMATION_SCHEMA read-only capture (R2C) after PR-PROMO-2 deploy 2026-09-23 from main 000b253",
+        "source": "production tables.get read-only recapture (R2C) 2026-11-02T19:46:40Z after C2 deploy 2026-11-02 15:00:48Z from main 3ea1b8a2 (#390); previous capture 2026-09-23T21:15:03Z from main 000b253, body a8a428ca",
         "historical_migration": null,
         "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "a8a428cae4f3289e613fc3e848bbd5403398fa47fd12aa56114d9a6fcabaaeae",
+      "live_body_sha256_at_capture": "d768db116d09a584366d8b52c1f43847c242b6650a4f1b0b75c89b4de1879659",
       "live_schema_sha256_at_capture": "0c601e92124d6f798eeaace8adcb67bdaef0d5c0827ebdeaee30e8e493fbe16d",
       "live_description_sha256_at_capture": "9adbed7626f69f9fd359d1c4a9a3b7b60dd8b94ce114bc66f6b72eb84baaf3e1",
       "live_schema_at_capture": [
@@ -2144,7 +2144,7 @@
           "ordinal_position": 14
         }
       ],
-      "canonical_body_sha256": "a8a428cae4f3289e613fc3e848bbd5403398fa47fd12aa56114d9a6fcabaaeae",
+      "canonical_body_sha256": "d768db116d09a584366d8b52c1f43847c242b6650a4f1b0b75c89b4de1879659",
       "canonical_description_sha256": "9adbed7626f69f9fd359d1c4a9a3b7b60dd8b94ce114bc66f6b72eb84baaf3e1",
       "canonical_schema_sha256": "0c601e92124d6f798eeaace8adcb67bdaef0d5c0827ebdeaee30e8e493fbe16d",
       "canonical_schema_verification": "bigquery_verified",

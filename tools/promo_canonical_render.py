@@ -681,8 +681,14 @@ ASSERTIONS: list[tuple[str, str, str]] = [
      f"{n_row(N_OBSV, "marketplace = 'WB' AND capability = 'SKU_MEMBERSHIP'", COUNTS4)} = '6/2/3/1'"),
     ("FXO", "wb_auto_add_not_provided",
      f"{n_row(N_OBSV, "marketplace = 'WB' AND capability = 'SKU_AUTO_ADD_SCHEDULE'", 'capability_status')} = 'NOT_PROVIDED_BY_SOURCE'"),
+    # Частичность сопоставления — по счётчикам: статус фикстуры (снимки 01.01.2026) всегда STALE (> 780 мин, #390).
     ("FXO", "ozon_mapping_partial",
-     f"{n_row(N_OBSV, "marketplace = 'OZON' AND capability = 'SKU_IDENTITY_MAPPING'", 'capability_status')} = 'PARTIALLY_OBSERVED'"),
+     f"{n_row(N_OBSV, "marketplace = 'OZON' AND capability = 'SKU_IDENTITY_MAPPING'", 'units_established > 0 AND units_established < units_total')}"),
+    ("FXO", "old_snapshot_is_stale",
+     f"{n_row(N_OBSV, "marketplace = 'OZON' AND capability = 'SKU_IDENTITY_MAPPING'", 'capability_status')} = 'STALE'"),
+    ("FXO", "source_absence_beats_staleness",
+     f"{n_row(N_OBSV, "marketplace = 'WB' AND capability = 'MARKETING_ACTION_LINKAGE'", 'capability_status')} = 'NOT_PROVIDED_BY_SOURCE'"),
+    ("FXO", "full_grid_both_marketplaces", f"{cnt(N_OBSV)} = 16"),
     # Зерно каждого представления.
     ("FXG", "grain_wb_observations", grain(WB_OBS, "observation_id")),
     ("FXG", "grain_wb_history", grain(WB_H, "FORMAT('%t', (observation_id, promotion_id))")),

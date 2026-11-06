@@ -60,7 +60,7 @@ describe('SQL: слой доказательств отказов (refusals_v1.s
 });
 
 describe('SQL: обе вью фактов прибавляют к S только доказанные отказы и только на днях воронки', () => {
-  const FORMULA = 'COALESCE(bf.canc, o.canc, 0) + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels';
+  const FORMULA = "IF(cc.cancel_class_status = 'FINAL', cc.final_cancels, COALESCE(bf.canc, o.canc, 0) + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0)) AS cancels";
   it.each([['sql/unitka/engine_v1_views.sql', 'V_UNITKA_DAILY_FACT'], ['sql/unitka/reconcile_v1.sql', 'V_UNITKA_RECON_FACT']])('%s %s', (file, name) => {
     const body = flat(viewBodies(read(file)).get(name)!);
     expect(body).toContain(FORMULA);

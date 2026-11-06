@@ -1,5 +1,49 @@
 # CHANGELOG.md
 
+## 2026-11-02 — Юнитка WB: классы отмен по присутствию в воронке и логистике (НЕ развёрнуто)
+
+OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверка октября с официальной воронкой WB:
+- 18.10 / 535580776 — отмена дня заказа без логистики осталась в Q и считалась продажей;
+- 24.10 / 252442517 — отмена заказа, которого в воронке нет (Q = 0), вычиталась из W.
+
+Изменения:
+- **SQL.** Новые вью `wb_mart.V_UNITKA_CANCEL_EVIDENCE` и `V_UNITKA_CANCEL_CLASS_DAILY` (`sql/unitka/cancel_class_v1.sql`). Присутствие отмены в Q определяется арифметикой суток, логистика — зрелым финотчётом (46 суток). Изменение S и поправка V считаются только на зрелых сутках.
+- **Вью фактов.** `V_UNITKA_DAILY_FACT` и `V_UNITKA_RECON_FACT` берут S одним выражением (FINAL → итоговый S класса, иначе прежний) и получают новые колонки `cancel_void_qty`, `cancel_class_status` в конце. В окнах писателя и сверки S прежний: проверено на production, 25/25 и 875/875 строк.
+- **Формула W.** Строка с отменой без логистики в Q получает поправку `+V*(AF+REVERSE_LEG_RATE)` в конце формулы. Колонки листа не меняются. Шаблон месяца, QA и Store P&L распознают поправку строго.
+- **Снимок Store P&L.** В конец схемы `wb_ops.UNITKA_SKU_COMPONENTS_DAILY` (и `__STAGE`) добавлена колонка `void_cancels INT64` (Terraform). `V_WB_STORE_PNL_MONTHLY` считает логистику модели без плеч таких отмен.
+- **Загрузчик** `unitka-cancel-restore`: план и манифест, запись только по отпечатку и OWNER ACK, перечитывание, откат.
+- **Аудит PR #394:**
+  - зрелость — непрерывное покрытие окончательным финотчётом по реестру `FINANCE_REPORT_LOADS` × `FINANCE_WEEK_STATUS` (вью `V_UNITKA_FINANCE_FINAL_INTERVALS`, `V_UNITKA_CANCEL_MATURITY`);
+  - непринятая аномалия останавливает запись;
+  - запись — один атомарный `batchUpdate`;
+  - Store P&L читает формулы только колонок W;
+  - повторный аудит: в отпечатке манифеста ставка обратного плеча и ожидаемые ΔW (`CANCEL_RESTORE_FINANCIAL_DRIFT`); детектор `V_UNITKA_CANCEL_SHEET_DRIFT` (лист против класса, событие `unitka_cancel_class_drift`).
+- **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
+
+## 2026-11-02 — Ozon: отдельный digest `ozon-runtime-promo` в Terraform (учёт C5, production не меняется)
+
+После C5 (OWNER ACK 02.11) `ozon-runtime-promo` работает на `sha256:cae0af75…`, а daily / fast / weekly — на
+`sha256:24e3c6d6…`. Terraform описывал один общий `local.ozon_runtime_image` для всех четырёх job'ов и врал бы о promo.
+- `infra/terraform/ozon_ingestion.tf`: `local.ozon_runtime_promo_image` (cae0af75, провенанс: релизная ветка
+  `release/evetis-ozon-runtime-08dfb88-promo` @605a34b7, Cloud Build `3a2899ed-291a-4842-872e-2ac51c19d7a7`, G1–G6 PASS)
+  и явная таблица `local.ozon_job_images` (job → digest); ресурс берёт образ из неё. `ignore_changes` на image сохранён —
+  plan по четырём job'ам: 0 изменений. Scheduler, IAM, env, SA, ресурсы — не менялись.
+- `pipelines/ozon/DEPLOYMENT.md`: §4 — правило «один digest на четыре job'а» заменено на «общий для трёх + свой у promo»,
+  новый §4b с провенансом и откатом.
+- `DEPLOYMENT.md` §4a: окно `finance_accrual` 30 суток отмечено как развёрнутое 22.09 (Gate 9B, замер прогонов 01–02.11 — 30 суток);
+  устаревшее «записать digest, `terraform apply`» заменено разграничением: деплой — `gcloud run jobs update`, фиксация digest —
+  коммит в Terraform (image под `ignore_changes`, apply образ не меняет).
+- `pipelines/ozon/tests/test_deployment_contract.py`: 4 теста соответствия job → digest (6 мутаций Terraform ловятся).
+- `promo.py` из релизной ветки в `main` не переносится; PR #388 остаётся заблокированным. Квалификационные хеши Heldi
+  (`pipelines/ozon/runtime/*`, `tools/tenancy/*`) не затронуты.
+
+## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)
+
+`evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`: возраст последнего годного снимка > 780 мин (FAIL контракта DRO-1 для
+ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon показывался OBSERVED/COMPLETE при снимке
+двухнедельной давности. Колонки не меняются; манифест — новый хеш тела, `pending_deploy`. Тест сверяет порог с DRO-1.
+План — `docs/ops/PROMO_OBSERVABILITY_STALE_DEPLOY_2026-10-28.md`.
+
 ## 2026-10-28 — SKU Performance V2: S6 хранения по парам SKU-дня, без потери денег (НЕ развёрнуто)
 
 Инцидент: `sp_build_sku_performance_v2_daily` падает каждый час с 19.10.2026 04:20 UTC (154 сборки) на
