@@ -43,10 +43,19 @@ describe('V_UNITKA_LOGISTICS_RATES: хвост доказанного возвр
   });
 });
 
+describe('V_UNITKA_LOGISTICS_RATES: возврат неопознанного товара продавцу (06.11.2026)', () => {
+  it('класс seller_return расширен ровно одним точным значением bonusTypeName — без LIKE, префиксов и регистра', () => {
+    const sr = /sr AS \(SELECT DISTINCT srid FROM b WHERE son IN \('Логистика', 'Доставка'\) AND bonus IN \(((?:'[^']*'(?:, )?)+)\)\)/.exec(flat)!;
+    expect([...sr[1]!.matchAll(/'([^']*)'/g)].map((m) => m[1])).toEqual(['Возврат брака (К продавцу)', 'Возврат неопознанного товара (К продавцу)']);
+    expect(flat).not.toMatch(/bonus\s+(NOT\s+)?LIKE|LOWER\(bonus|STARTS_WITH\(bonus|REGEXP_\w+\(bonus/i);
+    expect(flat.match(/\bsr AS \(/g)).toHaveLength(1);                         // одна точка правды класса
+  });
+});
+
 describe('V_UNITKA_LOGISTICS_RATES: возврат брака продавцу (27.10.2026)', () => {
   it('класс определён строго по bonusTypeName плеча, без допусков', () => {
     expect(flat).toContain("JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus");
-    expect(flat).toContain("sr AS (SELECT DISTINCT srid FROM b WHERE son IN ('Логистика', 'Доставка') AND bonus = 'Возврат брака (К продавцу)')");
+    expect(flat).toContain("sr AS (SELECT DISTINCT srid FROM b WHERE son IN ('Логистика', 'Доставка') AND bonus IN ('Возврат брака (К продавцу)', 'Возврат неопознанного товара (К продавцу)'))");
     expect(flat).toContain("(srx AND legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')) AS sret");
     expect(flat).toContain("WHERE legs = 1 AND srid IN (SELECT srid FROM sr) AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')");
   });
