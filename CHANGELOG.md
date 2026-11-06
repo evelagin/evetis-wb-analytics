@@ -8,8 +8,9 @@ OWNER ACK «FINAL REVIEW» (06.11.2026), п. 2, design & test only. Карта �
 
 Изменения (`sql/unitka/store_pnl_v1.sql`, колонки не меняются, карта не меняется):
 - признак `acq_api_form` (одинаковый текст в `V_WB_STORE_FINANCE_COHORT_DAILY`, `V_WB_FINANCE_NEW_OPERATIONS`,
-  `V_WB_STORE_FINANCE_COVERAGE`): операция «Корректировка эквайринга» после 2025-01-31, docType «Продажа», есть
-  «Продажа» того же srid, forPay > 0 и forPay + acquiringFee = 0, количество, база и прочие деньги = 0;
+  `V_WB_STORE_FINANCE_COVERAGE`): операция «Корректировка эквайринга» после 2025-01-31, только строки Finance API
+  (`source_layer` DAILY/WEEKLY), docType «Продажа», есть «Продажа» того же srid И того же nm, forPay > 0 и
+  forPay + acquiringFee = 0, количество, база и прочие деньги = 0;
 - такая строка — DIRECT_SKU по действующей формуле H0 (for_pay, зеркальный acquiring_fee не читается);
 - любая иная форма, отрицательная корректировка и любая другая операция — PENDING_CLASSIFICATION, как раньше.
 - Тесты: `tools/tests/test_unitka_store_pnl_acquiring_correction.py` (тексты вью исполняются на SQLite).

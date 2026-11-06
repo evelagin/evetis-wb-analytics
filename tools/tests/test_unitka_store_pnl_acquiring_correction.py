@@ -3,7 +3,8 @@
 Карта операций доказывает «Корректировку эквайринга» только для LEGACY (2024-09…2025-01): DIRECT_SKU, for_pay,
 зеркальный acquiring_fee не читается. В API-слое WB прислал ту же операцию как возврат части эквайринга продажи:
 forPay > 0, acquiringFee = −forPay, docType «Продажа», srid продажи, количество, база и прочие деньги = 0.
-Правило: вне периода карты строка этой операции — DIRECT_SKU ТОЛЬКО в этой форме (признак acq_api_form, одинаковый
+Правило: вне периода карты строка этой операции — DIRECT_SKU ТОЛЬКО в этой форме и только из Finance API
+(source_layer DAILY/WEEKLY), а «Продажа» того же srid должна быть того же nm (признак acq_api_form, одинаковый
 текст в трёх вью); любая иная форма и любая другая операция — PENDING_CLASSIFICATION, как раньше.
 
 Из sql/unitka/store_pnl_v1.sql берутся тексты V_WB_STORE_FINANCE_COHORT_DAILY, V_WB_FINANCE_NEW_OPERATIONS,
@@ -65,19 +66,20 @@ COLS = ["row_hash", "_rr_date", "supplier_oper_name", "finance_status", "source_
 NM = 22000001  # синтетический SKU
 
 
-def row(key, rr, op, srid="s-1", doc="Продажа", fp=0, acq=0, q=0, pwd=0, lg=0, layer="DAILY", odt="2026-10-10T08:00:00"):
+def row(key, rr, op, srid="s-1", doc="Продажа", fp=0, acq=0, q=0, pwd=0, lg=0, layer="DAILY", odt="2026-10-10T08:00:00",
+        nm=NM):
     camel = {"rebillLogisticCost": 0, "ppvzReward": 0, "vw": 0, "vwNds": 0}
     r = dict(row_hash=key, _rr_date=rr, supplier_oper_name=op, finance_status="PROVISIONAL" if layer == "DAILY" else "FINAL",
-             source_layer=layer, srid=srid, order_dt=odt, wb_nm_id=NM, doc_type_name=doc, quantity=q,
+             source_layer=layer, srid=srid, order_dt=odt, wb_nm_id=nm, doc_type_name=doc, quantity=q,
              retail_price_withdisc_rub=pwd, retail_amount=0, for_pay=fp, acquiring_fee=acq, logistics_amount=lg,
              storage_fee=0, deduction=0, penalty=0, acceptance=0, additional_payment=0, rebill_logistics=0,
              compensation_amount=0, other_amount=0, raw_json=json.dumps(camel))
     return tuple(r[c] for c in COLS)
 
 
-def sale(key="sale", srid="s-1"):
+def sale(key="sale", srid="s-1", nm=NM):
     # продажа 16.10 по заказу 10.10: база 600, for_pay 500, эквайринг 21,6 (3,6 %)
-    return row(key, "2026-10-16", "Продажа", srid, fp=500, acq=21.6, q=1, pwd=600, layer="WEEKLY")
+    return row(key, "2026-10-16", "Продажа", srid, fp=500, acq=21.6, q=1, pwd=600, layer="WEEKLY", nm=nm)
 
 
 def corr(key="corr", **kw):
@@ -180,3 +182,19 @@ def test_legacy_period_behaviour_is_unchanged():
     k = cov(out, "lg1")
     assert (k["treatment"], k["consumer"]) == ("DIRECT_SKU", "COHORT")
     assert out["cohort"][0]["for_pay_rub"] == -3.0
+
+
+def test_only_finance_api_rows_qualify():
+    assert_pending(run([sale(), corr(layer="LEGACY")]))   # та же форма, но не из Finance API
+    assert_pending(run([sale(), corr(layer=None)]))       # происхождение не указано — fail-closed
+
+
+def test_weekly_layer_qualifies_like_daily():
+    k = cov(run([sale(), corr(layer="WEEKLY")]), "corr")
+    assert (k["treatment"], k["consumer"]) == ("DIRECT_SKU", "COHORT")
+
+
+def test_sale_of_the_same_srid_must_be_the_same_sku():
+    other_nm = NM + 1
+    assert_pending(run([sale(nm=other_nm), corr()]))       # srid совпал, SKU продажи другой
+    assert_pending(run([sale(), corr(nm=None)]))           # у корректировки нет SKU
