@@ -212,7 +212,7 @@ def test_terminal_zero_effect_failure_expires_to_independent_retry_preserving_pr
             assert name.endswith("_0002")
             leases[name] = (labels, description); return True
     tables = Tables()
-    monkeypatch.setattr(T, "preflight", lambda *a: (tables, ledger))
+    monkeypatch.setattr(T, "preflight", lambda *a, **k: (tables, ledger))
     def start_api(method, url, body):
         assert method == "POST"
         if url.endswith("/tables"):
@@ -326,7 +326,7 @@ def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch, offl
     class Tables:
         def list_tables(self, _): return []
         def append(self, *args): writes.append(args)
-    monkeypatch.setattr(T, "preflight", lambda *a: (Tables(), []))
+    monkeypatch.setattr(T, "preflight", lambda *a, **k: (Tables(), []))
     requests = []
     def api(method, url, body):
         requests.append((method, url, body))
@@ -344,7 +344,7 @@ def test_multiday_override_is_sent_and_wrong_readback_rejected(monkeypatch, offl
         "template": {"serviceAccount": c["marketplaces"]["ozon"]["service_accounts"]["runtime"] + "@" + c["project_id"] + ".iam.gserviceaccount.com",
                      "containers": [{"image": p["image"], "env": [{"name":k,"value":v} for k,v in env.items()]}]}}
     monkeypatch.setattr(T.TT, "_req", lambda *a: {"done": True, "response": execution})
-    monkeypatch.setattr(T, "preflight", lambda *a: pytest.fail("wrong override reached checkpoint mutation"))
+    monkeypatch.setattr(T, "preflight", lambda *a, **k: pytest.fail("wrong override reached checkpoint mutation"))
     before = copy.deepcopy(writes)
     with pytest.raises(T.B.EvidenceError, match="provenance mismatch"):
         T.reconcile(p, p["ack_hash"], receipt)
