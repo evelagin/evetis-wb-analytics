@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## 2026-11-02 — Юнитка WB: классы отмен по присутствию в воронке и логистике (НЕ развёрнуто)
+
+OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверка октября с официальной воронкой WB:
+- 18.10 / 535580776 — отмена дня заказа без логистики осталась в Q и считалась продажей;
+- 24.10 / 252442517 — отмена заказа, которого в воронке нет (Q = 0), вычиталась из W.
+
+Изменения:
+- **SQL.** Новые вью `wb_mart.V_UNITKA_CANCEL_EVIDENCE` и `V_UNITKA_CANCEL_CLASS_DAILY` (`sql/unitka/cancel_class_v1.sql`). Присутствие отмены в Q определяется арифметикой суток, логистика — зрелым финотчётом (46 суток). Изменение S и поправка V считаются только на зрелых сутках.
+- **Вью фактов.** `V_UNITKA_DAILY_FACT` и `V_UNITKA_RECON_FACT` берут S одним выражением (FINAL → итоговый S класса, иначе прежний) и получают новые колонки `cancel_void_qty`, `cancel_class_status` в конце. В окнах писателя и сверки S прежний: проверено на production, 25/25 и 875/875 строк.
+- **Формула W.** Строка с отменой без логистики в Q получает поправку `+V*(AF+REVERSE_LEG_RATE)` в конце формулы. Колонки листа не меняются. Шаблон месяца, QA и Store P&L распознают поправку строго.
+- **Снимок Store P&L.** В конец схемы `wb_ops.UNITKA_SKU_COMPONENTS_DAILY` (и `__STAGE`) добавлена колонка `void_cancels INT64` (Terraform). `V_WB_STORE_PNL_MONTHLY` считает логистику модели без плеч таких отмен.
+- **Загрузчик** `unitka-cancel-restore`: план и манифест, запись только по отпечатку и OWNER ACK, перечитывание, откат.
+- **Аудит PR #394:**
+  - зрелость — непрерывное покрытие окончательным финотчётом по реестру `FINANCE_REPORT_LOADS` × `FINANCE_WEEK_STATUS` (вью `V_UNITKA_FINANCE_FINAL_INTERVALS`, `V_UNITKA_CANCEL_MATURITY`);
+  - непринятая аномалия останавливает запись;
+  - запись — один атомарный `batchUpdate`;
+  - Store P&L читает формулы только колонок W;
+  - повторный аудит: в отпечатке манифеста ставка обратного плеча и ожидаемые ΔW (`CANCEL_RESTORE_FINANCIAL_DRIFT`); детектор `V_UNITKA_CANCEL_SHEET_DRIFT` (лист против класса, событие `unitka_cancel_class_drift`).
+- **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
+
 ## 2026-11-02 — Ozon: отдельный digest `ozon-runtime-promo` в Terraform (учёт C5, production не меняется)
 
 После C5 (OWNER ACK 02.11) `ozon-runtime-promo` работает на `sha256:cae0af75…`, а daily / fast / weekly — на

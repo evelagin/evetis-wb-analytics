@@ -19,7 +19,8 @@ import { LoaderError } from '../../../errors.js';
 import { SheetsRest, type SheetsGateway } from '../sheets.js';
 import { colA1, NAMED, serialToIso, type CellValue } from '../model.js';
 import { quoteSheet } from '../section.js';
-import { parseUnitkaComponents } from './parse.js';
+import { formulaStyleOf } from '../formulas.js';
+import { parseUnitkaComponents, profitAllColumns, formulaGridFromColumns } from './parse.js';
 import { StorePnlBq } from './bq.js';
 import { buildTabPlan, HEADER_ROW, type TabPlan } from './tabplan.js';
 import { decidePublish, decideContract, contractSha, publishRequests, publishGate, metaOnly, otherTabsFingerprint, PUBLISH_META_KEY, CONTRACT_META_KEY, TAB_COLS,
@@ -52,9 +53,9 @@ export function activeNewOperations(rows: readonly NewOperationRow[], from: stri
 }
 
 export interface StorePnlDeps {
-  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'structureWrite' | 'readSheetStructure'>
+  makeSheets: (ctx: LoaderContext, readonly: boolean) => Pick<SheetsGateway, 'readSheetMeta' | 'readValues' | 'readFormulasBatch' | 'structureWrite' | 'readSheetStructure'>
     & Pick<SheetsRest, 'readSheetMetadata' | 'readNotes' | 'readSheetsList'>;
-  makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations'>;
+  makeBq: (ctx: LoaderContext) => Pick<StorePnlBq, 'appendSnapshot' | 'readPnl' | 'readNewOperations' | 'readCancelDrift'>;
   now: () => Date;
 }
 
@@ -97,7 +98,13 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
   const lcdRaw = single(lcdV, NAMED.LCD);
   const lcd = typeof lcdRaw === 'number' ? serialToIso(lcdRaw) : String(lcdRaw).trim();
   const rev = Number(single(revV, NAMED.REVERSE));
-  const parsed = parseUnitkaComponents(grid ?? [], lcd, rev);
+  // Формулы листа — ради поправки отмен без логистики в W (unitka-cancel-restore): V живёт только в формуле строки.
+  // Только колонки W блоков (одним batchGet), а не вся книга: замер 02.11.2026 на тестовой копии — 0,87 МБ / ≈0,95 с
+  // против 7,46 МБ / ≈2,3 с у A1:WY803.
+  const wCols = profitAllColumns(meta.columnCount);
+  if (!sheets.readFormulasBatch) throw new LoaderError('шлюз Sheets не читает формулы пакетом — поправку отмен в W не проверить', 'STORE_PNL_CONFIG');
+  const formulas = formulaGridFromColumns(wCols, await sheets.readFormulasBatch(wCols.map((c) => `${quoteSheet(name)}!${colA1(c)}1:${colA1(c)}${meta.rowCount}`)));
+  const parsed = parseUnitkaComponents(grid ?? [], lcd, rev, STORE_PNL_FROM, formulas, formulaStyleOf(meta.locale));
 
   const now = deps.now();
   const snap = { snapshotId: snapshotIdOf(now), runId: ctx.runId || `store_pnl_${randomUUID()}`, snapshotAt: now.toISOString(),
@@ -108,6 +115,15 @@ export async function unitkaStorePnlLoader(ctx: LoaderContext, deps: StorePnlDep
 
   await bq.appendSnapshot(parsed.rows, snap, `store_pnl_${snap.snapshotId}_${randomUUID().replace(/-/g, '').slice(0, 8)}`);
   logger.info('store_pnl_snapshot_appended', { snapshotId: snap.snapshotId, rows: parsed.rows.length, lcd });
+  // Детектор классов отмен: лист против текущего класса (поздняя логистика у восстановленной отмены и т. п.). Публикацию
+  // не останавливает — чистый результат магазина считается сверху вниз по финотчёту, — но владелец получает событие;
+  // восстановление (unitka-cancel-restore) при любом расхождении отказывает. Детектор не исполнился — тоже событие.
+  try {
+    const drift = await bq.readCancelDrift();
+    if (drift.length) logger.warn('unitka_cancel_class_drift', { snapshotId: snap.snapshotId, rows: drift.length, sample: drift.slice(0, 20) });
+  } catch (e) {
+    logger.warn('unitka_cancel_class_drift_unknown', { snapshotId: snap.snapshotId, error: e instanceof Error ? e.message : String(e) });
+  }
 
   const pnl = await bq.readPnl();
   const plan = buildTabPlan(pnl);

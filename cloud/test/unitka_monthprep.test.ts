@@ -8,6 +8,7 @@ import {
   planMonthPrep, toStructureRequests, manualCellsWritten, resolveCanonicalCogs, type PrepInputs, type MonthPrepPlan,
 } from '../src/loaders/unitka/monthprep.js';
 import { borderSpec, bordersJson, rowKindOf } from '../src/loaders/unitka/visual.js';
+import { profitAllFormula, profitAllVoidQty } from '../src/loaders/unitka/formulas.js';
 import { geometryAt, nextMonth, slotStart, formatMonthKey, dayRowOf, chainGaps, type MonthKey } from '../src/loaders/unitka/calendar.js';
 import { OFFSET, SUMMARY, colA1, isoToSerial, addDaysIso, type CellValue } from '../src/loaders/unitka/model.js';
 import { buildPlan, currentValue, type Snapshot } from '../src/loaders/unitka/plan.js';
@@ -392,6 +393,27 @@ describe('идемпотентность и частичные секции', ()
     const p = planMonthPrep(inputs({ ...book, sections: [sept] }, OCT));
     expect([p.status, p.code]).toEqual(['BLOCKED', 'TEMPLATE_MISMATCH']);
     expect(p.reasons[0]).toMatch(/AU766/);
+  });
+  it('W последнего дня с адресной поправкой отмен без логистики (unitka-cancel-restore) — шаблон признан, новый месяц канонический', () => {
+    const sept = structuredClone(book.sections[0]!);
+    sept.formulas[29]![37 + OFFSET.profitAll - 1] = profitAllFormula(37, 766, 1);
+    const p = planMonthPrep(inputs({ ...book, sections: [sept] }, OCT));
+    expect(p.status).toBe('PLAN_CREATE');
+    const oct = apply({ ...book, sections: [sept] }, p).sections[1]!;
+    for (const b of p.blocks) for (const dayIdx of [0, 30]) {
+      expect(profitAllVoidQty(oct.formulas[dayIdx]![b.start + OFFSET.profitAll - 1], b.start, oct.geometry.firstDailyRow + dayIdx)).toBe(0);
+    }
+  });
+  it('поправка-подобный хвост W не в каноне (чужая колонка, лишний член) → TEMPLATE_MISMATCH', () => {
+    for (const bad of [
+      '=IF($AK766>LAST_CLOSED_DATE,"",AO766*BG766-AV766-BE766-AQ766*(BG766+BD766+REVERSE_LEG_RATE)+AW766+1*(AV766+REVERSE_LEG_RATE))',
+      `${profitAllFormula(37, 766, 1).slice(0, -1)}+5)`,
+      profitAllFormula(37, 765, 1),
+    ]) {
+      const sept = structuredClone(book.sections[0]!);
+      sept.formulas[29]![37 + OFFSET.profitAll - 1] = bad;
+      expect(planMonthPrep(inputs({ ...book, sections: [sept] }, OCT)).code, bad).toBe('TEMPLATE_MISMATCH');
+    }
   });
 });
 

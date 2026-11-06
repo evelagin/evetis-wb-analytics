@@ -128,6 +128,11 @@ export interface SheetsGateway {
   readValues(ranges: string[]): Promise<CellValue[][][]>;
   /** Формулы одного диапазона (valueRenderOption=FORMULA): строки '=…' либо значения. */
   readFormulas(range: string): Promise<CellValue[][]>;
+  /**
+   * Формулы нескольких диапазонов одним values:batchGet (FORMULA). WB Store P&L читает так только колонки W блоков:
+   * на тестовой копии 02.11.2026 — 0,87 МБ / ≈0,95 с против 7,46 МБ / ≈2,3 с у всей сетки A1:WY803.
+   */
+  readFormulasBatch?(ranges: string[]): Promise<CellValue[][][]>;
   /** Статические форматы одного диапазона (spreadsheets.get + includeGridData). */
   readFormats(range: string): Promise<FormatGrid>;
   /** Один values.batchUpdate; возвращает totalUpdatedCells по ответу API. */
@@ -340,6 +345,17 @@ export class SheetsRest implements SheetsGateway {
     return (data.sheets ?? []).map((s) => ({ sheetId: Number(s.properties?.sheetId), title: String(s.properties?.title ?? ''),
       index: Number(s.properties?.index ?? 0), rowCount: Number(s.properties?.gridProperties?.rowCount ?? 0),
       columnCount: Number(s.properties?.gridProperties?.columnCount ?? 0) }));
+  }
+
+  async readFormulasBatch(ranges: string[]): Promise<CellValue[][][]> {
+    const q = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&');
+    const url = `${API}/${this.spreadsheetId}/values:batchGet?${q}&valueRenderOption=FORMULA&dateTimeRenderOption=SERIAL_NUMBER`;
+    const data = await this.request<BatchGetResp>('GET', url);
+    const out = data.valueRanges ?? [];
+    if (out.length !== ranges.length) {
+      throw new LoaderError(`Sheets API вернул ${out.length} диапазонов формул вместо ${ranges.length}`, 'SHEETS_API');
+    }
+    return out.map((v) => v.values ?? []);
   }
 
   async readFormulas(range: string): Promise<CellValue[][]> {

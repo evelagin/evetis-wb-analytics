@@ -142,6 +142,12 @@ WHERE gating;
 --    Поэтому вычитать его через S — ДВОЙНОЙ УЧЁТ: формула W уже не добавляла его прибыль.
 --    Одно бизнес-событие влияет на финансовый результат ровно один раз ⇒ S = отмены СЛЕДУЮЩИХ дней.
 --    Отмены дня заказа остаются видимыми диагностикой (same_day_cancel_qty в слое сверки), но в S не входят.
+--    УТОЧНЕНИЕ 02.11.2026 (cancel_class_v1.sql): правило выше — «обычно», а не «всегда» (18.10/535580776 воронка
+--    оставила отмену дня заказа; 24.10/252442517 не посчитала отмену следующего дня). Для ЗРЕЛЫХ дней (финотчёт
+--    окончателен ≥ 46 суток) S берётся из V_UNITKA_CANCEL_CLASS_DAILY: присутствие отмены в Q — арифметикой суток,
+--    логистика — финотчётом; отмена без логистики в Q даёт cancel_void_qty (поправка W, только unitka-cancel-restore).
+--    Окно этой вью (месяц LCD) всегда незрело, поэтому здесь S прежний; выражение S дословно совпадает с
+--    V_UNITKA_RECON_FACT (тест unitka_cancel_class.test.ts).
 --
 -- 🔴 КОНТРАКТ ЦЕНЫ — ОДИН НА ДВА СЛОЯ (введён 20.09.2026 после регрессии production).
 --    Суточный писатель строит план по ЭТОЙ вью, а сверка — по V_UNITKA_RECON_FACT. Пока подстановка
@@ -206,6 +212,12 @@ rf AS (
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_REFUSAL_DAILY`, lcd
   WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
 ),
+-- Класс отмен суток × SKU (cancel_class_v1.sql). Внутри окна дни всегда незрелы (зрелость 46 > окна) → прежний S.
+cc AS (
+  SELECT nm_id, date_msk AS d, cancel_class_status, final_cancels, void_qty
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY`, lcd
+  WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+),
 sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2),
 st AS (
   SELECT nm_id, snapshot_date AS d, SUM(quantity) AS stock
@@ -227,8 +239,12 @@ x AS (
     COALESCE(f.opens, bf.opens)                          AS opens,
     COALESCE(f.carts, bf.carts)                          AS carts,
     COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
-    COALESCE(bf.canc, o.canc, 0)
-      + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels,
+    -- Класс отмен (cancel_class_v1.sql): FINAL — S по присутствию в воронке и логистике; иначе прежний S.
+    IF(cc.cancel_class_status = 'FINAL', cc.final_cancels,
+       COALESCE(bf.canc, o.canc, 0)
+         + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0)) AS cancels,
+    IF(cc.cancel_class_status = 'FINAL', cc.void_qty, 0) AS cancel_void_qty,
+    cc.cancel_class_status,
     IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
     ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
     IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
@@ -252,6 +268,7 @@ x AS (
   LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
   LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
   LEFT JOIN rf ON rf.nm_id = g.nm_id AND rf.d = g.d
+  LEFT JOIN cc ON cc.nm_id = g.nm_id AND cc.d = g.d
   LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
   LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
   LEFT JOIN sd ON sd.d = g.d
@@ -287,7 +304,9 @@ SELECT
   unexplained_qty,
   refusal_finance_age_days,
   refusal_proven_srids,
-  refusal_proven_logistics_rub
+  refusal_proven_logistics_rub,
+  cancel_void_qty,
+  cancel_class_status
 FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
