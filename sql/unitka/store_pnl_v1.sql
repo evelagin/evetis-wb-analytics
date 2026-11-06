@@ -63,7 +63,24 @@ raw AS (
     SAFE_CAST(for_pay AS NUMERIC) fp, SAFE_CAST(logistics_amount AS NUMERIC) lg,
     IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) addp,
     COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales,
-    JSON_VALUE(raw_json, '$.bonusTypeName') bonus
+    JSON_VALUE(raw_json, '$.bonusTypeName') bonus,
+    -- «Корректировка эквайринга» после доказанного периода карты (API-слой): DIRECT_SKU только в доказанной форме —
+    -- возврат части эквайринга продажи того же srid И того же nm: только строки Finance API (source_layer DAILY/WEEKLY),
+    -- forPay > 0 = −acquiringFee (зеркало не читается), docType «Продажа», кол-во, база и прочие деньги = 0.
+    -- Любая иная форма или происхождение — PENDING_CLASSIFICATION (текст признака одинаков в трёх вью).
+    IFNULL(supplier_oper_name = 'Корректировка эквайринга' AND _rr_date > DATE '2025-01-31'
+      AND source_layer IN ('DAILY', 'WEEKLY') AND doc_type_name = 'Продажа' AND IFNULL(srid, '') != ''
+      AND IFNULL(SAFE_CAST(wb_nm_id AS INT64), 0) > 0
+      AND SAFE_CAST(for_pay AS NUMERIC) > 0
+      AND ABS(SAFE_CAST(for_pay AS NUMERIC) + SAFE_CAST(acquiring_fee AS NUMERIC)) <= 0.005
+      AND IFNULL(SAFE_CAST(quantity AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(retail_price_withdisc_rub AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(retail_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(logistics_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(storage_fee AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(deduction AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(penalty AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0) = 0
+      AND COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid, wb_nm_id) > 0, FALSE) acq_api_form
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
   WHERE srid IS NOT NULL AND srid != ''
     AND supplier_oper_name IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
@@ -74,7 +91,7 @@ f AS (
     -- Возврат неопознанного товара продавцу (обезличка при приёмке) — не когорта заказа покупателя: плечо идёт в
     -- журнал кабинета (V_WB_STORE_ACCOUNT_LEDGER, UNIDENTIFIED_RETURN). Только точное значение bonusTypeName.
     AND NOT (raw.op IN ('Логистика', 'Доставка') AND IFNULL(raw.bonus, '') = 'Возврат неопознанного товара (К продавцу)')
-    AND raw._rr_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31'))
+    AND (raw._rr_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') OR raw.acq_api_form))
 SELECT order_date_msk, nm_id,
   SUM(CASE op WHEN 'Продажа' THEN q WHEN 'Возврат' THEN -q
               WHEN 'Коррекция продаж' THEN IF(srid_sales = 0, IFNULL(q, 0), 0) ELSE 0 END) sold_qty,
@@ -201,12 +218,30 @@ WITH f AS (
     + ABS(IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0)) + ABS(IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0))
     + ABS(IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0)) + ABS(IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0))
     + ABS(IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0)) abs_money_rub,
-    srid, SAFE_CAST(wb_nm_id AS INT64) nm_id
+    srid, SAFE_CAST(wb_nm_id AS INT64) nm_id,
+    -- «Корректировка эквайринга» после доказанного периода карты (API-слой): DIRECT_SKU только в доказанной форме —
+    -- возврат части эквайринга продажи того же srid И того же nm: только строки Finance API (source_layer DAILY/WEEKLY),
+    -- forPay > 0 = −acquiringFee (зеркало не читается), docType «Продажа», кол-во, база и прочие деньги = 0.
+    -- Любая иная форма или происхождение — PENDING_CLASSIFICATION (текст признака одинаков в трёх вью).
+    IFNULL(supplier_oper_name = 'Корректировка эквайринга' AND _rr_date > DATE '2025-01-31'
+      AND source_layer IN ('DAILY', 'WEEKLY') AND doc_type_name = 'Продажа' AND IFNULL(srid, '') != ''
+      AND IFNULL(SAFE_CAST(wb_nm_id AS INT64), 0) > 0
+      AND SAFE_CAST(for_pay AS NUMERIC) > 0
+      AND ABS(SAFE_CAST(for_pay AS NUMERIC) + SAFE_CAST(acquiring_fee AS NUMERIC)) <= 0.005
+      AND IFNULL(SAFE_CAST(quantity AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(retail_price_withdisc_rub AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(retail_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(logistics_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(storage_fee AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(deduction AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(penalty AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0) = 0
+      AND COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid, wb_nm_id) > 0, FALSE) acq_api_form
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`),
 t AS (
   SELECT f.*,
     CASE WHEN m.treatment IS NULL THEN 'NEW_FINANCE_OPERATION'
-         WHEN f._rr_date NOT BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') THEN 'PENDING_CLASSIFICATION'
+         WHEN f._rr_date NOT BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31')
+              AND NOT f.acq_api_form THEN 'PENDING_CLASSIFICATION'
          ELSE m.treatment END treatment
   FROM f LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m USING (supplier_oper_name))
 SELECT supplier_oper_name, treatment,
@@ -254,7 +289,24 @@ WITH f AS (
     (JSON_VALUE(raw_json, '$.rebillLogisticCost') IS NOT NULL OR JSON_VALUE(raw_json, '$.ppvzReward') IS NOT NULL
       OR JSON_VALUE(raw_json, '$.vw') IS NOT NULL OR JSON_VALUE(raw_json, '$.vwNds') IS NOT NULL) any_camel,
     (JSON_VALUE(raw_json, '$.rebill_logistic_cost') IS NOT NULL OR JSON_VALUE(raw_json, '$.ppvz_vw') IS NOT NULL
-      OR JSON_VALUE(raw_json, '$.ppvz_for_pay') IS NOT NULL) any_snake
+      OR JSON_VALUE(raw_json, '$.ppvz_for_pay') IS NOT NULL) any_snake,
+    -- «Корректировка эквайринга» после доказанного периода карты (API-слой): DIRECT_SKU только в доказанной форме —
+    -- возврат части эквайринга продажи того же srid И того же nm: только строки Finance API (source_layer DAILY/WEEKLY),
+    -- forPay > 0 = −acquiringFee (зеркало не читается), docType «Продажа», кол-во, база и прочие деньги = 0.
+    -- Любая иная форма или происхождение — PENDING_CLASSIFICATION (текст признака одинаков в трёх вью).
+    IFNULL(supplier_oper_name = 'Корректировка эквайринга' AND _rr_date > DATE '2025-01-31'
+      AND source_layer IN ('DAILY', 'WEEKLY') AND doc_type_name = 'Продажа' AND IFNULL(srid, '') != ''
+      AND IFNULL(SAFE_CAST(wb_nm_id AS INT64), 0) > 0
+      AND SAFE_CAST(for_pay AS NUMERIC) > 0
+      AND ABS(SAFE_CAST(for_pay AS NUMERIC) + SAFE_CAST(acquiring_fee AS NUMERIC)) <= 0.005
+      AND IFNULL(SAFE_CAST(quantity AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(retail_price_withdisc_rub AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(retail_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(logistics_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(storage_fee AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(deduction AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(penalty AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(acceptance AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(rebill_logistics AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(compensation_amount AS NUMERIC), 0) = 0 AND IFNULL(SAFE_CAST(other_amount AS NUMERIC), 0) = 0
+      AND IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0) = 0
+      AND COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid, wb_nm_id) > 0, FALSE) acq_api_form
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`),
 g AS (
   SELECT f.*,
@@ -284,7 +336,7 @@ gd AS (
   FROM h),
 c AS (
   SELECT gd.*, m.treatment map_treatment,
-    gd.booking_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') in_period
+    (gd.booking_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31') OR gd.acq_api_form) in_period
   FROM gd LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_OPERATION_MAP` m ON m.supplier_oper_name = gd.op),
 t AS (
   SELECT c.*,

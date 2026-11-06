@@ -81,6 +81,7 @@ def ledger_body():
 
 
 COLS = ["row_hash", "_rr_date", "supplier_oper_name", "finance_status", "source_layer", "srid", "order_dt", "wb_nm_id",
+        "doc_type_name",
         "quantity", "retail_price_withdisc_rub", "retail_amount", "for_pay", "logistics_amount", "storage_fee",
         "deduction", "penalty", "acceptance", "additional_payment", "rebill_logistics", "compensation_amount",
         "other_amount", "acquiring_fee", "report_period_from", "report_period_to", "raw_json"]
@@ -92,7 +93,7 @@ def row(key, rr, op, layer="DAILY", srid="", order_dt=None, nm=None, logistics=0
         camel["bonusTypeName"] = bonus
     r = dict(row_hash=key, _rr_date=rr, supplier_oper_name=op,
              finance_status="PROVISIONAL" if layer == "DAILY" else "FINAL", source_layer=layer, srid=srid,
-             order_dt=order_dt, wb_nm_id=nm, quantity=kw.get("quantity", 0), retail_price_withdisc_rub=kw.get("pwd", 0),
+             order_dt=order_dt, wb_nm_id=nm, doc_type_name=kw.get("doc"), quantity=kw.get("quantity", 0), retail_price_withdisc_rub=kw.get("pwd", 0),
              retail_amount=0, for_pay=for_pay, logistics_amount=logistics, storage_fee=0, deduction=0, penalty=penalty,
              acceptance=0, additional_payment=0, rebill_logistics=0, compensation_amount=0, other_amount=0,
              acquiring_fee=0, report_period_from=rr, report_period_to=rr, raw_json=json.dumps(camel, ensure_ascii=False))
