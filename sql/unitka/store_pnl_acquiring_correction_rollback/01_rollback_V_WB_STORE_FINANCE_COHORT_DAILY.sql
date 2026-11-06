@@ -1,4 +1,4 @@
--- ОТКАТ store_pnl acquiring_correction: тело V_WB_STORE_FINANCE_COHORT_DAILY в production ДО изменения (git main 1062db5b, live = Git, проверено 2026-11-06)
+-- ОТКАТ store_pnl acquiring_correction: тело V_WB_STORE_FINANCE_COHORT_DAILY в production ДО изменения (git main 45a26503 = после #398, live = Git, проверено 2026-11-06)
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COHORT_DAILY` AS
 -- H0: доказанные исторические DIRECT_SKU-семейства читаются в когорту ТОЛЬКО в периоде своей карты:
 --   «Коррекция продаж» — for_pay по знаку, база — цена×кол-во где цена > 0, кол-во — только если у srid нет «Продажи»,
@@ -11,7 +11,8 @@ raw AS (
     SAFE_CAST(quantity AS NUMERIC) q, SAFE_CAST(retail_price_withdisc_rub AS NUMERIC) pwd,
     SAFE_CAST(for_pay AS NUMERIC) fp, SAFE_CAST(logistics_amount AS NUMERIC) lg,
     IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) addp,
-    COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales
+    COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales,
+    JSON_VALUE(raw_json, '$.bonusTypeName') bonus
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
   WHERE srid IS NOT NULL AND srid != ''
     AND supplier_oper_name IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
@@ -19,6 +20,9 @@ raw AS (
 f AS (
   SELECT raw.* FROM raw JOIN m ON m.supplier_oper_name = raw.op
   WHERE m.treatment = 'DIRECT_SKU'
+    -- Возврат неопознанного товара продавцу (обезличка при приёмке) — не когорта заказа покупателя: плечо идёт в
+    -- журнал кабинета (V_WB_STORE_ACCOUNT_LEDGER, UNIDENTIFIED_RETURN). Только точное значение bonusTypeName.
+    AND NOT (raw.op IN ('Логистика', 'Доставка') AND IFNULL(raw.bonus, '') = 'Возврат неопознанного товара (К продавцу)')
     AND raw._rr_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31'))
 SELECT order_date_msk, nm_id,
   SUM(CASE op WHEN 'Продажа' THEN q WHEN 'Возврат' THEN -q

@@ -1,4 +1,4 @@
--- ОТКАТ store_pnl acquiring_correction: тело V_WB_STORE_FINANCE_COVERAGE в production ДО изменения (git main 1062db5b, live = Git, проверено 2026-11-06)
+-- ОТКАТ store_pnl acquiring_correction: тело V_WB_STORE_FINANCE_COVERAGE в production ДО изменения (git main 45a26503 = после #398, live = Git, проверено 2026-11-06)
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COVERAGE` AS
 -- Р2-guard по схеме ключей raw_json (H0, OWNER ACK 11.10.2026):
 --   FINANCE_API_CAMEL (WEEKLY/DAILY) — |rebillLogisticCost + ppvzReward + vw + vwNds| ≤ 0,01 (как раньше, 0 различий
@@ -19,6 +19,7 @@ WITH f AS (
     ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)) ppvz,
     SAFE_CAST(JSON_VALUE(raw_json, '$.rebillLogisticCost') AS NUMERIC) c_rb,
     SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC) c_pr,
+    JSON_VALUE(raw_json, '$.bonusTypeName') bonus,
     SAFE_CAST(JSON_VALUE(raw_json, '$.vw') AS FLOAT64) c_vw,
     SAFE_CAST(JSON_VALUE(raw_json, '$.vwNds') AS NUMERIC) c_nds,
     SAFE_CAST(JSON_VALUE(raw_json, '$.rebill_logistic_cost') AS NUMERIC) s_rb,
@@ -76,6 +77,7 @@ SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer
                        -- зеркало эквайринга у «Корректировки эквайринга» — не деньги модели
     WHEN 'STORAGE' THEN retail + fp + lg + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     WHEN 'DEDUCTION_LEDGER' THEN retail + fp + lg + st + pen + acc + rb + comp + oth + acq + ppvz
+    WHEN 'ACCOUNT_LEDGER_LOGISTICS' THEN retail + fp + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     WHEN 'ACCOUNT_LEDGER' THEN retail + lg + st + ded + addp + rb + comp + oth + acq + ppvz
                        + IF(op IN ('Добровольная компенсация при возврате', 'Компенсация ущерба'), 0, fp)
     WHEN 'MEMO' THEN retail + fp + lg + st + ded + pen + acc + addp + comp + oth + acq
@@ -84,6 +86,7 @@ SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer
 FROM (
   SELECT t.*,
     CASE WHEN treatment IN ('PENDING_CLASSIFICATION', 'NEW_FINANCE_OPERATION') THEN 'NONE'
+         WHEN op IN ('Логистика', 'Доставка') AND IFNULL(bonus, '') = 'Возврат неопознанного товара (К продавцу)' THEN 'ACCOUNT_LEDGER_LOGISTICS'
          WHEN op IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
                      'Коррекция продаж', 'Корректировка эквайринга', 'Стоимость участия в программе лояльности') THEN 'COHORT'
          WHEN op IN ('Хранение', 'Коррекция хранения') THEN 'STORAGE'

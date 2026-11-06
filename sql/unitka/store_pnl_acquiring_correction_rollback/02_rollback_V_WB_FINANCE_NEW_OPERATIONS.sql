@@ -1,4 +1,4 @@
--- ОТКАТ store_pnl acquiring_correction: тело V_WB_FINANCE_NEW_OPERATIONS в production ДО изменения (git main 1062db5b, live = Git, проверено 2026-11-06)
+-- ОТКАТ store_pnl acquiring_correction: тело V_WB_FINANCE_NEW_OPERATIONS в production ДО изменения (git main 45a26503 = после #398, live = Git, проверено 2026-11-06)
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_FINANCE_NEW_OPERATIONS` AS
 -- Класс строки — по карте С УЧЁТОМ доказанного периода: вне периода — PENDING_CLASSIFICATION.
 WITH f AS (
