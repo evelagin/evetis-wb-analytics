@@ -138,10 +138,18 @@ jobs:
         run: python -m pytest -q tools/tests/test_current_independence.py tools/tests/test_pruned_executions.py
       - name: Heldi S4 CURRENT independence image check (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_independence_image_check
+      - name: Heldi CURRENT runtime succession (offline)
+        run: python -m pytest -q tools/tests/test_current_runtime_succession.py
+      - name: Heldi CURRENT runtime succession image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_runtime_succession_image_check
       - name: Heldi owner finance catch-up of missed accrual days (offline)
         run: python -m pytest -q tools/tests/test_finance_catchup.py
       - name: Heldi finance catch-up image check (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.finance_catchup_image_check
+      - name: Heldi owner tick pause is a typed quiescent end (offline)
+        run: python -m pytest -q tools/tests/test_owner_pause.py
+      - name: Heldi owner tick pause image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.owner_pause_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 

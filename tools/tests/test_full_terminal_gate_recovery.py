@@ -4,6 +4,14 @@ import pytest
 from tools.tenancy import full_terminal_gate_recovery as R,tenant_backfill as BF,durable_plan as D,controller_diagnostics as CD
 from tools.tenancy import full_terminal_gate_image_check as X
 
+
+@pytest.fixture(scope='module', autouse=True)
+def _historical_runtime():
+    """Frozen production incident: replay it with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        yield
+
 def test_fixture_is_the_production_page_identity():
     f=X.fixture()
     assert f.shard=='0cbd288401b04b4085d6a71ee4b2cb358b7dcf5fd9a774337865eb48c8a6d716'   # supplies leaf 465 shard of the frozen FULL root
