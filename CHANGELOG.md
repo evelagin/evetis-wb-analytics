@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
+
+OWNER ACK «FINANCE DESIGN» (06.11.2026), design & test only. WB вернул продавцу товар, обезличенный при приёмке:
+в финотчёте это плечо «Логистика»/«Доставка» с `bonusTypeName = 'Возврат неопознанного товара (К продавцу)'` на
+служебном nm «неопознанный товар» с датой «заказа». В когорте заказа плечо висело сиротой (`UNKNOWN_COST_PRESENT`,
+вне прибыли), хотя это расход магазина.
+
+Изменения (`sql/unitka/store_pnl_v1.sql`, колонки не меняются):
+- `V_WB_STORE_FINANCE_COHORT_DAILY` — такие плечи (точное значение типа) исключены из когорты заказа.
+- `V_WB_STORE_ACCOUNT_LEDGER` — новая категория `UNIDENTIFIED_RETURN` (treatment `ACCOUNT_LEVEL`, месяц проводки,
+  сумма со знаком: сторно уменьшает расход месяца своей проводки). На вкладке — строка «Прочие расходы WB»
+  (`other_marketplace_cost_rub`).
+- `V_WB_STORE_FINANCE_COVERAGE` — новый потребитель `ACCOUNT_LEDGER_LOGISTICS`: плечо прочитано журналом.
+- `V_WB_STORE_PNL_MONTHLY`, Юнитка Engine, ставки клиентской логистики — без изменений.
+- Тесты: `tools/tests/test_unitka_store_pnl_unidentified_return.py` (тексты вью исполняются на SQLite).
+- Откат: `sql/unitka/store_pnl_unidentified_return_rollback/` (тела трёх вью до изменения).
+
 ## 2026-11-02 — Юнитка WB: классы отмен по присутствию в воронке и логистике (НЕ развёрнуто)
 
 OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверка октября с официальной воронкой WB:
