@@ -321,6 +321,7 @@ def release_check():
     from tools.tenancy.validation import parse_tenant_json
     rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/2253a311871fb4a3b9e4644d5c5de9f18d37a407.json').read_text())
     settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
+    c = O.historical_contract(c, rel)   # the registered release is checked with its own runtime pair
     ok = dict(rel, finance_catchup_version=1, verification=dict(rel['verification'], finance_catchup_adapter='PASS'))
     assert O.block(c, settings, BF.REPO, release=ok)['job']['env']['CURRENT_DATA_MODE'] == K.TYPE
     for bad in (dict(ok, finance_catchup_version=2), dict(ok, finance_catchup_version=True),
