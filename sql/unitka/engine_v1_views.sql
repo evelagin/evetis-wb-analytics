@@ -321,9 +321,47 @@ WITH w AS (
 ),
 b AS (
   SELECT srid, SAFE_CAST(wb_nm_id AS INT64) AS nm, supplier_oper_name AS son,
-         SAFE_CAST(logistics_amount AS NUMERIC) AS amt, JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus
+         SAFE_CAST(logistics_amount AS NUMERIC) AS amt, JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus,
+         source_layer AS layer,
+         SAFE_CAST(JSON_VALUE(raw_json, '$.deliveryAmount') AS INT64) AS da,
+         SAFE_CAST(JSON_VALUE(raw_json, '$.returnAmount') AS INT64) AS ra,
+         JSON_VALUE(raw_json, '$.docTypeName') AS doc, JSON_VALUE(raw_json, '$.deliveryMethod') AS dm
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`, w
   WHERE _rr_date BETWEEN w.d1 AND w.d2 AND wb_nm_id IS NOT NULL AND srid IS NOT NULL
+),
+-- Форма строки логистики (инцидент 23.10.2026, тихое искажение ставок): плечо — это поездка единицы. В Finance API у
+-- каждого плеча ровно одна поездка: deliveryAmount = 1 (к клиенту / к продавцу, ПРЯМОЕ) или returnAmount = 1 (от
+-- клиента, ОБРАТНОЕ); 2 402 из 2 402 плеч с 13.07.2026, у srid не больше одного прямого и одного обратного. Строка
+-- «Логистика»/«Доставка» без поездки (deliveryAmount = returnAmount = 0, способ доставки пуст) — не плечо:
+-- «Услуга сопровождения экспортных операций» считалась вторым плечом проданного srid — отказом с пересечением, а её
+-- сумма, как наибольшая, — прямым плечом.
+--   LEG     — ровно одна поездка; srid в API-слое не больше чем с одним прямым и одним обратным плечом.
+--   SERVICE — только точный bonusTypeName экспортного сопровождения, без поездки и способа доставки, при «Продаже»
+--             (docType «Продажа») И прямом плече ТОГО ЖЕ srid И ТОГО ЖЕ nm; вне обеих ставок, деньги — в финотчёте
+--             (Store P&L не меняется: строка остаётся в когортной логистике продажи).
+--   UNKNOWN — всё прочее (нет полей поездки, поездок ≠ 1, другая услуга, другой nm, лишнее плечо направления).
+--   LEGACY  — как прежде (полей поездки нет): LEG, порядок плеч по сумме.
+-- UNKNOWN не меняет shipments/sales (истинные значения): ставки строки магазина = NULL — Engine отклоняет прогон
+-- явно (plan.ts: «нет ставок» → INVARIANT_FAIL), сумма и число srid видны в unclassified_sum / unclassified_srids.
+lg0 AS (
+  SELECT b.*,
+         CASE WHEN layer = 'LEGACY' THEN 'LEG'
+              WHEN da IS NOT NULL AND ra IS NOT NULL AND da >= 0 AND ra >= 0 AND da + ra = 1 THEN 'LEG'
+              WHEN da = 0 AND ra = 0 AND IFNULL(dm, '') = '' AND bonus = 'Услуга сопровождения экспортных операций'
+                   AND CONCAT(srid, '|', CAST(nm AS STRING)) IN (
+                         SELECT CONCAT(srid, '|', CAST(nm AS STRING)) FROM b WHERE son = 'Продажа' AND doc = 'Продажа')
+                   AND CONCAT(srid, '|', CAST(nm AS STRING)) IN (
+                         SELECT CONCAT(srid, '|', CAST(nm AS STRING)) FROM b
+                         WHERE son IN ('Логистика', 'Доставка') AND da = 1 AND ra = 0) THEN 'SERVICE'
+              ELSE 'UNKNOWN' END AS cls
+  FROM b WHERE son IN ('Логистика', 'Доставка')
+),
+lg AS (
+  SELECT srid, nm, son, amt, bonus, layer, da, ra, doc, dm,
+         IF(cls = 'LEG' AND layer != 'LEGACY'
+            AND (COUNTIF(cls = 'LEG' AND da = 1) OVER (PARTITION BY srid) > 1
+                 OR COUNTIF(cls = 'LEG' AND ra = 1) OVER (PARTITION BY srid) > 1), 'UNKNOWN', cls) AS cls
+  FROM lg0
 ),
 -- Возврат брака продавцу (инцидент 27.10.2026, unitka-engine-prod-qr5xr): покупатель вернул брак, WB везёт единицу со
 -- склада в ПВЗ продавца отдельным srid — одно плечо «Доставка»/«Логистика» с bonusTypeName «Возврат брака (К продавцу)»,
@@ -342,9 +380,10 @@ sr AS (SELECT DISTINCT srid FROM b WHERE son IN ('Логистика', 'Дост
 sale AS (SELECT COUNT(DISTINCT srid) AS n FROM b WHERE son = 'Продажа' AND srid NOT IN (SELECT srid FROM sr)),
 l AS (
   SELECT srid, nm, son, amt,
-         ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) AS rn,
+         -- прямое плечо — первое по направлению (returnAmount = 0), обратное — второе; LEGACY — по сумме, как прежде
+         ROW_NUMBER() OVER (PARTITION BY srid ORDER BY IF(layer = 'LEGACY', 0, ra), amt DESC) AS rn,
          COUNT(*) OVER (PARTITION BY srid) AS legs
-  FROM b WHERE son IN ('Логистика', 'Доставка')
+  FROM lg WHERE cls = 'LEG'
 ),
 p AS (
   SELECT srid, ANY_VALUE(nm) AS nm, ANY_VALUE(son) AS son,
@@ -403,21 +442,38 @@ sx AS (
     AND srid IN (SELECT srid FROM sr)
     AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
     AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')
+),
+-- Строки логистики вне плеч (см. lg): по SKU и магазину; UNKNOWN магазина — fail-closed через shipments
+xu AS (
+  SELECT nm, COUNTIF(cls = 'SERVICE') AS svc_rows, SUM(IF(cls = 'SERVICE', amt, 0)) AS svc_sum,
+         COUNT(DISTINCT IF(cls = 'UNKNOWN', srid, NULL)) AS unk_srids, SUM(IF(cls = 'UNKNOWN', amt, 0)) AS unk_sum
+  FROM lg WHERE cls != 'LEG' GROUP BY nm
+),
+xt AS (
+  SELECT IFNULL(COUNTIF(cls = 'SERVICE'), 0) AS svc_rows, IFNULL(SUM(IF(cls = 'SERVICE', amt, 0)), 0) AS svc_sum,
+         IFNULL(COUNT(DISTINCT IF(cls = 'UNKNOWN', srid, NULL)), 0) AS unk_srids,
+         IFNULL(SUM(IF(cls = 'UNKNOWN', amt, 0)), 0) AS unk_sum
+  FROM lg WHERE cls != 'LEG'
 )
 SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt - ns, 0)), 4) AS direct_rate,
        ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref + nt, 0)), 4) AS reverse_rate,
        ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
        nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
        CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to,
-       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail, ns AS seller_return, ROUND(srsum, 2) AS seller_return_sum
-FROM a
+       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail, ns AS seller_return, ROUND(srsum, 2) AS seller_return_sum,
+       IFNULL(xu.svc_rows, 0) AS service_rows, ROUND(IFNULL(xu.svc_sum, 0), 2) AS service_sum,
+       IFNULL(xu.unk_srids, 0) AS unclassified_srids, ROUND(IFNULL(xu.unk_sum, 0), 2) AS unclassified_sum
+FROM a LEFT JOIN xu USING (nm)
 UNION ALL
-SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt) - SUM(ns), 0)), 4),
-       SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4),
+SELECT 0, SUM(n),
+       IF((SELECT unk_srids FROM xt) > 0, NULL, ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt) - SUM(ns), 0)), 4)),
+       SUM(ref),
+       IF((SELECT unk_srids FROM xt) > 0, NULL, ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4)),
        ROUND(SUM(fwd), 2), ROUND(SUM(rev), 2),
        SUM(nlog), SUM(ndlv), ROUND(SUM(dlvfwd), 2),
        (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w),
-       (SELECT n FROM ov), (SELECT n FROM rt), (SELECT n FROM sx), ROUND(SUM(srsum), 2)
+       (SELECT n FROM ov), (SELECT n FROM rt), (SELECT n FROM sx), ROUND(SUM(srsum), 2),
+       (SELECT svc_rows FROM xt), ROUND((SELECT svc_sum FROM xt), 2), (SELECT unk_srids FROM xt), ROUND((SELECT unk_sum FROM xt), 2)
 FROM a;
 -- ─── 5. Комиссия WB + эквайринг, то же окно [LCD−29, LCD] ────────────────────
 -- Точная копия s8finsql_()/s8fin_() из Apps Script: тариф ROUND(cpw/base/100, 6)
