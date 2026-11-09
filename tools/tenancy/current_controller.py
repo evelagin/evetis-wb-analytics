@@ -291,11 +291,16 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     catchup=FC.scan(base,p,finance_days)
     # Owner ads catch-up: the same rule (open receipt drained first, new days only at the very end).
     ads=AC.scan(base,p,election=True)
-    if len(pending)+len(catchup['pending'])+len(ads['pending'])>1:fail('multiple current source authorities')
+    # Owner FBO refresh (OWNER_FBO_REFRESH_V1, own durable scope): same rule as the catch-up.
+    from tools.tenancy import fbo_refresh as FBR
+    refresh=FBR.scan(base,p)
+    base.fbo_refresh_summary=FBR.summary(refresh)
+    if len(pending)+len(catchup['pending'])+len(ads['pending'])+len(refresh['pending'])>1:fail('multiple current source authorities')
     if pending:
         d,item=pending[0];return source_tick(Backend(base,p,d),p,d,item)
     if catchup['pending']:return FC.drain(base,catchup)
     if ads['pending']:return AC.drain(base,ads)
+    if refresh['pending']:return FBR.drain(base,refresh)
     local=ADS.qualified(base)
     # The CURRENT entity set of this release: the four independent Seller entities, plus advertising when
     # flagged. It is the one set for selection and for per-entity status (durable_daily.entity_status, #404).
@@ -353,10 +358,12 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
     # Today's CURRENT has nothing left: an owner-authorised missed finance day may run, then an owner-
-    # authorised missed ads day (or None).
+    # authorised missed ads day, then owner FBO refresh units (daily/weekly re-read, 90-day history), or None.
     result=FC.wake(base,catchup,certs,partial)
     if result is not None:return result
-    return AC.wake(base,ads,certs,partial)
+    result=AC.wake(base,ads,certs,partial)
+    if result is not None:return result
+    return FBR.wake(base,refresh,certs,partial)
 
 def current_entities(ads):
     """Entities CURRENT elects (and reports status for): S4 v1 Seller entities, plus ads with current_ads_version."""
@@ -388,3 +395,4 @@ def historical_candidates(records,plans,done,quarantined):
 # Loaded once with the real adapter class: the catch-up adapters subclass Backend at import time.
 from tools.tenancy import finance_catchup as _finance_catchup  # noqa: E402,F401
 from tools.tenancy import ads_catchup as _ads_catchup  # noqa: E402,F401
+from tools.tenancy import fbo_refresh as _fbo_refresh  # noqa: E402,F401

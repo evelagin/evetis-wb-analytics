@@ -357,6 +357,9 @@ def bounded_wake(root, backend, *, decision_complete=None):
         if any(r['kind']=='FULL_MANIFEST' for r in records):
             from tools.tenancy import full_controller as FH
             result,full_backend=FH.wake(backend,root)
+            # Owner FBO refresh status/incidents on the JSON stdout line (stream E metric and alert).
+            from tools.tenancy import fbo_refresh as FBR
+            FBR.annotate(result,getattr(full_backend,'fbo_refresh_summary',None))
             # The source decision and its durable bookkeeping are complete.
             # Read-only reporting can outlive the platform deadline; retain the
             # canonical control closure before starting that observation.

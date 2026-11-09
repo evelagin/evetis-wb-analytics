@@ -36,6 +36,7 @@ SOURCE_FILES = (
     'durable_daily.py','durable_daily_image_check.py',
     'owner_pause_image_check.py',
     'current_ads.py','ads_catchup.py','current_ads_image_check.py',
+    'fbo_refresh.py','fbo_refresh_image_check.py',
 )
 
 
@@ -120,6 +121,10 @@ def block(c, settings, repo, release=None):
     if durable_daily:
         expected.add('durable_daily_version')
         if not control_closure or type(release['durable_daily_version']) is not int or release['durable_daily_version']!=1:raise ValueError('unqualified durable daily contour')
+    fbo_refresh='fbo_refresh_version' in release
+    if fbo_refresh:
+        expected.add('fbo_refresh_version')
+        if not durable_daily or type(release['fbo_refresh_version']) is not int or release['fbo_refresh_version']!=1:raise ValueError('unqualified FBO refresh')
     if control_closure:
         expected.add('control_closure_recovery_version')
         if not catchup or type(release['control_closure_recovery_version']) is not int or release['control_closure_recovery_version']!=1:raise ValueError('unqualified control-closure recovery')
@@ -188,6 +193,7 @@ def block(c, settings, repo, release=None):
     if durable_daily:required.add('durable_daily_adapter')
     if owner_pause:required.add('owner_pause_quiescent_adapter')
     if current_ads:required.add('current_ads_adapter')
+    if fbo_refresh:required.add('fbo_refresh_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

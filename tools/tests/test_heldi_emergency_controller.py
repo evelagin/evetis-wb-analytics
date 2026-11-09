@@ -434,6 +434,8 @@ def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
     from tools.tenancy import ads_catchup as AC, current_ads as ADS                                # no ads scope, ads not in CURRENT
     monkeypatch.setattr(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None})
     monkeypatch.setattr(ADS, 'qualified', lambda b: False)
+    from tools.tenancy import fbo_refresh as FBR                                                 # no owner FBO refresh scope
+    monkeypatch.setattr(FBR, 'scan', lambda *a: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]})
     base = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda *a, **k: []), state=lambda doc: {'progress': {}})
     result = CUR.wake(base, [], {}, {}, set())
     assert result['basis'] == 'WAKE_BUDGET_DISPATCH' and len(ticks) == 1

@@ -316,6 +316,38 @@ def test_fbo_readback_owns_days_by_in_process_at(monkeypatch):
     assert "DATE(in_process_at,'Europe/Moscow') = @day" in grain[0] and 'created_at' not in grain[0]
 
 
+@pytest.mark.parametrize('rows,run_rows,flag,outcome',[(3,3,True,'COMPLETE'),(5,3,True,'SOURCE_DISAPPEARED'),
+    (5,4,True,'STOP'),(5,3,False,'STOP'),(4,4,True,'STOP')])
+def test_fbo_refresh_run_verdict(monkeypatch,rows,run_rows,flag,outcome):
+    """OWNER_FBO_REFRESH_V1: rows the source no longer returns are a local PARTIAL only when this
+    plan's own runs prove every expected row; FULL/CURRENT (flag off) and unproven runs stay a STOP."""
+    c=BF.target('client_001');doc=BF.make_plan('client_001','fbo_postings','2026-10-06','2026-10-06','offline-fbo',NOW.isoformat(),today=NOW.astimezone(BF.B.MSK).date())
+    state=BF.B.initial(doc['runtime_plan']);state.update(sequence=1,complete=True)
+    state['progress'].update(pending=[],completed_to=BF.B.utc_ms('2026-10-07'))
+    detail={'action':'WINDOW_COMPLETE','by_moscow_day':{'2026-10-06':3}}
+    monkeypatch.setattr(BF,'validate_plan',lambda *a:c)
+    monkeypatch.setattr(BF.B,'validate',lambda *a,**k:None)
+    monkeypatch.setattr(BF,'preflight',lambda *a,**k:(SimpleNamespace(append=lambda *a:None),[]))
+    calls=[]
+    def reader(c,sql,params,**kw):
+        calls.append((sql,params))
+        if 'backfill_detail_json' in sql:return [{'backfill_sequence':1,'backfill_detail_json':json.dumps(detail)}]
+        if 'SELECT DISTINCT evidence_json' in sql:return [{'evidence_json':json.dumps({'state':state})}]
+        if ' AS run_rows' in sql:return [{'run_rows':run_rows}]
+        return [{'rows_n':rows,'keys_n':rows if outcome!='STOP' or rows!=4 else 3}]
+    monkeypatch.setattr(BF,'select',reader)
+    run=lambda:BF.verify_persistence(doc,doc['ack_hash'],backend=SimpleNamespace(request=lambda *a:None),fbo_run_verdict=flag)
+    if outcome=='STOP':
+        with pytest.raises(BF.B.EvidenceError,match='PILOT_DATA_RECONCILIATION_FAILED'):run()
+        return
+    out=run()['readback'][0]
+    if outcome=='COMPLETE':assert out['coverage']=='COMPLETE' and not any(' AS run_rows' in q for q,_ in calls)
+    else:
+        assert (out['coverage'],out['reason'],out['extra_rows'],out['run_rows'])==('PARTIAL','SOURCE_DISAPPEARED',2,3)
+        q,params=next((q,p) for q,p in calls if ' AS run_rows' in q)
+        assert "REGEXP_REPLACE(ingestion_run_id, r'-u[0-9]+$', '')" in q and set(params)=={'origin','pid','entity','day'}
+
+
 def test_full_authority_reconstructs_future_deployment_from_immutable_descriptor(authority, monkeypatch):
     p = authority
     packaged = copy.deepcopy(p.c)
