@@ -31,6 +31,7 @@ SOURCE_FILES = (
     'full_terminal_gate_recovery.py','full_terminal_gate_image_check.py',
     'current_independence.py','current_independence_image_check.py',
     'finance_catchup.py','finance_catchup_image_check.py',
+    'control_closure_recovery.py','control_closure_image_check.py',
 )
 
 
@@ -106,6 +107,10 @@ def block(c, settings, repo, release=None):
     terminal_gate='terminal_gate_recovery_version' in release
     independence='current_independence_version' in release
     catchup='finance_catchup_version' in release
+    control_closure='control_closure_recovery_version' in release
+    if control_closure:
+        expected.add('control_closure_recovery_version')
+        if not catchup or type(release['control_closure_recovery_version']) is not int or release['control_closure_recovery_version']!=1:raise ValueError('unqualified control-closure recovery')
     if catchup:
         expected.add('finance_catchup_version')
         if not independence or type(release['finance_catchup_version']) is not int or release['finance_catchup_version']!=1:raise ValueError('unqualified finance catch-up')
@@ -158,6 +163,7 @@ def block(c, settings, repo, release=None):
     if terminal_gate:required.add('terminal_gate_recovery_adapter')
     if independence:required.add('current_independence_adapter')
     if catchup:required.add('finance_catchup_adapter')
+    if control_closure:required.add('control_closure_recovery_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

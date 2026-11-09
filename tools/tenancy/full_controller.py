@@ -231,7 +231,7 @@ class Backend(C.Backend):
         if checkpoint.get('expirationTime') or (checkpoint.get('timePartitioning') or {}).get('expirationMs'):
             raise BF.B.EvidenceError('full checkpoint evidence expires')
         for name,labels,created,expiry in self.tables.list_tables(self.c['datasets']['tenant_locks'],with_expiry=True):
-            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_','BFTG_')) and expiry:
+            if name.startswith(('BFR_','BFQ_','BF_SPEC_','BFFLR_','BFFRF_','BFCF_','BFPB_','BFPT_','BFCC_','BFZE_','BFCW_','BFCX_','BFRS_','BFIG_','BFTG_','BFCLX_')) and expiry:
                 raise BF.B.EvidenceError('full authoritative marker expires')
 
     def quota(self, leaf, now):
