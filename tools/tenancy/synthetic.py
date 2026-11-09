@@ -73,6 +73,7 @@ def client_access_contract() -> dict:
         path = root / "client_001" / "tenant.json"
         doc = copy.deepcopy(load_tenant_document(path))          # только канонический загрузчик реестра
         doc["bi_access"] = {"mode": "ANALYTICS_SHARE_VIEWER", "principals": list(CLIENT_ACCESS_PRINCIPALS)}
+        doc.pop("rnp_access", None)          # фикстура T6 — только клиентский доступ (РНП — своя фикстура)
         path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
         contract = _terraform_contract(load_tenant("client_001", root))
     contract["marketplaces"]["ozon"]["runtime_image"] = FIXTURE_IMAGE
