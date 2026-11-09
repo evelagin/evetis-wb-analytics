@@ -224,6 +224,8 @@ def _project(base: dict, project_id: str) -> dict:
     # control, а не проверяемое правило пространства имён (мутационная проверка это ловит).
     doc["control"] = dict(copy.deepcopy(doc["control"]), email=CI.control_email(project_id))
     doc["control"]["job"]["env"]["GCP_PROJECT_ID"] = project_id
+    if doc.get("rnp_access"):   # согласованная учётка РНП: отвергать должно правило пространства имён
+        doc["rnp_access"] = dict(doc["rnp_access"], service_account=f"sa-rnp-web@{project_id}.iam.gserviceaccount.com")
     return doc
 
 
