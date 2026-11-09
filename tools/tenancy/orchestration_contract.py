@@ -30,9 +30,11 @@ SOURCE_FILES = (
     'stop_acceptance.py','wake_budget.py','controller_wake_budget_image_check.py',
     'full_terminal_gate_recovery.py','full_terminal_gate_image_check.py',
     'current_independence.py','current_independence_image_check.py',
+    'current_runtime_succession_image_check.py','runtime_history_fixture.py',
     'finance_catchup.py','finance_catchup_image_check.py',
     'control_closure_recovery.py','control_closure_image_check.py',
     'durable_daily.py','durable_daily_image_check.py',
+    'owner_pause_image_check.py',
 )
 
 
@@ -107,6 +109,10 @@ def block(c, settings, repo, release=None):
     wake_budget='controller_wake_budget_version' in release
     terminal_gate='terminal_gate_recovery_version' in release
     independence='current_independence_version' in release
+    succession='current_runtime_succession_version' in release
+    if succession:
+        expected.add('current_runtime_succession_version')
+        if not independence or type(release['current_runtime_succession_version']) is not int or release['current_runtime_succession_version']!=1:raise ValueError('unqualified current runtime succession')
     catchup='finance_catchup_version' in release
     control_closure='control_closure_recovery_version' in release
     durable_daily='durable_daily_version' in release
@@ -116,6 +122,10 @@ def block(c, settings, repo, release=None):
     if control_closure:
         expected.add('control_closure_recovery_version')
         if not catchup or type(release['control_closure_recovery_version']) is not int or release['control_closure_recovery_version']!=1:raise ValueError('unqualified control-closure recovery')
+    owner_pause='owner_pause_quiescent_version' in release
+    if owner_pause:
+        expected.add('owner_pause_quiescent_version')
+        if not independence or not catchup or type(release['owner_pause_quiescent_version']) is not int or release['owner_pause_quiescent_version']!=1:raise ValueError('unqualified owner pause handling')
     if catchup:
         expected.add('finance_catchup_version')
         if not independence or type(release['finance_catchup_version']) is not int or release['finance_catchup_version']!=1:raise ValueError('unqualified finance catch-up')
@@ -167,9 +177,11 @@ def block(c, settings, repo, release=None):
     if wake_budget:required.add('controller_wake_budget_adapter')
     if terminal_gate:required.add('terminal_gate_recovery_adapter')
     if independence:required.add('current_independence_adapter')
+    if succession:required.add('current_runtime_succession_adapter')
     if catchup:required.add('finance_catchup_adapter')
     if control_closure:required.add('control_closure_recovery_adapter')
     if durable_daily:required.add('durable_daily_adapter')
+    if owner_pause:required.add('owner_pause_quiescent_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

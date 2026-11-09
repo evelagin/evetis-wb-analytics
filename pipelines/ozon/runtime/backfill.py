@@ -109,6 +109,9 @@ class SourceThrottle(Exception):
         self.diagnostic = diagnostic
 
 
+CAMPAIGN_PAGE_PAUSE_SECONDS = 2
+
+
 class Engine:
     def __init__(self, p, run_id, ts, state, request_budget=400, unit_budget=20):
         self.p, self.run_id, self.ts = p, run_id, ts
@@ -417,6 +420,9 @@ class Engine:
     def campaigns(self):
         items, seen, total = [], set(), None
         for page in range(1, 101):
+            if page > 1:
+                # Не запрашивать следующую страницу в ту же секунду (см. C.PERF_429_RETRY_GET).
+                time.sleep(CAMPAIGN_PAGE_PAUSE_SECONDS)
             d = json.loads(self.call(f"/api/client/campaign?page={page}&pageSize=100", performance=True))
             values = d.get("list")
             try:

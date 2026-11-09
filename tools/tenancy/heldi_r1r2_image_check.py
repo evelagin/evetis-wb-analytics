@@ -126,7 +126,7 @@ def staged_descriptors_real_hashes():
     return own
 
 
-def check():
+def _check():
     m = FR.manifest(); x1 = R1.baseline()
     own = staged_descriptors_real_hashes()
     i, doc, prep, authority = intent_dispatch(); job = prep['job'].rsplit('/', 1)[-1]
@@ -187,6 +187,13 @@ def check():
             'r1_new_sequence_after_closure': 'PASS', 'r1_tampered_proof_blocks': 'PASS', 'r1_unknown_predicates_block': 'PASS',
             'r2_independent_certificate': 'PASS', 'r2_unknown_predicates_block': 'PASS', 'r2_finishing_peer_waits': 'PASS',
             'r1r2_staged_descriptors_real_hashes': 'PASS', 'r1r2_staged_descriptor_own_source_' + own: 'PASS'}
+
+
+def check():
+    """Frozen production incident replayed with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        return _check()
 
 
 if __name__ == '__main__':

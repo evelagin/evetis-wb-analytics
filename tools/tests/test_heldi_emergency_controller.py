@@ -220,7 +220,7 @@ def test_wake_budget_release_requires_its_in_image_proof():
     from tools.tenancy import orchestration_contract as O, tenant_backfill as BF
     release = installed_release()
     with_flag = dict(release, controller_wake_budget_version=1)
-    c = BF.target('client_001')
+    c = O.historical_contract(BF.target('client_001'), release)   # the installed release with its own runtime pair
     settings = dict(release=release['source_sha'], root_hash='bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222', scheduler_state='PAUSED')
     with pytest.raises(ValueError, match='gates not PASS'):
         O.block(c, settings, BF.REPO, with_flag)                       # flag without the adapter proof
