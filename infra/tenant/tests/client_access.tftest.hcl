@@ -93,7 +93,7 @@ run "client_001_without_client_access_renders_nothing_for_a_client" {
     values = { projects = [{ project_id = "mpa-t-client-001", number = "123456789012", lifecycle_state = "ACTIVE", parent = { id = "881419274207", type = "folder" } }] }
   }
   assert {
-    condition     = length(google_project_iam_member.client_access) == 0 && length(google_project_iam_custom_role.client_query) == 0 && length(flatten([for k, d in google_bigquery_dataset.this : [for a in d.access : a if length(a.dataset) > 0]])) == 0
+    condition     = length(google_project_iam_member.client_access) == 0 && length(google_project_iam_custom_role.client_query) == 0 && length(flatten([for k, d in google_bigquery_dataset.this : [for a in d.access : a if length(a.dataset) > 0]])) == (var.contract.rnp_access == null ? 0 : length(var.contract.rnp_access.authorized_views))
     error_message = "T6: with bi_access.mode NONE the contract must not change any ACL or project IAM"
   }
 }

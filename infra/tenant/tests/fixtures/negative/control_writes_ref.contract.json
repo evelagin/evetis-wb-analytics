@@ -178,7 +178,37 @@
   "project_id": "mpa-t-client-001",
   "project_id_revision": 1,
   "region": "europe-west1",
-  "rnp_access": null,
+  "rnp_access": {
+    "authorized_views": [
+      {
+        "source_key": "ozon_mart",
+        "viewer_key": "analytics_share"
+      },
+      {
+        "source_key": "tenant_ops",
+        "viewer_key": "analytics_share"
+      },
+      {
+        "source_key": "ozon_raw",
+        "viewer_key": "ozon_mart"
+      },
+      {
+        "source_key": "ref",
+        "viewer_key": "ozon_mart"
+      },
+      {
+        "source_key": "ref",
+        "viewer_key": "tenant_ops"
+      },
+      {
+        "source_key": "ozon_mart",
+        "viewer_key": "tenant_ops"
+      }
+    ],
+    "dataset_key": "analytics_share",
+    "mode": "OWNER_RNP_SERVICE",
+    "service_account": "sa-rnp-web@mpa-t-client-001.iam.gserviceaccount.com"
+  },
   "scheduler_state": "PAUSED",
   "sql_deployer": {
     "account_id": "sa-sql-deployer",

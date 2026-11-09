@@ -70,6 +70,10 @@
   "bi_access": {
     "mode": "NONE"
   },
+  "rnp_access": {
+    "mode": "OWNER_RNP_SERVICE",
+    "service_account": "sa-rnp-web@mpa-t-client-001.iam.gserviceaccount.com"
+  },
   "lifecycle": {
     "created_at": "2026-09-24T00:00:00+03:00"
   },
