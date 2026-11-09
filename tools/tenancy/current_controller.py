@@ -9,6 +9,7 @@ from tools.tenancy import tenant_backfill as BF,durable_plan as D,full_controlle
 from tools.tenancy import current_policy as P,current_contract as K,controller_cadence as CC
 from tools.tenancy.validation import parse_tenant_json as parse
 from tools.tenancy.controller_diagnostics import gate
+from tools.tenancy import durable_daily as DD
 
 def fail(s):raise BF.B.EvidenceError('operational current: '+s)
 
@@ -205,7 +206,13 @@ def source_tick(b,p,day,item):
     if b.state(doc)['complete']:
         if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
             return WB.handoff('COMPLETE',budget,operational_entity=doc['runtime_plan']['entity'])
-        cert=certificate(b,p,day,item,history)
+        try:cert=certificate(b,p,day,item,history)
+        except DD.LOCAL_ERRORS as error:
+            # A2: certification is read-only and runs after the shard is reconciled (lease released
+            # by reconciliation). Its evidence failure holds only this entity for this wake (UNKNOWN);
+            # a typed gate failure, an open authority or a transient read keep their global path.
+            if not DD.local_evidence(error) or not DD.hold_current(getattr(b,'wake_activity',{}),doc['runtime_plan']['entity'],history,day.isoformat(),today=day==b.clock().astimezone(K.MSK).date()):raise
+            return {'status':'WAITING','source_dispatches':0,'operational_entity':doc['runtime_plan']['entity'],'basis':'CURRENT_ENTITY_EVIDENCE_HOLD'}
         if cert is not None:
             b.store.commit(b.current_root,'CURRENT_CERT',P.ORDER.index(doc['runtime_plan']['entity']),cert,b.clock())
         else:
@@ -283,6 +290,7 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         validate_certificate(base,p,day,cert,item)
         if entity in certs and certs[entity]!=cert:fail('conflicting current certificate')
         certs[entity]=cert
+    DD.entity_status(getattr(base,'wake_activity',{}),INDEPENDENT_ENTITIES,set(certs),partial)
     if 'catalog' in certs and not local_full_stop(base):
         from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
         result=DIAGNOSTIC.queued(base)

@@ -32,6 +32,7 @@ SOURCE_FILES = (
     'current_independence.py','current_independence_image_check.py',
     'finance_catchup.py','finance_catchup_image_check.py',
     'control_closure_recovery.py','control_closure_image_check.py',
+    'durable_daily.py','durable_daily_image_check.py',
 )
 
 
@@ -108,6 +109,10 @@ def block(c, settings, repo, release=None):
     independence='current_independence_version' in release
     catchup='finance_catchup_version' in release
     control_closure='control_closure_recovery_version' in release
+    durable_daily='durable_daily_version' in release
+    if durable_daily:
+        expected.add('durable_daily_version')
+        if not control_closure or type(release['durable_daily_version']) is not int or release['durable_daily_version']!=1:raise ValueError('unqualified durable daily contour')
     if control_closure:
         expected.add('control_closure_recovery_version')
         if not catchup or type(release['control_closure_recovery_version']) is not int or release['control_closure_recovery_version']!=1:raise ValueError('unqualified control-closure recovery')
@@ -164,6 +169,7 @@ def block(c, settings, repo, release=None):
     if independence:required.add('current_independence_adapter')
     if catchup:required.add('finance_catchup_adapter')
     if control_closure:required.add('control_closure_recovery_adapter')
+    if durable_daily:required.add('durable_daily_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
