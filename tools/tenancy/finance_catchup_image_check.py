@@ -279,6 +279,7 @@ def scope_check():
 def order_check():
     """CURRENT.wake: open catch-up drained first; new catch-up work only after today's CURRENT."""
     from tools.tenancy import controller_cadence as CC, recent_priority as RP, fbo_diagnostic_owner as DIAG
+    from tools.tenancy import ads_catchup as AC, current_ads as ADS
     c, m, p, a = fixture(); day = NOW.astimezone(K.MSK).date()
     def item(e): return {'day': day.isoformat(), 'policy_hash': p['hash'], 'plan': {'ack_hash': e, 'runtime_plan': {'entity': e, 'from': '2026-10-24'}}, 'shard': 's-' + e}
     def run(*, certified=(), partial=(), current_pending=None, catchup=None):
@@ -294,7 +295,8 @@ def order_check():
              patched(CUR, 'validate_certificate', lambda *x: x[3]), patched(CUR, 'Backend', lambda *x: None), \
              patched(CUR, 'source_tick', lambda b, pp, d, it: calls.append(it['plan']['runtime_plan']['entity']) or {'status': 'WAITING', 'source_dispatches': 0}), \
              patched(DIAG, 'queued', lambda b: None), patched(FC, 'scan', lambda b, pp, fin: seen.append(fin) or scope), \
-             patched(FC, 'Backend', lambda *x: None), patched(FC, 'tick', lambda b, aa, d, it: calls.append('catchup:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}):
+             patched(FC, 'Backend', lambda *x: None), patched(FC, 'tick', lambda b, aa, d, it: calls.append('catchup:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}), \
+             patched(AC, 'scan', lambda *x, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), patched(ADS, 'qualified', lambda b: False):
             result = CUR.wake(base, [], {}, {}, set())
         return calls, result, seen
     open_scope = {'authorities': ['a'], 'pending': [(a, date(2026, 10, 8), {'plan': {}})], 'next': None, 'halted': None}
