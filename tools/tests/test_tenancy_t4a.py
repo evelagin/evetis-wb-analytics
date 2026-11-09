@@ -253,7 +253,8 @@ def test_new_datasets_grant_nothing_to_runtime_or_customer():
         want = {"projectOwners", deployer} | ({control} if ds == "tenant_ops" else set())
         if ds == "analytics_share" and c.get("rnp_access"):      # РНП владельца: READER учётки сайта (rnp_access.py)
             want |= {c["rnp_access"]["service_account"]}
-        assert {who for _r, _k, who, _c in acl[c["datasets"][ds]]} == want, ds
+        # авторизованные датасеты (рёбра VIEWS РНП/T6) — не принципалы
+        assert {who for r, _k, who, _c in acl[c["datasets"][ds]] if r != PS.AUTHORIZED_VIEWS} == want, ds
         assert runtime not in {who for _r, _k, who, _c in acl[c["datasets"][ds]]}, ds
 
 
