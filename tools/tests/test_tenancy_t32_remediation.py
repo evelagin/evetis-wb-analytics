@@ -46,6 +46,18 @@ def _rc(addr, rtype, after, unknown=None, actions=("create",), module=None):
     return rc
 
 
+def _rnp_acl(contract, key):
+    """РНП владельца (tools/tenancy/rnp_access.py): READER учётки сайта и рёбра VIEWS, если включено в реестре."""
+    ra = contract.get("rnp_access")
+    if not ra:
+        return []
+    p = contract["project_id"]
+    out = [_acl("READER", user_by_email=ra["service_account"])] if key == ra["dataset_key"] else []
+    return out + [{"role": "", "dataset": [{"dataset": [{"project_id": p, "dataset_id": contract["datasets"][e["viewer_key"]]}],
+                                            "target_types": ["VIEWS"]}]}
+                  for e in ra["authorized_views"] if e["source_key"] == key]
+
+
 def _plan_for(contract, number=NUMBER):
     p, o, region = contract["project_id"], contract["marketplaces"]["ozon"], contract["region"]
     rt = f"{o['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com"
@@ -66,7 +78,8 @@ def _plan_for(contract, number=NUMBER):
                                    condition=[dict(g["condition"], location="")] if g["condition"] else [])
                               for g in dep["grants"] if g["dataset_key"] == k]
                            + [_acl(g["role"], user_by_email=ctl["email"])
-                              for g in ctl["grants"] if g["dataset_key"] == k]},
+                              for g in ctl["grants"] if g["dataset_key"] == k]
+                           + _rnp_acl(contract, k)},
                 {"etag": True, "id": True, "access": [{}, {}]})
             for k, ds in contract["datasets"].items()]
     # T4.1: SA деплоера SQL в корне (не в модуле площадки).

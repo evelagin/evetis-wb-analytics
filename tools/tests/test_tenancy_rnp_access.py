@@ -153,20 +153,11 @@ def test_t6_and_rnp_together_do_not_duplicate_edges():
 
 # ═══════════════════════════════════════ сканер плана
 def _plan(contract):
+    """Синтетический план корня арендатора (T3.2); записи РНП в ACL строит _plan_for по контракту."""
     from tools.tests.test_tenancy_t32_remediation import _plan_for
     c = copy.deepcopy(contract)
     c.pop("orchestration", None)        # синтетический план T3.2 строит только корень и площадку
-    plan = _plan_for(c)
-    for rc in plan["resource_changes"]:
-        if rc["type"] != "google_bigquery_dataset":
-            continue
-        key = next(k for k, v in c["datasets"].items() if v == rc["change"]["after"]["dataset_id"])
-        acc = rc["change"]["after"]["access"]
-        if c.get("rnp_access") and key == c["rnp_access"]["dataset_key"]:
-            acc.append({"role": "READER", "user_by_email": c["rnp_access"]["service_account"]})
-        acc += [{"role": "", "dataset": [{"dataset": [{"project_id": P, "dataset_id": c["datasets"][v]}], "target_types": ["VIEWS"]}]}
-                for v, s in sorted(RA.authorized_edges(c)) if s == key]
-    return c, plan
+    return c, _plan_for(c)
 
 
 def test_plan_scan_accepts_exact_rnp_plan_and_nothing_else():
