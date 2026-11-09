@@ -29,6 +29,7 @@ from types import SimpleNamespace
 from tools.tenancy import current_ads as ADS, ads_catchup as AC, current_controller as CUR, current_policy as P
 from tools.tenancy import finance_catchup as FC, current_contract as K, durable_plan as D, tenant_backfill as BF
 from pipelines.ozon.runtime import full_resume as FR
+from tools.tenancy.validation import parse_tenant_json
 
 NOW = datetime(2026, 11, 8, 10, 30, tzinfo=timezone.utc)
 TODAY = date(2026, 11, 8)
@@ -149,7 +150,7 @@ def settle_check():
     assert out['failed'] is True and out['retry_category'] == ADS.RETRY and out['source_complete'] is False
     assert K.at(out['eligible_at']) == NOW + timedelta(seconds=ADS.RETRY_SECONDS)
     ld = objects[('tenant_locks', f'LD_{cid}_0171')]
-    assert ld[0] == {'owner': RUN} and json.loads(ld[1])['terminal'] == 'FAILED_ADS_LOCAL'
+    assert ld[0] == {'owner': RUN} and parse_tenant_json(ld[1])['terminal'] == 'FAILED_ADS_LOCAL'
     assert appended[0][1] == 'BACKFILL_CHECKPOINTS' and appended[0][2][0]['status'] == 'FAILED' and appended[0][2][0]['error_code'] == ADS.RETRY
     assert not any('statistics' in x or 'campaign' in x for x in calls)                       # never a source call
     again = b.reconcile({'plan': doc, 'receipt': receipt})                                    # idempotent release
