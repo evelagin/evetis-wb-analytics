@@ -69,12 +69,67 @@ export interface FactRow {
   refusalProvenSrids?: string | null;
   refusalProvenLogisticsRub?: number | null;
   refusalEvidenceStatus?: string | null;
+  /**
+   * Класс отмен (sql/unitka/cancel_class_v1.sql). cancelClassStatus — статус суток (null — отмен Orders API нет);
+   * cancelVoidQty — отмены без логистики, оставшиеся в Q (поправка W). В окне писателя и сверки дни всегда незрелы,
+   * поэтому cancelVoidQty здесь всегда 0: иное — отказ CANCEL_VOID_OUTSIDE_RESTORE (лист правит только unitka-cancel-restore).
+   */
+  cancelVoidQty?: number;
+  cancelClassStatus?: string | null;
+}
+
+/**
+ * Строка wb_mart.V_UNITKA_CANCEL_CLASS_DAILY (sql/unitka/cancel_class_v1.sql) для unitka-cancel-restore: зрелые сутки,
+ * где лист должен измениться (FINAL), и аномалии, которые лист не меняют (ANOMALY_*).
+ */
+export interface CancelClassRow {
+  nmId: number;
+  date: string;
+  funnelOrders: number;
+  keptQty: number;
+  cancelLogQty: number;
+  cancelNologQty: number;
+  refusalCountedQty: number;
+  soldNotInApiQty: number;
+  room: number;
+  logInQ: number;
+  nologInQ: number;
+  nologAbsentQty: number;
+  legacyCancels: number;
+  finalCancels: number;
+  voidQty: number;
+  status: string;
+  sheetChangeRequired: boolean;
+  logSrids: string[];
+  nologSrids: string[];
+  nologCancelDates: string[];
+  financeFinalThrough: string;
+  matureOn: string;
 }
 
 /** Источник отмен, в которые вошли доказанные отказы вне Orders API. */
 export const CANCELS_SOURCE_WITH_REFUSALS = 'PROXY_FACT_ORDERS+FINANCE_REFUSAL';
 const CANCELS_SOURCES: ReadonlySet<string> = new Set(['PROXY_FACT_ORDERS', 'XLSX_BACKFILL', CANCELS_SOURCE_WITH_REFUSALS]);
 const REFUSAL_STATUSES: ReadonlySet<string> = new Set(['NO_EXCESS', 'EXPLAINED', 'STILL_OPEN', 'MATURE_BUT_UNPROVEN']);
+/** Статусы V_UNITKA_CANCEL_CLASS_DAILY.cancel_class_status. */
+export const CANCEL_CLASS_STATUSES: ReadonlySet<string> = new Set(['NO_FUNNEL', 'IMMATURE', 'ANOMALY_FUNNEL_BELOW_API', 'ANOMALY_ABSENT_WITH_LOGISTICS', 'FINAL']);
+
+/**
+ * Поля класса отмен строки фактов. Поправку W (cancel_void_qty > 0) суточный писатель и сверка НЕ пишут: её вносит
+ * только загрузчик unitka-cancel-restore по манифесту и OWNER ACK. Поэтому такая строка в окне — отказ до любой записи.
+ */
+function cancelClassFields(r: Record<string, unknown>, view: string): Pick<FactRow, 'cancelVoidQty' | 'cancelClassStatus'> {
+  if (r.cancel_void_qty === undefined) return { cancelVoidQty: 0, cancelClassStatus: null };
+  const where = `${String(r.nm_id)} ${String(date(r.date_msk))}`;
+  const v = num(r.cancel_void_qty) ?? 0;
+  const status = str(r.cancel_class_status);
+  if (status !== null && !CANCEL_CLASS_STATUSES.has(status)) throw new LoaderError(`${view}: неизвестный cancel_class_status '${status}' (${where})`, 'BQ_SHAPE');
+  if (v < 0 || !Number.isInteger(v)) throw new LoaderError(`${view}: cancel_void_qty=${v} (${where})`, 'BQ_SHAPE');
+  if (v > 0) {
+    throw new LoaderError(`${view}: cancel_void_qty=${v} в окне писателя (${where}, ${String(status)}) — поправку W вносит только unitka-cancel-restore`, 'CANCEL_VOID_OUTSIDE_RESTORE');
+  }
+  return { cancelVoidQty: v, cancelClassStatus: status };
+}
 
 /**
  * Поля отказов строки факта + fail-closed проверка контракта слоя: отказ входит в S только на днях воронки,
@@ -134,6 +189,11 @@ export interface LogisticsRateRow {
   saleRefusalOverlap: number | null;
   /** Только у магазина: уникальные srid с одним плечом в окне, без «Продажи» и с «Возвратом» (хвост доказанного возврата: продажа ушла за начало окна). null у SKU и при отсутствии поля. */
   returnTail: number | null;
+  /** Возврат брака продавцу: srid с одним плечом «Возврат брака (К продавцу)», без «Продажи» и «Возврата» в окне — не
+   *  отправка покупателю, ни в sales, ни в refusals, ни в ставках (27.10.2026). Магазин и SKU; null — поля нет. */
+  sellerReturn: number | null;
+  /** Сумма плеч sellerReturn (вне прямой и обратной ставки; деньги — в Store P&L по факту финотчёта). */
+  sellerReturnSum: number | null;
 }
 
 export interface CommissionRateRow {
@@ -312,7 +372,8 @@ export class UnitkaBq {
   async facts(): Promise<FactRow[]> {
     const rows = await this.runner.query(
       `SELECT nm_id, date_msk, views, opens, carts, orders, cancels, stock, ads_in, price, storage, orders_source, cancels_source,
-              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub
+              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub,
+              cancel_void_qty, cancel_class_status
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_DAILY_FACT')} ORDER BY nm_id, date_msk`,
     );
     return rows.map((r) => ({
@@ -330,7 +391,60 @@ export class UnitkaBq {
       ordersSource: String(r.orders_source ?? ''),
       cancelsSource: String(r.cancels_source ?? ''),
       ...refusalFields(r, 'V_UNITKA_DAILY_FACT'),
+      ...cancelClassFields(r, 'V_UNITKA_DAILY_FACT'),
     }));
+  }
+
+  /**
+   * wb_mart.V_UNITKA_CANCEL_CLASS_DAILY: зрелые сутки, где лист должен измениться, и аномалии. Только чтение.
+   * Форма строки проверяется здесь (fail-closed): итоговый S и поправка V сходятся с распределением мест в Q.
+   */
+  async cancelClassRows(): Promise<CancelClassRow[]> {
+    const rows = await this.runner.query(
+      `SELECT nm_id, date_msk, funnel_orders, kept_qty, cancel_log_qty, cancel_nolog_qty, refusal_counted_qty, sold_not_in_api_qty,
+              room, log_in_q, nolog_in_q, nolog_absent_qty, legacy_cancels, final_cancels, void_qty, cancel_class_status,
+              sheet_change_required, cancel_log_srids, cancel_nolog_srids, cancel_nolog_dates, finance_final_through, mature_on
+       FROM ${this.fqn(this.martDataset, 'V_UNITKA_CANCEL_CLASS_DAILY')}
+       WHERE sheet_change_required OR STARTS_WITH(cancel_class_status, 'ANOMALY')
+       ORDER BY date_msk, nm_id`,
+    );
+    const list = (v: unknown): string[] => (str(v) ?? '').split(',').filter(Boolean);
+    return rows.map((r) => {
+      const n = (k: string): number => numReq(r[k], k);
+      const status = String(r.cancel_class_status ?? '');
+      const row: CancelClassRow = {
+        nmId: n('nm_id'), date: date(r.date_msk) ?? '', funnelOrders: n('funnel_orders'), keptQty: n('kept_qty'),
+        cancelLogQty: n('cancel_log_qty'), cancelNologQty: n('cancel_nolog_qty'), refusalCountedQty: n('refusal_counted_qty'),
+        soldNotInApiQty: n('sold_not_in_api_qty'), room: n('room'), logInQ: n('log_in_q'), nologInQ: n('nolog_in_q'),
+        nologAbsentQty: n('nolog_absent_qty'), legacyCancels: n('legacy_cancels'), finalCancels: n('final_cancels'), voidQty: n('void_qty'),
+        status, sheetChangeRequired: r.sheet_change_required === true || r.sheet_change_required === 'true',
+        logSrids: list(r.cancel_log_srids), nologSrids: list(r.cancel_nolog_srids), nologCancelDates: list(r.cancel_nolog_dates),
+        financeFinalThrough: date(r.finance_final_through) ?? '', matureOn: date(r.mature_on) ?? '',
+      };
+      const where = `${row.nmId} ${row.date}`;
+      if (!CANCEL_CLASS_STATUSES.has(status)) throw new LoaderError(`V_UNITKA_CANCEL_CLASS_DAILY: неизвестный статус '${status}' (${where})`, 'BQ_SHAPE');
+      const ok = row.finalCancels === row.refusalCountedQty + row.logInQ + row.nologInQ && row.voidQty === row.nologInQ
+        && row.nologAbsentQty === row.cancelNologQty - row.nologInQ && row.logInQ <= row.cancelLogQty && row.nologInQ <= row.cancelNologQty
+        && row.finalCancels <= row.funnelOrders && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && /^\d{4}-\d{2}-\d{2}$/.test(row.financeFinalThrough)
+        // зрелость — непрерывное покрытие окончательным финотчётом (вью); здесь вторая линия: FINAL ⇒ горизонт не позже
+        // последнего окончательного отчёта (IMMATURE возможен и при более позднем отчёте — пропуск недели).
+        && (status === 'IMMATURE' || row.matureOn <= row.financeFinalThrough);
+      if (!ok) throw new LoaderError(`V_UNITKA_CANCEL_CLASS_DAILY: строка не сходится (${where}: ${JSON.stringify(r)})`, 'BQ_SHAPE');
+      return row;
+    });
+  }
+
+  /**
+   * wb_mart.V_UNITKA_CANCEL_SHEET_DRIFT: сутки, где лист (последний снимок Store P&L) расходится с текущим классом отмен.
+   * Возвращает описания «nmID дата: лист S/V, класс S/V (статус)». Пусто — расхождений нет.
+   */
+  async cancelSheetDrift(): Promise<string[]> {
+    const rows = await this.runner.query(
+      `SELECT nm_id, date_msk, sheet_cancels, sheet_void, cancel_class_status, effective_cancels, effective_void_qty, snapshot_id
+       FROM ${this.fqn(this.martDataset, 'V_UNITKA_CANCEL_SHEET_DRIFT')} WHERE drift_status = 'RESTORED_DRIFT' ORDER BY date_msk, nm_id`,
+    );
+    return rows.map((r) => `${String(r.nm_id)} ${String(date(r.date_msk))}: лист S ${String(r.sheet_cancels)}/V ${String(r.sheet_void)}, класс `
+      + `${r.cancel_class_status === null || r.cancel_class_status === undefined ? 'нет строки' : `S ${String(r.effective_cancels)}/V ${String(r.effective_void_qty)} (${String(r.cancel_class_status)})`}, снимок ${String(r.snapshot_id)}`);
   }
 
   /* ── Слой сверки (sql/unitka/reconcile_v1.sql). Читается ТОЛЬКО при UNITKA_RECONCILE_MODE = observe | write. ── */
@@ -378,7 +492,8 @@ export class UnitkaBq {
       `SELECT nm_id, date_msk, views, opens, carts, orders, cancels, stock, ads_in, price, storage, orders_source, cancels_source,
               price_source, fact_order_qty, funnel_orders, funnel_orders_sum, sku_active,
               funnel_observed_at, orders_built_at, storage_observed_at,
-              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub
+              refusal_counted_qty, refusal_evidence_status, refusal_proven_srids, refusal_proven_logistics_rub,
+              cancel_void_qty, cancel_class_status
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_RECON_FACT')} ORDER BY nm_id, date_msk`,
     );
     return rows.map((r) => {
@@ -406,6 +521,7 @@ export class UnitkaBq {
         skuActive: r.sku_active === true || r.sku_active === 'true',
         funnelObservedAt: str(r.funnel_observed_at), ordersBuiltAt: str(r.orders_built_at), storageObservedAt: str(r.storage_observed_at),
         ...refusalFields(r, 'V_UNITKA_RECON_FACT'),
+        ...cancelClassFields(r, 'V_UNITKA_RECON_FACT'),
       };
     });
   }
@@ -413,7 +529,8 @@ export class UnitkaBq {
   async logisticsRates(): Promise<LogisticsRateRow[]> {
     const rows = await this.runner.query(
       `SELECT nm_id, shipments, direct_rate, refusals, reverse_rate, forward_sum, reverse_sum, n_logistics, n_delivery,
-              delivery_component_sum, sales, window_from, window_to, sale_refusal_overlap, return_tail
+              delivery_component_sum, sales, window_from, window_to, sale_refusal_overlap, return_tail,
+              seller_return, seller_return_sum
        FROM ${this.fqn(this.martDataset, 'V_UNITKA_LOGISTICS_RATES')} ORDER BY nm_id`,
     );
     return rows.map((r) => ({
@@ -432,6 +549,8 @@ export class UnitkaBq {
       windowTo: date(r.window_to) ?? '',
       saleRefusalOverlap: num(r.sale_refusal_overlap),
       returnTail: num(r.return_tail),
+      sellerReturn: num(r.seller_return),
+      sellerReturnSum: num(r.seller_return_sum),
     }));
   }
 

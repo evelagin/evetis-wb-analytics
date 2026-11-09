@@ -13,6 +13,7 @@
     "serviceusage.googleapis.com"
   ],
   "bq_location": "EU",
+  "client_access": null,
   "contract_version": 2,
   "control": {
     "account_id": "sa-tenant-control",

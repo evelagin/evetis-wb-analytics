@@ -61,6 +61,25 @@ def fixture_text(tenant_id: str) -> str:
 
 
 RELEASE_FIXTURE_DIR = FIXTURE_DIR / "release"
+CLIENT_ACCESS_PRINCIPALS = ["user:analyst@example-client.test", "group:bi-readers@example-client.test"]   # синтетика, не реальный клиент
+
+
+def client_access_contract() -> dict:
+    """T6: контракт client_001 с ВКЛЮЧЁННЫМ клиентским доступом (синтетические principals).
+    Реальная клиентская идентичность в Git не хранится и здесь не используется."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _with_ephemeral_client_002(TENANTS_DIR, Path(tmp) / "tenants")
+        path = root / "client_001" / "tenant.json"
+        doc = copy.deepcopy(load_tenant_document(path))          # только канонический загрузчик реестра
+        doc["bi_access"] = {"mode": "ANALYTICS_SHARE_VIEWER", "principals": list(CLIENT_ACCESS_PRINCIPALS)}
+        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        contract = _terraform_contract(load_tenant("client_001", root))
+    contract["marketplaces"]["ozon"]["runtime_image"] = FIXTURE_IMAGE
+    return contract
+
+
+def client_access_fixture_text() -> str:
+    return json.dumps(client_access_contract(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
 def release_contract(tenant_id: str) -> dict:
@@ -212,6 +231,8 @@ if __name__ == "__main__":     # регенерация: python -m tools.tenancy
     for t in SYNTHETIC_TENANTS:
         (FIXTURE_DIR / f"{t}.contract.json").write_text(fixture_text(t), encoding="utf-8")
         print(f"записана фикстура {t}")
+    (FIXTURE_DIR / "client_access.synthetic.contract.json").write_text(client_access_fixture_text(), encoding="utf-8")
+    print("записана фикстура client_access.synthetic")
     neg = FIXTURE_DIR / "negative"
     neg.mkdir(exist_ok=True)
     for name, doc in negative_cases().items():

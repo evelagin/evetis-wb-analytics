@@ -142,6 +142,12 @@ WHERE gating;
 --    Поэтому вычитать его через S — ДВОЙНОЙ УЧЁТ: формула W уже не добавляла его прибыль.
 --    Одно бизнес-событие влияет на финансовый результат ровно один раз ⇒ S = отмены СЛЕДУЮЩИХ дней.
 --    Отмены дня заказа остаются видимыми диагностикой (same_day_cancel_qty в слое сверки), но в S не входят.
+--    УТОЧНЕНИЕ 02.11.2026 (cancel_class_v1.sql): правило выше — «обычно», а не «всегда» (18.10/535580776 воронка
+--    оставила отмену дня заказа; 24.10/252442517 не посчитала отмену следующего дня). Для ЗРЕЛЫХ дней (финотчёт
+--    окончателен ≥ 46 суток) S берётся из V_UNITKA_CANCEL_CLASS_DAILY: присутствие отмены в Q — арифметикой суток,
+--    логистика — финотчётом; отмена без логистики в Q даёт cancel_void_qty (поправка W, только unitka-cancel-restore).
+--    Окно этой вью (месяц LCD) всегда незрело, поэтому здесь S прежний; выражение S дословно совпадает с
+--    V_UNITKA_RECON_FACT (тест unitka_cancel_class.test.ts).
 --
 -- 🔴 КОНТРАКТ ЦЕНЫ — ОДИН НА ДВА СЛОЯ (введён 20.09.2026 после регрессии production).
 --    Суточный писатель строит план по ЭТОЙ вью, а сверка — по V_UNITKA_RECON_FACT. Пока подстановка
@@ -206,6 +212,12 @@ rf AS (
   FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_REFUSAL_DAILY`, lcd
   WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
 ),
+-- Класс отмен суток × SKU (cancel_class_v1.sql). Внутри окна дни всегда незрелы (зрелость 46 > окна) → прежний S.
+cc AS (
+  SELECT nm_id, date_msk AS d, cancel_class_status, final_cancels, void_qty
+  FROM `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_CANCEL_CLASS_DAILY`, lcd
+  WHERE date_msk BETWEEN lcd.d1 AND lcd.d2
+),
 sd AS (SELECT DISTINCT snapshot_date AS d FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_STOCKS_SNAPSHOT`, lcd WHERE snapshot_date BETWEEN lcd.d1 AND lcd.d2),
 st AS (
   SELECT nm_id, snapshot_date AS d, SUM(quantity) AS stock
@@ -227,8 +239,12 @@ x AS (
     COALESCE(f.opens, bf.opens)                          AS opens,
     COALESCE(f.carts, bf.carts)                          AS carts,
     COALESCE(f.forders, bf.forders, o.gross, 0)          AS orders,
-    COALESCE(bf.canc, o.canc, 0)
-      + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0) AS cancels,
+    -- Класс отмен (cancel_class_v1.sql): FINAL — S по присутствию в воронке и логистике; иначе прежний S.
+    IF(cc.cancel_class_status = 'FINAL', cc.final_cancels,
+       COALESCE(bf.canc, o.canc, 0)
+         + IF(f.forders IS NOT NULL AND bf.canc IS NULL, IFNULL(rf.refusal_counted_qty, 0), 0)) AS cancels,
+    IF(cc.cancel_class_status = 'FINAL', cc.void_qty, 0) AS cancel_void_qty,
+    cc.cancel_class_status,
     IF(sd.d IS NULL, NULL, IFNULL(st.stock, 0))          AS stock,
     ROUND(IFNULL(m.ads, 0), 2)                           AS ads_in,
     IF(pd.d IS NULL, NULL, ROUND(IFNULL(ps.storage, 0), 2)) AS storage,
@@ -252,6 +268,7 @@ x AS (
   LEFT JOIN f  ON f.nm_id  = g.nm_id AND f.d  = g.d
   LEFT JOIN bf ON bf.nm_id = g.nm_id AND bf.d = g.d
   LEFT JOIN rf ON rf.nm_id = g.nm_id AND rf.d = g.d
+  LEFT JOIN cc ON cc.nm_id = g.nm_id AND cc.d = g.d
   LEFT JOIN st ON st.nm_id = g.nm_id AND st.d = g.d
   LEFT JOIN ps ON ps.nm_id = g.nm_id AND ps.d = g.d
   LEFT JOIN sd ON sd.d = g.d
@@ -287,13 +304,16 @@ SELECT
   unexplained_qty,
   refusal_finance_age_days,
   refusal_proven_srids,
-  refusal_proven_logistics_rub
+  refusal_proven_logistics_rub,
+  cancel_void_qty,
+  cancel_class_status
 FROM p;
 -- ─── 4. Ставки логистики, модель B, окно 30 дней [LCD−29, LCD], как s8win_() в Apps Script ──────
 -- Популяция прямых отправлений — уникальные srid с операцией IN ('Логистика','Доставка')
 -- (решение владельца 11.09). Первое плечо srid — прямое, второе — обратное.
--- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref − sale_refusal_overlap + return_tail проверяет Engine
--- (продажа с последующим возвратом входит в обе группы — 20.10.2026; хвост доказанного возврата — ни в одну).
+-- Строка nm_id = 0 — магазин (fallback). Инвариант n = sales + ref − sale_refusal_overlap + return_tail + seller_return
+-- проверяет Engine (продажа с последующим возвратом входит в обе группы — 20.10.2026; хвост доказанного возврата и
+-- возврат брака продавцу — ни в одну).
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_UNITKA_LOGISTICS_RATES` AS
 WITH w AS (
   SELECT DATE_SUB(last_closed_date, INTERVAL 29 DAY) AS d1, last_closed_date AS d2
@@ -301,16 +321,69 @@ WITH w AS (
 ),
 b AS (
   SELECT srid, SAFE_CAST(wb_nm_id AS INT64) AS nm, supplier_oper_name AS son,
-         SAFE_CAST(logistics_amount AS NUMERIC) AS amt
+         SAFE_CAST(logistics_amount AS NUMERIC) AS amt, JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus,
+         source_layer AS layer,
+         SAFE_CAST(JSON_VALUE(raw_json, '$.deliveryAmount') AS INT64) AS da,
+         SAFE_CAST(JSON_VALUE(raw_json, '$.returnAmount') AS INT64) AS ra,
+         JSON_VALUE(raw_json, '$.docTypeName') AS doc, JSON_VALUE(raw_json, '$.deliveryMethod') AS dm
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`, w
   WHERE _rr_date BETWEEN w.d1 AND w.d2 AND wb_nm_id IS NOT NULL AND srid IS NOT NULL
 ),
-sale AS (SELECT COUNT(DISTINCT srid) AS n FROM b WHERE son = 'Продажа'),
+-- Форма строки логистики (инцидент 23.10.2026, тихое искажение ставок): плечо — это поездка единицы. В Finance API у
+-- каждого плеча ровно одна поездка: deliveryAmount = 1 (к клиенту / к продавцу, ПРЯМОЕ) или returnAmount = 1 (от
+-- клиента, ОБРАТНОЕ); 2 402 из 2 402 плеч с 13.07.2026, у srid не больше одного прямого и одного обратного. Строка
+-- «Логистика»/«Доставка» без поездки (deliveryAmount = returnAmount = 0, способ доставки пуст) — не плечо:
+-- «Услуга сопровождения экспортных операций» считалась вторым плечом проданного srid — отказом с пересечением, а её
+-- сумма, как наибольшая, — прямым плечом.
+--   LEG     — ровно одна поездка; srid в API-слое не больше чем с одним прямым и одним обратным плечом.
+--   SERVICE — только точный bonusTypeName экспортного сопровождения, без поездки и способа доставки, при «Продаже»
+--             (docType «Продажа») И прямом плече ТОГО ЖЕ srid И ТОГО ЖЕ nm; вне обеих ставок, деньги — в финотчёте
+--             (Store P&L не меняется: строка остаётся в когортной логистике продажи).
+--   UNKNOWN — всё прочее (нет полей поездки, поездок ≠ 1, другая услуга, другой nm, лишнее плечо направления).
+--   LEGACY  — как прежде (полей поездки нет): LEG, порядок плеч по сумме.
+-- UNKNOWN не меняет shipments/sales (истинные значения): ставки строки магазина = NULL — Engine отклоняет прогон
+-- явно (plan.ts: «нет ставок» → INVARIANT_FAIL), сумма и число srid видны в unclassified_sum / unclassified_srids.
+lg0 AS (
+  SELECT b.*,
+         CASE WHEN layer = 'LEGACY' THEN 'LEG'
+              WHEN da IS NOT NULL AND ra IS NOT NULL AND da >= 0 AND ra >= 0 AND da + ra = 1 THEN 'LEG'
+              WHEN da = 0 AND ra = 0 AND IFNULL(dm, '') = '' AND bonus = 'Услуга сопровождения экспортных операций'
+                   AND CONCAT(srid, '|', CAST(nm AS STRING)) IN (
+                         SELECT CONCAT(srid, '|', CAST(nm AS STRING)) FROM b WHERE son = 'Продажа' AND doc = 'Продажа')
+                   AND CONCAT(srid, '|', CAST(nm AS STRING)) IN (
+                         SELECT CONCAT(srid, '|', CAST(nm AS STRING)) FROM b
+                         WHERE son IN ('Логистика', 'Доставка') AND da = 1 AND ra = 0) THEN 'SERVICE'
+              ELSE 'UNKNOWN' END AS cls
+  FROM b WHERE son IN ('Логистика', 'Доставка')
+),
+lg AS (
+  SELECT srid, nm, son, amt, bonus, layer, da, ra, doc, dm,
+         IF(cls = 'LEG' AND layer != 'LEGACY'
+            AND (COUNTIF(cls = 'LEG' AND da = 1) OVER (PARTITION BY srid) > 1
+                 OR COUNTIF(cls = 'LEG' AND ra = 1) OVER (PARTITION BY srid) > 1), 'UNKNOWN', cls) AS cls
+  FROM lg0
+),
+-- Возврат брака продавцу (инцидент 27.10.2026, unitka-engine-prod-qr5xr): покупатель вернул брак, WB везёт единицу со
+-- склада в ПВЗ продавца отдельным srid — одно плечо «Доставка»/«Логистика» с bonusTypeName «Возврат брака (К продавцу)»,
+-- без «Продажи» и «Возврата» (они — у исходного srid покупателя). Это не отправка покупателю: srid не входит ни в
+-- sales, ни в refusals, ни в хвост, а его плечо — ни в прямую, ни в обратную ставку (seller_return / seller_return_sum;
+-- деньги — в Store P&L по факту финотчёта, когорта даты заказа × nm). srid с таким плечом другой формы (есть «Продажа»,
+-- «Возврат» или второе плечо) не попадает НИ в один класс — инвариант Engine отклоняет его (fail-closed).
+-- Возврат неопознанного товара продавцу (инцидент 06.11.2026, unitka-engine-prod-7tfbj): WB возвращает продавцу товар,
+-- который не смог опознать при приёмке (обезличка), — тот же вид движения: одно плечо «Доставка» с bonusTypeName
+-- «Возврат неопознанного товара (К продавцу)», без «Продажи» и «Возврата» (строки «Возмещение за выдачу и возврат
+-- на ПВЗ» того же srid — с nm 0 и вне логистики). Класс тот же — seller_return: не продажа,
+-- не отказ, не возврат покупателя, вне обеих ставок; деньги остаются в финотчёте. Сопоставление — только точные значения
+-- bonusTypeName; иная форма srid по-прежнему не попадает ни в один класс (fail-closed).
+sr AS (SELECT DISTINCT srid FROM b WHERE son IN ('Логистика', 'Доставка')
+         AND bonus IN ('Возврат брака (К продавцу)', 'Возврат неопознанного товара (К продавцу)')),
+sale AS (SELECT COUNT(DISTINCT srid) AS n FROM b WHERE son = 'Продажа' AND srid NOT IN (SELECT srid FROM sr)),
 l AS (
   SELECT srid, nm, son, amt,
-         ROW_NUMBER() OVER (PARTITION BY srid ORDER BY amt DESC) AS rn,
+         -- прямое плечо — первое по направлению (returnAmount = 0), обратное — второе; LEGACY — по сумме, как прежде
+         ROW_NUMBER() OVER (PARTITION BY srid ORDER BY IF(layer = 'LEGACY', 0, ra), amt DESC) AS rn,
          COUNT(*) OVER (PARTITION BY srid) AS legs
-  FROM b WHERE son IN ('Логистика', 'Доставка')
+  FROM lg WHERE cls = 'LEG'
 ),
 p AS (
   SELECT srid, ANY_VALUE(nm) AS nm, ANY_VALUE(son) AS son,
@@ -323,16 +396,20 @@ p AS (
 -- refusals + хвосты) — так же, как это плечо учитывалось, пока продажа была в окне. У SKU return_tail = число хвостов
 -- (Engine считает порог своей ставки по прямым: shipments − return_tail). Без хвостов (обычное состояние)
 -- результат совпадает с прежним определением побайтно. shipments и refusals не меняют смысла (инвариант V1).
+px AS (SELECT p.*, srid IN (SELECT srid FROM sr) AS srx FROM p),
 pt AS (
-  SELECT p.*, (legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
-                        AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')) AS tail
-  FROM p
+  SELECT px.*, (NOT srx AND legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
+                            AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')) AS tail,
+               (srx AND legs = 1 AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
+                    AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')) AS sret
+  FROM px
 ),
 a AS (
-  SELECT nm, COUNT(*) AS n, COUNTIF(tail) AS nt, SUM(IF(tail, 0, fwd)) AS fwd, COUNTIF(legs >= 2) AS ref,
-         SUM(rev) + SUM(IF(tail, fwd, 0)) AS rev,
+  SELECT nm, COUNT(*) AS n, COUNTIF(tail) AS nt, COUNTIF(sret) AS ns, SUM(IF(tail OR sret, 0, fwd)) AS fwd,
+         COUNTIF(legs >= 2 AND NOT srx) AS ref,
+         SUM(rev) + SUM(IF(tail, fwd, 0)) AS rev, SUM(IF(sret, fwd, 0)) AS srsum,
          COUNTIF(son = 'Логистика') AS nlog, COUNTIF(son = 'Доставка') AS ndlv,
-         SUM(IF(son = 'Доставка' AND NOT tail, fwd, 0)) AS dlvfwd
+         SUM(IF(son = 'Доставка' AND NOT tail AND NOT sret, fwd, 0)) AS dlvfwd
   FROM pt GROUP BY nm
 ),
 -- Продажа с последующим возвратом (инцидент 20.10.2026, unitka-engine-prod-qs2p4): у srid есть «Продажа»
@@ -341,7 +418,7 @@ a AS (
 ov AS (
   SELECT COUNT(*) AS n
   FROM p
-  WHERE legs >= 2 AND srid IN (SELECT srid FROM b WHERE son = 'Продажа')
+  WHERE legs >= 2 AND srid IN (SELECT srid FROM b WHERE son = 'Продажа') AND srid NOT IN (SELECT srid FROM sr)
 ),
 -- Хвост доказанного возврата (follow-up инцидента 20.10.2026): «Продажа» srid ушла за начало окна, а «Возврат» и его
 -- плечо остались в окне. Такой srid в shipments (одно плечо), но ни в sales, ни в refusals. Считается независимо:
@@ -353,21 +430,50 @@ rt AS (
   WHERE legs = 1
     AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
     AND srid IN (SELECT srid FROM b WHERE son = 'Возврат')
+    AND srid NOT IN (SELECT srid FROM sr)
+),
+-- Возврат брака продавцу — независимый счётчик магазина (см. sr): одно плечо с этим bonusTypeName, без «Продажи» и
+-- без «Возврата» в окне. Если позже по srid придёт «Продажа»/«Возврат»/второе плечо — он выпадет отсюда и не попадёт
+-- ни в один класс (инвариант отклонит), а не будет учтён дважды.
+sx AS (
+  SELECT COUNT(*) AS n
+  FROM p
+  WHERE legs = 1
+    AND srid IN (SELECT srid FROM sr)
+    AND srid NOT IN (SELECT srid FROM b WHERE son = 'Продажа')
+    AND srid NOT IN (SELECT srid FROM b WHERE son = 'Возврат')
+),
+-- Строки логистики вне плеч (см. lg): по SKU и магазину; UNKNOWN магазина — fail-closed через shipments
+xu AS (
+  SELECT nm, COUNTIF(cls = 'SERVICE') AS svc_rows, SUM(IF(cls = 'SERVICE', amt, 0)) AS svc_sum,
+         COUNT(DISTINCT IF(cls = 'UNKNOWN', srid, NULL)) AS unk_srids, SUM(IF(cls = 'UNKNOWN', amt, 0)) AS unk_sum
+  FROM lg WHERE cls != 'LEG' GROUP BY nm
+),
+xt AS (
+  SELECT IFNULL(COUNTIF(cls = 'SERVICE'), 0) AS svc_rows, IFNULL(SUM(IF(cls = 'SERVICE', amt, 0)), 0) AS svc_sum,
+         IFNULL(COUNT(DISTINCT IF(cls = 'UNKNOWN', srid, NULL)), 0) AS unk_srids,
+         IFNULL(SUM(IF(cls = 'UNKNOWN', amt, 0)), 0) AS unk_sum
+  FROM lg WHERE cls != 'LEG'
 )
-SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt, 0)), 4) AS direct_rate,
+SELECT nm AS nm_id, n AS shipments, ROUND(SAFE_DIVIDE(fwd, NULLIF(n - nt - ns, 0)), 4) AS direct_rate,
        ref AS refusals, ROUND(SAFE_DIVIDE(rev, NULLIF(ref + nt, 0)), 4) AS reverse_rate,
        ROUND(fwd, 2) AS forward_sum, ROUND(rev, 2) AS reverse_sum,
        nlog AS n_logistics, ndlv AS n_delivery, ROUND(dlvfwd, 2) AS delivery_component_sum,
        CAST(NULL AS INT64) AS sales, (SELECT d1 FROM w) AS window_from, (SELECT d2 FROM w) AS window_to,
-       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail
-FROM a
+       CAST(NULL AS INT64) AS sale_refusal_overlap, nt AS return_tail, ns AS seller_return, ROUND(srsum, 2) AS seller_return_sum,
+       IFNULL(xu.svc_rows, 0) AS service_rows, ROUND(IFNULL(xu.svc_sum, 0), 2) AS service_sum,
+       IFNULL(xu.unk_srids, 0) AS unclassified_srids, ROUND(IFNULL(xu.unk_sum, 0), 2) AS unclassified_sum
+FROM a LEFT JOIN xu USING (nm)
 UNION ALL
-SELECT 0, SUM(n), ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt), 0)), 4),
-       SUM(ref), ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4),
+SELECT 0, SUM(n),
+       IF((SELECT unk_srids FROM xt) > 0, NULL, ROUND(SAFE_DIVIDE(SUM(fwd), NULLIF(SUM(n) - SUM(nt) - SUM(ns), 0)), 4)),
+       SUM(ref),
+       IF((SELECT unk_srids FROM xt) > 0, NULL, ROUND(SAFE_DIVIDE(SUM(rev), NULLIF(SUM(ref) + SUM(nt), 0)), 4)),
        ROUND(SUM(fwd), 2), ROUND(SUM(rev), 2),
        SUM(nlog), SUM(ndlv), ROUND(SUM(dlvfwd), 2),
        (SELECT n FROM sale), (SELECT d1 FROM w), (SELECT d2 FROM w),
-       (SELECT n FROM ov), (SELECT n FROM rt)
+       (SELECT n FROM ov), (SELECT n FROM rt), (SELECT n FROM sx), ROUND(SUM(srsum), 2),
+       (SELECT svc_rows FROM xt), ROUND((SELECT svc_sum FROM xt), 2), (SELECT unk_srids FROM xt), ROUND((SELECT unk_sum FROM xt), 2)
 FROM a;
 -- ─── 5. Комиссия WB + эквайринг, то же окно [LCD−29, LCD] ────────────────────
 -- Точная копия s8finsql_()/s8fin_() из Apps Script: тариф ROUND(cpw/base/100, 6)

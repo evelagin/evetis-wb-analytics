@@ -14,11 +14,22 @@
 --                          перечисление, неоднозначная связь, нет сопоставления SKU).
 -- source_provides_capability = FALSE — у площадки нет такого источника вовсе
 -- (у WB нет автодобавления и marketing_actions; зафиксировано фазой 0, CONFIRMED_DOCS).
+--
+-- STALE (28.10.2026): последний годный снимок старше 780 мин — способность не «наблюдается»,
+-- что бы ни было в том снимке. Порог = FAIL контракта DRO-1 для ozon_promo / wb_promo
+-- (sql/health/dro1_01_contract.sql); самый длинный плановый перерыв между слотами — 9 ч.
+-- Инцидент: Ozon показывался OBSERVED/COMPLETE при снимке 14.10 (возраст 19 956 мин) — потребители
+-- видели состояние двухнедельной давности как текущее. NOT_PROVIDED_BY_SOURCE от возраста не зависит.
+-- NO_VALID_OBSERVATION (28.10.2026): у площадки нет ни одного годного снимка (COMPLETE/REUSED) — строки площадки
+-- всё равно есть (каркас WB/OZON), а не исчезают: отсутствие снимка — сигнал, а не тишина.
 -- ============================================================================
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`
 OPTIONS (description = "PR-PROMO-2. Наблюдаемость состояния акций в последнем годном снимке каждой площадки: одна строка на marketplace × capability. Для каждой способности: сколько единиц установлено, сколько не наблюдаемо по контракту источника, сколько не определено в этом снимке, и даёт ли площадка такой источник вовсе. Свежесть — возраст последнего снимка в минутах.")
 AS
-WITH mp AS (
+WITH markets AS (
+  SELECT marketplace FROM UNNEST(['WB', 'OZON']) AS marketplace
+),
+mp AS (
   SELECT marketplace, observation_id, observed_at, observation_status
   FROM `project-fa311fc0-4d87-4781-986.evetis_mart.V_PROMO_OBSERVATION_HISTORY`
   QUALIFY ROW_NUMBER() OVER (PARTITION BY marketplace ORDER BY observed_at DESC, observation_id DESC) = 1
@@ -58,11 +69,12 @@ e AS (
 ),
 caps AS (
   SELECT
-    mp.marketplace, mp.observation_id, mp.observed_at, mp.observation_status, c.*
-  FROM mp
-  LEFT JOIN p ON p.marketplace = mp.marketplace
-  LEFT JOIN s ON s.marketplace = mp.marketplace
-  LEFT JOIN e ON e.marketplace = mp.marketplace
+    k.marketplace, mp.observation_id, mp.observed_at, mp.observation_status, c.*
+  FROM markets k
+  LEFT JOIN mp ON mp.marketplace = k.marketplace
+  LEFT JOIN p ON p.marketplace = k.marketplace
+  LEFT JOIN s ON s.marketplace = k.marketplace
+  LEFT JOIN e ON e.marketplace = k.marketplace
   CROSS JOIN UNNEST([
     STRUCT('PROMOTION_CALENDAR' AS capability, 'promotions' AS unit, TRUE AS source_provides_capability,
       IFNULL(p.promotions, 0) AS units_total, IFNULL(p.promotions, 0) AS units_established,
@@ -81,11 +93,11 @@ caps AS (
     STRUCT('SKU_PARTICIPATION_STATE', 'sku_promotion_pairs', TRUE,
       IFNULL(s.pairs, 0), IFNULL(s.participation_known, 0),
       0, IFNULL(s.pairs - s.participation_known, 0), 'DIRECT_SOURCE_OR_DERIVED_DETERMINISTIC'),
-    STRUCT('SKU_AUTO_ADD_SCHEDULE', 'sku_promotion_pairs', mp.marketplace = 'OZON',
-      IFNULL(s.pairs, 0), IF(mp.marketplace = 'OZON', IFNULL(s.auto_add_known, 0), 0),
-      IF(mp.marketplace = 'OZON', 0, IFNULL(s.pairs, 0)),
-      IF(mp.marketplace = 'OZON', IFNULL(s.pairs - s.auto_add_known, 0), 0), 'DIRECT_SOURCE_OR_DERIVED_DETERMINISTIC'),
-    STRUCT('MARKETING_ACTION_LINKAGE', 'marketing_action_rows', mp.marketplace = 'OZON',
+    STRUCT('SKU_AUTO_ADD_SCHEDULE', 'sku_promotion_pairs', k.marketplace = 'OZON',
+      IFNULL(s.pairs, 0), IF(k.marketplace = 'OZON', IFNULL(s.auto_add_known, 0), 0),
+      IF(k.marketplace = 'OZON', 0, IFNULL(s.pairs, 0)),
+      IF(k.marketplace = 'OZON', IFNULL(s.pairs - s.auto_add_known, 0), 0), 'DIRECT_SOURCE_OR_DERIVED_DETERMINISTIC'),
+    STRUCT('MARKETING_ACTION_LINKAGE', 'marketing_action_rows', k.marketplace = 'OZON',
       IFNULL(e.marketing_rows, 0), IFNULL(e.marketing_exact, 0),
       IFNULL(e.marketing_unresolved, 0), IFNULL(e.marketing_ambiguous, 0), 'DETERMINISTIC_EXACT_MATCH'),
     STRUCT('SKU_IDENTITY_MAPPING', 'products', TRUE,
@@ -100,6 +112,8 @@ SELECT
   source_provides_capability,
   CASE
     WHEN NOT source_provides_capability THEN 'NOT_PROVIDED_BY_SOURCE'
+    WHEN observed_at IS NULL THEN 'NO_VALID_OBSERVATION'
+    WHEN TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, MINUTE) > 780 THEN 'STALE'
     WHEN units_total = 0 THEN 'NO_UNITS_IN_LATEST_OBSERVATION'
     WHEN units_established = units_total THEN 'OBSERVED'
     WHEN units_established = 0 AND units_not_observable = units_total THEN 'NOT_OBSERVABLE'

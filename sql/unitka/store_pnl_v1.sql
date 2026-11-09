@@ -62,7 +62,8 @@ raw AS (
     SAFE_CAST(quantity AS NUMERIC) q, SAFE_CAST(retail_price_withdisc_rub AS NUMERIC) pwd,
     SAFE_CAST(for_pay AS NUMERIC) fp, SAFE_CAST(logistics_amount AS NUMERIC) lg,
     IFNULL(SAFE_CAST(additional_payment AS NUMERIC), 0) addp,
-    COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales
+    COUNTIF(supplier_oper_name = 'Продажа') OVER (PARTITION BY srid) srid_sales,
+    JSON_VALUE(raw_json, '$.bonusTypeName') bonus
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
   WHERE srid IS NOT NULL AND srid != ''
     AND supplier_oper_name IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
@@ -70,6 +71,9 @@ raw AS (
 f AS (
   SELECT raw.* FROM raw JOIN m ON m.supplier_oper_name = raw.op
   WHERE m.treatment = 'DIRECT_SKU'
+    -- Возврат неопознанного товара продавцу (обезличка при приёмке) — не когорта заказа покупателя: плечо идёт в
+    -- журнал кабинета (V_WB_STORE_ACCOUNT_LEDGER, UNIDENTIFIED_RETURN). Только точное значение bonusTypeName.
+    AND NOT (raw.op IN ('Логистика', 'Доставка') AND IFNULL(raw.bonus, '') = 'Возврат неопознанного товара (К продавцу)')
     AND raw._rr_date BETWEEN IFNULL(m.valid_from, DATE '1900-01-01') AND IFNULL(m.valid_to, DATE '9999-12-31'))
 SELECT order_date_msk, nm_id,
   SUM(CASE op WHEN 'Продажа' THEN q WHEN 'Возврат' THEN -q
@@ -114,6 +118,11 @@ other AS (
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
   WHERE supplier_oper_name IN ('Штраф', 'Платная приемка', 'Пересчет платной приемки')
   UNION ALL
+  -- Возврат неопознанного товара продавцу: расход магазина (не логистика заказа), месяц услуги = месяц проводки
+  SELECT row_hash, _rr_date, 'Возврат неопознанного товара (К продавцу)', 'UNIDENTIFIED_RETURN', IFNULL(SAFE_CAST(logistics_amount AS NUMERIC), 0), srid
+  FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL`
+  WHERE supplier_oper_name IN ('Логистика', 'Доставка') AND JSON_VALUE(raw_json, '$.bonusTypeName') = 'Возврат неопознанного товара (К продавцу)'
+  UNION ALL
   -- H0: компенсации WB (for_pay, +) — доход кабинета, только в доказанном периоде карты; знак ledger: доход < 0
   SELECT f.row_hash, f._rr_date, f.supplier_oper_name, 'MARKETPLACE_COMPENSATION', -IFNULL(SAFE_CAST(f.for_pay AS NUMERIC), 0), f.srid
   FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_FINANCE_CANONICAL` f
@@ -146,7 +155,8 @@ SELECT finance_row_key, finance_date booking_date, DATE_TRUNC(finance_date, MONT
        -- утилизация без «за <месяц> <год>»: месяц услуги не доказан → не закрывать месяц молча
        WHEN deduction_class = 'UTILIZATION' AND (m_num IS NULL OR m_year IS NULL) THEN 'UNKNOWN'
        WHEN deduction_class = 'UNCLASSIFIED_DEDUCTION' THEN 'UNKNOWN'
-       WHEN deduction_class IN ('MINIMUM_PAYMENT_ADJUSTMENT', 'UTILIZATION', 'TRANSIT_DEDUCTION', 'PENALTY', 'ACCEPTANCE') THEN 'ACCOUNT_LEVEL'
+       WHEN deduction_class IN ('MINIMUM_PAYMENT_ADJUSTMENT', 'UTILIZATION', 'TRANSIT_DEDUCTION', 'PENALTY', 'ACCEPTANCE',
+                                'UNIDENTIFIED_RETURN') THEN 'ACCOUNT_LEVEL'
        ELSE 'UNKNOWN' END treatment,
   -- знак: + = расход продавца; доходы (компенсации, возвраты аванса) приходят отрицательными
   amount_rub, label, srid, transit_supply_id
@@ -233,6 +243,7 @@ WITH f AS (
     ABS(IFNULL(SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC), 0)) ppvz,
     SAFE_CAST(JSON_VALUE(raw_json, '$.rebillLogisticCost') AS NUMERIC) c_rb,
     SAFE_CAST(JSON_VALUE(raw_json, '$.ppvzReward') AS NUMERIC) c_pr,
+    JSON_VALUE(raw_json, '$.bonusTypeName') bonus,
     SAFE_CAST(JSON_VALUE(raw_json, '$.vw') AS FLOAT64) c_vw,
     SAFE_CAST(JSON_VALUE(raw_json, '$.vwNds') AS NUMERIC) c_nds,
     SAFE_CAST(JSON_VALUE(raw_json, '$.rebill_logistic_cost') AS NUMERIC) s_rb,
@@ -290,6 +301,7 @@ SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer
                        -- зеркало эквайринга у «Корректировки эквайринга» — не деньги модели
     WHEN 'STORAGE' THEN retail + fp + lg + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     WHEN 'DEDUCTION_LEDGER' THEN retail + fp + lg + st + pen + acc + rb + comp + oth + acq + ppvz
+    WHEN 'ACCOUNT_LEDGER_LOGISTICS' THEN retail + fp + st + ded + pen + acc + addp + rb + comp + oth + acq + ppvz
     WHEN 'ACCOUNT_LEDGER' THEN retail + lg + st + ded + addp + rb + comp + oth + acq + ppvz
                        + IF(op IN ('Добровольная компенсация при возврате', 'Компенсация ущерба'), 0, fp)
     WHEN 'MEMO' THEN retail + fp + lg + st + ded + pen + acc + addp + comp + oth + acq
@@ -298,6 +310,7 @@ SELECT finance_row_key, booking_date, op supplier_oper_name, treatment, consumer
 FROM (
   SELECT t.*,
     CASE WHEN treatment IN ('PENDING_CLASSIFICATION', 'NEW_FINANCE_OPERATION') THEN 'NONE'
+         WHEN op IN ('Логистика', 'Доставка') AND IFNULL(bonus, '') = 'Возврат неопознанного товара (К продавцу)' THEN 'ACCOUNT_LEDGER_LOGISTICS'
          WHEN op IN ('Продажа', 'Возврат', 'Логистика', 'Доставка', 'Коррекция логистики',
                      'Коррекция продаж', 'Корректировка эквайринга', 'Стоимость участия в программе лояльности') THEN 'COHORT'
          WHEN op IN ('Хранение', 'Коррекция хранения') THEN 'STORAGE'
@@ -321,6 +334,7 @@ WITH snap AS (
 sku_day AS (
   SELECT s.date_msk, s.nm_id, s.orders, s.cancels, s.orders - s.cancels realized, s.price, s.commission_rate,
     s.logistics_per_unit, s.reverse_leg_rate, s.storage, s.ads_in, s.ads_out, s.profit, s.lcd, s.model_gap, s.tax_per_unit, s.cogs_per_unit,
+    s.void_cancels,
     c.sold_qty, c.seller_base_rub, c.wb_take_rub, c.logistics_rub fin_logistics_rub
   FROM snap s LEFT JOIN `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_STORE_FINANCE_COHORT_DAILY` c
     ON c.order_date_msk = s.date_msk AND c.nm_id = s.nm_id),
@@ -329,7 +343,8 @@ sku AS (
     SUM(realized * price) revenue_model_rub,
     SUM(profit) sku_contribution_rub,
     SUM(ads_in) ads_sku_rub, SUM(storage) storage_sku_rub,
-    SUM(orders * logistics_per_unit + cancels * reverse_leg_rate) logistics_sku_rub,
+    -- отмены без логистики (void_cancels, поправка W) не несут ни прямого, ни обратного плеча — как в формуле W листа
+    SUM((orders - IFNULL(void_cancels, 0)) * logistics_per_unit + (cancels - IFNULL(void_cancels, 0)) * reverse_leg_rate) logistics_sku_rub,
     SUM(IFNULL(sold_qty, 0)) sold_qty, SUM(realized) realized_qty,
     SUM(IFNULL(seller_base_rub, 0) - IFNULL(sold_qty, 0) * price) price_adjustment_rub,
     SUM(IFNULL(sold_qty, 0) * price * commission_rate - IFNULL(wb_take_rub, 0)) commission_adjustment_rub,

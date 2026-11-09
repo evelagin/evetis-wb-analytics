@@ -30,7 +30,7 @@ import { cellAt, formulaAt, isFormula, validateSection, MTD_LABEL, type Snapshot
 import { parseCogsTerm, type CogsSnapshot } from './integrity.js';
 import {
   blockDayFormulas, blockProjectionFormulas, blockMtdFormulas, summaryDayFormulas, summaryMtdFormulas, normFormula,
-  formulaStyleOf, fromLocaleFormula, toLocaleFormula, recogniseMtdStock,
+  formulaStyleOf, fromLocaleFormula, toLocaleFormula, recogniseMtdStock, profitAllVoidQty,
   type BlockFormulaParams, type FormulaStyle,
 } from './formulas.js';
 import type { RawCellFormat, SheetMeta, SheetStructure, StructureRequest } from './sheets.js';
@@ -235,6 +235,12 @@ export function extractPredecessorParams(pred: Snapshot, layout: MonthLayout, st
       // У последнего блока секции колонки-разделителя (день недели) может не быть: в книге до Calendar V2 она есть,
       // в секции, созданной Calendar V2, — нет. Пусто — допустимо; что-то иное, чем формула дня недели, — расхождение.
       if (off === OFFSET.weekday && b.slot === lastSlot && isEmpty(fAt(row, b.start + off) ?? cellAt(pred, row, b.start + off))) continue;
+      // W последнего дня может нести адресную поправку отмен без логистики (unitka-cancel-restore): форма с поправкой
+      // распознаётся строго (formulas.profitAllVoidQty), в новый месяц переносится только каноническая форма.
+      if (off === OFFSET.profitAll) {
+        if (profitAllVoidQty(fAt(row, b.start + off), b.start, row) === null) mismatches.push(`${colA1(b.start + off)}${row}`);
+        continue;
+      }
       check(row, b.start + off, f);
     }
     for (const [off, f] of blockMtdFormulas(b.start, g, mtdStockFamily)) if (off !== OFFSET.stock) check(g.mtdRow, b.start + off, f);

@@ -1,5 +1,130 @@
 # CHANGELOG.md
 
+## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
+
+OWNER ACK «FINANCE DESIGN» (06.11.2026), design & test only. WB вернул продавцу товар, обезличенный при приёмке:
+в финотчёте это плечо «Логистика»/«Доставка» с `bonusTypeName = 'Возврат неопознанного товара (К продавцу)'` на
+служебном nm «неопознанный товар» с датой «заказа». В когорте заказа плечо висело сиротой (`UNKNOWN_COST_PRESENT`,
+вне прибыли), хотя это расход магазина.
+
+Изменения (`sql/unitka/store_pnl_v1.sql`, колонки не меняются):
+- `V_WB_STORE_FINANCE_COHORT_DAILY` — такие плечи (точное значение типа) исключены из когорты заказа.
+- `V_WB_STORE_ACCOUNT_LEDGER` — новая категория `UNIDENTIFIED_RETURN` (treatment `ACCOUNT_LEVEL`, месяц проводки,
+  сумма со знаком: сторно уменьшает расход месяца своей проводки). На вкладке — строка «Прочие расходы WB»
+  (`other_marketplace_cost_rub`).
+- `V_WB_STORE_FINANCE_COVERAGE` — новый потребитель `ACCOUNT_LEDGER_LOGISTICS`: плечо прочитано журналом.
+- `V_WB_STORE_PNL_MONTHLY`, Юнитка Engine, ставки клиентской логистики — без изменений.
+- Тесты: `tools/tests/test_unitka_store_pnl_unidentified_return.py` (тексты вью исполняются на SQLite).
+- Откат: `sql/unitka/store_pnl_unidentified_return_rollback/` (тела трёх вью до изменения).
+
+## 2026-11-02 — Юнитка WB: классы отмен по присутствию в воронке и логистике (НЕ развёрнуто)
+
+OWNER ACK «CANCEL RECONCILIATION» (02.11.2026), design & test only. Сверка октября с официальной воронкой WB:
+- 18.10 / 535580776 — отмена дня заказа без логистики осталась в Q и считалась продажей;
+- 24.10 / 252442517 — отмена заказа, которого в воронке нет (Q = 0), вычиталась из W.
+
+Изменения:
+- **SQL.** Новые вью `wb_mart.V_UNITKA_CANCEL_EVIDENCE` и `V_UNITKA_CANCEL_CLASS_DAILY` (`sql/unitka/cancel_class_v1.sql`). Присутствие отмены в Q определяется арифметикой суток, логистика — зрелым финотчётом (46 суток). Изменение S и поправка V считаются только на зрелых сутках.
+- **Вью фактов.** `V_UNITKA_DAILY_FACT` и `V_UNITKA_RECON_FACT` берут S одним выражением (FINAL → итоговый S класса, иначе прежний) и получают новые колонки `cancel_void_qty`, `cancel_class_status` в конце. В окнах писателя и сверки S прежний: проверено на production, 25/25 и 875/875 строк.
+- **Формула W.** Строка с отменой без логистики в Q получает поправку `+V*(AF+REVERSE_LEG_RATE)` в конце формулы. Колонки листа не меняются. Шаблон месяца, QA и Store P&L распознают поправку строго.
+- **Снимок Store P&L.** В конец схемы `wb_ops.UNITKA_SKU_COMPONENTS_DAILY` (и `__STAGE`) добавлена колонка `void_cancels INT64` (Terraform). `V_WB_STORE_PNL_MONTHLY` считает логистику модели без плеч таких отмен.
+- **Загрузчик** `unitka-cancel-restore`: план и манифест, запись только по отпечатку и OWNER ACK, перечитывание, откат.
+- **Аудит PR #394:**
+  - зрелость — непрерывное покрытие окончательным финотчётом по реестру `FINANCE_REPORT_LOADS` × `FINANCE_WEEK_STATUS` (вью `V_UNITKA_FINANCE_FINAL_INTERVALS`, `V_UNITKA_CANCEL_MATURITY`);
+  - непринятая аномалия останавливает запись;
+  - запись — один атомарный `batchUpdate`;
+  - Store P&L читает формулы только колонок W;
+  - повторный аудит: в отпечатке манифеста ставка обратного плеча и ожидаемые ΔW (`CANCEL_RESTORE_FINANCIAL_DRIFT`); детектор `V_UNITKA_CANCEL_SHEET_DRIFT` (лист против класса, событие `unitka_cancel_class_drift`).
+- **Откат:** `sql/unitka/cancel_class_v1_rollback.sql`. Док: `docs/UNITKA_CANCEL_CLASS_V1_2026-11-02.md`.
+
+## 2026-11-02 — Ozon: отдельный digest `ozon-runtime-promo` в Terraform (учёт C5, production не меняется)
+
+После C5 (OWNER ACK 02.11) `ozon-runtime-promo` работает на `sha256:cae0af75…`, а daily / fast / weekly — на
+`sha256:24e3c6d6…`. Terraform описывал один общий `local.ozon_runtime_image` для всех четырёх job'ов и врал бы о promo.
+- `infra/terraform/ozon_ingestion.tf`: `local.ozon_runtime_promo_image` (cae0af75, провенанс: релизная ветка
+  `release/evetis-ozon-runtime-08dfb88-promo` @605a34b7, Cloud Build `3a2899ed-291a-4842-872e-2ac51c19d7a7`, G1–G6 PASS)
+  и явная таблица `local.ozon_job_images` (job → digest); ресурс берёт образ из неё. `ignore_changes` на image сохранён —
+  plan по четырём job'ам: 0 изменений. Scheduler, IAM, env, SA, ресурсы — не менялись.
+- `pipelines/ozon/DEPLOYMENT.md`: §4 — правило «один digest на четыре job'а» заменено на «общий для трёх + свой у promo»,
+  новый §4b с провенансом и откатом.
+- `DEPLOYMENT.md` §4a: окно `finance_accrual` 30 суток отмечено как развёрнутое 22.09 (Gate 9B, замер прогонов 01–02.11 — 30 суток);
+  устаревшее «записать digest, `terraform apply`» заменено разграничением: деплой — `gcloud run jobs update`, фиксация digest —
+  коммит в Terraform (image под `ignore_changes`, apply образ не меняет).
+- `pipelines/ozon/tests/test_deployment_contract.py`: 4 теста соответствия job → digest (6 мутаций Terraform ловятся).
+- `promo.py` из релизной ветки в `main` не переносится; PR #388 остаётся заблокированным. Квалификационные хеши Heldi
+  (`pipelines/ozon/runtime/*`, `tools/tenancy/*`) не затронуты.
+
+## 2026-10-28 — Наблюдаемость акций: устаревший снимок — STALE, а не OBSERVED (НЕ развёрнуто)
+
+`evetis_mart.V_PROMO_OBSERVABILITY_CURRENT`: возраст последнего годного снимка > 780 мин (FAIL контракта DRO-1 для
+ozon_promo / wb_promo) → `capability_status = 'STALE'`. С 14.10 Ozon показывался OBSERVED/COMPLETE при снимке
+двухнедельной давности. Колонки не меняются; манифест — новый хеш тела, `pending_deploy`. Тест сверяет порог с DRO-1.
+План — `docs/ops/PROMO_OBSERVABILITY_STALE_DEPLOY_2026-10-28.md`.
+
+## 2026-10-28 — SKU Performance V2: S6 хранения по парам SKU-дня, без потери денег (НЕ развёрнуто)
+
+Инцидент: `sp_build_sku_performance_v2_daily` падает каждый час с 19.10.2026 04:20 UTC (154 сборки) на
+«SKU_V2 S6: хранение по SKU разошлось с отчётом платного хранения»; слой заморожен на 15.10. Причина — nm 909951444:
+платное хранение с 17.10 (2,2542 ₽, приёмка на склад), а календарь SKU в `MART_SKU_DAILY` — с первого события 18.10.
+Прежняя S6 сравнивала Σ слоя с Σ отчёта по всем дням окна без привязки к парам.
+
+- `sql/dash/sku_performance_v2_daily_v1.sql`, процедура: S6 хранения — две точные проверки без допуска:
+  (а) Σ слоя = Σ отчёта на парах (day, nm_id) слоя; (б) вне слоя допустимо только хранение SKU-дня до календаря SKU
+  и без единого другого события (заказ, продажа, строка финотчёта с nm, реклама). Дыра внутри или в начале календаря
+  по-прежнему роняет сборку. Остальные проверки S1–S6 не менялись.
+- Новый view `wb_mart.V_SKU_PERFORMANCE_V2_STORAGE_UNATTRIBUTED`: хранение вне строк слоя с причиной
+  (`BEFORE_SKU_CALENDAR` / `NM_OUTSIDE_SKU_UNIVERSE` / `AFTER_LAYER_WINDOW` / `MISSING_SKU_DAY`). Деньги не теряются:
+  они в хранении уровня счёта Executive (мост l2/l3). Колонки `SKU_PERFORMANCE_V2_DAILY` не меняются.
+- Live-реплей (SELECT): отчёт 6 740,055267 ₽ = пары слоя 6 737,801067 + до календаря 2,2542; дыр 0; прежняя S6 — FAIL,
+  новая (а) и (б) — PASS; искусственная дыра 20.10 — (б) FAIL.
+- Тест `tools/tests/test_sku_performance_v2_s6_storage.py`: настоящие ASSERT из файла на SQLite-фикстурах (11 случаев).
+
+## 2026-10-28 — Юнитка: минимальное включение оповещений к переходу месяца (НЕ применено)
+
+`infra/terraform/unitka_monitoring.tf`: `enabled` у heartbeat — по писателю (ON только LCD WB и LCD Ozon, P&L — OFF);
+`unitka_writers_failed` — ON (создаётся этим apply: 21.10 метрика создавалась в ту же секунду). Остальные политики
+не меняются. Порядок, targeted plan с точным составом и проверка доставки — `docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md`.
+
+## 2026-10-27 — WB UNITKA: возврат брака продавцу — отдельный класс инварианта логистики (НЕ развёрнуто)
+
+Инцидент `unitka-engine-prod-qr5xr` (27.10.2026 07:00Z): `INVARIANT_FAIL 554 ≠ 503 + 52 − 2 + 0`, сутки 26.10 не закрыты.
+Причина — отдельный srid доставки возвращённого брака со склада WB в ПВЗ продавца: одно плечо «Доставка»
+(bonusTypeName «Возврат брака (К продавцу)»), без «Продажи» и «Возврата» — это не отправка покупателю.
+
+- `wb_mart.V_UNITKA_LOGISTICS_RATES`: колонки `seller_return` (число таких srid) и `seller_return_sum` (их плечи) в конце
+  списка, у магазина и SKU. Класс — строго по bonusTypeName, одно плечо, без «Продажи» и «Возврата» в окне. srid с таким
+  плечом исключён из sales, refusals, пересечения и хвоста: любая другая форма (позднее пришедшие «Продажа», «Возврат»,
+  второе плечо) не попадает ни в один класс и отклоняется инвариантом, а не учитывается дважды.
+- Плечо не входит ни в прямую, ни в обратную ставку (не отправка покупателю и не отказ); сумма всех плеч окна
+  сохраняется: forward_sum + reverse_sum + seller_return_sum. Расход учитывается в Store P&L по факту финотчёта
+  (логистика когорты дата заказа × nm) — как любая разница модели и факта логистики.
+- Engine: инвариант `shipments = sales + refusals − overlap + return_tail + seller_return`, без допуска; нет поля или
+  оно вне [0, shipments − refusals − return_tail] — `INVARIANT_FAIL`. Порог своей ставки SKU — без seller_return.
+- Живые срезы (read-only): LCD 25.10 — побайтно как прежде; LCD 26.10 — 554 = 503 + 52 − 2 + 0 + 1, прямая магазина
+  57,3994 → 57,1245, SKU 252442517 58,9316 → 57,6000, обратная без изменений; LCD 23.08 (аналог 25.07) — проходит;
+  LCD 25.07 по-прежнему отклоняется (плечо 29.06 из слоя LEGACY без bonusTypeName — не доказано).
+
+## 2026-10-26 — T6: клиентский отчёт поверх analytics_share арендатора (НЕ развёрнуто, доступ не выдан)
+
+Подробно — `docs/tenancy/CLIENT_BI_T6.md`.
+- `sql/tenant/ozon/analytics_share`: колонки `offer_id`, `ozon_name` (из `DIM_OZON_PRODUCT`) после `product_name` в
+  `orders`, `sku_daily`, `inventory_current`, `profitability_daily`; существующие колонки не меняются.
+- Новые вью `inventory_cover` (запас в днях со статусами остатков и скорости) и `data_freshness` (свежесть всех
+  сущностей; неоценённая сущность и незагруженный сегодняшний день — UNKNOWN). Пакет: 34 объекта.
+- `tools/client_bi/report.py` — спецификация отчёта Looker Studio (5 разделов), ссылка Linking API, проверка
+  изоляции от имени клиента; `tools/client_bi/preview.py` — локальный предпросмотр вне репозитория.
+## 2026-10-21 — UNITKA мониторинг: имена политики конфигурации ≤ 100 байт (достройка #368, НЕ применено)
+
+Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 heartbeat-политики (выключены), но не создал 4 политики:
+- `unitka_writer_config` — `display_name must not be more than 100 characters`: предел считается в байтах UTF-8, имя
+  политики было 107 байт, условия — 101;
+- `unitka_writers_failed`, `unitka_publication_blocked`, `unitka_owner_attention` — `PromQL metric(s) are invalid`:
+  политика создавалась в ту же секунду, что и её метрика; запросы корректны (PromQL API — success), не меняются.
+
+Изменение — только имена политики и условия `unitka_writer_config`. Новый тест: display_name всех политик и условий
+во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
+и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
+
 ## 2026-10-27 — Heldi: облачное наблюдение контроллера (поток E, НЕ применено)
 
 Замена локального `observe_loop` (25.10 умер от протухшего gcloud-токена). Регламент — `docs/ops/HELDI_CLOUD_WATCH.md`.

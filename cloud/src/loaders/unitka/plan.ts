@@ -142,7 +142,7 @@ export interface Plan {
   cells: PlannedCell[];       // подмножество expected, где лист ≠ BQ
   rates: RateLine[];
   reverseRate: number;
-  invariant: { shipments: number; sales: number; refusals: number; overlap: number; returnTail: number; pass: boolean };
+  invariant: { shipments: number; sales: number; refusals: number; overlap: number; returnTail: number; sellerReturn: number; pass: boolean };
   sourcesByDay: Record<string, Record<string, number>>;
   gaps: Record<string, number>;
   legacy: LegacyFormulas;
@@ -410,12 +410,19 @@ export function buildPlan(inp: PlanInputs): Plan {
   if (returnTail === null || !Number.isInteger(returnTail) || returnTail < 0 || returnTail > store.shipments - store.refusals) {
     throw new LoaderError(`V_UNITKA_LOGISTICS_RATES: некорректное return_tail у строки магазина: ${String(returnTail)} (shipments ${store.shipments}, refusals ${store.refusals})`, 'INVARIANT_FAIL');
   }
+  // Возврат брака продавцу (инцидент 27.10.2026): отдельный srid доставки брака со склада в ПВЗ продавца — в shipments
+  // (одно плечо), но не отправка покупателю. Вью считает его независимо по bonusTypeName «Возврат брака (К продавцу)»,
+  // без «Продажи» и «Возврата». Нет поля или оно не целое в [0, shipments − refusals − return_tail] — отказ, не 0.
+  const sellerReturn = store.sellerReturn;
+  if (sellerReturn === null || !Number.isInteger(sellerReturn) || sellerReturn < 0 || sellerReturn > store.shipments - store.refusals - returnTail) {
+    throw new LoaderError(`V_UNITKA_LOGISTICS_RATES: некорректное seller_return у строки магазина: ${String(sellerReturn)} (shipments ${store.shipments}, refusals ${store.refusals}, return_tail ${returnTail})`, 'INVARIANT_FAIL');
+  }
   const invariant = {
-    shipments: store.shipments, sales: salesN, refusals: store.refusals, overlap, returnTail,
-    pass: store.shipments === salesN + store.refusals - overlap + returnTail,
+    shipments: store.shipments, sales: salesN, refusals: store.refusals, overlap, returnTail, sellerReturn,
+    pass: store.shipments === salesN + store.refusals - overlap + returnTail + sellerReturn,
   };
   if (!invariant.pass) {
-    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED − OVERLAP + RETURN_TAIL: ${store.shipments} ≠ ${store.sales} + ${store.refusals} − ${overlap} + ${returnTail}`, 'INVARIANT_FAIL');
+    throw new LoaderError(`DIRECT SHIPMENTS ≠ SALES + CANCELLED − OVERLAP + RETURN_TAIL + SELLER_RETURN: ${store.shipments} ≠ ${store.sales} + ${store.refusals} − ${overlap} + ${returnTail} + ${sellerReturn}`, 'INVARIANT_FAIL');
   }
   const cstore = inp.commission.find((r) => r.nmId === 0);
   if (!cstore || cstore.sales <= 0 || cstore.commissionRate === null || !(cstore.commissionRate > 0)) {
@@ -439,8 +446,9 @@ export function buildPlan(inp: PlanInputs): Plan {
     expected.push(...expectedFactCells(g, b, monthStart, Array.from({ length: closedDays }, (_, i) => i), (nm, d) => byKey.get(`${nm}|${d}`), gaps));
     // Ставки — константа на все строки дней секции (как s8brates/s8rates), сколько бы дней ни было.
     const p = logByNm.get(b.nmId);
-    // Порог своей ставки — по популяции прямых: хвост доказанного возврата (return_tail SKU) прямой отправки в окне не имеет.
-    const fwdN = p ? p.shipments - (p.returnTail ?? 0) : 0;
+    // Порог своей ставки — по популяции прямых: ни хвост доказанного возврата (return_tail SKU), ни возврат брака продавцу
+    // (seller_return SKU) прямой отправки покупателю в окне не имеют.
+    const fwdN = p ? p.shipments - (p.returnTail ?? 0) - (p.sellerReturn ?? 0) : 0;
     const ownD = !!(p && fwdN >= minN && p.directRate !== null && p.directRate > 0);
     const direct = round2(ownD ? (p!.directRate as number) : store.directRate);
     const c = comByNm.get(b.nmId);

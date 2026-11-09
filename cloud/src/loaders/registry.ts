@@ -23,6 +23,7 @@ import { unitkaSlot } from './unitka/slot.js';
 import { unitkaMonthPrepLoader } from './unitka/prep.js';
 import { unitkaMonthRollbackLoader } from './unitka/rollback.js';
 import { unitkaSppRollbackLoader } from './unitka/spp_rollback.js';
+import { unitkaCancelRestoreLoader } from './unitka/cancel_restore.js';
 import { ozonUnitkaLoader } from './unitka/ozon/loader.js';
 import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
@@ -89,6 +90,10 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // SPP-3: откат миграции колонки AB по манифесту. По умолчанию ТОЛЬКО план; исполнение — prod +
   // UNITKA_SPP_ROLLBACK_WRITE=1 + манифест + подтверждённый отпечаток. Нет расписания.
   'unitka-spp-rollback': { handler: (ctx) => unitkaSppRollbackLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+  // OWNER ACK «CANCEL RECONCILIATION» (02.11.2026): адресное восстановление зрелых суток по классу отмен
+  // (cancel_class_v1.sql). По умолчанию ТОЛЬКО план и манифест; запись — prod + UNITKA_CANCEL_RESTORE_WRITE=1 + отпечаток
+  // просмотренного манифеста. Нет расписания: одно исполнение unitka-engine-prod с --args=unitka-cancel-restore.
+  'unitka-cancel-restore': { handler: (ctx) => unitkaCancelRestoreLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
   // Gate 8: суточный прогон Ozon-Юнитки. Окно перезаписи 45 суток (раз в месяц 120),
   // провизорная экономика (факт > оценка). Запись — prod + OZON_UNITKA_WRITE_ENABLED=1;
   // по умолчанию прогон только считает план. Расписание НЕ создано: см. runbook Gate 8.

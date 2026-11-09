@@ -79,8 +79,9 @@ gs://run-sources-…-europe-west1/jobs/ozon-bootstrap-load/1788427420.934997-…
 
 - **джобы обязаны ссылаться на digest**, а не на тег — это закреплено тестом
   `test_runtime_image_is_pinned_by_digest`;
-- Terraform хранит digest в `local.ozon_runtime_image` и является источником
-  истины о том, что развёрнуто.
+- Terraform хранит digest каждого job'а (`local.ozon_job_images`: daily/fast/weekly →
+  `local.ozon_runtime_image`, promo → `local.ozon_runtime_promo_image`, см. §4b) и является
+  источником истины о том, что развёрнуто.
 
 ---
 
@@ -110,27 +111,36 @@ gs://run-sources-…-europe-west1/jobs/ozon-bootstrap-load/1788427420.934997-…
    ```
    Тег — короткий SHA коммита, не `latest`.
 3. **Фиксация digest** — взять `results.images[].digest` из сборки и записать
-   его в `local.ozon_runtime_image`. Коммит этой строки и есть запись о том, что
-   развёрнуто.
+   его в тот local, на который указывает job в `local.ozon_job_images`
+   (`ozon_runtime_image` — daily/fast/weekly, `ozon_runtime_promo_image` — promo). Коммит
+   этой строки и есть запись о том, что развёрнуто.
 4. **Раскатка** — НЕ `terraform apply`. Поле `image` у `google_cloud_run_v2_job.ozon_runtime`
    стоит под `ignore_changes` (см. `lifecycle` в `ozon_ingestion.tf`), поэтому целевой план
    на этот ресурс даёт «No changes» даже при новом digest в файле — проверено 2026-09-22.
    Образ продвигается так же, как у WB-загрузчиков, — обновлением самих Job'ов:
 
    ```bash
-   for JOB in ozon-runtime-daily ozon-runtime-fast ozon-runtime-weekly ozon-runtime-promo; do
+   # общий образ — три job'а
+   for JOB in ozon-runtime-daily ozon-runtime-fast ozon-runtime-weekly; do
      gcloud run jobs update "$JOB" --region europe-west1 \
        --image europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/\
    cloud-run-source-deploy/ozon-runtime-ingest@sha256:…
    done
+   # promo — отдельно, только своим digest (§4b)
+   gcloud run jobs update ozon-runtime-promo --region europe-west1 \
+     --image europe-west1-docker.pkg.dev/project-fa311fc0-4d87-4781-986/\
+   cloud-run-source-deploy/ozon-runtime-ingest@sha256:…
    ```
 
-   Digest в `local.ozon_runtime_image` — запись о том, что развёрнуто, а не источник
-   раскатки. Все **четыре** джоба обязаны получить ОДИН digest: разъехаться они не могут
-   только потому, что команда одна на всех, а не потому, что это гарантирует Terraform.
-   Четвёртый — `ozon-runtime-promo` (PR-PROMO-1, наблюдатель акций, каденция 4 раза в
-   сутки). Состав образа проверяется тестом `tests/test_image_contents.py`: всё, что
-   импортируется от `main.py`, обязано входить в `COPY` Dockerfile.
+   Digest в Terraform — запись о том, что развёрнуто, а не источник раскатки.
+   **С 02.11.2026 у Ozon два digest:** `ozon-runtime-daily`, `-fast`, `-weekly` обязаны
+   получать ОДИН общий digest (`local.ozon_runtime_image`) — одной командой; `ozon-runtime-promo`
+   (PR-PROMO-1, наблюдатель акций, 4 раза в сутки) — свой (`local.ozon_runtime_promo_image`),
+   отдельной командой и отдельным OWNER ACK. Соответствие job → digest проверяет
+   `tests/test_deployment_contract.py` (`RECORDED_JOB_DIGESTS`): при раскатке поправить
+   Terraform и эту таблицу в одном PR. Состав образа проверяется тестом
+   `tests/test_image_contents.py`: всё, что импортируется от `main.py`, обязано входить в
+   `COPY` Dockerfile.
 
 **Пока не сделано (осознанно, вне Stage A):** образ не несёт `GIT_SHA` в env,
 как это устроено у WB-загрузчиков. Добавление переменной означает новую ревизию
@@ -140,7 +150,11 @@ Terraform».
 
 ---
 
-## 4a. 🔴 НЕ РАЗВЁРНУТО: окно загрузки начислений 30 суток (Gate 9)
+## 4a. Окно загрузки начислений 30 суток (Gate 9) — РАЗВЁРНУТО 22.09.2026
+
+> Статус на 02.11.2026: развёрнуто образом `sha256:dccc50ae…` (Gate 9B, 22.09.2026, из `main` 1b651fd) и далее
+> `sha256:24e3c6d6…` (`finance_accrual` = 30 в `entities.py` @08dfb88). Замер `OZON_INGESTION_RUNS`: прогоны
+> `finance_accrual` 01.11 и 02.11 взяли окно 30 суток. Текст ниже — история на 22.09 до раскатки.
 
 Gate 9 изменил окно `finance_accrual` с 14 на 30 суток
 (`pipelines/ozon/runtime/entities.py`, `REGISTRY`). Изменение **в `main`, но не в
@@ -156,9 +170,41 @@ Gate 9, а `pipelines/ozon/**` не входит ни в один деплойн
 14 суток за всю историю не появлялось. 30 суток — запас на случай, когда Ozon
 опубликует начисление задним числом, а не устранение известной потери.
 
-Развернуть: собрать образ из `main` по §4, записать digest в
-`local.ozon_runtime_image` (`infra/terraform/ozon_ingestion.tf`), `terraform apply`.
-До этого момента считать production-окно равным **14**, а не 30.
+Как это выпускалось (и как выпускается любой образ Ozon) — два разных шага, `terraform apply` в них нет:
+1. **Деплой** — `gcloud run jobs update <job> --image …@sha256:<digest>` (§4 п.4; promo — отдельно, §4b).
+   Только эта команда меняет образ в production.
+2. **Фиксация digest** — коммит нового digest в `local.ozon_runtime_image` (или `local.ozon_runtime_promo_image`)
+   в `infra/terraform/ozon_ingestion.tf` (§4 п.3). Это запись о развёрнутом, а не раскатка: поле `image` стоит под
+   `ignore_changes`, и `terraform apply` образ не меняет.
+До раскатки 22.09 production-окно было **14** суток.
+
+---
+
+## 4b. Отдельный образ `ozon-runtime-promo` (C5, 02.11.2026)
+
+Ozon снял методы акций v1: `/v1/actions/auto-add/products/list` отвечал 400 code 9 с 14.10 и 404 с 26.10,
+годный снимок был 14.10. Новый `promo.py` (методы v2, изоляция этапов, полнота пагинации по `total` и id)
+нельзя выпустить из `main`: правка `pipelines/ozon/runtime/promo.py` в `main` меняет квалификационный хеш
+Heldi (`backfill_core.implementation_hash`). Поэтому promo собран из изолированной релизной ветки и раскатан
+только на свой job.
+
+| | |
+|---|---|
+| Job | `ozon-runtime-promo` (только он) |
+| Образ | `ozon-runtime-ingest@sha256:cae0af75c1af2272390d5023485d99b3b9fb0a20feafecfd0f2c968b548f03d7` (тег `605a34b7`) |
+| Исходник | ветка `release/evetis-ozon-runtime-08dfb88-promo` @ `605a34b71783a0ba5be859f6aa6cfe10cf7a814c`; относительно 08dfb88 в образе изменён только `runtime/promo.py` |
+| Сборка | Cloud Build `3a2899ed-291a-4842-872e-2ac51c19d7a7` (europe-west1); архив исходника sha256 `16d685125d7445ddbdf8e33d805dc63087f3668db052f312d081bcaa448f4532` = `git archive 605a34b7 pipelines/ozon/runtime` |
+| Ворота | `pipelines/ozon/release_gate_evetis.sh` (в релизной ветке) G1–G6 PASS; CI ветки success |
+| Раскатка | 02.11.2026 16:51Z, `gcloud run jobs update ozon-runtime-promo --image …@sha256:cae0af75…` (изменено только поле image) |
+| Приёмка | штатный слот 02.11 19:00Z: `OZPROMO_prod_202611021900` COMPLETE, 381 строка RAW, DRO-1 `ozon_promo` HEALTHY |
+| Откат | `gcloud run jobs update ozon-runtime-promo --image …@sha256:24e3c6d6…` |
+
+Правила:
+- `promo.py` из релизной ветки в `main` не переносится (PR #388 заблокирован до решения о квалификации Heldi).
+  Код в `main` и в образе promo различается осознанно; источник образа — релизная ветка, не `main`.
+- Окружение образа promo новее базы (Python 3.12.16 против 3.12.14, 10 транзитивных пакетов новее; прямые пины те
+  же): `python:3.12-slim` и транзитивные зависимости не закреплены — риск воспроизводимости сборки (S-3).
+- Следующая пересборка daily/fast/weekly не трогает promo, и наоборот.
 
 ---
 

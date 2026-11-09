@@ -34,9 +34,12 @@ export interface SnapshotMeta {
 
 /** Строка снимка — ровно колонки таблицы (Terraform: infra/terraform/unitka_store_pnl.tf). */
 export function snapshotRecord(r: SkuComponentRow, m: SnapshotMeta): Record<string, unknown> {
+  const { void_cancels: voidCancels, ...base } = r;
   return {
     snapshot_id: m.snapshotId, run_id: m.runId, snapshot_at: m.snapshotAt, lcd: m.lcd,
-    month_key: r.date_msk.slice(0, 7), ...r, image_digest: m.imageDigest, git_sha: m.gitSha,
+    month_key: r.date_msk.slice(0, 7), ...base, image_digest: m.imageDigest, git_sha: m.gitSha,
+    // Колонка добавлена в КОНЕЦ схемы (INSERT … SELECT * из stage): строки старых снимков — NULL (= 0).
+    void_cancels: voidCancels,
   };
 }
 
@@ -140,6 +143,19 @@ export class StorePnlBq {
   async readPnl(): Promise<PnlRow[]> {
     const [rows] = await this.bq.query({ query: `SELECT * FROM ${this.fqn(this.martDataset, PNL_VIEW)} ORDER BY service_month`, location: this.location });
     return rows as PnlRow[];
+  }
+
+  /**
+   * Детектор классов отмен (sql/unitka/cancel_class_v1.sql): сутки, где только что записанный снимок листа расходится с
+   * текущим классом (RESTORED_DRIFT). Читается ПОСЛЕ добавления снимка — вью берёт последний snapshot_id.
+   */
+  async readCancelDrift(): Promise<Array<Record<string, unknown>>> {
+    const [rows] = await this.bq.query({
+      query: `SELECT nm_id, CAST(date_msk AS STRING) date_msk, sheet_cancels, sheet_void, cancel_class_status, effective_cancels, effective_void_qty
+              FROM ${this.fqn(this.martDataset, 'V_UNITKA_CANCEL_SHEET_DRIFT')} WHERE drift_status = 'RESTORED_DRIFT' ORDER BY date_msk, nm_id`,
+      location: this.location,
+    });
+    return rows as Array<Record<string, unknown>>;
   }
 
   async readNewOperations(): Promise<NewOperationRow[]> {

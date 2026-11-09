@@ -105,7 +105,7 @@ describe('buildPlan', () => {
     expect(p.closedDays).toBe(10);
     // 24 × 10 × 9 факт + 24 × 30 × 2 ставки + reverse + 2 LCD
     expect(p.expected).toHaveLength(24 * 10 * 9 + 24 * 30 * 2 + 3);
-    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, pass: true });
+    expect(p.invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, sellerReturn: 0, pass: true });
     expect(p.gaps.stock).toBe(10);
     expect(p.gaps.storage).toBe(24);
   });
@@ -160,11 +160,11 @@ describe('buildPlan', () => {
   describe('инвариант с пересечением продажа × отказ (20.10.2026, unitka-engine-prod-qs2p4)', () => {
     const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
     it('продажа без возврата и отказ без продажи — пересечение 0, проходит', () => {
-      expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, pass: true });
+      expect(buildPlan(inputs()).invariant).toEqual({ shipments: 597, sales: 545, refusals: 52, overlap: 0, returnTail: 0, sellerReturn: 0, pass: true });
     });
     it('продажа и последующий возврат одного srid — проходит; план не берёт счётчики в ставки', () => {
       const p = buildPlan(inputs({ logistics: logistics({ sales: 546, saleRefusalOverlap: 1 }) }));
-      expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, returnTail: 0, pass: true });
+      expect(p.invariant).toEqual({ shipments: 597, sales: 546, refusals: 52, overlap: 1, returnTail: 0, sellerReturn: 0, pass: true });
       expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs())));
     });
     it('несколько пересечений — проходит', () => {
@@ -173,7 +173,7 @@ describe('buildPlan', () => {
     });
     it('текущий случай: 535 = 492 + 44 − 1', () => {
       const p = buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 1 }) }));
-      expect(p.invariant).toEqual({ shipments: 535, sales: 492, refusals: 44, overlap: 1, returnTail: 0, pass: true });
+      expect(p.invariant).toEqual({ shipments: 535, sales: 492, refusals: 44, overlap: 1, returnTail: 0, sellerReturn: 0, pass: true });
     });
     it('без пересечения тот же срез по-прежнему отклоняется (как в инциденте)', () => {
       expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 535, sales: 492, refusals: 44, saleRefusalOverlap: 0 }) })))).toBe('INVARIANT_FAIL');
@@ -201,7 +201,7 @@ describe('buildPlan', () => {
     // srid в shipments (одно плечо), но ни в sales, ни в refusals; вью отдаёт return_tail = 1.
     it('хвост одного srid — проходит; план не берёт счётчики в ставки', () => {
       const p = buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 1 }) }));
-      expect(p.invariant).toEqual({ shipments: 598, sales: 545, refusals: 52, overlap: 0, returnTail: 1, pass: true });
+      expect(p.invariant).toEqual({ shipments: 598, sales: 545, refusals: 52, overlap: 0, returnTail: 1, sellerReturn: 0, pass: true });
       expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: 0, sales: 546 }) }))));
     });
     it('порог своей ставки SKU — по прямым отправкам: хвост SKU в порог не входит', () => {
@@ -218,7 +218,7 @@ describe('buildPlan', () => {
       // и ещё 1 srid с одним плечом и только «Возмещением…» — не доказанный возврат: 552 ≠ 494 + 56 − 0 + 1.
       expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 552, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 1 }) })))).toBe('INVARIANT_FAIL');
       // Без неподтверждённого плеча тот же срез проходит только благодаря хвосту
-      expect(buildPlan(inputs({ logistics: logistics({ shipments: 551, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 1 }) })).invariant).toMatchObject({ returnTail: 1, pass: true });
+      expect(buildPlan(inputs({ logistics: logistics({ shipments: 551, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 1 }) })).invariant).toMatchObject({ returnTail: 1, sellerReturn: 0, pass: true });
       expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 551, sales: 494, refusals: 56, saleRefusalOverlap: 0, returnTail: 0 }) })))).toBe('INVARIANT_FAIL');
     });
     it('хвост и пересечение одновременно — проходит', () => {
@@ -236,6 +236,36 @@ describe('buildPlan', () => {
     it('хвост отсутствует, дробный, отрицательный или больше shipments − refusals — INVARIANT_FAIL, не ноль', () => {
       for (const v of [null, 0.5, -1, 547]) {
         expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598, returnTail: v }) })))).toBe('INVARIANT_FAIL');
+      }
+    });
+  });
+  describe('инвариант с возвратом брака продавцу (отдельный srid доставки брака в ПВЗ продавца, 27.10.2026)', () => {
+    const ratesOf = (p: ReturnType<typeof buildPlan>) => ({ reverse: p.reverseRate, rates: p.rates });
+    it('реальный срез LCD 26.10: 554 = 503 + 52 − 2 + 0 + 1 — проходит; без счётчика — INVARIANT_FAIL', () => {
+      const real = { shipments: 554, sales: 503, refusals: 52, saleRefusalOverlap: 2, returnTail: 0 };
+      expect(buildPlan(inputs({ logistics: logistics({ ...real, sellerReturn: 1, sellerReturnSum: 209.4 }) })).invariant)
+        .toEqual({ shipments: 554, sales: 503, refusals: 52, overlap: 2, returnTail: 0, sellerReturn: 1, pass: true });
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ ...real, sellerReturn: 0 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('счётчик не попадает в ставки плана (ставки — из вью, где плечо уже исключено)', () => {
+      const p = buildPlan(inputs({ logistics: logistics({ shipments: 598, sellerReturn: 1, sellerReturnSum: 209.4 }) }));
+      expect(ratesOf(p)).toEqual(ratesOf(buildPlan(inputs({ logistics: logistics({ shipments: 598, sellerReturn: 0, sales: 546 }) }))));
+    });
+    it('отдельно от хвоста: хвост и возврат брака одновременно — проходит; лишний srid сверх обоих — INVARIANT_FAIL', () => {
+      expect(buildPlan(inputs({ logistics: logistics({ shipments: 599, returnTail: 1, sellerReturn: 1 }) })).invariant).toMatchObject({ returnTail: 1, sellerReturn: 1, pass: true });
+      expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 600, returnTail: 1, sellerReturn: 1 }) })))).toBe('INVARIANT_FAIL');
+    });
+    it('порог своей ставки SKU — без возврата брака продавцу', () => {
+      const base = logistics();
+      const sku = base.find((r) => r.nmId !== 0 && r.shipments >= 10)!;
+      const n = sku.shipments;
+      const at = (sr: number | null) => buildPlan(inputs({ minN: n, logistics: base.map((r) => (r.nmId === sku.nmId ? { ...r, sellerReturn: sr } : r)) })).rates.find((x) => x.nmId === sku.nmId)!;
+      expect(at(0)).toMatchObject({ directSource: 'own', n });
+      expect(at(1)).toMatchObject({ directSource: 'store', n: n - 1 });
+    });
+    it('seller_return отсутствует, дробный, отрицательный или больше shipments − refusals − return_tail — INVARIANT_FAIL, не ноль', () => {
+      for (const v of [null, 0.5, -1, 547]) {
+        expect(codeOf(() => buildPlan(inputs({ logistics: logistics({ shipments: 598, sellerReturn: v }) })))).toBe('INVARIANT_FAIL');
       }
     });
   });
