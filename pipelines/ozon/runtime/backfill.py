@@ -26,11 +26,15 @@ from google.cloud import bigquery
 QUOTA_EVIDENCE = {}
 
 
-def validate_fbo_timestamp(value, a, b, *, page_ordinal, request_ordinal, record_ordinal):
-    """Strict half-open UTC membership with bounded, redacted failure evidence.
+def validate_fbo_timestamp(value, a, b, *, page_ordinal, request_ordinal, record_ordinal,
+                           until_inclusive=False, bounded=True):
+    """Strict UTC membership with bounded, redacted failure evidence.
 
     No posting/product identifiers or response bodies enter this diagnostic.
-    A timezone is mandatory; an adjacent-window record is always rejected.
+    A timezone is mandatory. Default: half-open [a, b), an adjacent-window record is
+    rejected. until_inclusive: the closed request interval [a, b] of the proven FBO
+    transport contract (the caller defers a record exactly at b). bounded=False checks
+    only the timestamp format (created_at is not an FBO filter field).
     """
     category = 'INVALID_TIMESTAMP_FORMAT'
     try:
@@ -42,7 +46,7 @@ def validate_fbo_timestamp(value, a, b, *, page_ordinal, request_ordinal, record
             raise ValueError
         delta = instant.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
         micros = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
-        if not a * 1000 <= micros < b * 1000:
+        if bounded and not (a * 1000 <= micros and (micros <= b * 1000 if until_inclusive else micros < b * 1000)):
             category = 'OUTSIDE_REQUESTED_INTERVAL'
             raise ValueError
         return instant
@@ -51,7 +55,7 @@ def validate_fbo_timestamp(value, a, b, *, page_ordinal, request_ordinal, record
         # redacted before truncation and hashing, including malformed values.
         safe = C.safe_error_text(value, len(value)) if isinstance(value, str) else None
         evidence = dict(version=1, validation_class=category,
-            requested_utc_from=B.stamp(a), requested_utc_to=B.stamp(b - 1),
+            requested_utc_from=B.stamp(a), requested_utc_to=B.stamp(b if until_inclusive else b - 1),
             utc_until_exclusive=B.stamp(b), timestamp_type=type(value).__name__,
             timestamp_value=safe[:1024] if safe is not None else None,
             timestamp_truncated=safe is not None and len(safe) > 1024,
@@ -102,6 +106,64 @@ def export_budget(cap=15, p=None):
     QUOTA_EVIDENCE.clear()
     QUOTA_EVIDENCE.update(rolling_guard=cap, recent_reserved=used, recent_accepted=accepted)
     return max(cap - used, 0)
+
+
+RETURNS_PATH = "/v1/returns/list"
+
+
+def returns_window(call, a, b, run_id, ts, *, page_cap=200):
+    """One owned window of FBO returns under B.RETURNS_TRANSPORT_CONTRACT → (rows, detail).
+
+    Pure over `call` (Engine.call in the controller path): no MERGE, no state. The request is
+    [a, b]; the window owns a <= visual.change_moment < b; an item exactly at b is deferred to
+    the next window; anything outside [a, b] or malformed fails closed before any row is kept.
+    An id repeated inside the window (status changed while paging) keeps its latest change.
+    Wiring as a backfill/CURRENT domain is done by the consolidated release (owner ACK).
+    """
+    boundary = datetime.fromtimestamp(b / 1000, timezone.utc)
+    latest, seen, last_id, deferred, superseded = {}, set(), 0, 0, 0
+    for page_ordinal in range(1, page_cap + 1):
+        d = call(RETURNS_PATH, {"filter": {"visual_status_change_moment": {"time_from": B.stamp(a), "time_to": B.stamp(b)},
+                                           "return_schema": "FBO"},
+                                "limit": B.RETURNS_TRANSPORT_CONTRACT["limit"], "last_id": last_id})
+        page, more = d.get("returns"), d.get("has_next")
+        if not isinstance(page, list) or len(page) > B.RETURNS_TRANSPORT_CONTRACT["limit"] or type(more) is not bool:
+            raise B.EvidenceError("returns source page shape invalid")
+        for record_ordinal, item in enumerate(page, 1):
+            if not isinstance(item, dict) or type(item.get("id")) is not int or not isinstance(item.get("product"), dict):
+                raise B.EvidenceError("returns source record shape invalid")
+            try:
+                moment = validate_fbo_timestamp((item.get("visual") or {}).get("change_moment"), a, b, until_inclusive=True,
+                                                page_ordinal=page_ordinal, request_ordinal=page_ordinal, record_ordinal=record_ordinal)
+            except B.FboWindowError as error:
+                raise B.EvidenceError("RETURNS_WINDOW_" + error.fbo_window_evidence["validation_class"]) from None
+            if moment == boundary:
+                deferred += 1
+                continue
+            previous = latest.get(item["id"])
+            if previous is not None:
+                superseded += 1
+                if moment < previous[0]:
+                    continue
+            latest[item["id"]] = (moment, item)
+        if not more:
+            items = [latest[k][1] for k in sorted(latest)]
+            rows = E._return_rows(items, run_id, ts)
+            by_day = {}
+            for moment, _ in latest.values():
+                day = str(moment.astimezone(B.MSK).date())
+                by_day[day] = by_day.get(day, 0) + 1
+            return rows, {"action": "RETURNS_WINDOW_COMPLETE", "by_moscow_day": by_day, "utc_from": B.stamp(a),
+                          "utc_until_exclusive": B.stamp(b), "returns": len(rows), "pages": page_ordinal,
+                          "boundary_deferred": deferred, "superseded_in_window": superseded,
+                          "returns_contract": B.RETURNS_TRANSPORT_CONTRACT_HASH, "source_terminal": True}
+        if not page:
+            raise B.EvidenceError("returns nonterminal empty page")
+        last_id = page[-1]["id"]
+        if last_id in seen:
+            raise B.EvidenceError("returns repeated cursor")
+        seen.add(last_id)
+    raise B.CapacityReached("returns page cap reached at has_next=true: split the window")
 
 
 class SourceThrottle(Exception):
@@ -172,25 +234,36 @@ class Engine:
             left, right = B.split(window, self.p["minimum_ms"])
             pr["pending"][:1] = [left, right]
             return {}, {"action": "SPLIT_CONFIGURED_WINDOW"}
-        rows, cursor, seen, postings = [], "", set(), 0
+        # B.FBO_TRANSPORT_CONTRACT: the source filters by in_process_at at sub-millisecond
+        # precision. Request [a, b]; own a <= in_process_at < b; a record exactly at b belongs
+        # to the next window. created_at is not a filter field and may precede a by days.
+        rows, cursor, seen, postings, deferred, created_before = [], "", set(), 0, 0, 0
         cap = self.p["fbo_page_cap"]
+        boundary = datetime.fromtimestamp(b / 1000, timezone.utc)
         for page_ordinal in range(1, cap + 1):
             d = self.call("/v3/posting/fbo/list", {"cursor": cursor,
-                          "filter": {"since": B.stamp(a), "to": B.stamp(b - 1)},
+                          "filter": {"since": B.stamp(a), "to": B.stamp(b)},
                           "limit": 100, "with": {"analytics_data": True, "financial_data": True}})
             page = d.get("postings")
             if not isinstance(page, list) or len(page) > 100:
                 raise B.EvidenceError("FBO source page shape invalid")
             self.pages += 1
+            owned = []
             for record_ordinal, item in enumerate(page, 1):
                 if not isinstance(item, dict):
                     raise B.EvidenceError('FBO source record shape invalid')
-                validate_fbo_timestamp(item.get('created_at'), a, b, page_ordinal=page_ordinal,
-                    request_ordinal=self.requests, record_ordinal=record_ordinal)
+                marks = dict(page_ordinal=page_ordinal, request_ordinal=self.requests, record_ordinal=record_ordinal)
+                in_process = validate_fbo_timestamp(item.get('in_process_at'), a, b, until_inclusive=True, **marks)
+                created = validate_fbo_timestamp(item.get('created_at'), a, b, bounded=False, **marks)
                 if not item.get("products") or any(product.get("sku") in (None,"",0,"0") for product in item["products"]):
                     raise B.EvidenceError("FBO posting without stable product grain")
-            rows.extend(E._fbo_rows(page, self.run_id, self.ts))
-            postings += len(page)
+                if in_process == boundary:
+                    deferred += 1
+                    continue
+                created_before += created < datetime.fromtimestamp(a / 1000, timezone.utc)
+                owned.append(item)
+            rows.extend(E._fbo_rows(owned, self.run_id, self.ts, v3_commission=True))
+            postings += len(owned)
             terminal, nxt = B.source_terminal(d, "cursor", seen, require_flag=True)
             if terminal:
                 out = self.merge("RAW_OZON_POSTINGS_FBO", rows, ["posting_number", "sku"])
@@ -199,11 +272,14 @@ class Engine:
                 s["complete"] = not pr["pending"]
                 day_counts = {}
                 for row in rows:
-                    day = str(datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")).astimezone(B.MSK).date())
+                    # Coverage is owned by in_process_at (tenant_backfill reads RAW back on the same basis).
+                    day = str(datetime.fromisoformat(row["in_process_at"].replace("Z", "+00:00")).astimezone(B.MSK).date())
                     day_counts.setdefault(day, set()).add((row["posting_number"], row["sku"]))
                 return out, {"action": "WINDOW_COMPLETE", "by_moscow_day": {d: len(k) for d, k in day_counts.items()}, "utc_from": B.stamp(a),
                              "utc_until_exclusive": B.stamp(b), "postings": postings,
-                             "product_rows": len(rows), "source_terminal": True}
+                             "product_rows": len(rows), "source_terminal": True,
+                             "fbo_contract": B.FBO_TRANSPORT_CONTRACT_HASH, "ownership": "in_process_at",
+                             "boundary_deferred": deferred, "created_before_window": created_before}
             if not page:
                 raise B.EvidenceError("FBO nonterminal empty page")
             cursor = nxt

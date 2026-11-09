@@ -290,6 +290,32 @@ def test_snapshot_readback_verifies_exact_partial_prefix_and_stock_catalog_cohor
         assert writes==previous
 
 
+def test_fbo_readback_owns_days_by_in_process_at(monkeypatch):
+    """FBO windows own postings by in_process_at (B.FBO_TRANSPORT_CONTRACT); the RAW read-back
+    must count the same Moscow day basis, never created_at (which may precede it by days)."""
+    c=BF.target('client_001');doc=BF.make_plan('client_001','fbo_postings','2026-10-06','2026-10-06','offline-fbo',NOW.isoformat(),today=NOW.astimezone(BF.B.MSK).date())
+    state=BF.B.initial(doc['runtime_plan']);state.update(sequence=1,complete=True)
+    state['progress'].update(pending=[],completed_to=BF.B.utc_ms('2026-10-07'))
+    detail={'action':'WINDOW_COMPLETE','by_moscow_day':{'2026-10-06':3},'fbo_contract':BF.B.FBO_TRANSPORT_CONTRACT_HASH}
+    monkeypatch.setattr(BF,'validate_plan',lambda *a:c)
+    monkeypatch.setattr(BF.B,'validate',lambda *a,**k:None)
+    monkeypatch.setattr(BF,'preflight',lambda *a,**k:(SimpleNamespace(append=lambda *a:None),[]))
+    calls=[]
+    def reader(c,sql,params,**kw):
+        calls.append(sql)
+        if 'backfill_detail_json' in sql:return [{'backfill_sequence':1,'backfill_detail_json':json.dumps(detail)}]
+        if 'SELECT DISTINCT evidence_json' in sql:return [{'evidence_json':json.dumps({'state':state})}]
+        if ' AS unresolved_sku_rows' in sql:return [{'sku_rows':3,'unresolved_sku_rows':0}]
+        if 'COUNT(DISTINCT product_id) > 1' in sql:return [{'n':0}]
+        return [{'rows_n':3,'keys_n':3}]
+    monkeypatch.setattr(BF,'select',reader)
+    out=BF.verify_coverage(doc,doc['ack_hash'],backend=SimpleNamespace(request=lambda *a:None))
+    grain=[q for q in calls if ' AS keys_n' in q]
+    assert all("DATE(in_process_at,'Europe/Moscow') = @day" in q for q in calls if 'RAW_OZON_POSTINGS_FBO' in q)
+    assert out['readback'][0]['coverage']=='COMPLETE' and len(grain)==1
+    assert "DATE(in_process_at,'Europe/Moscow') = @day" in grain[0] and 'created_at' not in grain[0]
+
+
 def test_full_authority_reconstructs_future_deployment_from_immutable_descriptor(authority, monkeypatch):
     p = authority
     packaged = copy.deepcopy(p.c)

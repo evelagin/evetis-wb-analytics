@@ -710,7 +710,9 @@ def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
     latest=reader(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND backfill_sequence = @seq",dict(params,seq=("INT64",max(details))))
     if len(latest)!=1:raise B.EvidenceError("latest source state ambiguous")
     state=parse_tenant_json(latest[0]["evidence_json"])["state"];B.validate(p,state)
-    mapping={"fbo_postings":("RAW_OZON_POSTINGS_FBO","posting_number,sku","order_date BETWEEN DATE_SUB(@day,INTERVAL 1 DAY) AND @day AND DATE(TIMESTAMP(created_at),'Europe/Moscow') = @day"),
+    # FBO windows own postings by in_process_at (B.FBO_TRANSPORT_CONTRACT); created_at may precede it
+    # by days, so the read-back uses the same basis and no created_at partition bound.
+    mapping={"fbo_postings":("RAW_OZON_POSTINGS_FBO","posting_number,sku","DATE(in_process_at,'Europe/Moscow') = @day"),
         "finance_accrual":("RAW_OZON_FINANCE_ACCRUAL","accrual_id,type_id,sku","event_date = @day"),
         "ads_expense_daily":("RAW_OZON_ADS_EXPENSE_DAILY","date,campaign_id","date = @day"),
         "ads_sku_daily":("RAW_OZON_ADS_SKU_DAILY","date,campaign_id,sku","date = @day")}
