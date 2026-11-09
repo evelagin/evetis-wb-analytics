@@ -30,6 +30,13 @@ def handoff():
         # the synthetic legacy profile separate from the registered v4 flags.
         release.pop('current_data_version',None)
         release['verification'].pop('current_data_adapter',None)
+        # The live pin (09.11: 1a2b61a0) carries the later v4-only recovery extensions; a legacy v3
+        # profile has none of them.
+        for k,v in (('exact_r1r2_recovery_version','exact_r1r2_recovery'),('exact_f507_recovery_version','exact_f507_recovery'),
+                    ('controller_wake_budget_version','controller_wake_budget_adapter'),('terminal_gate_recovery_version','terminal_gate_recovery_adapter'),
+                    ('current_independence_version','current_independence_adapter'),('finance_catchup_version','finance_catchup_adapter'),
+                    ('control_closure_recovery_version','control_closure_recovery_adapter')):
+            release.pop(k,None);release['verification'].pop(v,None)
     release['controller_implementation_hash']=O.implementation_hash(B.REPO)
     release['runtime_implementation_hash']=B.B.implementation_hash()
     # Synthetic current replacement, paired with the elected runtime. The
