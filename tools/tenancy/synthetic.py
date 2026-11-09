@@ -266,6 +266,8 @@ if __name__ == "__main__":     # регенерация: python -m tools.tenancy
     (FIXTURE_DIR / "client_access.synthetic.contract.json").write_text(client_access_fixture_text(), encoding="utf-8")
     print("записана фикстура client_access.synthetic")
     (FIXTURE_DIR / "rnp_access.client_001.contract.json").write_text(rnp_access_fixture_text(), encoding="utf-8")
+    for t in SYNTHETIC_TENANTS:
+        (RELEASE_FIXTURE_DIR / f"{t}.contract.json").write_text(release_fixture_text(t), encoding="utf-8")
     print("записана фикстура rnp_access.client_001")
     neg = FIXTURE_DIR / "negative"
     neg.mkdir(exist_ok=True)
