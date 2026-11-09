@@ -492,17 +492,20 @@ def status_check():
         with patched(CUR, 'cycles', lambda bb, pp: cycles), patched(CUR, 'plans', plans), patched(AC, 'complete_days', lambda bb, pp: {e: [] for e in AC.ENTITIES}):
             return ADS.status(b, p)
     s = run([], {})
-    assert all(v['status'] == 'STALE' and v['day_status'] == 'UNKNOWN' for v in s.values())         # nothing proven: never 0
+    assert all(v['status'] == 'STALE' and v['last_complete_day'] is None and v['lag_days'] is None for v in s.values())   # never 0
     cert = lambda e: {'kind': 'CURRENT_CERT', 'payload': {'fact': {'entity': e}}}
     s = run([cert('ads_campaigns'), {'kind': 'CURRENT_PARTIAL', 'payload': {'entity': 'ads_expense_daily', 'reason': AC.UNKNOWN_DAY}}],
             {'ads_sku_daily': {'sequence': 4, 'progress': {'pending': ['1'] * 65}}})
     assert s['ads_campaigns']['status'] == 'COMPLETE' and s['ads_campaigns']['business_day'] == TODAY.isoformat()
-    assert s['ads_expense_daily']['day_status'] == 'UNKNOWN' and s['ads_expense_daily']['business_day'] == '2026-11-07'
-    assert s['ads_sku_daily']['day_status'] == 'PARTIAL' and s['ads_sku_daily']['progress'] == {'pending_campaigns': 65}
+    assert s['ads_expense_daily']['status'] == 'PARTIAL' and s['ads_expense_daily']['reason'] == AC.UNKNOWN_DAY
+    assert s['ads_expense_daily']['business_day'] == '2026-11-07'
+    assert s['ads_sku_daily']['status'] == 'STALE' and s['ads_sku_daily']['progress'] == {'pending_campaigns': 65}
     s = run([{'kind': 'CURRENT_PARTIAL', 'payload': {'entity': 'ads_campaigns', 'reason': 'ADS_SOURCE_FAILED'}}], {},
             older=[((TODAY - timedelta(days=1)).isoformat(), cert('ads_campaigns'))])
-    assert s['ads_campaigns']['day_status'] == 'PARTIAL' and s['ads_campaigns']['reason'] == 'ADS_SOURCE_FAILED'
-    assert s['ads_campaigns']['status'] == 'PARTIAL' and s['ads_campaigns']['last_complete_day'] == (TODAY - timedelta(days=1)).isoformat()
+    assert s['ads_campaigns']['status'] == 'PARTIAL' and s['ads_campaigns']['reason'] == 'ADS_SOURCE_FAILED'
+    assert s['ads_campaigns']['last_complete_day'] == (TODAY - timedelta(days=1)).isoformat() and s['ads_campaigns']['lag_days'] == 1
+    assert {v['status'] for v in s.values()} <= {'COMPLETE', 'PARTIAL', 'STALE'}                     # #404 vocabulary
+    assert CUR.current_entities(False) == CUR.INDEPENDENT_ENTITIES and CUR.current_entities(True) == CUR.INDEPENDENT_ENTITIES + ADS.ENTITIES
     return 'PASS'
 
 

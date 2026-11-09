@@ -24,7 +24,7 @@ What (only with the qualified release flag ``current_ads_version``; without it n
     A halted entity gets CURRENT_PARTIAL with that reason; the Seller entities, finance catch-up and
     FULL continue. An uncertain DISPATCH (no receipt), a foreign/unattributed execution or lease and
     every authority/duplicate check stay fail-closed (global STOP) exactly as before;
-  * status: ``status`` reports COMPLETE / PARTIAL / STALE / UNKNOWN per ads entity from durable records.
+  * status: ``status`` reports COMPLETE / PARTIAL / STALE per ads entity (durable_daily vocabulary, #404).
 
 Quota (fact, not a choice of this module): one day of SKU statistics needs ~78-88 campaign exports;
 the guard allows 15 per rolling 24 h (owner rule 2026-10-29: not raised without a separate Ozon quota
@@ -41,7 +41,6 @@ REASONS = frozenset({'ADS_SOURCE_FAILED', 'ADS_REPORT_AMBIGUOUS', 'ADS_RETRY_EXH
 KNOWN_READ = re.compile(r"EvidenceError\(['\"]SOURCE_HTTP_(429|500|502|503|504|NET_ERROR): /[A-Za-z0-9_./-]+['\"]\)")
 MAX_ATTEMPTS = 3
 RETRY_SECONDS = 600
-STALE_DAYS = 2
 
 
 def fail(s): raise BF.B.EvidenceError('current ads: ' + s)
@@ -189,14 +188,16 @@ def partial_reasons(entity):
 
 
 def status(b, p, today=None):
-    """Read-only per-entity ads status from durable CURRENT records (and owner catch-up certificates).
+    """Read-only per-entity ads status of today's operational day, in the vocabulary of
+    durable_daily.entity_status (#404): COMPLETE (certified today), PARTIAL (explicit CURRENT_PARTIAL:
+    retention gap or an ADS_* local outcome, with its reason), STALE (not certified today; the last
+    accepted day is older). UNKNOWN is only a wake-local hold (#404), never computed here.
 
-    business_day is D-1 for the dated entities and today's snapshot day for ads_campaigns. A day without
-    a certificate is never zero: day_status UNKNOWN (nothing observed / no data proven) or PARTIAL (some
-    progress or a local error); status is day_status, or STALE when the business day is not COMPLETE and
-    the last COMPLETE business day is older than STALE_DAYS (or absent).
+    Extra facts: business_day (D-1 for dated entities, today for the campaign snapshot), the last
+    COMPLETE business day (CURRENT or owner catch-up certificate), SKU progress (pending campaigns) and,
+    for an unfinished plan, a retry cooldown or local halt reason. A day without a certificate is never 0.
     """
-    from tools.tenancy import current_controller as CURRENT, current_policy as P, ads_catchup as AC
+    from tools.tenancy import current_controller as CURRENT, ads_catchup as AC
     today = today or b.clock().astimezone(K.MSK).date()
     cycles = CURRENT.cycles(b, p)
     complete = {e: [] for e in ENTITIES}; out = {}
@@ -214,19 +215,15 @@ def status(b, p, today=None):
         v = {'business_day': business.isoformat(), 'last_complete_day': last, 'reason': None, 'progress': None}
         item = items.get(e)
         if last == business.isoformat(): v['status'] = 'COMPLETE'
-        elif e in partials:
-            v['reason'] = partials[e]
-            v['status'] = 'UNKNOWN' if partials[e] == 'SOURCE_RETENTION_COMPLETENESS_UNPROVEN' else 'PARTIAL'
-        elif item is None: v['status'] = 'UNKNOWN'; v['reason'] = 'NOT_ELECTED'
+        elif e in partials: v['status'] = 'PARTIAL'; v['reason'] = partials[e]
         else:
-            state = b.state(item['plan']); pr = state['progress']
-            gate = failure_gate(b.store.history(item['shard']), b.clock())
-            if gate: v['reason'] = gate[1] if gate[0] == 'HALT' else 'ADS_READ_RETRY_COOLDOWN'
-            if e == 'ads_sku_daily' and 'pending' in pr:
-                v['progress'] = {'pending_campaigns': len(pr['pending'])}
-            v['status'] = 'PARTIAL' if state['sequence'] > 0 else 'UNKNOWN'
-        v['day_status'] = v.pop('status')
-        stale = last is None or date.fromisoformat(last) < business - timedelta(days=STALE_DAYS)
-        v['status'] = 'STALE' if v['day_status'] != 'COMPLETE' and stale else v['day_status']
+            v['status'] = 'STALE'
+            if item is None: v['reason'] = 'NOT_ELECTED'
+            else:
+                pr = b.state(item['plan'])['progress']
+                gate = failure_gate(b.store.history(item['shard']), b.clock())
+                if gate: v['reason'] = gate[1] if gate[0] == 'HALT' else 'ADS_READ_RETRY_COOLDOWN'
+                if e == 'ads_sku_daily' and 'pending' in pr: v['progress'] = {'pending_campaigns': len(pr['pending'])}
+        v['lag_days'] = None if last is None else (business - date.fromisoformat(last)).days
         out[e] = v
     return out

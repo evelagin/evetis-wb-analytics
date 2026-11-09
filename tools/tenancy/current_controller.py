@@ -290,6 +290,9 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     if catchup['pending']:return FC.drain(base,catchup)
     if ads['pending']:return AC.drain(base,ads)
     local=ADS.qualified(base)
+    # The CURRENT entity set of this release: the four independent Seller entities, plus advertising when
+    # flagged. It is the one set for selection and for per-entity status (durable_daily.entity_status, #404).
+    selectable=current_entities(local)
     for d,item in sku_plans:
         if local and not ADS.live(base,item,d,day,base.clock()):continue
         report=base.state(item['plan'])['progress'].get('report')
@@ -324,7 +327,6 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         if result is not None:return result
     budget=WB.of(base)
     # Ads (flagged) after the four independent Seller entities; a local ads outcome never stops them.
-    selectable=INDEPENDENT_ENTITIES+(ADS.ENTITIES if local else ())
     for entity in P.eligible(p,{e:True for e in certs}):
         if entity in partial or entity not in selectable:continue
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
@@ -347,6 +349,11 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     result=FC.wake(base,catchup,certs,partial)
     if result is not None:return result
     return AC.wake(base,ads,certs,partial)
+
+def current_entities(ads):
+    """Entities CURRENT elects (and reports status for): S4 v1 Seller entities, plus ads with current_ads_version."""
+    from tools.tenancy import current_ads as ADS
+    return INDEPENDENT_ENTITIES+(ADS.ENTITIES if ads else ())
 
 def local_full_stop(base):
     """S4 admitted wake: an unresolved FULL-local STOP exists and only CURRENT runs.
