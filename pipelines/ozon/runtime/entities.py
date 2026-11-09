@@ -472,7 +472,10 @@ def stocks(run_id, ts, _f, _t):
 
 
 # ---------------------------------------------------------- заказы FBO
-def _fbo_rows(postings, run_id, ts):
+def _fbo_rows(postings, run_id, ts, *, v3_commission=False):
+    # v3_commission: only the tenant strict backfill path (backfill.Engine.fbo) reads the v3
+    # commission object {amount, percent, currency}. The default path keeps its previous
+    # output byte for byte (EVETIS isolation: its rows are not changed on a tenant's behalf).
     rows = []
     for p in postings:
         ad = p.get("analytics_data") or {}
@@ -490,9 +493,9 @@ def _fbo_rows(postings, run_id, ts):
                 price_rub=_num(fd.get("price") if fd.get("price") is not None else pr.get("price")),
                 old_price_rub=_num(fd.get("old_price")),
                 total_discount_value_rub=_num(fd.get("total_discount_value")),
-                # v3 carries commission as {amount, percent, currency}; v2 had commission_amount.
-                commission_amount_rub=_num((fd.get("commission") or {}).get("amount")
-                                           if isinstance(fd.get("commission"), dict) else fd.get("commission_amount")),
+                commission_amount_rub=_num(fd["commission"].get("amount")
+                                           if v3_commission and isinstance(fd.get("commission"), dict)
+                                           else fd.get("commission_amount")),
                 payout_rub=_num(fd.get("payout")), actions=fd.get("actions") or [],
                 warehouse_name=ad.get("warehouse_name"),
                 warehouse_id=str(ad["warehouse_id"]) if ad.get("warehouse_id") else None,
@@ -533,6 +536,55 @@ def fbo_postings(run_id, ts, frm, to):
             break
         time.sleep(1)
     return merge_rows("RAW_OZON_POSTINGS_FBO", rows, ["posting_number", "sku"], run_id)
+
+
+# ------------------------------------------------------------ возвраты FBO
+def _money_rub(money):
+    """{currency_code, price} → RUB amount; another currency is never relabelled as RUB."""
+    if not isinstance(money, dict) or money.get("price") is None:
+        return None
+    if money.get("currency_code") not in ("RUB", "") and money.get("price") != 0:
+        return None
+    return _num(money.get("price"))
+
+
+def _return_rows(items, run_id, ts):
+    """RAW_OZON_RETURNS rows from /v1/returns/list (one product per return; grain return_id).
+
+    Tenant-only (Heldi); not in REGISTRY, so no EVETIS job can run it. Wired by the
+    consolidated release together with the table (pipelines/ozon/schema/ozon_raw/RAW_OZON_RETURNS.json).
+    """
+    rows = []
+    for r in items:
+        pr, lg, vs = r.get("product") or {}, r.get("logistic") or {}, r.get("visual") or {}
+        st, sto, pl, tp = vs.get("status") or {}, r.get("storage") or {}, r.get("place") or {}, r.get("target_place") or {}
+        comp = r.get("compensation_status")
+        rows.append(dict(return_id=r["id"], posting_number=r.get("posting_number"),
+            order_id=r.get("order_id"), order_number=r.get("order_number"),
+            return_type=r.get("type"), return_schema=r.get("schema"),
+            return_reason_name=r.get("return_reason_name"),
+            sku=str(pr["sku"]) if pr.get("sku") not in (None, "") else None,
+            offer_id=pr.get("offer_id"), quantity=pr.get("quantity"),
+            product_price_rub=_money_rub(pr.get("price")),
+            price_without_commission_rub=_money_rub(pr.get("price_without_commission")),
+            commission_percent=_num(pr.get("commission_percent")), commission_rub=_money_rub(pr.get("commission")),
+            visual_status_id=st.get("id"), visual_status_sys_name=st.get("sys_name"),
+            visual_status_name=st.get("display_name"), visual_change_moment=vs.get("change_moment"),
+            return_date=lg["return_date"][:10] if lg.get("return_date") else None,
+            return_moment=lg.get("return_date"), final_moment=lg.get("final_moment"),
+            technical_return_moment=lg.get("technical_return_moment"),
+            cancelled_with_compensation_moment=lg.get("cancelled_with_compensation_moment"),
+            place_id=str(pl["id"]) if pl.get("id") else None, place_name=pl.get("name"),
+            target_place_id=str(tp["id"]) if tp.get("id") else None, target_place_name=tp.get("name"),
+            storage_sum_rub=_money_rub(sto.get("sum")), storage_days=sto.get("days"),
+            utilization_sum_rub=_money_rub(sto.get("utilization_sum")),
+            is_opened=(r.get("additional_info") or {}).get("is_opened"),
+            compensation_status=json.dumps(comp, ensure_ascii=False, sort_keys=True) if comp is not None else None,
+            clearing_id=r.get("clearing_id"), return_clearing_id=r.get("return_clearing_id"),
+            source_id=r.get("source_id"), source_event_time=vs.get("change_moment"),
+            source_payload_hash=h(r["id"], vs.get("change_moment"), st.get("sys_name")),
+            **_meta("POST /v1/returns/list", run_id, ts)))
+    return rows
 
 
 # ------------------------------------------------------------- финансы

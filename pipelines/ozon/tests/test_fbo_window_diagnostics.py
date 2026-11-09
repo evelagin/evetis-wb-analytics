@@ -51,7 +51,7 @@ def test_failed_second_page_persists_diagnostic_without_merge_or_progress(monkey
     pages=iter([dict(postings=[dict(created_at=B.stamp(A),in_process_at=B.stamp(A),products=[dict(sku='SYNTHETIC')])],has_next=True,cursor='SYNTHETIC_CURSOR'),
                 dict(postings=[dict(created_at=B.stamp(A),in_process_at=value,products=[dict(sku='SYNTHETIC')])],has_next=False,cursor='')])
     monkeypatch.setattr(C,'seller_post',lambda *args:(200,next(pages)))
-    monkeypatch.setattr(F.E,'_fbo_rows',lambda *args:[{}])
+    monkeypatch.setattr(F.E,'_fbo_rows',lambda *args,**kw:[{}])
     calls=[]
     monkeypatch.setattr(C,'merge_rows',lambda *args,**kwargs:calls.append('MERGE'))
     monkeypatch.setattr(C,'record_run',lambda *args,**kwargs:calls.append('UNIT'))

@@ -108,6 +108,64 @@ def export_budget(cap=15, p=None):
     return max(cap - used, 0)
 
 
+RETURNS_PATH = "/v1/returns/list"
+
+
+def returns_window(call, a, b, run_id, ts, *, page_cap=200):
+    """One owned window of FBO returns under B.RETURNS_TRANSPORT_CONTRACT → (rows, detail).
+
+    Pure over `call` (Engine.call in the controller path): no MERGE, no state. The request is
+    [a, b]; the window owns a <= visual.change_moment < b; an item exactly at b is deferred to
+    the next window; anything outside [a, b] or malformed fails closed before any row is kept.
+    An id repeated inside the window (status changed while paging) keeps its latest change.
+    Wiring as a backfill/CURRENT domain is done by the consolidated release (owner ACK).
+    """
+    boundary = datetime.fromtimestamp(b / 1000, timezone.utc)
+    latest, seen, last_id, deferred, superseded = {}, set(), 0, 0, 0
+    for page_ordinal in range(1, page_cap + 1):
+        d = call(RETURNS_PATH, {"filter": {"visual_status_change_moment": {"time_from": B.stamp(a), "time_to": B.stamp(b)},
+                                           "return_schema": "FBO"},
+                                "limit": B.RETURNS_TRANSPORT_CONTRACT["limit"], "last_id": last_id})
+        page, more = d.get("returns"), d.get("has_next")
+        if not isinstance(page, list) or len(page) > B.RETURNS_TRANSPORT_CONTRACT["limit"] or type(more) is not bool:
+            raise B.EvidenceError("returns source page shape invalid")
+        for record_ordinal, item in enumerate(page, 1):
+            if not isinstance(item, dict) or type(item.get("id")) is not int or not isinstance(item.get("product"), dict):
+                raise B.EvidenceError("returns source record shape invalid")
+            try:
+                moment = validate_fbo_timestamp((item.get("visual") or {}).get("change_moment"), a, b, until_inclusive=True,
+                                                page_ordinal=page_ordinal, request_ordinal=page_ordinal, record_ordinal=record_ordinal)
+            except B.FboWindowError as error:
+                raise B.EvidenceError("RETURNS_WINDOW_" + error.fbo_window_evidence["validation_class"]) from None
+            if moment == boundary:
+                deferred += 1
+                continue
+            previous = latest.get(item["id"])
+            if previous is not None:
+                superseded += 1
+                if moment < previous[0]:
+                    continue
+            latest[item["id"]] = (moment, item)
+        if not more:
+            items = [latest[k][1] for k in sorted(latest)]
+            rows = E._return_rows(items, run_id, ts)
+            by_day = {}
+            for moment, _ in latest.values():
+                day = str(moment.astimezone(B.MSK).date())
+                by_day[day] = by_day.get(day, 0) + 1
+            return rows, {"action": "RETURNS_WINDOW_COMPLETE", "by_moscow_day": by_day, "utc_from": B.stamp(a),
+                          "utc_until_exclusive": B.stamp(b), "returns": len(rows), "pages": page_ordinal,
+                          "boundary_deferred": deferred, "superseded_in_window": superseded,
+                          "returns_contract": B.RETURNS_TRANSPORT_CONTRACT_HASH, "source_terminal": True}
+        if not page:
+            raise B.EvidenceError("returns nonterminal empty page")
+        last_id = page[-1]["id"]
+        if last_id in seen:
+            raise B.EvidenceError("returns repeated cursor")
+        seen.add(last_id)
+    raise B.CapacityReached("returns page cap reached at has_next=true: split the window")
+
+
 class SourceThrottle(Exception):
     def __init__(self, diagnostic):
         self.diagnostic = diagnostic
@@ -201,7 +259,7 @@ class Engine:
                     continue
                 created_before += created < datetime.fromtimestamp(a / 1000, timezone.utc)
                 owned.append(item)
-            rows.extend(E._fbo_rows(owned, self.run_id, self.ts))
+            rows.extend(E._fbo_rows(owned, self.run_id, self.ts, v3_commission=True))
             postings += len(owned)
             terminal, nxt = B.source_terminal(d, "cursor", seen, require_flag=True)
             if terminal:
