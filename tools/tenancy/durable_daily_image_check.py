@@ -142,7 +142,7 @@ def entrypoint_check():
         with patched(C, 'bootstrap', lambda env: (b, m['hash'])), patched(C, 'bounded_wake', lambda *a, **k: dict(result)), \
              patched(DD, 'sleep', lambda s: None), contextlib.redirect_stdout(out):
             rc = C.main()
-        return rc, json.loads(out.getvalue().strip().splitlines()[-1]), commits, closure(objects, m)
+        return rc, D.parse_tenant_json(out.getvalue().strip().splitlines()[-1]), commits, closure(objects, m)
     rc, printed, commits, value = run({'create:BFCX': [transient()]}, {'status': 'MONITORING', 'source_dispatches': 0, 'progress': {}})
     assert rc == 0 and printed['status'] == 'MONITORING' and printed['closure_read_retries'] == 1 and not commits
     assert value['status'] == 'MONITORING'

@@ -42,7 +42,7 @@ def rate_limited(error):
     Only the closed `reason` codes are inspected; the body never reaches a message or a log.
     """
     try:
-        data = json.loads(error.read(65536).decode() or "{}")
+        data = parse_tenant_json(error.read(65536).decode() or "{}")
         reasons = {x.get("reason") for x in (data.get("error") or {}).get("errors") or [] if isinstance(x, dict)}
     except Exception:  # noqa: BLE001 — an unreadable body is not evidence of rate limiting
         return False
