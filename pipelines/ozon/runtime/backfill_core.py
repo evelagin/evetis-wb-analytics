@@ -38,6 +38,27 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+# /v3/posting/fbo/list transport contract, proven 2026-11-09 by a direct read-only probe
+# (11 Seller requests; evidence bundle SHA256SUMS below, summary in the PR description):
+# * filter.since/filter.to select postings by in_process_at, NOT by created_at: three postings
+#   whose created_at precedes in_process_at by 1-4 days were absent from their fully enumerated
+#   created_at windows and present in their in_process_at windows; six windows matched the
+#   retained RAW set exactly by in_process_at; the response is ordered by in_process_at ASC;
+# * the comparison is finer than a millisecond: to=...40.155Z excluded in_process_at
+#   ...40.155705Z, so `to = b - 1 ms` leaves (b - 1 ms, b) unowned by any window. The request
+#   covers [a, b]; the window owns a <= in_process_at < b; a record exactly at b is deferred to
+#   the next window (whose since is b);
+# * limit is at most 100 (code 3: "value must be inside range (0, 100]").
+FBO_TRANSPORT_CONTRACT = {
+    "version": 1, "endpoint": "/v3/posting/fbo/list", "filter_field": "in_process_at",
+    "response_order": "in_process_at ASC", "comparison_precision": "SUB_MILLISECOND",
+    "request_interval": "CLOSED [since=a, to=b]", "ownership": "HALF_OPEN [a, b) ON in_process_at",
+    "boundary_record": "DEFERRED_TO_NEXT_WINDOW", "created_at": "NOT_A_FILTER_FIELD",
+    "limit_max": 100, "merge_key": ["posting_number", "sku"],
+    "evidence_sha256sums": "d109d43a72f5fbc30dc126df3f7cab63332842a0fab208877aaa68e24e42f304"}
+FBO_TRANSPORT_CONTRACT_HASH = digest(FBO_TRANSPORT_CONTRACT)
+
+
 def implementation_hash():
     # Qualified app code only. No credentials/configuration stores are inspected.
     root = Path(__file__).resolve().parent

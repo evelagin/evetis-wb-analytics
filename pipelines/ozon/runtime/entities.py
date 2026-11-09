@@ -490,7 +490,9 @@ def _fbo_rows(postings, run_id, ts):
                 price_rub=_num(fd.get("price") if fd.get("price") is not None else pr.get("price")),
                 old_price_rub=_num(fd.get("old_price")),
                 total_discount_value_rub=_num(fd.get("total_discount_value")),
-                commission_amount_rub=_num(fd.get("commission_amount")),
+                # v3 carries commission as {amount, percent, currency}; v2 had commission_amount.
+                commission_amount_rub=_num((fd.get("commission") or {}).get("amount")
+                                           if isinstance(fd.get("commission"), dict) else fd.get("commission_amount")),
                 payout_rub=_num(fd.get("payout")), actions=fd.get("actions") or [],
                 warehouse_name=ad.get("warehouse_name"),
                 warehouse_id=str(ad["warehouse_id"]) if ad.get("warehouse_id") else None,
