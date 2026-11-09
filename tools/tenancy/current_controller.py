@@ -253,10 +253,15 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     # authority and is drained before any new CURRENT work; new catch-up days only at the very end.
     from tools.tenancy import finance_catchup as FC
     catchup=FC.scan(base,p,finance_days)
-    if len(pending)+len(catchup['pending'])>1:fail('multiple current source authorities')
+    # Owner FBO refresh (OWNER_FBO_REFRESH_V1, own durable scope): same rule as the catch-up.
+    from tools.tenancy import fbo_refresh as FBR
+    refresh=FBR.scan(base,p)
+    base.fbo_refresh_summary=FBR.summary(refresh)
+    if len(pending)+len(catchup['pending'])+len(refresh['pending'])>1:fail('multiple current source authorities')
     if pending:
         d,item=pending[0];return source_tick(Backend(base,p,d),p,d,item)
     if catchup['pending']:return FC.drain(base,catchup)
+    if refresh['pending']:return FBR.drain(base,refresh)
     for d,item in sku_plans:
         report=base.state(item['plan'])['progress'].get('report')
         if report:
@@ -302,7 +307,10 @@ def wake(base,historical_records,historical_plans,done,quarantined):
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
     # Today's CURRENT has nothing left: an owner-authorised missed finance day may run (or None).
-    return FC.wake(base,catchup,certs,partial)
+    result=FC.wake(base,catchup,certs,partial)
+    if result is not None:return result
+    # Then owner FBO refresh units (daily/weekly re-read, 90-day history), or None.
+    return FBR.wake(base,refresh,certs,partial)
 
 def local_full_stop(base):
     """S4 admitted wake: an unresolved FULL-local STOP exists and only CURRENT runs.
@@ -322,3 +330,4 @@ def historical_candidates(records,plans,done,quarantined):
 
 # Loaded once with the real adapter class: the catch-up adapter subclasses Backend at import time.
 from tools.tenancy import finance_catchup as _finance_catchup  # noqa: E402,F401
+from tools.tenancy import fbo_refresh as _fbo_refresh  # noqa: E402,F401

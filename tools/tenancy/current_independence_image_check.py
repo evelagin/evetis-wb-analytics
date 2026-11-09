@@ -153,12 +153,12 @@ def evidence_readers_check():
         assert CI.ledger(SimpleNamespace(c={},tables=None))==(rows,False) and seen
     day='2026-10-23';p={'hash':'a'*64}
     def items(*specs):return {e:{'shard':'s-'+e} for e,_ in specs}
-    from tools.tenancy import finance_catchup as FC
-    def run(specs,catchup=()):
+    from tools.tenancy import finance_catchup as FC, fbo_refresh as FBR
+    def run(specs,catchup=(),refresh=()):
         hist={'s-'+e:h for e,h in specs}
         b=SimpleNamespace(store=SimpleNamespace(history=lambda shard,**k:hist[shard]))
         with patched(CUR,'policy',lambda _b:p),patched(CUR,'cycles',lambda _b,_p:{day:{}}),patched(CUR,'plans',lambda _b,_p,_d:([],items(*specs))),\
-             patched(FC,'receipts',lambda _b,_p:list(catchup)):
+             patched(FC,'receipts',lambda _b,_p:list(catchup)),patched(FBR,'receipts',lambda _b,_p:list(refresh)):
             return CI.current_receipt(b,'bf-cur',346)
     def series(run_id='bf-cur',g=346,reconciled=False):
         h=[rec('s','DISPATCH_INTENT',1,{}),rec('s','DISPATCH_RECEIPT',1,{'receipt':{'run_id':run_id,'lease_generation':g}})]
@@ -172,6 +172,8 @@ def evidence_readers_check():
     assert run([],catchup=[held]) is True                                            # open finance catch-up day holds it
     assert run([('catalog',series())],catchup=[held]) is False                       # never two holders
     assert run([],catchup=[dict(held,lease_generation=345)]) is False
+    assert run([],refresh=[held]) is True                                            # open owner FBO refresh unit holds it
+    assert run([],catchup=[held],refresh=[held]) is False                            # never two holders
     return 'PASS'
 
 
@@ -217,7 +219,7 @@ def wake_check():
 
 
 def selection_check():
-    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
+    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC,fbo_refresh as FBR
     day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
     def item(e):return {'day':day.isoformat(),'policy_hash':p['hash'],'plan':{'ack_hash':e,'runtime_plan':{'entity':e,'from':'2026-10-22'}},'shard':'s-'+e}
     def run(certified=(),partial=(),pending=None):
@@ -233,7 +235,7 @@ def selection_check():
         with patched(CUR,'policy',lambda b:p),patched(CC,'ensure',lambda b:None),patched(RP,'pending_receipts',lambda *a:[]),\
              patched(CUR,'cycles',lambda b,pp:{day.isoformat():{}}),patched(CUR,'plans',lambda b,pp,d:(records,items)),\
              patched(CUR,'validate_certificate',lambda *a:a[3]),patched(CUR,'Backend',lambda *a:None),patched(CUR,'source_tick',tick),\
-             patched(DIAG,'queued',lambda b:None),patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
+             patched(DIAG,'queued',lambda b:None),patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None),patched(FBR,'scan',lambda *a:{'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
             result=CUR.wake(base,[],{},{},set())
         assert result is None if not pending else result['status']=='WAITING'
         return ticks
@@ -250,7 +252,7 @@ def diagnostic_token_check():
 
     No BFDQUEUE/BFDA read, no BFDC claim, no RunJob/source POST and no new STOP; CURRENT continues.
     Without a local STOP the queue is consulted exactly as before."""
-    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
+    from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC,fbo_refresh as FBR
     from tools.tenancy import full_controller as H,stop_acceptance as SA,full_leaf_recovery as FL,full_first_receipt_recovery as FRR
     day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
     writes=[];reads=[];ticks=[]
@@ -270,7 +272,7 @@ def diagnostic_token_check():
              patched(CUR,'source_tick',lambda b,pp,d,it:ticks.append(it['plan']['runtime_plan']['entity']) or {'status':'WAITING','source_dispatches':0}),\
              patched(DIAG,'policy',lambda *a,**k:(_ for _ in ()).throw(AssertionError('diagnostic permission read'))),\
              patched(DIAG,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('diagnostic dispatched'))),\
-             patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
+             patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None),patched(FBR,'scan',lambda *a:{'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
             try:result=CUR.wake(base,[],{},{},set())
             except AssertionError as e:result={'refused':str(e)}
         return result,commits

@@ -124,6 +124,9 @@ def current_receipt(b,run_id,generation):
     # An open owner finance catch-up day is drained by the same CURRENT wake before new work.
     from tools.tenancy import finance_catchup as FC
     found+=sum(1 for rc in FC.receipts(b,p) if rc.get('run_id')==run_id and rc.get('lease_generation')==generation)
+    # An open owner FBO refresh unit likewise.
+    from tools.tenancy import fbo_refresh as FBR
+    found+=sum(1 for rc in FBR.receipts(b,p) if rc.get('run_id')==run_id and rc.get('lease_generation')==generation)
     return found==1
 
 
