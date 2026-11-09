@@ -33,6 +33,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise TT.TableError("cloud transport redirect denied")
 
 
+RATE_LIMIT_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded"})
+
+
+def rate_limited(error):
+    """A2: Google's 403 rate protection on a READ is a bounded retry, any other 403 stays a hard failure.
+
+    Only the closed `reason` codes are inspected; the body never reaches a message or a log.
+    """
+    try:
+        data = json.loads(error.read(65536).decode() or "{}")
+        reasons = {x.get("reason") for x in (data.get("error") or {}).get("errors") or [] if isinstance(x, dict)}
+    except Exception:  # noqa: BLE001 — an unreadable body is not evidence of rate limiting
+        return False
+    return bool(reasons) and reasons <= RATE_LIMIT_REASONS
+
+
 def wire(method, url, body=None, headers=None):
     """No retry of POST, no response/error payloads in exception messages."""
     request = urllib.request.Request(url, method=method, headers=headers or {},
@@ -47,7 +63,8 @@ def wire(method, url, body=None, headers=None):
             return parse_tenant_json(raw.decode() or "{}")
     except urllib.error.HTTPError as e:
         readonly_retry = method=='GET' or url.endswith('/queries') or url.endswith(':generateAccessToken')
-        cls = TT.Conflict if e.code == 409 else (TransientReadError if readonly_retry and e.code in (429,500,502,503,504) else TT.TableError)
+        retryable = e.code in (429,500,502,503,504) or (readonly_retry and e.code == 403 and rate_limited(e))
+        cls = TT.Conflict if e.code == 409 else (TransientReadError if readonly_retry and retryable else TT.TableError)
         raise cls(f"cloud transport HTTP {e.code}") from None
     except (OSError, http.client.IncompleteRead, http.client.BadStatusLine):
         # A truncated/dropped HTTP response (IncompleteRead, BadStatusLine incl.
