@@ -63,11 +63,11 @@ run "client_001_renders" {
     error_message = "идентичности выводятся детерминированно и известны на плане"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
+    condition     = toset([for a in output.dataset_access["ozon_raw"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}" if a.role != null]) == toset(["OWNER|projectOwners|", "WRITER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
     error_message = "ACL ozon_raw: ровно projectOwners OWNER, runtime SA WRITER, чтение деплоера SQL и control (T3.3: без создателя-провижионера)"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}"]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
+    condition     = toset([for a in output.dataset_access["ref"] : "${a.role}|${a.special_group == null ? "" : a.special_group}|${a.user_by_email == null ? "" : a.user_by_email}" if a.role != null]) == toset(["OWNER|projectOwners|", "READER||sa-ozon-runtime@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com", "organizations/1043233412973/roles/mpaSqlSourceRead||sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com"])
     error_message = "ACL ref: ровно projectOwners OWNER, runtime SA READER, чтение деплоера SQL и control (записи control в ref нет)"
   }
   assert {
@@ -83,15 +83,21 @@ run "client_001_renders" {
     error_message = "T4/T5: 15 таблиц ozon_raw, 6 таблиц ref (SELLER_BINDING и OPERATOR_DECISIONS — пишет только владелец), 7 таблиц tenant_ops"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["ozon_mart"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|"])
+    condition     = toset([for a in output.dataset_access["ozon_mart"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}" if a.role != null]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|"])
     error_message = "T4.1: ozon_mart — projectOwners и деплоер SQL (чтение, создание, изменение) без условия"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["analytics_share"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|"])
-    error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет"
+    condition     = toset([for a in output.dataset_access["analytics_share"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}" if a.role != null]) == toset(["OWNER||", "READER|sa-rnp-web@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|"])
+    error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет; READER только учётка РНП владельца"
+  }
+  # РНП владельца (rnp_access.py): записи авторизованных датасетов (role = null) исключены из точных ACL выше
+  # и проверены здесь — ровно рёбра rnp_access, ни одного сверх.
+  assert {
+    condition     = length(flatten([for k, d in output.dataset_access : [for a in d : a if a.role == null]])) == (var.contract.rnp_access == null ? 0 : length(var.contract.rnp_access.authorized_views))
+    error_message = "РНП: авторизованные датасеты (VIEWS) — только рёбра rnp_access; без них — ни одного"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaTenantControlAppend|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
+    condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}" if a.role != null]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-001.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-001/datasets/tenant_ops/tables/V_\")", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaTenantControlAppend|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
     error_message = "T4.1/T5: tenant_ops — изменение деплоером только V_*; control читает и дописывает (без DML)"
   }
   assert {
@@ -107,7 +113,7 @@ run "client_001_renders" {
     error_message = "подтверждённая привязка к кабинету живёт в ref (runtime только читает), а не в tenant_ops"
   }
   assert {
-    condition     = toset([for a in output.dataset_access["tenant_locks"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaTenantControlLease|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
+    condition     = toset([for a in output.dataset_access["tenant_locks"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}" if a.role != null]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaTenantControlLease|sa-tenant-control@mpa-t-client-001.iam.gserviceaccount.com|"])
     error_message = "T5: tenant_locks — только аренда control (create/get/list), больше никого"
   }
   assert {
@@ -171,7 +177,7 @@ run "client_002_same_code_different_tenant" {
   }
   assert {
     condition     = toset([for a in output.dataset_access["analytics_share"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|"])
-    error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет"
+    error_message = "T4.1: analytics_share — деплоер создаёт и меняет, но НЕ читает строки; клиента нет; READER только учётка РНП владельца"
   }
   assert {
     condition     = toset([for a in output.dataset_access["tenant_ops"] : "${a.role}|${a.user_by_email == null ? "" : a.user_by_email}|${a.condition == null ? "" : a.condition}"]) == toset(["OWNER||", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewCreate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaSqlViewUpdate|sa-sql-deployer@mpa-t-client-002.iam.gserviceaccount.com|resource.type == \"bigquery.googleapis.com/Table\" && resource.service == \"bigquery.googleapis.com\" && resource.name.startsWith(\"projects/mpa-t-client-002/datasets/tenant_ops/tables/V_\")", "organizations/1043233412973/roles/mpaSqlSourceRead|sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com|", "organizations/1043233412973/roles/mpaTenantControlAppend|sa-tenant-control@mpa-t-client-002.iam.gserviceaccount.com|"])

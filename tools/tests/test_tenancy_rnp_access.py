@@ -92,9 +92,12 @@ def test_registry_validation():
 
 
 # ═══════════════════════════════════════ живой реестр и отсутствие клиентских идентичностей
-def test_live_registry_grants_nothing_until_activation():
+def test_live_registry_activates_exactly_the_owner_rnp_service():
+    """P1b: живой реестр client_001 включает РНП владельца и ничего клиентского."""
     c = R.terraform_inputs("client_001")
-    assert c["rnp_access"] is None and c["client_access"] is None
+    assert c["client_access"] is None
+    assert c["rnp_access"] == {"mode": "OWNER_RNP_SERVICE", "dataset_key": "analytics_share", "service_account": SA,
+                               "authorized_views": [{"viewer_key": v, "source_key": s} for v, s in CA.AUTHORIZED_VIEW_EDGES]}
 
 
 def test_block_has_no_client_identities_and_no_project_roles():
@@ -103,7 +106,7 @@ def test_block_has_no_client_identities_and_no_project_roles():
     assert c["client_access"] is None, "РНП не включает клиентский доступ"
     assert set(ra) == {"mode", "dataset_key", "service_account", "authorized_views"}
     assert "principals" not in ra and "query_role" not in ra
-    assert PS.expected_iam(c) == PS.expected_iam(SY.contract_for_doc(SY.load_tenant_document(SY.TENANTS_DIR / "client_001" / "tenant.json"))), \
+    assert PS.expected_iam(c) == PS.expected_iam(SY.contract_for_doc(_registry_without_rnp())), \
         "ни одной новой IAM-привязки проекта"
 
 
@@ -113,8 +116,14 @@ def test_rnp_fixture_is_current_registry_output():
 
 
 # ═══════════════════════════════════════ план арендатора: ровно 5 датасетов in-place
+def _registry_without_rnp():
+    d = copy.deepcopy(SY.load_tenant_document(SY.TENANTS_DIR / "client_001" / "tenant.json"))
+    d.pop("rnp_access", None)
+    return d
+
+
 def _before_after():
-    before = SY.contract_for_doc(SY.load_tenant_document(SY.TENANTS_DIR / "client_001" / "tenant.json"))
+    before = SY.contract_for_doc(_registry_without_rnp())
     after = SY.rnp_access_contract()
     return before, after
 

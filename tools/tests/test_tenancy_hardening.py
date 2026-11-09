@@ -323,8 +323,9 @@ def test_derivation_depends_only_on_tenant_id_and_revision():
 
 
 def test_revision_is_validated_against_the_project_id():
-    ok = put(put(CLIENT, "data_boundary.project_id_revision", 2),
-             "data_boundary.gcp_project_id", "mpa-t2-client-001")
+    ok = put(put(put(CLIENT, "data_boundary.project_id_revision", 2),
+             "data_boundary.gcp_project_id", "mpa-t2-client-001"),
+             "rnp_access.service_account", "sa-rnp-web@mpa-t2-client-001.iam.gserviceaccount.com")   # учётка РНП — своего проекта
     assert rules(ok) == set()
     assert "naming" in rules(put(CLIENT, "data_boundary.project_id_revision", 2))
     for bad in (1, 10, True, 2.0, "2"):
