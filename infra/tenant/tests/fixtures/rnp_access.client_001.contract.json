@@ -233,8 +233,8 @@
         "BQ_LOCATION": "EU",
         "BQ_RAW_DATASET": "ozon_raw",
         "BQ_REF_DATASET": "ref",
-        "CONTROLLER_IMAGE": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:7749f7d59453fcb5e3b56794546b4312b31f03d12660d221664ee1f3541c47ab",
-        "CONTROLLER_SOURCE_SHA": "ba9d3d0430e598290ef71e321f235e27941170f5",
+        "CONTROLLER_IMAGE": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:450ecc9e1ac41cefb8a336fae5b9f0988289235ab605790be0b92d2ddd9634e7",
+        "CONTROLLER_SOURCE_SHA": "1a2b61a0793d41f08924a515663d0da2318e15cf",
         "CURRENT_DATA_MODE": "CURRENT_DATA_V1",
         "GCP_PROJECT_ID": "mpa-t-client-001",
         "HISTORICAL_CADENCE_POLICY": "eecf050fe95f36cb526357b3646eac668d76116f43bd94dfae1acb564ab634de",
@@ -243,7 +243,7 @@
         "TENANT_BINDING_REQUIRED": "1",
         "TENANT_ID": "client_001"
       },
-      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:7749f7d59453fcb5e3b56794546b4312b31f03d12660d221664ee1f3541c47ab",
+      "image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:450ecc9e1ac41cefb8a336fae5b9f0988289235ab605790be0b92d2ddd9634e7",
       "name": "tenant-backfill-controller",
       "timeout": "1800s"
     },

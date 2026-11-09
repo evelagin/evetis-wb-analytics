@@ -375,6 +375,37 @@ def _job_container(after: dict) -> tuple[dict | None, str | None]:
         return None, "структура шаблона не читается"
 
 
+def controller_release_findings(addr: str, change: dict) -> list[str]:
+    """Live controller release guard (09.11.2026).
+
+    The controller release (image + env) is installed by an owner-ACK package via UpdateJob, never by
+    this Terraform root; the registry pin (tenant.json historical_orchestration.release) only follows
+    the installed release. A plan that would change the image or env of the existing controller job
+    therefore means the registry pin is stale (or ahead of the installed release) — applying it would
+    roll the controller to another release, e.g. one that does not know records the live release
+    already published (CONTROL_CLOSURE certificate, 09.11), and cause an unrecoverable global STOP.
+    The only allowed update keeps image and env exactly as installed (before == after).
+    """
+    actions = set(change.get("actions", []))
+    if "update" not in actions and "delete" not in actions:
+        return []
+    before, after = change.get("before") or {}, change.get("after") or {}
+    b, b_err = _job_container(before)
+    a, a_err = _job_container(after)
+    if b_err or a_err:
+        return [f"{addr}: controller job container unreadable in plan (before/after) — release cannot be verified"]
+    out = []
+    if b.get("image") != a.get("image"):
+        out.append(f"{addr}: plan changes the installed controller image {b.get('image')!r} -> {a.get('image')!r}; "
+                   "align tenant.json historical_orchestration.release with the installed release (no Terraform release install)")
+    env = lambda c: {e.get("name"): e.get("value") for e in (c.get("env") or [])}
+    diff = sorted(k for k in set(env(b)) | set(env(a)) if env(b).get(k) != env(a).get(k))
+    if diff:
+        out.append(f"{addr}: plan changes the installed controller env {diff}; "
+                   "align tenant.json historical_orchestration.release with the installed release")
+    return out
+
+
 def job_findings(addr: str, after: dict, contract: dict) -> list[str]:
     """Правило C: чей job, от чьего SA, с какой точкой входа и каким окружением."""
     p, ozon = contract["project_id"], contract["marketplaces"].get("ozon") or {}
@@ -745,6 +776,8 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
                 if path.endswith('.image') and s!=image:
                     findings.append(f'{path}: image differs from exact qualified digest')
             findings += [f'{addr}: {x}' for x in BP.job_findings(after,block)] if controller else job_findings(addr,after,contract)
+            if controller:
+                findings += controller_release_findings(addr, change)
         if rtype == "google_cloud_scheduler_job":
             if block and after.get('name')==block['scheduler']['name']:
                 findings += [f'{addr}: {x}' for x in BP.scheduler_findings(after,block)]
