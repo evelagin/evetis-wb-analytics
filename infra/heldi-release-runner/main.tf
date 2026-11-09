@@ -140,47 +140,88 @@ resource "google_project_iam_member" "data" {
   depends_on = [google_project_iam_custom_role.data, google_service_account.exec, google_service_account.rehearse]
 }
 
-# ── Гранты: запись (только исполнитель пакета) ──────────────────────────────────────────────
+# ── Гранты на изменение production: ТОЛЬКО на окно выпуска (решение владельца 09.11) ──────────────
+# В покое у sa-heldi-release-exec нет ни одного права на изменение production: эти четыре привязки не
+# существуют, пока ACK выпуска не задаст `release_window`. С окном каждая привязка несёт условие IAM
+# `request.time` в [not_before, expires) — по истечении права гаснут сами, без apply (атрибут времени
+# поддерживают все сервисы Google Cloud: docs.cloud.google.com/iam/docs/conditions-attribute-reference,
+# прочитано через Firecrawl 09.11). Окно не длиннее 8 ч. Закрывающий apply ACK (без release_window)
+# убирает и сами привязки — до следующего выпуска.
+# Пауза tick дополнительно ограничена безопасной фазой цикла */3: вызов pause/resume разрешён IAM только
+# во 2-й минуте каждого трёхминутного цикла (минута UTC = 1, 4, …, 58; МСК = UTC+3, границы минут совпадают),
+# то есть не раньше 60 с после срабатывания tick и не позже 60 с до следующего. «Нет активного исполнения»
+# проверяет образ перед вызовом и readback после (см. регламент §4).
+locals {
+  window = var.release_window
+  in_window = local.window == null ? null : join(" && ", [
+    "request.time >= timestamp(\"${local.window.not_before}\")",
+    "request.time < timestamp(\"${local.window.expires}\")",
+  ])
+  safe_minute  = "(${join(" || ", [for m in range(1, 60, 3) : "request.time.getMinutes() == ${m}"])})"
+  window_title = local.window == null ? null : "heldi-release-${substr(local.window.ack_sha256, 0, 12)}"
+  window_note  = local.window == null ? null : "ACK ${local.window.ack_sha256}; ${local.window.not_before} — ${local.window.expires}"
+}
+
 resource "google_project_iam_member" "write" {
+  count   = local.window == null ? 0 : 1
   project = var.project_id
   role    = "projects/${var.project_id}/roles/heldiRunnerWrite"
   member  = "serviceAccount:${local.sa.exec}"
   condition {
-    title       = "heldi-runner-write-datasets"
-    description = "Только ${join(", ", var.exec_write_datasets)}."
-    expression  = local.dataset_condition["write"]
+    title       = "${local.window_title}-write"
+    description = "Только ${join(", ", var.exec_write_datasets)}; ${local.window_note}"
+    expression  = "(${local.dataset_condition["write"]}) && ${local.in_window}"
   }
   depends_on = [google_project_iam_custom_role.write, google_service_account.exec, google_service_account.rehearse]
 }
 
 # Cloud Scheduler не даёт IAM на уровне задания и НЕ поддерживает resource.name в условиях IAM
-# (docs.cloud.google.com/iam/docs/conditions-resource-attributes, прочитано через Firecrawl 09.11: сервиса нет
-# в списке; условие по имени не сработало бы вовсе). Поэтому pause/resume — на уровне проекта, без условия.
-# Остаточный риск: SA может поставить на паузу или возобновить и ozon-daily/fast/weekly. Сужение — в коде
-# (образ вызывает только …/jobs/tenant-backfill-tick:pause|resume, тест образа) и в наблюдении: heldi-health-eval
-# даёт FAIL ORDINARY_SCHEDULER_NOT_PAUSED, если обычное расписание не PAUSED. update/delete/create расписаний нет.
+# (docs.cloud.google.com/iam/docs/conditions-resource-attributes, Firecrawl 09.11). Поэтому pause/resume —
+# на проекте; сужение по времени (окно выпуска + безопасная минута цикла) — условием, по заданию —
+# кодом образа (только …/jobs/tenant-backfill-tick:pause|resume) и наблюдением (heldi-health-eval FAIL
+# ORDINARY_SCHEDULER_NOT_PAUSED). update/delete/create/run расписаний нет.
 resource "google_project_iam_member" "tick" {
-  project    = var.project_id
-  role       = "projects/${var.project_id}/roles/heldiRunnerTick"
-  member     = "serviceAccount:${local.sa.exec}"
+  count   = local.window == null ? 0 : 1
+  project = var.project_id
+  role    = "projects/${var.project_id}/roles/heldiRunnerTick"
+  member  = "serviceAccount:${local.sa.exec}"
+  condition {
+    title       = "${local.window_title}-tick"
+    description = "Безопасная минута цикла */3; ${local.window_note}"
+    expression  = "${local.in_window} && ${local.safe_minute}"
+  }
   depends_on = [google_project_iam_custom_role.tick, google_service_account.exec, google_service_account.rehearse]
 }
 
-# Неавторитетный member на задании контроллера: infra/tenant тоже ведёт его members (backfill_job_grants), не политику.
+# Неавторитетный member на задании контроллера (infra/tenant тоже ведёт members, не политику). Если политика
+# задания Cloud Run не примет условную привязку, apply упадёт (fail-closed): тогда — решение владельца,
+# без молчаливого расширения на проект.
 resource "google_cloud_run_v2_job_iam_member" "controller" {
-  project    = var.project_id
-  location   = var.region
-  name       = local.controller_job
-  role       = "projects/${var.project_id}/roles/heldiRunnerController"
-  member     = "serviceAccount:${local.sa.exec}"
+  count    = local.window == null ? 0 : 1
+  project  = var.project_id
+  location = var.region
+  name     = local.controller_job
+  role     = "projects/${var.project_id}/roles/heldiRunnerController"
+  member   = "serviceAccount:${local.sa.exec}"
+  condition {
+    title       = "${local.window_title}-controller"
+    description = local.window_note
+    expression  = local.in_window
+  }
   depends_on = [google_project_iam_custom_role.controller, google_service_account.exec, google_service_account.rehearse]
 }
 
 resource "google_service_account_iam_member" "act_as" {
+  count              = local.window == null ? 0 : 1
   service_account_id = "projects/${var.project_id}/serviceAccounts/${local.controller_sa}"
   role               = "projects/${var.project_id}/roles/heldiRunnerActAs"
   member             = "serviceAccount:${local.sa.exec}"
-  depends_on         = [google_project_iam_custom_role.act_as, google_service_account.exec]
+  condition {
+    title       = "${local.window_title}-act-as"
+    description = local.window_note
+    expression  = local.in_window
+  }
+  depends_on = [google_project_iam_custom_role.act_as, google_service_account.exec]
 }
 
 # ── Журнал: бакет только на добавление ──────────────────────────────────────────────────────
@@ -269,7 +310,7 @@ resource "google_cloud_run_v2_job" "exec" {
       }
     }
   }
-  depends_on = [google_project_iam_member.read, google_project_iam_member.data, google_project_iam_member.write,
+  depends_on = [google_project_iam_member.read, google_project_iam_member.data,
   google_storage_bucket_iam_member.creator, google_storage_bucket_iam_member.viewer]
 }
 

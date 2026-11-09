@@ -18,37 +18,61 @@ run "first_apply_creates_identities_roles_journal_but_no_jobs" {
   }
 }
 
-run "no_role_can_delete_or_touch_foreign_resources" {
+run "idle_runner_is_read_only" {
   command = plan
   assert {
-    condition = alltrue([for r in [google_project_iam_custom_role.read, google_project_iam_custom_role.data, google_project_iam_custom_role.write, google_project_iam_custom_role.tick, google_project_iam_custom_role.controller, google_project_iam_custom_role.act_as] :
-    alltrue([for p in r.permissions : length(regexall("(delete|setIamPolicy|\\.create$|\\.update$|undelete)", p)) == 0 || contains(["bigquery.tables.create", "bigquery.jobs.create", "run.jobs.update"], p)])])
-    error_message = "Нет delete/setIamPolicy; create только у таблиц и запросов, update только у задания (грант на одном задании)."
+    condition     = length(google_project_iam_member.write) == 0 && length(google_project_iam_member.tick) == 0 && length(google_cloud_run_v2_job_iam_member.controller) == 0 && length(google_service_account_iam_member.act_as) == 0
+    error_message = "Без окна выпуска у исполнителя нет ни одного права на изменение production."
   }
   assert {
-    condition     = !contains(google_project_iam_custom_role.read.permissions, "bigquery.tables.updateData") && !contains(google_project_iam_custom_role.data.permissions, "bigquery.tables.updateData")
-    error_message = "Роли чтения не пишут."
+    condition = alltrue([for r in [google_project_iam_custom_role.read, google_project_iam_custom_role.data] :
+    alltrue([for p in r.permissions : length(regexall("(delete|setIamPolicy|update|pause|resume|\\.run$|\\.create$)", p)) == 0 || p == "bigquery.jobs.create"])])
+    error_message = "Постоянные роли — только чтение (SELECT через jobs.create)."
+  }
+}
+
+run "release_window_grants_expire_by_themselves" {
+  command = plan
+  variables {
+    release_window = { ack_sha256 = "2222222222222222222222222222222222222222222222222222222222222222", not_before = "2026-11-10T09:00:00Z", expires = "2026-11-10T13:00:00Z" }
   }
   assert {
-    condition     = google_cloud_run_v2_job_iam_member.controller.name == "tenant-backfill-controller" && google_service_account_iam_member.act_as.service_account_id == "projects/mpa-t-client-001/serviceAccounts/sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com"
-    error_message = "UpdateJob/run и actAs — ровно контроллер Heldi и его SA."
+    condition = alltrue([for c in [google_project_iam_member.write[0].condition[0].expression, google_project_iam_member.tick[0].condition[0].expression, google_cloud_run_v2_job_iam_member.controller[0].condition[0].expression, google_service_account_iam_member.act_as[0].condition[0].expression] :
+    strcontains(c, "request.time >= timestamp(\"2026-11-10T09:00:00Z\")") && strcontains(c, "request.time < timestamp(\"2026-11-10T13:00:00Z\")")])
+    error_message = "Каждое право на изменение ограничено окном выпуска и гаснет само."
   }
   assert {
-    condition     = toset(google_project_iam_custom_role.tick.permissions) == toset(["cloudscheduler.jobs.pause", "cloudscheduler.jobs.resume"])
-    error_message = "По расписаниям — только pause/resume (без update/delete/create/run)."
+    condition     = strcontains(google_project_iam_member.tick[0].condition[0].expression, "request.time.getMinutes() == 1 ||") && strcontains(google_project_iam_member.tick[0].condition[0].expression, "request.time.getMinutes() == 58)") && !strcontains(google_project_iam_member.tick[0].condition[0].expression, "request.time.getMinutes() == 0 ") && !strcontains(google_project_iam_member.tick[0].condition[0].expression, "request.time.getMinutes() == 2 ")
+    error_message = "pause/resume tick — только во 2-й минуте цикла */3 (не на границе срабатывания)."
   }
   assert {
-    condition     = !strcontains(google_project_iam_member.write.condition[0].expression, "ozon_raw") && !strcontains(google_project_iam_member.write.condition[0].expression, "ref/") && strcontains(google_project_iam_member.write.condition[0].expression, "tenant_locks")
-    error_message = "Запись — только tenant_ops/tenant_locks."
+    condition     = google_cloud_run_v2_job_iam_member.controller[0].name == "tenant-backfill-controller" && google_service_account_iam_member.act_as[0].service_account_id == "projects/mpa-t-client-001/serviceAccounts/sa-backfill-controller@mpa-t-client-001.iam.gserviceaccount.com" && google_project_iam_member.write[0].member == "serviceAccount:sa-heldi-release-exec@mpa-t-client-001.iam.gserviceaccount.com" && google_project_iam_member.tick[0].member == google_project_iam_member.write[0].member
+    error_message = "Права окна — только у sa-heldi-release-exec, только на контроллер Heldi и его SA."
   }
+  assert {
+    condition     = !strcontains(google_project_iam_member.write[0].condition[0].expression, "ozon_raw") && strcontains(google_project_iam_member.write[0].condition[0].expression, "tenant_locks") && toset(google_project_iam_custom_role.tick.permissions) == toset(["cloudscheduler.jobs.pause", "cloudscheduler.jobs.resume"])
+    error_message = "Запись — только tenant_ops/tenant_locks; по расписаниям — только pause/resume."
+  }
+}
+
+run "reject_window_longer_than_8h" {
+  command = plan
+  variables {
+    release_window = { ack_sha256 = "2222222222222222222222222222222222222222222222222222222222222222", not_before = "2026-11-10T09:00:00Z", expires = "2026-11-10T17:00:01Z" }
+  }
+  expect_failures = [var.release_window]
+}
+
+run "reject_inverted_window" {
+  command = plan
+  variables {
+    release_window = { ack_sha256 = "2222222222222222222222222222222222222222222222222222222222222222", not_before = "2026-11-10T13:00:00Z", expires = "2026-11-10T09:00:00Z" }
+  }
+  expect_failures = [var.release_window]
 }
 
 run "rehearsal_identity_never_writes_production" {
   command = plan
-  assert {
-    condition     = google_project_iam_member.write.member == "serviceAccount:sa-heldi-release-exec@mpa-t-client-001.iam.gserviceaccount.com" && google_project_iam_member.tick.member == google_project_iam_member.write.member && google_cloud_run_v2_job_iam_member.controller.member == google_project_iam_member.write.member && google_service_account_iam_member.act_as.member == google_project_iam_member.write.member
-    error_message = "Права записи — только у sa-heldi-release-exec."
-  }
   assert {
     condition     = strcontains(google_storage_bucket_iam_member.creator["rehearse"].condition[0].expression, "/objects/rehearsal/") && !strcontains(google_storage_bucket_iam_member.creator["rehearse"].condition[0].expression, "/objects/journal/")
     error_message = "Репетиция пишет только rehearsal/ своего бакета."

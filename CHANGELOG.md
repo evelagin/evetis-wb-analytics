@@ -8,6 +8,8 @@
 (хранение 400 сут), задания `heldi-release-exec`/`heldi-release-rehearse` (`max_retries = 0`, образ по digest,
 пины ACK/пакета/исходника в env). Регламент — `docs/ops/HELDI_RELEASE_RUNNER.md`. Read-only plan 09.11: первый
 apply 21 to add, второй +2 задания. CI: offline validate + 7 mock-тестов.
+Решение владельца 09.11: права на изменение production — только на окно выпуска ≤ 8 ч (`release_window`, условие
+IAM `request.time`, гаснут сами), pause/resume — только во 2-й минуте цикла */3; в покое — только чтение (17 to add).
 
 ## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
 

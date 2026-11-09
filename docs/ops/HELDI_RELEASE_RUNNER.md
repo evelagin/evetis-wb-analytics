@@ -1,6 +1,10 @@
 # Серверный исполнитель пакетов выпуска и репетиций Heldi (client_001)
 
 Статус: **дизайн**, Terraform и тесты в PR. **Ничего не применено.** Применение — только по OWNER ACK (§7).
+
+Решение владельца 09.11: разработка одобрена при УЗКИХ правах и СТРОГОЙ безопасной паузе. Постоянного права
+менять production нет: в покое исполнитель только читает; права на изменение выдаёт ACK конкретного выпуска
+на окно ≤ 8 ч, и они гаснут сами (условие IAM `request.time`).
 Корень Terraform: `infra/heldi-release-runner/`. Поток E (мандат владельца 09.11, «долговечный runner релизов»).
 
 ## 1. Зачем
@@ -23,17 +27,35 @@
 | SA | `sa-heldi-rehearse` | репетиция на копии, production только читается |
 | Роль | `heldiRunnerRead` (проект, обе SA) | `bigquery.jobs.create`, `cloudscheduler.jobs.get/list`, `logging.logEntries.list`, `run.executions.get/list`, `run.jobs.get/list`, `run.operations.get` |
 | Роль | `heldiRunnerData` (проект, условие на ozon_raw, ref, tenant_ops, tenant_locks; обе SA) | `bigquery.datasets.get`, `bigquery.tables.get/getData/list` |
-| Роль | `heldiRunnerWrite` (проект, условие на tenant_ops, tenant_locks; только exec) | `bigquery.tables.create`, `bigquery.tables.updateData` |
-| Роль | `heldiRunnerTick` (проект, только exec) | `cloudscheduler.jobs.pause`, `cloudscheduler.jobs.resume` |
-| Роль | `heldiRunnerController` (грант на задании `tenant-backfill-controller`, только exec) | `run.jobs.get`, `run.jobs.run`, `run.jobs.update` |
-| Роль | `heldiRunnerActAs` (грант на SA `sa-backfill-controller`, только exec) | `iam.serviceAccounts.actAs` |
+| Роль | `heldiRunnerWrite` (проект, условие: tenant_ops, tenant_locks **и окно выпуска**; только exec, только в окне) | `bigquery.tables.create`, `bigquery.tables.updateData` |
+| Роль | `heldiRunnerTick` (проект, условие: окно выпуска **и безопасная минута цикла */3**; только exec, только в окне) | `cloudscheduler.jobs.pause`, `cloudscheduler.jobs.resume` |
+| Роль | `heldiRunnerController` (грант на задании `tenant-backfill-controller`, условие: окно выпуска; только exec, только в окне) | `run.jobs.get`, `run.jobs.run`, `run.jobs.update` |
+| Роль | `heldiRunnerActAs` (грант на SA `sa-backfill-controller`, условие: окно выпуска; только exec, только в окне) | `iam.serviceAccounts.actAs` |
 | Бакет | `mpa-t-client-001-heldi-release-journal` | журнал и логи, EUROPE-WEST1, только добавление |
 | Cloud Run Job | `heldi-release-exec` | образ пакета по digest, `max_retries = 0`, таймаут 6 ч |
 | Cloud Run Job | `heldi-release-rehearse` | тот же образ, режим копии, таймаут 24 ч |
 
 Read-only plan 09.11 (пустой локальный state, провайдер читает живой проект):
-- первый apply (без пинов пакета): **21 to add, 0 to change, 0 to destroy** (SA, роли, гранты, бакет; заданий нет);
-- второй apply (пины + digest-заглушки): **23 to add** от нуля, то есть +2 задания поверх первого.
+- покой (первый apply, без окна и пинов): **17 to add, 0 to change, 0 to destroy** — SA, 6 ролей, только читающие
+  гранты, бакет; ни одной привязки на изменение production;
+- окно выпуска (`release_window`): **21 to add** от нуля = +4 привязки с условием времени поверх покоя;
+- окно + задания (пины и digest-заглушки): **23 to add** от нуля = ещё +2 задания.
+
+## 2а. Окно выпуска и безопасная пауза
+
+- `release_window = {ack_sha256, not_before, expires}` (UTC, не длиннее 8 ч; иначе plan отклоняет переменную).
+  Четыре привязки на изменение создаются только с окном, и у каждой условие
+  `request.time >= timestamp(not_before) && request.time < timestamp(expires)` — по истечении права гаснут сами,
+  даже если закрывающий apply не сделан. Закрывающий apply ACK (без окна) убирает привязки: −4.
+- `pause/resume` tick дополнительно разрешены IAM только во 2-й минуте каждого трёхминутного цикла (минуты UTC
+  1, 4, …, 58): не раньше 60 с после срабатывания `*/3` и не позже 60 с до следующего. Вызов на границе тика
+  невозможен на уровне IAM, а не только по договорённости кода.
+- Код образа (контракт `heldi_runner.entry`, следующий PR) перед pause: ни одного исполнения
+  `tenant-backfill-controller` без `completionTime`; после pause — readback: tick PAUSED и за это время не
+  появилось новых исполнений. Иначе стадия кончается без дальнейших записей (как freeze пакетов C-R/eca0335a).
+  Пауза посреди пробуждения (STOP bf7d1370, 28.10) так невозможна дважды: и по времени, и по исполнениям.
+- Запись журнала в свой бакет (journal/, logs/) остаётся и в покое: это не production, объекты только
+  добавляются.
 
 Чего нет и не будет: Scheduler, SA-будильника, `roles/*` (кроме `storage.objectCreator/objectViewer` на бакете),
 грантов на ozon_raw/ref/ozon_mart/analytics_share на запись, `delete`/`setIamPolicy` где-либо, доступа к EVETIS.
@@ -45,10 +67,10 @@ Read-only plan 09.11 (пустой локальный state, провайдер 
   нет `tables.delete`, `tables.update`, `datasets.update`.
 - **Run.** Гранты на уровне задания `tenant-backfill-controller`. Задания runtime Ozon (`ozon-runtime-*`)
   и `tenant-control` недоступны. `actAs` — ровно на SA контроллера (UpdateJob сохраняет его SA).
-- **Scheduler — остаточный риск.** У Cloud Scheduler нет IAM на уровне задания, и он не поддерживает
-  `resource.name` в условиях IAM (`docs.cloud.google.com/iam/docs/conditions-resource-attributes`, прочитано через
-  Firecrawl 09.11). Поэтому `pause/resume` выдаются на проект: SA технически может поставить на паузу или возобновить
-  и `ozon-daily/fast/weekly`. Сужение: код образа вызывает только `…/jobs/tenant-backfill-tick:pause|resume`
+- **Scheduler — остаточный риск (сужен временем).** У Cloud Scheduler нет IAM на уровне задания, и он не
+  поддерживает `resource.name` в условиях IAM (`docs.cloud.google.com/iam/docs/conditions-resource-attributes`,
+  Firecrawl 09.11). Поэтому `pause/resume` — на проекте, но только в окне выпуска и только в безопасную минуту
+  цикла: в этих пределах SA технически может поставить на паузу или возобновить и `ozon-daily/fast/weekly`. Сужение: код образа вызывает только `…/jobs/tenant-backfill-tick:pause|resume`
   (так уже устроен `send()` пакетов: бюджет запросов на стадию); наблюдатель `heldi-health-eval` даёт FAIL
   `ORDINARY_SCHEDULER_NOT_PAUSED`. `update/delete/create/run` расписаний нет.
 - **Почему не SA контроллера.** Исполнитель меняет само задание контроллера; общая личность смешала бы
@@ -107,10 +129,13 @@ Free tier Cloud Run (180 000 vCPU-с) считается на платёжный
 
 ## 7. Порядок включения (каждый шаг — по OWNER ACK)
 
-1. **Первый apply** — личности, роли, гранты, бакет; заданий нет. Ожидается 21 to add, 0 change, 0 destroy.
+1. **Первый apply (покой)** — личности, роли, только читающие гранты, бакет; заданий и прав на изменение нет.
+   Ожидается 17 to add, 0 change, 0 destroy.
 2. **Код `tools/heldi_runner`** (entry, cloudbuild, Dockerfile, тесты) — отдельный PR, без ACK.
-3. **Первый пакет на сервере** — его собственный ACK: сборка образа, второй apply (+2 задания), затем стадии.
-   Репетиция идёт первой (`heldi-release-rehearse`), стадии записи — только после её PASS.
+3. **Каждый выпуск на сервере** — собственный ACK пакета: сборка образа; apply с пинами (+2 задания, если их ещё нет)
+   и репетиция (`heldi-release-rehearse`, только чтение); после её PASS — apply с `release_window` (+4 привязки,
+   окно ≤ 8 ч), стадии записи; закрывающий apply без окна (−4). Если закрывающий apply не сделан — права всё равно
+   гаснут в `expires`.
 4. Откат: plan/apply без `exec_image`/`rehearse_image`/`package_pins` (−2 задания); полностью — destroy корня.
    Бакет с непустым журналом не удаляется (`force_destroy = false`, политика хранения) — это намеренно.
    Пользовательские роли после удаления 7 суток нельзя создать с тем же id (повтор — через undelete).

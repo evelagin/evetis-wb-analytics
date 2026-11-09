@@ -107,3 +107,24 @@ variable "journal_retention_days" {
     error_message = "От 90 до 3650 дней."
   }
 }
+
+# Окно выпуска (решение владельца 09.11): права на изменение production существуют только на время
+# выпуска, заданного ACK. null — покой: у исполнителя только чтение. Время — UTC, RFC 3339 с «Z».
+variable "release_window" {
+  description = "Окно выпуска: ack_sha256 (64 hex), not_before и expires (RFC 3339 UTC), не длиннее 8 ч."
+  type = object({
+    ack_sha256 = string
+    not_before = string
+    expires    = string
+  })
+  default = null
+  validation {
+    condition = var.release_window == null || try(
+      can(regex("^[0-9a-f]{64}$", var.release_window.ack_sha256)) &&
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.release_window.not_before)) &&
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.release_window.expires)) &&
+      timecmp(var.release_window.not_before, var.release_window.expires) < 0 &&
+    timecmp(var.release_window.expires, timeadd(var.release_window.not_before, "8h")) <= 0, false)
+    error_message = "Окно выпуска: ack_sha256 64 hex, not_before < expires, не длиннее 8 ч, время UTC вида 2026-11-10T09:00:00Z."
+  }
+}
