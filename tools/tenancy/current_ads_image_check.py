@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 import json
 from types import SimpleNamespace
-from tools.tenancy import current_ads as ADS, ads_catchup as AC, current_controller as CUR, current_policy as P
+from tools.tenancy import current_ads as ADS, ads_catchup as AC, current_controller as CUR, current_policy as P, fbo_refresh as FBR
 from tools.tenancy import finance_catchup as FC, current_contract as K, durable_plan as D, tenant_backfill as BF
 from pipelines.ozon.runtime import full_resume as FR
 from tools.tenancy.validation import parse_tenant_json
@@ -300,7 +300,8 @@ def order_check():
                               (DIAG, 'queued', lambda b: None), (FC, 'scan', lambda *x, **k: fin or none), (FC, 'Backend', lambda *x: None),
                               (FC, 'tick', lambda b, aa, d, it: calls.append('fin:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}),
                               (AC, 'scan', lambda *x, **k: ads or none), (AC, 'Backend', lambda *x: None),
-                              (AC, 'tick', lambda b, aa, d, it: calls.append('ads:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1})):
+                              (AC, 'tick', lambda b, aa, d, it: calls.append('ads:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}),
+                              (FBR, 'scan', lambda *x, **k: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]})):
                 s.enter_context(patched(obj, n, v))
             result = CUR.wake(base, [], {}, {}, set())
         return calls, result

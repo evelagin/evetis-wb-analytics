@@ -104,7 +104,7 @@ def test_retained_f507_acceptance_survives_the_runtime_succession(monkeypatch):
 def test_same_day_plan_of_the_original_runtime_is_never_dispatched_and_never_stops(succession):
     """Plans elected under C the same Moscow day stay read-back only: the entity waits for the next day (no STOP)."""
     from types import SimpleNamespace
-    from tools.tenancy import controller_cadence as CC, recent_priority as RP, fbo_diagnostic_owner as DIAG, finance_catchup as FC, ads_catchup as AC, current_ads as ADS
+    from tools.tenancy import controller_cadence as CC, recent_priority as RP, fbo_diagnostic_owner as DIAG, finance_catchup as FC, ads_catchup as AC, current_ads as ADS, fbo_refresh as FBR
     b, policy, _, _ = succession
     day = CHECK.DAY
     def item(entity, original):
@@ -122,7 +122,8 @@ def test_same_day_plan_of_the_original_runtime_is_never_dispatched_and_never_sto
             CHECK.patched(C, 'cycles', lambda bb, pp: {day.isoformat(): {}}), CHECK.patched(C, 'plans', lambda bb, pp, d: (records, items)), \
             CHECK.patched(C, 'validate_certificate', lambda *a: a[3]), CHECK.patched(C, 'Backend', lambda *a: None), CHECK.patched(C, 'source_tick', tick), \
             CHECK.patched(DIAG, 'queued', lambda bb: None), CHECK.patched(FC, 'scan', lambda *a: {'pending': []}), CHECK.patched(FC, 'wake', lambda *a: None), \
-            CHECK.patched(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), CHECK.patched(ADS, 'qualified', lambda bb: False):
+            CHECK.patched(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), CHECK.patched(ADS, 'qualified', lambda bb: False), \
+            CHECK.patched(FBR, 'scan', lambda *a, **k: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
         assert C.wake(base, [], {}, {}, set()) is None
     assert 'stocks' not in ticks and ticks[:1] == ['prices'] and set(ticks) <= {'prices', 'finance_accrual'}
     assert C.original_runtime_plan(policy, items['stocks']['plan']) and not C.original_runtime_plan(policy, items['prices']['plan'])

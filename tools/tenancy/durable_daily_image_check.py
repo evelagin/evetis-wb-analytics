@@ -309,12 +309,13 @@ def current_hold_check():
             assert DD.hold_current(base.wake_activity, e, series('9' * 64, 1), str(d), today=True)
             return {'status': 'WAITING', 'source_dispatches': 0, 'operational_entity': e, 'basis': 'CURRENT_ENTITY_EVIDENCE_HOLD'}
         return {'status': 'DISPATCHED', 'source_dispatches': 1, 'operational_entity': e}
-    from tools.tenancy import recent_priority as RP, fbo_diagnostic_owner as DIAG, finance_catchup as FC, ads_catchup as AC, current_ads as ADS
+    from tools.tenancy import recent_priority as RP, fbo_diagnostic_owner as DIAG, finance_catchup as FC, ads_catchup as AC, current_ads as ADS, fbo_refresh as FBR
     with patched(CUR, 'policy', lambda b: p), patched(CC, 'ensure', lambda b: None), patched(RP, 'pending_receipts', lambda *a: []), \
          patched(CUR, 'cycles', lambda b, pp: {str(day): {}}), patched(CUR, 'plans', lambda b, pp, d: (records, items)), \
          patched(CUR, 'validate_certificate', lambda *a: a[3]), patched(CUR, 'Backend', lambda *a: None), patched(CUR, 'source_tick', loop_tick), \
          patched(DIAG, 'queued', lambda b: None), patched(FC, 'scan', lambda *a: {'pending': []}), patched(FC, 'wake', lambda *a: None), \
-         patched(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), patched(ADS, 'qualified', lambda b: False):
+         patched(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), patched(ADS, 'qualified', lambda b: False), \
+         patched(FBR, 'scan', lambda *a, **k: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
         result = CUR.wake(base, [], {}, {}, set())
     assert ticks == ['stocks', 'prices'] and result['operational_entity'] == 'prices'
     assert base.wake_activity['current_entities'] == {'catalog': 'COMPLETE', 'stocks': 'UNKNOWN', 'prices': 'STALE', 'finance_accrual': 'STALE'}

@@ -18,7 +18,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 import json
 from types import SimpleNamespace
-from tools.tenancy import fbo_refresh as FBR, finance_catchup as FC, current_controller as CUR
+from tools.tenancy import fbo_refresh as FBR, finance_catchup as FC, current_controller as CUR, ads_catchup as AC, current_ads as ADS
 from tools.tenancy import current_contract as K, durable_plan as D, tenant_backfill as BF
 from tools.tenancy.finance_catchup_image_check import Store, patched, rejects, fixture as catchup_fixture
 from tools.tenancy.validation import parse_tenant_json
@@ -281,7 +281,8 @@ def order_check():
              patched(FC, 'wake', lambda b, s, ce, pa: catchup_result), \
              patched(FBR, 'scan', lambda b, pp: scope), patched(FBR, 'Backend', lambda *x: SimpleNamespace()), \
              patched(FBR, 'tick', lambda b, aa, s, it: calls.append('refresh:' + str(s)) or {'status': 'DISPATCHED', 'source_dispatches': 1}), \
-             patched(FBR, 'document', lambda aa, u: {'ack_hash': 'x', 'runtime_plan': {}}), patched(FBR, 'shard', lambda *x: 'f' * 64):
+             patched(FBR, 'document', lambda aa, u: {'ack_hash': 'x', 'runtime_plan': {}}), patched(FBR, 'shard', lambda *x: 'f' * 64), \
+             patched(AC, 'scan', lambda *x, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), patched(ADS, 'qualified', lambda b: False):
             result = CUR.wake(base, [], {}, {}, set())
         return calls, result
     item0 = {'unit': {}, 'plan': {}, 'shard': 'x'}
@@ -309,6 +310,8 @@ def release_check():
     from tools.tenancy.validation import parse_tenant_json
     c = BF.target('client_001'); env = c['orchestration']['job']['env']
     rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/2253a311871fb4a3b9e4644d5c5de9f18d37a407.json').read_text())
+    # The candidate pairs the packaged runtime of this tree (runtime succession): only the flag chain is under test.
+    rel = dict(rel, runtime_image=c['marketplaces']['ozon']['runtime_image'], runtime_implementation_hash=BF.B.implementation_hash())
     settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
     base = dict(rel, finance_catchup_version=1, control_closure_recovery_version=1, durable_daily_version=1,
                 verification=dict(rel['verification'], finance_catchup_adapter='PASS', control_closure_recovery_adapter='PASS',

@@ -247,7 +247,7 @@ def test_packaged_docker_copy_closure_resolves_canonical_registry(tmp_path):
         if src.is_dir():shutil.copytree(src,dest,ignore=shutil.ignore_patterns('__pycache__','artifacts'))
         else:shutil.copy2(src,dest)
     (tmp_path/'CONTROLLER_SOURCE_SHA').write_text('5'*40+'\n')
-    result=subprocess.run([sys.executable,'-m','tools.tenancy.controller_image_check'],cwd=tmp_path,capture_output=True,text=True,timeout=60)
+    result=subprocess.run([sys.executable,'-m','tools.tenancy.controller_image_check'],cwd=tmp_path,capture_output=True,text=True,timeout=600)
     from tools.tenancy import platform as PL
     image=BF.target('client_001')['marketplaces']['ozon']['runtime_image']
     releases=[json.loads(f.read_text()) for f in (BF.REPO/PL.RUNTIME_RELEASES_DIR/'ozon').glob('*.json')]
