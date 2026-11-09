@@ -36,18 +36,24 @@ variable "freshness_enabled" {
   default     = false
 }
 
-# Сущности, которые текущий контур обязан сертифицировать каждые сутки МСК
-# (tools/tenancy/current_policy.py ORDER). Реклама и FBO останутся в инциденте,
-# пока их загрузка не восстановлена: это правда о данных, а не ложная тревога.
-variable "expected_entities" {
-  description = "Сущности суточного контура, свежесть которых проверяется."
-  type        = list(string)
-  default = ["catalog", "stocks", "prices", "finance_accrual",
-  "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"]
+# Группы сущностей суточного контура МСК (tools/tenancy/current_policy.py ORDER), свежесть которых
+# проверяется: один инцидент на группу. Реклама и заказы (FBO) останутся в инциденте, пока их
+# загрузка не восстановлена: это правда о данных, а не ложная тревога (одно письмо на открытие).
+variable "freshness_groups" {
+  description = "Группа → сущности суточного контура (catalog, stocks, prices, finance, orders, ads)."
+  type        = map(list(string))
+  default = {
+    catalog = ["catalog"]
+    stocks  = ["stocks"]
+    prices  = ["prices"]
+    finance = ["finance_accrual"]
+    orders  = ["fbo_postings"]
+    ads     = ["ads_campaigns", "ads_expense_daily", "ads_sku_daily"]
+  }
   validation {
-    condition = length(var.expected_entities) > 0 && alltrue([for e in var.expected_entities : contains(
-    ["catalog", "stocks", "prices", "finance_accrual", "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"], e)])
-    error_message = "Только сущности суточного контура (current_policy.ORDER)."
+    condition = length(var.freshness_groups) > 0 && alltrue([for g, es in var.freshness_groups : can(regex("^[a-z_]+$", g)) && length(es) > 0 && alltrue([for e in es : contains(
+    ["catalog", "stocks", "prices", "finance_accrual", "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"], e)])])
+    error_message = "Только сущности суточного контура (current_policy.ORDER), непустые группы."
   }
 }
 

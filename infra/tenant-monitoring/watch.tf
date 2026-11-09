@@ -70,7 +70,7 @@ resource "google_logging_metric" "controller_crash" {
 }
 
 resource "google_monitoring_alert_policy" "controller_crash" {
-  display_name = "Heldi ${local.who}: контроллер упал (необработанное исключение)"
+  display_name = "Heldi ${local.who}: контроллер упал (Traceback)"
   combiner     = "OR"
   severity     = "CRITICAL"
   conditions {
@@ -85,6 +85,7 @@ resource "google_monitoring_alert_policy" "controller_crash" {
   alert_strategy { notification_prompts = ["OPENED"] }
   notification_channels = local.stop_channels
   documentation {
+    subject   = "Heldi ${var.tenant_id}: контроллер упал (необработанное исключение)"
     mime_type = "text/markdown"
     content   = "Исполнение контроллера ${local.who} завершилось необработанным исключением (Traceback, exit 1): решение тика могло остаться без закрытия, следующий тик, вероятно, запишет STOP (так было 25.10: kc4bg 20:09Z → STOP aaf68ede 20:10Z). Проверить исполнение по метке run.googleapis.com/execution_name в stderr. ${local.watch_runbook}"
   }
@@ -130,6 +131,7 @@ resource "google_monitoring_alert_policy" "controller_silence" {
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
   notification_channels = [google_monitoring_notification_channel.owner_email.id]
   documentation {
+    subject   = "Heldi ${var.tenant_id}: контроллер молчит 20 мин"
     mime_type = "text/markdown"
     content   = "Контроллер ${local.who} 20 мин не напечатал ни одного итогового статуса: тик на паузе (в т.ч. плановой — тогда это ожидаемо), Scheduler не будит задание, исполнения падают до вывода статуса или зависли. ${local.watch_runbook}"
   }
@@ -372,6 +374,7 @@ resource "google_monitoring_alert_policy" "watch_watchdog" {
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
   notification_channels = local.stop_channels
   documentation {
+    subject   = "Heldi ${var.tenant_id}: наблюдатель не работает 75 мин"
     mime_type = "text/markdown"
     content   = "Наблюдатель Heldi 75 мин не завершил ни одной оценки: состояние контроллера сейчас НЕИЗВЕСТНО по слою 2 (слой 1 — STOP, падение, тишина — продолжает работать). Проверить Scheduler heldi-health-eval и строки UNAVAILABLE/stderr задания. ${local.watch_runbook}"
   }

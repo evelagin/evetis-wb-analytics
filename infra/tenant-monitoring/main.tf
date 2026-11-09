@@ -24,10 +24,18 @@ locals {
   # absent_over_time принял бы ряд из одних нулей за «есть данные» (проверено 20.10 на ряде
   # completed_execution_count: окно из 2–3 нулевых точек → absent пусто, increase 0).
   # Нет ряда вовсе → `or vector(0)`. Сущность ставится label_replace: инцидент на сущность.
-  freshness_query = join(" or ", [for e in var.expected_entities :
-  "label_replace((sum(increase(logging_googleapis_com:user_tenant_current_certified{monitored_resource=\"cloud_run_job\",entity=\"${e}\"}[24h])) or vector(0)), \"entity\", \"${e}\", \"\", \"\") < 1"])
+  # Группа (catalog, stocks, prices, finance, orders, ads) — один инцидент: метка entity = имя группы,
+  # а `or` отбрасывает справа ряд с той же меткой, поэтому три устаревшие сущности рекламы дают ОДНО письмо.
+  freshness_query = join(" or ", flatten([for g in sort(keys(var.freshness_groups)) : [for e in var.freshness_groups[g] :
+  "label_replace((sum(increase(logging_googleapis_com:user_tenant_current_certified{monitored_resource=\"cloud_run_job\",entity=\"${e}\"}[24h])) or vector(0)), \"entity\", \"${g}\", \"\", \"\") < 1"]]))
   # То же для завершений контроллера: нет ряда и ряд из нулей — оба «0 успешных завершений».
-  completions_query = "(sum(increase(run_googleapis_com:job_completed_execution_count{monitored_resource=\"cloud_run_job\",job_name=\"tenant-backfill-controller\",result=\"succeeded\"}[30m])) or vector(0)) < 1"
+  # Окно 60 мин (было 30): бэктест 30.10–05.11 — 25 ложных открытий при 30 мин (WAIT-исполнения
+  # завершаются ошибкой, разрывы между успешными до 49 мин), 0 при 60 мин.
+  completions_query = "(sum(increase(run_googleapis_com:job_completed_execution_count{monitored_resource=\"cloud_run_job\",job_name=\"tenant-backfill-controller\",result=\"succeeded\"}[60m])) or vector(0)) < 1"
+  # STOP: окно 3 ч (было 10 мин). Под STOP строки STOPPED идут не на каждом тике (между ними
+  # WAIT_ACTIVE_CONTROLLER), разрывы 05.11–09.11 до 133 мин. При 10 мин инцидент закрывался и
+  # открывался заново: за STOP eca0335a — 58 инцидентов и 58 писем. При 3 ч — один.
+  stop_query = "sum(increase(logging_googleapis_com:user_tenant_controller_stopped{monitored_resource=\"cloud_run_job\"}[3h])) > 0"
 }
 
 resource "terraform_data" "target_guard" {
@@ -120,8 +128,10 @@ resource "google_logging_metric" "delivery_test" {
   depends_on       = [terraform_data.target_guard]
 }
 
-# ── Политики. PromQL-инцидент открывается один раз и закрывается сам через 270 с после
-# того, как условие перестало выполняться: письмо на открытие, без повторов на тиках. ──
+# ── Политики. PromQL-инцидент закрывается сам через ~5 мин после того, как условие перестало
+# выполняться, и следующее срабатывание открывает НОВЫЙ инцидент с новым письмом. Поэтому окно
+# условия должно перекрывать самый длинный штатный разрыв сигнала (замер 05.11–09.11: 58 писем
+# за один STOP при окне 10 мин). Тема каждого письма начинается с «Heldi». ──
 resource "google_monitoring_alert_policy" "controller_stopped" {
   display_name = "Heldi ${local.who}: контроллер в STOP"
   combiner     = "OR"
@@ -129,7 +139,7 @@ resource "google_monitoring_alert_policy" "controller_stopped" {
   conditions {
     display_name = "Тики завершаются STOPPED"
     condition_prometheus_query_language {
-      query                     = "sum(increase(logging_googleapis_com:user_tenant_controller_stopped{monitored_resource=\"cloud_run_job\"}[10m])) > 0"
+      query                     = local.stop_query
       duration                  = "0s"
       evaluation_interval       = "60s"
       disable_metric_validation = true
@@ -139,6 +149,9 @@ resource "google_monitoring_alert_policy" "controller_stopped" {
   alert_strategy { notification_prompts = ["OPENED"] }
   notification_channels = local.stop_channels
   documentation {
+    # Тема письма. Без неё Google пишет «[ALERT - Critical] Тики завершаются STOPPED on __missing__»:
+    # ни слова о Heldi, письмо уходит во вкладку «Оповещения» Gmail (так было 05.11).
+    subject   = "Heldi STOP: контроллер ${var.tenant_id} остановлен, данные не обновляются"
     mime_type = "text/markdown"
     content   = "Контроллер ${local.who} остановлен STOP: в Ozon он больше ничего не отправляет (fail-closed), каждый тик завершается STOPPED. Данные не обновляются до разрешения STOP новым OWNER ACK. Причина — в логе тика (jsonPayload.reason, diagnostic). ${local.runbook}"
   }
@@ -164,6 +177,7 @@ resource "google_monitoring_alert_policy" "tick_attempt_failed" {
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
   notification_channels = [google_monitoring_notification_channel.owner_email.id]
   documentation {
+    subject   = "Heldi ${var.tenant_id}: Scheduler не запускает контроллер"
     mime_type = "text/markdown"
     content   = "Расписание tenant-backfill-tick срабатывает, но исполнение контроллера не создаётся — логов контроллера не будет. Код в метке status: PERMISSION_DENIED — у SA расписания нет run.invoker; NOT_FOUND — задание переименовано или удалено; UNAVAILABLE/DEADLINE_EXCEEDED — отказ API. ${local.runbook}"
   }
@@ -177,10 +191,10 @@ resource "google_monitoring_alert_policy" "controller_completions" {
   combiner     = "OR"
   severity     = "ERROR"
   conditions {
-    display_name = "30 мин без succeeded-исполнений tenant-backfill-controller"
+    display_name = "60 мин без succeeded-исполнений tenant-backfill-controller"
     condition_prometheus_query_language {
-      # Тик каждые 3 мин: 30 мин — 10 тиков. Одиночные штатные ожидания (WAITING_READ_RETRY
-      # завершаются с ошибкой) не мешают соседним тикам завершиться успешно.
+      # Тик каждые 3 мин: 60 мин — 20 тиков. Штатные ожидания (WAITING_READ_RETRY завершаются
+      # с ошибкой) не мешают соседним тикам завершиться успешно.
       query               = local.completions_query
       duration            = "0s"
       evaluation_interval = "60s"
@@ -189,22 +203,27 @@ resource "google_monitoring_alert_policy" "controller_completions" {
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
   notification_channels = [google_monitoring_notification_channel.owner_email.id]
   documentation {
+    subject   = "Heldi ${var.tenant_id}: контроллер 60 мин без успешных завершений"
     mime_type = "text/markdown"
-    content   = "Контроллер ${local.who} 30 мин не завершается успешно: tick на паузе (в т.ч. плановой или аварийной), Scheduler не запускает задание, исполнения падают или зависли, либо действует STOP (тогда открыт и инцидент STOP). ${local.runbook}"
+    content   = "Контроллер ${local.who} 60 мин не завершается успешно: tick на паузе (в т.ч. плановой или аварийной), Scheduler не запускает задание, исполнения падают или зависли, либо действует STOP (тогда открыт и инцидент STOP). ${local.runbook}"
   }
   user_labels = { tenant = var.tenant_id, signal = "controller_completions" }
 }
 
 resource "google_monitoring_alert_policy" "data_freshness" {
-  display_name = "Heldi ${local.who}: данные сущности не обновлены 24 ч"
+  display_name = "Heldi ${local.who}: данные сущности не обновлены 27 ч"
   combiner     = "OR"
   severity     = "WARNING"
   enabled      = var.freshness_enabled
   conditions {
-    display_name = "Нет сертификата суток по сущности 24 ч"
+    display_name = "Нет сертификата суток по группе сущностей 27 ч"
     condition_prometheus_query_language {
+      # Окно 24 ч + удержание 3 ч = тревога через 27 ч после последнего сертификата. Сертификат
+      # суток приходит раз в сутки, разрывы 29.10–05.11 — 23,6–24,5 ч: при удержании 30 мин окно
+      # 24 ч открывало бы ложный инцидент почти каждую ночь. Пропущенная загрузка суток видна
+      # к ~04:00 МСК следующего дня (сертификаты 00:20–01:45 МСК).
       query                     = local.freshness_query
-      duration                  = "1800s"
+      duration                  = "10800s"
       evaluation_interval       = "300s"
       disable_metric_validation = true
     }
@@ -212,8 +231,9 @@ resource "google_monitoring_alert_policy" "data_freshness" {
   alert_strategy { notification_prompts = ["OPENED", "CLOSED"] }
   notification_channels = [google_monitoring_notification_channel.owner_email.id]
   documentation {
+    subject   = "Heldi ${var.tenant_id}: данные не обновлены 27 ч (группа — в письме, метка entity)"
     mime_type = "text/markdown"
-    content   = "У сущности (метка entity) 24 ч нет сертификата суток: данные не записаны или не сверены, даже если исполнения контроллера и runtime успешны (например, 429 рекламы или исключённый FBO). Окно = SLA политики суточного контура (86400 с). Проверка покрытия: tenant_ops.V_COVERAGE_DAILY. ${local.runbook}"
+    content   = "У группы сущностей (метка entity: catalog, stocks, prices, finance, orders, ads) 27 ч нет сертификата суток: данные не записаны или не сверены, даже если исполнения контроллера и runtime успешны (например, 429 рекламы или исключённый FBO). Окно = SLA политики суточного контура (86400 с) + 3 ч удержания. Проверка покрытия: tenant_ops.V_COVERAGE_DAILY. ${local.runbook}"
   }
   user_labels = { tenant = var.tenant_id, signal = "data_freshness" }
   # Метрика должна существовать до политики, ссылающейся на неё по имени.
