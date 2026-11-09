@@ -153,7 +153,7 @@
       },
       "raw_dataset_key": "ozon_raw",
       "ref_dataset_key": "ref",
-      "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:d20b2f0887965d6fb2f65c431cbd76bcf841f3680a614e00fd1e0d7105925aac",
+      "runtime_image": "europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/ozon-runtime@sha256:d993501bdb7a258f50f9fd13ada88a6edcd63b67ed303ab59efe79cf6117f058",
       "secret_ids": {
         "performance_client_id": "ozon-perf-client-id",
         "performance_client_secret": "ozon-perf-client-secret",
