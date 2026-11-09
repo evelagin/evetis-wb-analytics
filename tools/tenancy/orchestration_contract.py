@@ -35,6 +35,7 @@ SOURCE_FILES = (
     'control_closure_recovery.py','control_closure_image_check.py',
     'durable_daily.py','durable_daily_image_check.py',
     'owner_pause_image_check.py',
+    'current_ads.py','ads_catchup.py','current_ads_image_check.py',
 )
 
 
@@ -122,6 +123,10 @@ def block(c, settings, repo, release=None):
     if control_closure:
         expected.add('control_closure_recovery_version')
         if not catchup or type(release['control_closure_recovery_version']) is not int or release['control_closure_recovery_version']!=1:raise ValueError('unqualified control-closure recovery')
+    current_ads='current_ads_version' in release
+    if current_ads:
+        expected.add('current_ads_version')
+        if not independence or type(release['current_ads_version']) is not int or release['current_ads_version']!=1:raise ValueError('unqualified current advertising')
     owner_pause='owner_pause_quiescent_version' in release
     if owner_pause:
         expected.add('owner_pause_quiescent_version')
@@ -182,6 +187,7 @@ def block(c, settings, repo, release=None):
     if control_closure:required.add('control_closure_recovery_adapter')
     if durable_daily:required.add('durable_daily_adapter')
     if owner_pause:required.add('owner_pause_quiescent_adapter')
+    if current_ads:required.add('current_ads_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"

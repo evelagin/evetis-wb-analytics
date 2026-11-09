@@ -81,19 +81,29 @@ def current_cooldowns(b):
 def _current_ads(b):
     p=policy(b)
     if p is None:return [],[]
-    reports=[];cooldowns=[]
+    from tools.tenancy import current_ads as ADS,ads_catchup as AC
+    # Ads in CURRENT (flagged): a locally halted plan holds no scope; an in-flight report INTENT (open
+    # dispatch) is the one async scope; only recent cycles and live catch-up days are read (bounded reads).
+    local=ADS.qualified(b);now=b.clock();today=now.astimezone(K.MSK).date()
+    reports=[];cooldowns=[];selected=[]
     for text in cycles(b,p):
-        _,items=plans(b,p,date.fromisoformat(text))
-        for entity,item in items.items():
-            if entity not in {'ads_campaigns','ads_expense_daily','ads_sku_daily'}:continue
-            state=b.state(item['plan']);pr=state['progress']
-            report=pr.get('report') if entity=='ads_sku_daily' else None
-            if report:
-                if report['phase']=='INTENT':fail('ambiguous current report intent; never create a second report')
-                if report['phase']!='POLL':fail('unknown current report phase')
-                reports.append(item['plan']['runtime_plan']['plan_id'])
-            eligible=pr.get('rate_limit',{}).get('eligible_at')
-            if eligible and K.at(eligible)>b.clock():cooldowns.append(eligible)
+        cycle=date.fromisoformat(text);_,items=plans(b,p,cycle)
+        selected+=[(cycle,item) for entity,item in items.items() if entity in ADS.ENTITIES]
+    selected+=[(None,item) for item in AC.live_items(b,p)]   # an elected ads catch-up day, whatever the release
+    for cycle,item in selected:
+        entity=item['plan']['runtime_plan']['entity'];opened=False
+        if local or cycle is None:
+            hs=b.store.history(item['shard']);opened=ADS.open_intent(hs)
+            if not opened and (ADS.halted(hs,now) or not any(r['kind']=='DISPATCH_INTENT' for r in hs)):continue
+            if not opened and cycle is not None and (today-cycle).days>ADS.LOOKBACK_DAYS:continue
+        state=b.state(item['plan']);pr=state['progress']
+        report=pr.get('report') if entity=='ads_sku_daily' else None
+        if report:
+            if report['phase']=='INTENT' and not opened:fail('ambiguous current report intent; never create a second report')
+            if report['phase'] not in {'INTENT','POLL'}:fail('unknown current report phase')
+            reports.append(item['plan']['runtime_plan']['plan_id'])
+        eligible=pr.get('rate_limit',{}).get('eligible_at')
+        if eligible and K.at(eligible)>now:cooldowns.append(eligible)
     if len(reports)>1:fail('multiple current async report scopes')
     return reports,cooldowns
 
@@ -161,7 +171,11 @@ class Backend(H.Backend):
         with gate('RUNTIME_TERMINAL'):
             op=self.request('GET',BF.RUN_API+'/'+receipt['operation'])
             if not op.get('done'):return None
-            if op.get('error'):fail('FAILED current source needs exact effect investigation; no automatic replay')
+            failed=bool(op.get('error'))
+            from tools.tenancy import current_ads as ADS
+            if failed and not ADS.local(self,doc):fail('FAILED current source needs exact effect investigation; no automatic replay')
+        # Ads in CURRENT (flagged): an exactly attributed FAILED ads execution is a local ads outcome.
+        if failed:return ADS.settle_failed(self,doc,receipt,op)
         result=BF.reconcile(doc,doc['ack_hash'],receipt,backend=self)
         result['persistence']=BF.verify_persistence(doc,doc['ack_hash'],backend=self)
         result['source_complete']=self.state(doc)['complete']
@@ -209,6 +223,15 @@ def source_tick(b,p,day,item):
         if result is None:return {'status':'MONITORING','source_dispatches':0}
         b.store.commit(shard,'RECONCILED',seq,result,b.clock())
         history=b.store.history(shard)
+    from tools.tenancy import current_ads as ADS
+    if doc['runtime_plan']['entity'] in ADS.ENTITIES:
+        local=ADS.failure_gate(history,b.clock())
+        if local is not None and local[0]=='HALT':
+            # Ads-local terminal outcome: the entity stays PARTIAL for this day; nothing else is stopped.
+            b.store.commit(b.current_root,'CURRENT_PARTIAL',P.ORDER.index(doc['runtime_plan']['entity']),ADS.partial_payload(p,doc,b.state(doc),local[1]),b.clock())
+            return {'status':'WAITING','source_dispatches':0,'operational_entity':doc['runtime_plan']['entity'],'basis':'ADS_LOCAL_HALT','reason':local[1]}
+        if local is not None:
+            return {'status':'WAITING','source_dispatches':0,'operational_entity':doc['runtime_plan']['entity'],'basis':'ADS_READ_RETRY_COOLDOWN','eligible_at':local[1]}
     if b.state(doc)['complete']:
         if budget is not None and not budget.allows(WB.COMPLETE_SECONDS):
             return WB.handoff('COMPLETE',budget,operational_entity=doc['runtime_plan']['entity'])
@@ -264,13 +287,21 @@ def wake(base,historical_records,historical_plans,done,quarantined):
             if entity=='finance_accrual':finance_days.add(item['plan']['runtime_plan']['from'])
     # Owner finance catch-up (its own durable scope): an open catch-up receipt is one more source
     # authority and is drained before any new CURRENT work; new catch-up days only at the very end.
-    from tools.tenancy import finance_catchup as FC
+    from tools.tenancy import finance_catchup as FC,current_ads as ADS,ads_catchup as AC
     catchup=FC.scan(base,p,finance_days)
-    if len(pending)+len(catchup['pending'])>1:fail('multiple current source authorities')
+    # Owner ads catch-up: the same rule (open receipt drained first, new days only at the very end).
+    ads=AC.scan(base,p,election=True)
+    if len(pending)+len(catchup['pending'])+len(ads['pending'])>1:fail('multiple current source authorities')
     if pending:
         d,item=pending[0];return source_tick(Backend(base,p,d),p,d,item)
     if catchup['pending']:return FC.drain(base,catchup)
+    if ads['pending']:return AC.drain(base,ads)
+    local=ADS.qualified(base)
+    # The CURRENT entity set of this release: the four independent Seller entities, plus advertising when
+    # flagged. It is the one set for selection and for per-entity status (durable_daily.entity_status, #404).
+    selectable=current_entities(local)
     for d,item in sku_plans:
+        if local and not ADS.live(base,item,d,day,base.clock()):continue
         report=base.state(item['plan'])['progress'].get('report')
         if report:
             if report['phase']=='INTENT':fail('ambiguous current async intent after terminal receipt')
@@ -287,7 +318,8 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         if r['kind']=='CURRENT_PARTIAL':
             v=r['payload'];entity=v['entity'];item=items.get(entity)
             if (set(v)!={'entity','policy_hash','ack_hash','state_hash','status','reason'} or not item
-                or (v['policy_hash'],v['ack_hash'],v['status'],v['reason'])!=(p['hash'],item['plan']['ack_hash'],'PARTIAL','SOURCE_RETENTION_COMPLETENESS_UNPROVEN')
+                or (v['policy_hash'],v['ack_hash'],v['status'])!=(p['hash'],item['plan']['ack_hash'],'PARTIAL')
+                or v['reason'] not in ADS.partial_reasons(entity)
                 or D.digest(base.state(item['plan']))!=v['state_hash']):fail('current partial evidence differs')
             partial.add(entity);continue
         if r['kind']!='CURRENT_CERT':continue
@@ -296,14 +328,15 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         validate_certificate(base,p,day,cert,item)
         if entity in certs and certs[entity]!=cert:fail('conflicting current certificate')
         certs[entity]=cert
-    DD.entity_status(getattr(base,'wake_activity',{}),INDEPENDENT_ENTITIES,set(certs),partial)
+    DD.entity_status(getattr(base,'wake_activity',{}),selectable,set(certs),partial)
     if 'catalog' in certs and not local_full_stop(base):
         from tools.tenancy import fbo_diagnostic_owner as DIAGNOSTIC
         result=DIAGNOSTIC.queued(base)
         if result is not None:return result
     budget=WB.of(base)
+    # Ads (flagged) after the four independent Seller entities; a local ads outcome never stops them.
     for entity in P.eligible(p,{e:True for e in certs}):
-        if entity in partial or entity not in INDEPENDENT_ENTITIES:continue
+        if entity in partial or entity not in selectable:continue
         if budget is not None and not budget.allows(WB.LEAF_SECONDS):
             return WB.handoff('LEAF',budget,operational_entity=entity)
         item=items.get(entity)
@@ -319,8 +352,16 @@ def wake(base,historical_records,historical_plans,done,quarantined):
         return result
     # PARTIAL is explicit while FBO or quota-dependent sources are unresolved.
     # It never grants operational READY, historical COMPLETE or Finance FINAL.
-    # Today's CURRENT has nothing left: an owner-authorised missed finance day may run (or None).
-    return FC.wake(base,catchup,certs,partial)
+    # Today's CURRENT has nothing left: an owner-authorised missed finance day may run, then an owner-
+    # authorised missed ads day (or None).
+    result=FC.wake(base,catchup,certs,partial)
+    if result is not None:return result
+    return AC.wake(base,ads,certs,partial)
+
+def current_entities(ads):
+    """Entities CURRENT elects (and reports status for): S4 v1 Seller entities, plus ads with current_ads_version."""
+    from tools.tenancy import current_ads as ADS
+    return INDEPENDENT_ENTITIES+(ADS.ENTITIES if ads else ())
 
 def local_full_stop(base):
     """S4 admitted wake: an unresolved FULL-local STOP exists and only CURRENT runs.
@@ -344,5 +385,6 @@ def historical_candidates(records,plans,done,quarantined):
     selected.update({('dependency',n):r['payload'] for n,r in enumerate(records) if r['kind']=='DEPENDENCY_PLAN'})
     return selected
 
-# Loaded once with the real adapter class: the catch-up adapter subclasses Backend at import time.
+# Loaded once with the real adapter class: the catch-up adapters subclass Backend at import time.
 from tools.tenancy import finance_catchup as _finance_catchup  # noqa: E402,F401
+from tools.tenancy import ads_catchup as _ads_catchup  # noqa: E402,F401
