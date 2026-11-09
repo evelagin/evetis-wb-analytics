@@ -251,6 +251,8 @@ def test_new_datasets_grant_nothing_to_runtime_or_customer():
         # T4.1: кроме projectOwners — только деплоер SQL; ни runtime, ни клиента.
         # T5: control plane читает и дописывает только tenant_ops; витрину и клиентский слой не видит.
         want = {"projectOwners", deployer} | ({control} if ds == "tenant_ops" else set())
+        if ds == "analytics_share" and c.get("rnp_access"):      # РНП владельца: READER учётки сайта (rnp_access.py)
+            want |= {c["rnp_access"]["service_account"]}
         assert {who for _r, _k, who, _c in acl[c["datasets"][ds]]} == want, ds
         assert runtime not in {who for _r, _k, who, _c in acl[c["datasets"][ds]]}, ds
 

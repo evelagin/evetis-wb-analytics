@@ -202,7 +202,7 @@
     ],
     "dataset_key": "analytics_share",
     "mode": "OWNER_RNP_SERVICE",
-    "service_account": "sa-rnp-web@mpa-t-client-001.iam.gserviceaccount.com"
+    "service_account": "sa-rnp-web@some-other-project-1.iam.gserviceaccount.com"
   },
   "scheduler_state": "PAUSED",
   "sql_deployer": {
