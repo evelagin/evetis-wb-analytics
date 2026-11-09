@@ -224,6 +224,8 @@ def _project(base: dict, project_id: str) -> dict:
     # control, а не проверяемое правило пространства имён (мутационная проверка это ловит).
     doc["control"] = dict(copy.deepcopy(doc["control"]), email=CI.control_email(project_id))
     doc["control"]["job"]["env"]["GCP_PROJECT_ID"] = project_id
+    if doc.get("rnp_access"):   # согласованная учётка РНП: отвергать должно правило пространства имён
+        doc["rnp_access"] = dict(doc["rnp_access"], service_account=f"sa-rnp-web@{project_id}.iam.gserviceaccount.com")
     return doc
 
 
@@ -266,6 +268,8 @@ if __name__ == "__main__":     # регенерация: python -m tools.tenancy
     (FIXTURE_DIR / "client_access.synthetic.contract.json").write_text(client_access_fixture_text(), encoding="utf-8")
     print("записана фикстура client_access.synthetic")
     (FIXTURE_DIR / "rnp_access.client_001.contract.json").write_text(rnp_access_fixture_text(), encoding="utf-8")
+    for t in SYNTHETIC_TENANTS:
+        (RELEASE_FIXTURE_DIR / f"{t}.contract.json").write_text(release_fixture_text(t), encoding="utf-8")
     print("записана фикстура rnp_access.client_001")
     neg = FIXTURE_DIR / "negative"
     neg.mkdir(exist_ok=True)
