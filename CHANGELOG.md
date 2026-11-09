@@ -1,5 +1,14 @@
 # CHANGELOG.md
 
+## 2026-11-09 — Heldi: серверный исполнитель пакетов выпуска и репетиций — дизайн (поток E, НЕ применено)
+
+Новый корень `infra/heldi-release-runner/` (state `ops/tenants/client_001/release-runner`): SA `sa-heldi-release-exec`
+(UpdateJob/run только контроллера, actAs только его SA, pause/resume расписаний, создание таблиц и дописывание строк
+только в tenant_ops/tenant_locks) и `sa-heldi-rehearse` (только чтение), бакет журнала только на добавление
+(хранение 400 сут), задания `heldi-release-exec`/`heldi-release-rehearse` (`max_retries = 0`, образ по digest,
+пины ACK/пакета/исходника в env). Регламент — `docs/ops/HELDI_RELEASE_RUNNER.md`. Read-only plan 09.11: первый
+apply 21 to add, второй +2 задания. CI: offline validate + 7 mock-тестов.
+
 ## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
 
 OWNER ACK «FINANCE DESIGN» (06.11.2026), design & test only. WB вернул продавцу товар, обезличенный при приёмке:

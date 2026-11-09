@@ -181,3 +181,9 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
           terraform test
+      - name: Heldi release runner root (offline validate + mock tests)
+        working-directory: infra/heldi-release-runner
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
