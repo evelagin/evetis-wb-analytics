@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
+
+Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`
+(образ `7749f7d5…`, 14.10), а живой контроллер — gen 64, релиз восстановления STOP eca0335a `1a2b61a0` (образ `450ecc9e…`,
+установлен пакетом 09.11 13:45Z, #400 = 4d280838), который уже опубликовал сертификат CONTROL_CLOSURE. Read-only plan
+арендатора был `0 to add, 1 to change, 0 to destroy`: откат образа и env (CONTROLLER_IMAGE, CONTROLLER_SOURCE_SHA)
+контроллера. Сканер плана нарушений не находил, то есть apply (только ручной `workflow_dispatch` владельца) прошёл бы.
+- `tenant.json`: `historical_orchestration.release` → `1a2b61a0793d41f08924a515663d0da2318e15cf`.
+- `infra/tenant/releases/backfill/1a2b61a0….json` — запись релиза; совпадает с квалификацией пакета
+  (`CANDIDATE_RELEASE.json`) и с `release` в живом дескрипторе `tenant_locks.BF_SPEC_1a2b61a0…_bb3ceca5…_ENABLED`.
+  Отрендеренный контракт = живому заданию (образ и все 13 env). Read-only plan: «No changes».
+- `tools/tenancy/plan_scan.py`: `controller_release_findings` — план, меняющий образ или env существующего задания
+  контроллера, отклоняется (релиз ставит только пакет под ACK через UpdateJob; реестр следует за установленным).
+  Тесты: `tools/tests/test_controller_release_guard.py` (5).
+
 ## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
 
 OWNER ACK «FINANCE DESIGN» (06.11.2026), design & test only. WB вернул продавцу товар, обезличенный при приёмке:
