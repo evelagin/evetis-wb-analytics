@@ -166,6 +166,8 @@ def check(source_sha):
     full.update(check_catchup())
     from tools.tenancy.control_closure_image_check import check as check_control_closure_stop
     full.update(check_control_closure_stop())
+    from tools.tenancy.fbo_refresh_image_check import check as check_fbo_refresh
+    full.update(check_fbo_refresh())
     return {**check_full_leaf(),**full,'controller_dispatch_recovery':check_dispatch(),'controller_stop_recovery':check_controller_stop(),'python_version':sys.version.split()[0],'source_sha':source_sha,'controller_implementation_hash':O.implementation_hash(BF.REPO),
             'runtime_implementation_hash':BF.B.implementation_hash(),
             'pre_source_recovery':check_pre_source(),'quota_query_syntax':'PASS','offline_restart':'PASS','lost_post_no_repeat':'PASS','quota_wait_no_source':'PASS',
