@@ -14,6 +14,15 @@ ROOT = 'a' * 64
 SHARD = 'b' * 64
 
 
+@pytest.fixture(autouse=True)
+def _ads_not_in_current(monkeypatch):
+    # These boundaries are the S4 v1 fences (release without current_ads_version, no owner ads catch-up);
+    # the flagged ads path is covered by current_ads_image_check.fence_check.
+    from tools.tenancy import current_ads as ADS, ads_catchup as AC
+    monkeypatch.setattr(ADS, 'qualified', lambda b: False)
+    monkeypatch.setattr(AC, 'live_items', lambda b, p: [])
+
+
 def document(entity, generation='guard'):
     return BF.make_plan('client_001', entity, '2026-10-14', '2026-10-14',
                         generation, '2026-10-15T00:00:00Z', NOW.date())

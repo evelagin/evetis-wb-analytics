@@ -45,6 +45,14 @@ def rollover_fixture(target, *, expired=False):
 
 
 def check():
+    # S4 v1 fences (release without current_ads_version, no owner ads catch-up); the flagged ads path is
+    # covered by current_ads_image_check.fence_check.
+    from tools.tenancy import current_ads as ADS, ads_catchup as AC
+    with patch.object(ADS, 'qualified', lambda b: False), patch.object(AC, 'live_items', lambda b, p: []):
+        return _check()
+
+
+def _check():
     now = datetime(2026, 10, 15, 13, 6, tzinfo=timezone.utc)
     root, shard = 'a' * 64, 'b' * 64
     policy = {'hash': 'c' * 64}
