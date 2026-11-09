@@ -35,6 +35,7 @@ def _with_ephemeral_client_002(src: Path, dst: Path) -> Path:
     # client_001's live rollout/root to another tenant or baseline H2 fixture.
     doc.pop("historical_orchestration", None)
     (dst / "client_001" / "tenant.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    doc.pop("rnp_access", None)   # РНП владельца — исключение только client_001 (rnp_access.ALLOWED_TENANTS)
     doc["tenant_id"] = "client_002"
     doc["marketplaces"]["ozon"].pop("seller_inventory_model", None)  # unrelated tenant remains strict
     doc["display_name"] = "Синтетический арендатор 002 (эфемерная фикстура T3.2)"
