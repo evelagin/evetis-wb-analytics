@@ -107,3 +107,31 @@ variable "silence_alerts_enabled" {
   type        = bool
   default     = false
 }
+
+# ── Локальные состояния A2 (durable.tf) ──
+# Включать только после выпуска образа #404 (durable daily): до него этих полей в логах нет.
+variable "durable_daily_alerts" {
+  description = "Включить политики локальных состояний A2: UNKNOWN/PARTIAL CURRENT, WAITING_READ_RETRY подряд, локальные STOP листьев FULL, SOURCE_DISAPPEARED."
+  type        = bool
+  default     = false
+}
+
+variable "hold_wakes" {
+  description = "Сколько пробуждений за 90 мин сущность держится UNKNOWN (без COMPLETE) до тревоги."
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.hold_wakes >= 3 && var.hold_wakes <= 20
+    error_message = "От 3 до 20."
+  }
+}
+
+variable "read_retry_streak" {
+  description = "Сколько WAITING_READ_RETRY за 90 мин без единого решения до тревоги."
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.read_retry_streak >= 3 && var.read_retry_streak <= 20
+    error_message = "От 3 до 20."
+  }
+}

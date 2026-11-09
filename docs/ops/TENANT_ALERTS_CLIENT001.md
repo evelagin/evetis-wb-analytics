@@ -41,7 +41,28 @@
 - STOP-инцидент закрывается и при паузе тика, хотя STOP при этом не разрешён. Поэтому письма о его
   закрытии нет. STOP снимается только новым OWNER ACK.
 
-## Порядок включения
+## Локальные состояния A2 (PR #404, `durable.tf`)
+
+После A2 временные сбои не дают глобальный STOP, а становятся локальными состояниями. Лог-метрики создаются
+сразу (до выпуска #404 считают ноль), политики включаются `-var durable_daily_alerts=true` только после выпуска
+образа #404 (0 add / 7 change: шесть политик + фильтр метрики STOP).
+
+| Политика | Условие (поля #404) | Письмо |
+|---|---|---|
+| Сущность CURRENT держится UNKNOWN | `current_entities.<e> = UNKNOWN` ≥ 5 раз за 90 мин и ни одного COMPLETE/PARTIAL | открытие и закрытие, на сущность |
+| Сущность CURRENT частична | `current_entities.<e> = PARTIAL` за 3 ч (FBO SOURCE_DISAPPEARED приходит так) | открытие, на сущность |
+| Чтение повторяется, нет решений | ≥ 5 `WAITING_READ_RETRY` за 90 мин и ни одного другого решения, кроме ожиданий | открытие и закрытие; почта + push |
+| Локальный STOP листа FULL | `STOPPED` со `diagnostic.stage = PERSISTED_SOURCE_RECONCILIATION` и контекстом листа | открытие, на лист |
+| FULL закрыт: больше 3 локальных STOP | `basis = FULL_HISTORY_LOCAL_STOP` | открытие; почта + push |
+| SOURCE_DISAPPEARED | значение `SOURCE_DISAPPEARED` в строке контроллера (контракт потока B) | открытие |
+
+- Решений контроллера в среднем 5,2 в час (медианный разрыв 12 мин, p95 18 мин; перекрытые пробуждения пишут
+  `WAIT_ACTIVE_CONTROLLER`), поэтому «N пробуждений подряд» = N раз за 90 мин. Бэктест 26.10–05.11 (4675 строк):
+  подряд не больше 3 `WAITING_READ_RETRY`, при пороге 5 за 90 мин — 0 срабатываний.
+- С включением A2 метрика STOP перестаёт считать локальный STOP листа (`NOT jsonPayload.diagnostic.context.index:*`):
+  письмо «контроллер в STOP» означает только глобальный STOP.
+
+
 
 1. `terraform init -backend-config=bucket=mpa-platform-tfstate-777428383056 -backend-config=prefix=monitoring/tenants/client_001`
 2. `terraform plan -var tenant_id=client_001 -var project_id=mpa-t-client-001 -var alert_email=<почта владельца> -out=alerts.plan`

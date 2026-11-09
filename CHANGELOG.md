@@ -8,6 +8,11 @@
 свежесть — группы catalog, stocks, prices, finance, orders, ads (`expected_entities` → `freshness_groups`, один инцидент
 на группу), удержание 30 мин → 3 ч (сертификаты приходят раз в 23,6–24,5 ч); `documentation.subject` «Heldi …» у всех
 политик; имя политики H2 ≤ 100 байт. Ожидаемый консолидированный plan (#385 + #383): 18 to add, 5 to change, 0 to destroy.
+Дополнение 09.11 (A2, PR #404): `durable.tf` — 4 лог-метрики (`heldi_current_entity_status` с меткой на каждую из 8
+сущностей, `heldi_full_leaf_stop`, `heldi_full_local_stop_systemic`, `heldi_source_disappeared`) и 6 политик (UNKNOWN и
+PARTIAL CURRENT, WAITING_READ_RETRY подряд, локальный STOP листа, FULL закрыт, SOURCE_DISAPPEARED), выключены до
+выпуска #404 (`durable_daily_alerts`). Консолидированный plan: 28 to add, 5 to change, 0 to destroy; включение после
+#404 — 0 add / 7 change.
 
 ## 2026-11-06 — Store P&L WB: возврат неопознанного товара продавцу — расход магазина (НЕ развёрнуто)
 

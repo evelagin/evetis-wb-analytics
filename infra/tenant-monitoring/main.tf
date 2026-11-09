@@ -59,7 +59,9 @@ resource "google_monitoring_notification_channel" "owner_email" {
 resource "google_logging_metric" "controller_stopped" {
   name        = "tenant_controller_stopped"
   description = "Тик контроллера завершился STOPPED (новый или неразрешённый STOP)."
-  filter      = "${local.controller_stdout} AND jsonPayload.status=\"STOPPED\""
+  # С A2 локальный STOP листа FULL (контекст листа в diagnostic) — не глобальный STOP: его считает
+  # heldi_full_leaf_stop (durable.tf). До выпуска #404 фильтр прежний.
+  filter = var.durable_daily_alerts ? "${local.controller_stdout} AND jsonPayload.status=\"STOPPED\" AND NOT jsonPayload.diagnostic.context.index:*" : "${local.controller_stdout} AND jsonPayload.status=\"STOPPED\""
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
