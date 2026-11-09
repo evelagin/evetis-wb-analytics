@@ -33,6 +33,7 @@ SOURCE_FILES = (
     'current_runtime_succession_image_check.py','runtime_history_fixture.py',
     'finance_catchup.py','finance_catchup_image_check.py',
     'owner_pause_image_check.py',
+    'current_ads.py','ads_catchup.py','current_ads_image_check.py',
 )
 
 
@@ -112,6 +113,10 @@ def block(c, settings, repo, release=None):
         expected.add('current_runtime_succession_version')
         if not independence or type(release['current_runtime_succession_version']) is not int or release['current_runtime_succession_version']!=1:raise ValueError('unqualified current runtime succession')
     catchup='finance_catchup_version' in release
+    current_ads='current_ads_version' in release
+    if current_ads:
+        expected.add('current_ads_version')
+        if not independence or type(release['current_ads_version']) is not int or release['current_ads_version']!=1:raise ValueError('unqualified current advertising')
     owner_pause='owner_pause_quiescent_version' in release
     if owner_pause:
         expected.add('owner_pause_quiescent_version')
@@ -170,6 +175,7 @@ def block(c, settings, repo, release=None):
     if succession:required.add('current_runtime_succession_adapter')
     if catchup:required.add('finance_catchup_adapter')
     if owner_pause:required.add('owner_pause_quiescent_adapter')
+    if current_ads:required.add('current_ads_adapter')
     if set(release['verification'])!=required or any(v!='PASS' for v in release['verification'].values()):
         raise ValueError('controller release gates not PASS')
     p=c['project_id'];base=f"projects/{p}/locations/{c['region']}"
