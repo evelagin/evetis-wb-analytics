@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-11-09 — Tenancy: провижионеру — чтение пользовательских ролей (`iam.roles.get`) (НЕ применено)
+
+Канонический план арендатора (tenant-infra, прогон 42653082899) упал на refresh: у `sa-tenant-provisioner@mpa-platform`
+нет `iam.roles.get` на 13 пользовательских ролях `mpa-t-client-001` (backfill*, runtimeCapabilityRead); других отказов
+в прогоне нет. `tools/tenancy/iam_proposals.py`: роль `mpaTenantProvisioner` — +`iam.roles.get` (REQUIRED_NOW, только
+чтение; create/update ролей не добавляются). Применение — одной командой владельца по ACK (роль организации).
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`

@@ -36,6 +36,11 @@ PROVISIONER_PERMISSIONS = [
     ("iam.serviceAccounts.actAs", REQUIRED_NOW,
      "job Cloud Run исполняется от runtime SA; OAuth планировщика — от scheduler SA",
      "в связке с cloudscheduler.jobs.create — вызовы API Google от имени любого SA арендатора (см. INDIRECT)"),
+    ("iam.roles.get", REQUIRED_NOW,
+     "refresh google_project_iam_custom_role корня (backfill*, runtimeCapabilityRead): без него план "
+     "арендатора падает 403 (прогон tenant-infra 42653082899, 09.11.2026)",
+     "чтение определения пользовательской роли (список разрешений); не политика IAM и не данные. "
+     "Создание и изменение ролей (iam.roles.create/update) — НЕ входит: только чтение"),
     ("iam.serviceAccounts.create", REQUIRED_T3_3_ONLY, "создание sa-ozon-runtime/sa-ozon-scheduler",
      "может создать дополнительные SA и действовать от них (actAs)"),
     ("bigquery.datasets.get", REQUIRED_NOW, "refresh датасетов", "метаданные, не строки"),
