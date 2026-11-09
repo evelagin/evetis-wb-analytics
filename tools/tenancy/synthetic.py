@@ -82,6 +82,36 @@ def client_access_fixture_text() -> str:
     return json.dumps(client_access_contract(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
+RNP_SERVICE_ACCOUNT = "sa-rnp-web@mpa-t-client-001.iam.gserviceaccount.com"   # учётка сайта РНП владельца (не клиент)
+
+
+def rnp_access_registry_doc() -> dict:
+    """Реестр client_001 с ВКЛЮЧЁННЫМ доступом РНП владельца (ровно то, что активирует PR P1b)."""
+    doc = copy.deepcopy(load_tenant_document(TENANTS_DIR / "client_001" / "tenant.json"))
+    doc["rnp_access"] = {"mode": "OWNER_RNP_SERVICE", "service_account": RNP_SERVICE_ACCOUNT}
+    return doc
+
+
+def contract_for_doc(doc: dict, tenant_id: str = "client_001") -> dict:
+    """Контракт из документа реестра через канонический загрузчик (временная копия реестра)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _with_ephemeral_client_002(TENANTS_DIR, Path(tmp) / "tenants")
+        path = root / tenant_id / "tenant.json"
+        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        contract = _terraform_contract(load_tenant(tenant_id, root))
+    contract["marketplaces"]["ozon"]["runtime_image"] = FIXTURE_IMAGE
+    return contract
+
+
+def rnp_access_contract() -> dict:
+    """РНП: контракт client_001 с rnp_access = OWNER_RNP_SERVICE (bi_access не меняется — NONE)."""
+    return contract_for_doc(rnp_access_registry_doc())
+
+
+def rnp_access_fixture_text() -> str:
+    return json.dumps(rnp_access_contract(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
 def release_contract(tenant_id: str) -> dict:
     """Контракт с НАСТОЯЩИМ утверждённым образом из runtime_release.json (T3.2b), без подмены."""
     if tenant_id not in SYNTHETIC_TENANTS:
@@ -233,6 +263,8 @@ if __name__ == "__main__":     # регенерация: python -m tools.tenancy
         print(f"записана фикстура {t}")
     (FIXTURE_DIR / "client_access.synthetic.contract.json").write_text(client_access_fixture_text(), encoding="utf-8")
     print("записана фикстура client_access.synthetic")
+    (FIXTURE_DIR / "rnp_access.client_001.contract.json").write_text(rnp_access_fixture_text(), encoding="utf-8")
+    print("записана фикстура rnp_access.client_001")
     neg = FIXTURE_DIR / "negative"
     neg.mkdir(exist_ok=True)
     for name, doc in negative_cases().items():

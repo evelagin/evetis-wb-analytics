@@ -25,6 +25,11 @@ resource "google_project_service" "this" {
 # Больше никого: ни провижионера, ни SA планировщика, ни клиента. Лишнюю запись (в т.ч.
 # созданную API) Terraform увидит как дрейф и снимет; сканер плана сверяет ACL точно.
 locals {
+  # T6 и РНП: рёбра авторизованных датасетов — объединение обоих блоков без дублей (один набор рёбер пакета SQL).
+  authorized_views = distinct(concat(
+    var.contract.client_access == null ? [] : var.contract.client_access.authorized_views,
+    var.contract.rnp_access == null ? [] : var.contract.rnp_access.authorized_views,
+  ))
   ozon               = var.contract.marketplaces.ozon
   ozon_runtime_email = local.ozon == null ? null : one(module.ozon[*].runtime_email)
   dataset_data_grants = local.ozon == null ? [] : [
@@ -106,12 +111,21 @@ resource "google_bigquery_dataset" "this" {
       group_by_email = access.value.email
     }
   }
+  # РНП владельца (tools/tenancy/rnp_access.py): READER ровно учётке сайта sa-rnp-web на analytics_share.
+  # Узкое исключение из правила T6 «сервисным аккаунтам — нет»; клиентские идентичности сюда не попадают.
+  dynamic "access" {
+    for_each = var.contract.rnp_access == null || each.key != try(var.contract.rnp_access.dataset_key, "") ? [] : [var.contract.rnp_access.service_account]
+    content {
+      role          = "READER"
+      user_by_email = access.value
+    }
+  }
   # T6: авторизованные датасеты (только VIEWS) по реальным зависимостям вью пакета sql/tenant/ozon:
   # вью датасета viewer_key читают источники source_key от имени самих вью, клиент к источникам прав
   # не получает. Все датасеты уже существуют у действующего арендатора (первый apply нового арендатора
   # с client_access — после создания датасетов, т.е. вторым прогоном).
   dynamic "access" {
-    for_each = var.contract.client_access == null ? [] : [for e in var.contract.client_access.authorized_views : e if e.source_key == each.key]
+    for_each = [for e in local.authorized_views : e if e.source_key == each.key]
     content {
       dataset {
         dataset {

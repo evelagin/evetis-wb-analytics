@@ -288,6 +288,18 @@ def validate_tenant(doc, source: str, schema: dict | None = None,
     if bi["mode"] != "ANALYTICS_SHARE_VIEWER" and bi.get("principals"):
         err("$.bi_access.principals", "bi", "получатели доступа заданы, но режим доступа их не использует")
 
+    # ── РНП владельца (узкое исключение T6, tools/tenancy/rnp_access.py) ──
+    ra = doc.get("rnp_access")
+    if ra is not None:
+        from tools.tenancy import rnp_access as RA
+        if ra["mode"] == RA.MODE:
+            if tid not in RA.ALLOWED_TENANTS:
+                err("$.rnp_access.mode", "rnp", f"OWNER_RNP_SERVICE разрешён только арендаторам {RA.ALLOWED_TENANTS}")
+            if ra.get("service_account") != f"{RA.ACCOUNT_ID}@{doc['data_boundary']['gcp_project_id']}.iam.gserviceaccount.com":
+                err("$.rnp_access.service_account", "rnp", "допустима только учётка sa-rnp-web проекта этого арендатора")
+        elif "service_account" in ra:
+            err("$.rnp_access.service_account", "rnp", "учётка задана, но режим РНП её не использует")
+
     # ── жизненный цикл ──────────────────────────────────────────────────
     lc, status = doc["lifecycle"], doc["status"]
     if status == "SUSPENDED" and "suspended_at" not in lc:

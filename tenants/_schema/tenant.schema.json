@@ -150,6 +150,16 @@
         }
       }
     },
+    "rnp_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "$comment": "Узкое исключение из T6 (tools/tenancy/rnp_access.py): READER на analytics_share ровно учётке сайта РНП владельца sa-rnp-web@<проект арендатора>. Не путь для клиентских идентичностей (они — только bi_access).",
+      "properties": {
+        "mode": {"enum": ["NONE", "OWNER_RNP_SERVICE"]},
+        "service_account": {"type": "string", "pattern": "^sa-rnp-web@mpa-t[0-9]*-[a-z0-9-]{1,40}\\.iam\\.gserviceaccount\\.com$"}
+      }
+    },
     "lifecycle": {
       "type": "object",
       "additionalProperties": false,

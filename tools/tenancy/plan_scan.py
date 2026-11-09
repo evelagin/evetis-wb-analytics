@@ -73,6 +73,7 @@ from tools.tenancy import platform as PL  # noqa: E402
 from tools.tenancy import sql_identity as SI  # noqa: E402
 from tools.tenancy import orchestration_plan as BP  # noqa: E402
 from tools.tenancy import client_access as CA  # noqa: E402
+from tools.tenancy import rnp_access as RA  # noqa: E402
 
 # ── S. Структура ─────────────────────────────────────────────────────────────
 ALLOWED_MANAGED_TYPES = frozenset({
@@ -299,12 +300,16 @@ def expected_dataset_access(contract: dict) -> dict[str, set[AclEntry]]:
             acl[contract['datasets'][g['dataset_key']]].add((g['role'],'user_by_email',g['email'],None))
     ca = contract.get("client_access")
     if ca:
-        # T6: READER клиента на analytics_share и авторизованные датасеты (только VIEWS) по рёбрам контракта.
+        # T6: READER клиента на analytics_share.
         for pr in ca["principals"]:
             acl[contract["datasets"][ca["dataset_key"]]].add(("READER", f"{pr['kind']}_by_email", pr["email"], None))
-        for e in ca["authorized_views"]:
-            acl[contract["datasets"][e["source_key"]]].add(
-                (AUTHORIZED_VIEWS, "dataset", f"{p}.{contract['datasets'][e['viewer_key']]}", None))
+    ra = contract.get("rnp_access")
+    if ra:
+        # РНП владельца: READER ровно учётке сайта на analytics_share (узкое исключение, rnp_access.py).
+        acl[contract["datasets"][ra["dataset_key"]]].add(("READER", "user_by_email", ra["service_account"], None))
+    # T6/РНП: авторизованные датасеты (только VIEWS) — объединение рёбер обоих блоков, без дублей.
+    for viewer, source in RA.authorized_edges(contract):
+        acl[contract["datasets"][source]].add((AUTHORIZED_VIEWS, "dataset", f"{p}.{contract['datasets'][viewer]}", None))
     return acl
 
 
@@ -594,6 +599,7 @@ def scan_plan(plan: dict, contract: dict) -> list[str]:
     findings += sql_deployer_findings(contract)
     findings += control_findings(contract)
     findings += client_access_findings(contract)
+    findings += RA.findings(contract)
     contract_tables = {(contract["datasets"][x["dataset_key"]], x["table_id"]) for x in contract.get("tables", [])}
 
     # M. EVETIS — нигде: configuration, prior_state, переменные, значения.
