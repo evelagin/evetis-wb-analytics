@@ -54,11 +54,19 @@ describe('FinanceApi: пейсер и лимит WB (1 запрос/мин на 
     expect(wb.calls.length).toBe(3); // 1 + FIN_HTTP_MAX_RETRIES
   });
 
-  it('4xx (401) не повторяется', async () => {
+  it('4xx (401) не повторяется: WB_FINANCE_AUTH (подробно — finance_token_auth.test.ts)', async () => {
     const { wb, api } = setup();
     wb.overrides.push(() => ({ status: 401, body: 'unauthorized' }));
+    await expect(api.list('daily', '2026-11-07', '2026-11-10')).rejects.toMatchObject({ code: 'WB_FINANCE_AUTH' });
+    expect(wb.calls.length).toBe(1);
+  });
+
+  it('прочий 4xx (400) не повторяется и возвращается кодом', async () => {
+    const { wb, api } = setup();
+    wb.overrides.push(() => ({ status: 400, body: 'bad request' }));
     const r = await api.list('daily', '2026-11-07', '2026-11-10');
     expect(r.ok).toBe(false);
+    expect(r.error).toContain('list HTTP 400');
     expect(wb.calls.length).toBe(1);
   });
 

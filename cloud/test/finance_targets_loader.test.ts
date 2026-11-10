@@ -221,7 +221,7 @@ describe('financeLoader', () => {
     expect(tokenRead).toBe(false);
   });
 
-  it('OK → результат со строками; ERROR тика → LoaderError FINANCE_RUN_ERROR', async () => {
+  it('OK → результат со строками; 401 → WB_FINANCE_AUTH (не обобщённый FINANCE_RUN_ERROR)', async () => {
     const clock = new FakeClock(T0);
     const store = new MemFinanceStore(clock);
     const wb = new SynthFinanceApi([{ reportId: '900000000000000401', reportType: 1, period: 'daily', dateFrom: '2026-11-09', dateTo: '2026-11-09',
@@ -230,7 +230,23 @@ describe('financeLoader', () => {
     const res = await financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), deps);
     expect(res).toEqual({ rowsFetched: 2, rowsLoaded: 2 });
     wb.overrides.push(() => ({ status: 401, body: 'unauthorized' }));
-    await expect(financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), deps)).rejects.toMatchObject({ code: 'FINANCE_RUN_ERROR' });
+    await expect(financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), deps)).rejects.toMatchObject({ code: 'WB_FINANCE_AUTH' });
+  });
+
+  it('ERROR тика (list HTTP 400) → LoaderError FINANCE_RUN_ERROR', async () => {
+    const clock = new FakeClock(T0);
+    const wb = new SynthFinanceApi([], clock);
+    wb.overrides.push(() => ({ status: 400, body: 'bad request' }));
+    await expect(financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), { makeStore: () => new MemFinanceStore(clock), clock, fetchFn: wb.fetch, readToken: async () => 'synthetic', peerProbe: noPeer }))
+      .rejects.toMatchObject({ code: 'FINANCE_RUN_ERROR' });
+  });
+
+  it('DRY_RUN разбирается ровно как cli.ts (=== \'1\'): \' 1\', \'1 \', \'true\', \'yes\', \'0\', пусто — НЕ сухой прогон', () => {
+    expect(cfg({ ENVIRONMENT: 'shadow', DRY_RUN: '1' }).financeDryRun).toBe(true);
+    for (const v of [' 1', '1 ', 'true', 'TRUE', 'yes', '0', '']) {
+      expect(cfg({ ENVIRONMENT: 'shadow', DRY_RUN: v }).financeDryRun, `DRY_RUN=${JSON.stringify(v)}`).toBe(false);
+    }
+    expect(cfg({ ENVIRONMENT: 'shadow' }).financeDryRun).toBe(false);
   });
 
   it('DRY_RUN=1: контур и схема проверены, токен не читается, записей нет', async () => {

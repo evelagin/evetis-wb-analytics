@@ -6,9 +6,15 @@
  * проверяется офлайн. Порядок шагов тот же, что в Apps Script:
  *   1 stale-recovery → 2 календарь недель → PK-assert → 3 очередь → 4 discovery daily/weekly →
  *   PK-assert → 5 свежеоткрытое → 6 финализация недель + RECON → 7 статус прогона.
+ *
+ * Отказ авторизации WB (401/403 → WB_FINANCE_AUTH, wbApi.ts) — единственное исключение из «тик не бросает»:
+ * журнал закрывается ERROR как обычно, затем исключение уходит наверх с детерминированным кодом
+ * (иначе код заменился бы обобщённым FINANCE_RUN_ERROR). Остаток тика не исполняется — каждый
+ * следующий запрос с тем же токеном отказал бы так же.
  */
 import type { Logger } from '../../logging.js';
 import { classifyFailure } from '../../failure.js';
+import { LoaderError } from '../../errors.js';
 import {
   FIN_LOOKBACK_DAYS, FIN_STALE_STARTED_MIN, FIN_MAX_ATTEMPTS, FIN_METRIC_TOL, FIN_LOAD_BATCH, FIN_LIST_METRICS,
 } from './constants.js';
@@ -18,7 +24,7 @@ import {
   type ListReport, type ReportPeriod, type RunCounters, type RunStatus,
 } from './normalize.js';
 import type { FinanceStore, QueueItem, ReconRow, WeeklyCandidate } from './store.js';
-import type { FinanceApi, Clock } from './wbApi.js';
+import { WB_FINANCE_AUTH, type FinanceApi, type Clock } from './wbApi.js';
 
 export type FinanceApiPort = Pick<FinanceApi, 'canRequest' | 'list' | 'detailed' | 'requests'>;
 
@@ -45,6 +51,11 @@ export interface TickResult {
 }
 
 type LoadOutcome = { status: 'COMPLETE'; fetched: number; loaded: number } | { status: 'ERROR' | 'SKIPPED' };
+
+/** 401/403 Finance API: прогон прерывается с этим кодом, а не превращается в ERROR тика. */
+export function isFinanceAuthError(e: unknown): e is LoaderError {
+  return e instanceof LoaderError && e.code === WB_FINANCE_AUTH;
+}
 
 /** Регистрация отчётов list (дизайн §3.3/§4). */
 export async function registerReports(
@@ -129,7 +140,14 @@ export async function loadReport(d: TickDeps, item: QueueItem): Promise<LoadOutc
   }
   if (guardMsg) return fail('ORPHAN_GUARD', guardMsg);
 
-  const fetched = await api.detailed(rid);
+  let fetched: Awaited<ReturnType<FinanceApiPort['detailed']>>;
+  try {
+    fetched = await api.detailed(rid);
+  } catch (e) {
+    // 401/403: отчёт — в ERROR, как прежде при отказе detailed (паритет с Apps Script), затем прогон прерывается.
+    if (isFinanceAuthError(e)) { await fail(e.code, e.message); }
+    throw e;
+  }
   if (!fetched.ok) return fail('DETAILED_FAILED', fetched.error);
   const rows = fetched.rows;
 
@@ -350,6 +368,7 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
     if (opened) {
       try { await store.runClose(runId, 'ERROR', counters, em); } catch { /* best-effort, как в Apps Script */ }
     }
+    if (isFinanceAuthError(e)) throw e;
     return { status: 'ERROR', runId, counters, queueLeft, finalized, anomalies, errorMessage: em, rowsFetched, rowsLoaded };
   }
 }
@@ -378,6 +397,7 @@ export async function runBackfillRegister(d: TickDeps, from: string, to: string)
   } catch (e) {
     const em = e instanceof Error ? e.message : String(e);
     try { await store.runClose(runId, 'ERROR', { ...counters, requests: api.requests }, em); } catch { /* best-effort */ }
+    if (isFinanceAuthError(e)) throw e;
     return { ...base, status: 'ERROR', counters, anomalies: [], errorMessage: em };
   }
 }

@@ -10,8 +10,15 @@
  *
  * Токен передаётся в заголовке Authorization как есть (без Bearer) — как в Apps Script.
  * Значение токена не логируется.
+ *
+ * 401/403 (F5, общий механизм #423 `http/wbToken.ts`): НЕ повторяются и НЕ возвращаются кодом — `post` бросает
+ * детерминированный `WB_FINANCE_AUTH` (`wbAuthError`): повтор не лечит отозванный/истёкший токен или токен без
+ * категории «Финансы», а каждый лишний запрос съедает минуту лимита. В тексте — имя секрета, статус и
+ * обрезанная причина WB (токеноподобное вырезано), значения токена нет.
  */
 import type { Logger } from '../../logging.js';
+import type { LoaderError } from '../../errors.js';
+import { isWbAuthStatus, wbAuthError } from '../../http/wbToken.js';
 import {
   FIN_API_LIST_PATH, FIN_API_DET_PATH, FIN_PACER_MS, FIN_REQ_MARGIN_MS, FIN_LIST_LIMIT, FIN_PAGE_LIMIT,
   FIN_LIST_PAGE_GUARD, FIN_DET_PAGE_GUARD, FIN_HTTP_MAX_RETRIES, FIN_RETRY_AFTER_CAP_MS, FIN_BQ_TAIL_MS,
@@ -36,9 +43,15 @@ export interface HttpResponseLike {
 }
 export type FetchFn = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<HttpResponseLike>;
 
+/** Префикс кодов потока для общего механизма токенов: WB_FINANCE_AUTH, WB_FINANCE_TOKEN_EXPIRED. */
+export const WB_FINANCE_CODE_PREFIX = 'WB_FINANCE';
+export const WB_FINANCE_AUTH = `${WB_FINANCE_CODE_PREFIX}_AUTH`;
+
 export interface FinanceApiOptions {
   host: string;
   token: string;
+  /** Имя секрета токена — только для текста ошибки 401/403 (по умолчанию WB_TOKEN_FINANCE). */
+  secretName?: string;
   /** Момент старта прогона (мс) — от него считается бюджет. */
   t0: number;
   budgetMs: number;
@@ -52,6 +65,7 @@ export interface PostResult { code: number; body: string }
 export interface ListResult { ok: boolean; reports: ListReport[]; error: string }
 export interface DetailedResult { ok: boolean; rows: Array<Record<string, unknown>>; pages: number; error: string }
 
+/** Повторяемы только сеть (0), 429 и 5xx. 401/403 сюда не входят: они — WB_FINANCE_AUTH без повтора. */
 export function isRetryableFinanceStatus(code: number): boolean {
   return code === 0 || code === 429 || (code >= 500 && code <= 599);
 }
@@ -108,11 +122,15 @@ export class FinanceApi {
     throw new Error('Finance API pacer: слот не зарезервирован');
   }
 
-  /** Один POST через пейсер, с повтором 429/5xx/сети. Отказ после повторов — код ≠ 200 (не исключение). */
+  /**
+   * Один POST через пейсер, с повтором 429/5xx/сети. Отказ после повторов — код ≠ 200 (не исключение).
+   * 401/403 — исключение WB_FINANCE_AUTH сразу, без повтора.
+   */
   async post(path: string, payload: string): Promise<PostResult> {
     const maxRetries = this.o.maxRetries ?? FIN_HTTP_MAX_RETRIES;
     let last: PostResult = { code: 0, body: '' };
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      let authErr: LoaderError | null = null;
       if (attempt > 1 && !this.canRequest()) {
         this.logger?.warn('finance_retry_budget_exhausted', { path: redactPath(path), attempt, code: last.code });
         return last;
@@ -130,16 +148,22 @@ export class FinanceApi {
         });
         const body = await resp.text();
         last = { code: resp.status, body };
-        if (!isRetryableFinanceStatus(resp.status)) return last;
-        const ra = retryAfterMs(resp.headers);
-        if (ra > 0) this.notBefore = Math.max(this.notBefore, this.clock.now() + ra);
-        this.logger?.warn('finance_http_retryable', { status: resp.status, attempt, retryAfterMs: ra, path: redactPath(path) });
+        // Бросаем после finally: внутри try исключение приняли бы за сетевой сбой и повторили.
+        if (isWbAuthStatus(resp.status)) {
+          authErr = wbAuthError(WB_FINANCE_CODE_PREFIX, this.o.secretName ?? 'WB_TOKEN_FINANCE', resp.status, `Finance API ${redactPath(path)}`, body);
+        } else if (!isRetryableFinanceStatus(resp.status)) return last;
+        else {
+          const ra = retryAfterMs(resp.headers);
+          if (ra > 0) this.notBefore = Math.max(this.notBefore, this.clock.now() + ra);
+          this.logger?.warn('finance_http_retryable', { status: resp.status, attempt, retryAfterMs: ra, path: redactPath(path) });
+        }
       } catch (e) {
         last = { code: 0, body: `network: ${e instanceof Error ? e.message : String(e)}` };
         this.logger?.warn('finance_http_network', { attempt, error: last.body, path: redactPath(path) });
       } finally {
         clearTimeout(timer);
       }
+      if (authErr) throw authErr;
     }
     return last;
   }

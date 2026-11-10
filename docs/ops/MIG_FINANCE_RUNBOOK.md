@@ -109,14 +109,17 @@
 
 Предусловия: PR слит (deploy-shadow соберёт образ и обновит `wb-finance-shadow`, если Job уже есть).
 
-1. **Terraform** (план — владельцу, apply — по ACK), `finance_prod_enabled` = false (по умолчанию — prod-ресурсов в
-   конфигурации нет вовсе). `-target`: `google_bigquery_table.{raw_wb_finance_cr,finance_loader_runs_cr,finance_report_loads_cr,
-   finance_week_status_cr,finance_week_recon_cr}`, `google_service_account.finance_shadow`,
+1. **Terraform** (план — владельцу, apply — по ACK SHADOW): GitHub Variable `M4_SHADOW_ENABLED='true'` →
+   `m4_shadow_enabled = true` (infra.yml); `m4_prod_enabled` = false (по умолчанию — prod-ресурсов в конфигурации нет
+   вовсе). Пока `M4_SHADOW_ENABLED` не задана, ресурсов потока в плане нет совсем — нецелевой apply их не создаст.
+   Все ресурсы shadow — под `count`/`for_each`, адреса с индексами. `-target`:
+   `google_bigquery_table.{raw_wb_finance_cr,finance_loader_runs_cr,finance_report_loads_cr,
+   finance_week_status_cr,finance_week_recon_cr}[0]`, `google_service_account.finance_shadow[0]`,
    `google_project_iam_member.finance_jobuser`, `google_bigquery_table_iam_member.finance_write_loader_runs`,
    `google_secret_manager_secret_iam_member.finance_token_access`, `google_service_account_iam_member.finance_actas_deployer`,
    `google_service_account_iam_member.finance_actas_terraform`, `google_bigquery_table_iam_member.finance_shadow_write_cr`,
-   `google_cloud_run_v2_job.wb_finance_shadow`, `google_cloud_run_v2_job_iam_member.scheduler_finance_shadow_invoke`,
-   `google_cloud_scheduler_job.wb_finance_shadow`. Ожидание плана: 5 таблиц + 1 SA + 5 привязок SA + 5 `__CR` + Job +
+   `google_cloud_run_v2_job.wb_finance_shadow[0]`, `google_cloud_run_v2_job_iam_member.scheduler_finance_shadow_invoke[0]`,
+   `google_cloud_scheduler_job.wb_finance_shadow[0]` (привязки SA — `["shadow"]`, `finance_shadow_write_cr` — ×5). Ожидание плана: 5 таблиц + 1 SA + 5 привязок SA + 5 `__CR` + Job +
    invoker + Scheduler = 19 add, 0 change, 0 destroy.
    Перед apply сверить `FINANCE_CUTOVER` shadow: понедельник недели **перед** стартом shadow.
 2. Образ: `deploy-shadow` (workflow_dispatch) — шаг `wb-finance-shadow` продвинет тот же digest.
@@ -136,16 +139,17 @@
 1. Дождаться завершения вечернего тика Apps Script (~18:40 МСК, `FINANCE_LOADER_RUNS`: последняя строка ≠ RUNNING).
 2. Проверка манифеста (только SELECT): нет STARTED; нет ERROR c `attempt_count=5` без разбора; PK манифеста цел.
 3. Apps Script: `wbFinRemoveDailyTriggers()`; затем `wbFinanceBackfillAuditTriggers()` — триггеров финансов 0.
-4. Terraform (ACK): включить флаг `finance_prod_enabled = true` (tfvars / `-var` infra.yml), план по prod-ресурсам
+4. Terraform (ACK): GitHub Variable `M4_PROD_ENABLED='true'` → `m4_prod_enabled = true` (infra.yml), план по prod-ресурсам
    `wb_finance_loader.tf`: `google_service_account.finance_prod[0]`, его привязки (`finance_jobuser["prod"]`,
    `finance_write_loader_runs["prod"]`, `finance_token_access["prod"]`, `finance_actas_deployer["prod"]`,
    `finance_actas_terraform["prod"]`), `finance_prod_write` ×5 (боевые таблицы), `wb_finance_prod[0]`, invoker,
    `google_cloud_scheduler_job.wb_finance_prod[0]` (PAUSED), `google_monitoring_alert_policy.wb_finance_failed[0]`.
-   Ожидание: 15 add, 0 change, 0 destroy (shadow не меняется). Флаг после cutover остаётся true; откат флагом
+   Ожидание: 15 add, 0 change, 0 destroy (shadow не меняется, `m4_shadow_enabled` остаётся true). Флаг после cutover остаётся true; откат флагом
    в false удалит prod-контур — только после возврата на Apps Script (§6).
-5. Образ **только в свой Job**: `gcloud run jobs update wb-finance-prod --image <digest, проверенный shadow>
-   --update-env-vars IMAGE_DIGEST=…,GIT_SHA=…` (или `deploy-prod.yml only_job=wb-finance-prod`, когда механизм из
-   #382/#416 будет в main). `deploy-prod.yml` в этом PR не меняется: общий промоушен двигает 12 prod-Job'ов.
+5. Образ **только в свой Job**: `deploy-prod.yml` с `only_job=wb-finance` (общий механизм #423: шаг
+   «Deploy M4: wb-finance-prod», охват до/после проверяет `tools/deploy_scope_check.py` — меняется ровно
+   `wb-finance-prod`), digest — проверенный shadow. Режим `all` требует фразы `PROMOTE-ALL-PROD` и для cutover потока
+   не используется. Сам PR потока `deploy-prod.yml` не меняет — шаг принадлежит общей ветке.
 6. Сверить env Job'а (`gcloud run jobs describe wb-finance-prod`): боевые имена 5 таблиц, `FINANCE_CUTOVER=2026-07-13`.
    Ошибка здесь не запишет ничего: `FINANCE_TARGET_MISMATCH` до токена и BigQuery.
 7. `scheduler-control`: environment=prod, loader=`wb-finance`, action=resume. Первый прогон — 07:30 МСК.
@@ -176,7 +180,8 @@ Shadow после cutover: пауза `wb-finance-shadow`; таблицы `__CR`
 
 ## 7. Что нужно для shadow-выпуска
 
-- **Terraform targets** — §4 п.1 (19 ресурсов, prod не затрагивается: под флагом `finance_prod_enabled=false`).
+- **Terraform targets** — §4 п.1 (19 ресурсов под `m4_shadow_enabled=true`; prod не затрагивается: под флагом
+  `m4_prod_enabled=false`).
   `terraform validate -backend=false` — Success.
 - **Секрет:** `WB_TOKEN_FINANCE` уже в `local.wb_secrets`; accessor выдаётся новым SA (`finance_token_access`).
   Версия v1 от 26.07 — проверить срок действия (без вывода значения) до старта shadow.

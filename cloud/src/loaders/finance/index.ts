@@ -4,7 +4,9 @@
  * Порядок fail-closed (как в Apps Script: токен → C0 → журнал):
  *   1) контур и время прогона (targets.ts) — чистая проверка env, ДО любого I/O;
  *   2) готовность схемы (метаданные таблиц, эквивалент C0-маркера) — ДО токена и WB API;
- *   3) токен из Secret Manager; 4) тик (run.ts) — пишет FINANCE_LOADER_RUNS и манифест.
+ *   3) токен из Secret Manager и его срок (общий механизм http/wbToken.ts, #423): истёкший — WB_FINANCE_TOKEN_EXPIRED
+ *      ДО первого запроса к WB, < 14 дней — warn WB_TOKEN_EXPIRING_SOON; 4) тик (run.ts) — пишет FINANCE_LOADER_RUNS
+ *      и манифест. 401/403 Finance API — WB_FINANCE_AUTH без повтора (wbApi.ts).
  *
  * Исход для LOADER_RUNS (его пишет cli.ts):
  *   OK / OK_NO_NEW / PARTIAL → COMPLETE (PARTIAL — хвост очереди или ошибка отдельного отчёта,
@@ -19,7 +21,8 @@ import { LoaderError } from '../../errors.js';
 import { SecretsClient } from '../../secrets.js';
 import { assertFinanceTargets } from './targets.js';
 import { BqFinanceStore, BigQuerySqlRunner } from './bq.js';
-import { FinanceApi, realClock, type FetchFn, type Clock } from './wbApi.js';
+import { FinanceApi, realClock, WB_FINANCE_CODE_PREFIX, type FetchFn, type Clock } from './wbApi.js';
+import { assertWbTokenUsable } from '../../http/wbToken.js';
 import { runFinanceTick, runBackfillRegister, type TickResult } from './run.js';
 import { newFinanceRunId, isCalendarDate } from './parse.js';
 import type { FinanceStore } from './store.js';
@@ -56,9 +59,11 @@ async function prepare(ctx: LoaderContext, deps: FinanceLoaderDeps, mode: 'tick'
   const token = (await (deps.readToken ?? ((x: LoaderContext) => new SecretsClient(x.config.projectId).access(x.config.wbFinanceSecret)))(ctx)).trim();
   if (!token) throw new LoaderError(`Нет токена ${config.wbFinanceSecret}`, 'FINANCE_TOKEN_MISSING');
   const clock = deps.clock ?? realClock;
+  // Срок токена — ДО первого запроса (и до журнала FINANCE_LOADER_RUNS): истёкший не тратит минуту лимита WB.
+  assertWbTokenUsable(token, config.wbFinanceSecret, { codePrefix: WB_FINANCE_CODE_PREFIX, logger, nowMs: clock.now() });
   const t0 = clock.now();
   const api = new FinanceApi(
-    { host: config.wbFinanceHost, token, t0, budgetMs: config.financeBudgetMs, timeoutMs: config.financeHttpTimeoutMs },
+    { host: config.wbFinanceHost, token, secretName: config.wbFinanceSecret, t0, budgetMs: config.financeBudgetMs, timeoutMs: config.financeHttpTimeoutMs },
     clock,
     deps.fetchFn ?? (fetch as unknown as FetchFn),
     logger,
