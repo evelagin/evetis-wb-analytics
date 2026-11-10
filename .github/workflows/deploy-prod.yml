@@ -11,10 +11,14 @@ on:
         description: "SHA коммита, из которого собран этот образ (из summary deploy-shadow)"
         required: true
       only_job:
-        description: "Mig1b-0: all — прежний промоушен во все prod-Job'ы; wb-stocks-prod — ТОЛЬКО этот Job, с боевым env остатков и readback (остальные не трогаются)"
+        description: "all — промоушен во все prod-Job'ы (нужна фраза в confirm_all); wb-stocks-prod — ТОЛЬКО остатки (Mig1b-0); wb-statistics / wb-ads / wb-finance / wb-supplies-ref — ТОЛЬКО Job'ы своего потока миграции. Состав режимов — tools/deploy_scope_check.py"
         type: choice
-        options: ["all", "wb-stocks-prod"]
+        options: ["all", "wb-stocks-prod", "wb-statistics", "wb-ads", "wb-finance", "wb-supplies-ref"]
         default: "all"
+      confirm_all:
+        description: "Только для only_job=all: впиши PROMOTE-ALL-PROD. Без фразы режим all ничего не обновляет (защита от выката во все prod-Job'ы значениями формы по умолчанию)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,7 +33,17 @@ jobs:
     env:
       DIGEST: ${{ inputs.image_digest }}
       SOURCE_GIT_SHA: ${{ inputs.source_git_sha }}
+      ONLY_JOB: ${{ inputs.only_job }}
+      CONFIRM_ALL: ${{ inputs.confirm_all }}
     steps:
+      # Первый шаг, ДО выдачи токена sa-deployer: режим all без фразы подтверждения не идёт дальше.
+      - name: "Guard: режим all — только с фразой подтверждения"
+        run: |
+          if [ "$ONLY_JOB" = "all" ] && [ "$CONFIRM_ALL" != "PROMOTE-ALL-PROD" ]; then
+            echo "::error title=deploy-prod::only_job=all обновляет ВСЕ prod-Job'ы. Впиши PROMOTE-ALL-PROD в confirm_all или выбери режим потока."
+            exit 1
+          fi
+          echo "режим: $ONLY_JOB"
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
@@ -49,6 +63,14 @@ jobs:
           echo "digest ok: $DIGEST"
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: "Охват выката: снимок всех Job'ов ДО (tools/deploy_scope_check.py)"
+        id: scope_before
+        run: |
+          python3 tools/deploy_scope_check.py allowed "$ONLY_JOB" | sed 's/^/может обновить: /'
+          gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > scope_before.json
       - name: Deploy prod Jobs (промоушен того же digest, source sha)
         if: inputs.only_job == 'all'
         # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest во ВСЕ
@@ -172,6 +194,75 @@ jobs:
           else
             echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      # ── Потоки миграции Apps Script → Cloud Run (M2–M5): каждый — свой режим only_job ──────────────
+      - name: "Deploy M2: wb-orders-prod + wb-sales-prod + wb-sales-reconcile-prod"
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-statistics'
+        # Job'ов нет, пока Terraform не применён с m2_prod_enabled=true (OWNER ACK cutover потока) — тогда шаг только
+        # предупреждает. Боевые имена таблиц Terraform ставит на CREATE; загрузчик сам отказывает при чужом
+        # контуре (targets.ts потока). Шаг НЕ включает Scheduler и НЕ запускает Job. Без шага Job остался бы
+        # на bootstrap hello (урок PR-1).
+        run: |
+          for JOB in wb-orders-prod wb-sales-prod wb-sales-reconcile-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: "Deploy M3: wb-ads-prod + wb-ads-query-prod + wb-ads-costs-audit-prod"
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-ads'
+        # Job'ов нет, пока Terraform не применён с m3_prod_enabled=true (OWNER ACK cutover потока) — тогда шаг только
+        # предупреждает. Боевые имена таблиц Terraform ставит на CREATE; загрузчик сам отказывает при чужом
+        # контуре (targets.ts потока). Шаг НЕ включает Scheduler и НЕ запускает Job. Без шага Job остался бы
+        # на bootstrap hello (урок PR-1).
+        run: |
+          for JOB in wb-ads-prod wb-ads-query-prod wb-ads-costs-audit-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: "Deploy M4: wb-finance-prod"
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-finance'
+        # Job'ов нет, пока Terraform не применён с m4_prod_enabled=true (OWNER ACK cutover потока) — тогда шаг только
+        # предупреждает. Боевые имена таблиц Terraform ставит на CREATE; загрузчик сам отказывает при чужом
+        # контуре (targets.ts потока). Шаг НЕ включает Scheduler и НЕ запускает Job. Без шага Job остался бы
+        # на bootstrap hello (урок PR-1).
+        run: |
+          for JOB in wb-finance-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: "Deploy M5: wb-supplies-prod + ref-sync-prod"
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-supplies-ref'
+        # Job'ов нет, пока Terraform не применён с m5_prod_enabled=true (OWNER ACK cutover потока) — тогда шаг только
+        # предупреждает. Боевые имена таблиц Terraform ставит на CREATE; загрузчик сам отказывает при чужом
+        # контуре (targets.ts потока). Шаг НЕ включает Scheduler и НЕ запускает Job. Без шага Job остался бы
+        # на bootstrap hello (урок PR-1).
+        run: |
+          for JOB in wb-supplies-prod ref-sync-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         if: inputs.only_job == 'all'
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
@@ -194,10 +285,6 @@ jobs:
       # таблицы остатков. НЕ запускает Job, НЕ трогает Scheduler (у sa-deployer нет Scheduler Admin),
       # НЕ меняет args (их владелец — Terraform). Readback валит выкат, если изменился любой другой Job.
       # Порядок применения — docs/ops/MIG1B0_STOCKS_PROD_PREP.md, только по OWNER ACK MIG1B.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: inputs.only_job == 'wb-stocks-prod'
-        with:
-          persist-credentials: false
       - name: "wb-stocks-prod: pre-check — digest = образ wb-stocks-shadow, происхождение образа, контур prod; снимок всех Job'ов"
         if: inputs.only_job == 'wb-stocks-prod'
         run: |
@@ -233,3 +320,11 @@ jobs:
             echo "- source_git_sha: \`${SOURCE_GIT_SHA}\`"
             echo "- Scheduler wb-stocks-prod проверить отдельно: PAUSED до OWNER ACK MIG1B"
           } >> "$GITHUB_STEP_SUMMARY"
+      # Последний шаг, в ЛЮБОМ режиме и даже после сбоя шага выката: изменились только Job'ы режима,
+      # каждый существующий Job режима — на digest, состав Job'ов прежний.
+      - name: "Охват выката: снимок ПОСЛЕ — изменились только Job'ы режима"
+        if: always() && steps.scope_before.outcome == 'success'
+        run: |
+          gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > scope_after.json
+          python3 tools/deploy_scope_check.py check "$ONLY_JOB" scope_before.json scope_after.json "$DIGEST"
+          echo "- охват выката (${ONLY_JOB}): OK — tools/deploy_scope_check.py" >> "$GITHUB_STEP_SUMMARY"
