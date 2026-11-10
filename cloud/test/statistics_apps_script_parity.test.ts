@@ -202,3 +202,38 @@ describe('replay-паритет ночной сверки (runWbSalesNightReconc
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Сверка, затем инкремент: watermark инкремента сверкой не двигается (обе стороны)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('replay-паритет цепочки «сверка 04:20 → инкремент 06:22»', () => {
+  it('инкремент после сверки берёт прежний watermark и пишет то же, что Apps Script', async () => {
+    const recon = [saleRow(21, { lastChangeDate: '2026-11-09T13:00:00' }), saleRow(22, { lastChangeDate: '2026-11-10T04:19:00' })];
+    const later = [...recon, saleRow(23, { lastChangeDate: '2026-11-10T02:00:00' })]; // всплыла после сверки, lcd < 04:19
+    const props = { WB_SALES_BQ_SINK: '1', WB_TOKEN_STATISTICS: 'synthetic', WB_SALES_LAST_CHANGE_WATERMARK: W };
+
+    // Apps Script: сверка, затем инкремент на RAW, дополненном сверкой.
+    const a1 = runAppsScript('runWbSalesNightReconcile', { props, existing: SALES_EXISTING, wb: [{ status: 200, body: recon }] });
+    // Часы в песочнице стоят: сбросить общий 65-с cooldown, иначе инкремент Apps Script = SKIPPED_RATE_LIMIT.
+    const { WB_SALES_API_LAST_REQUEST_AT_MS: _cooldown, ...afterRecon } = a1.props;
+    expect(_cooldown).toBeDefined();
+    const a2 = runAppsScript('runWbSalesIncremental', {
+      props: afterRecon, existing: [...SALES_EXISTING, ...a1.loaded], wb: [{ status: 200, body: later }],
+    });
+
+    // Cloud Run: та же цепочка на одной таблице.
+    const bq = new FakeStatsBq(SALES_EXISTING.map((r) => ({ ...r })));
+    await runSalesReconcile(statsCtx(), statsDeps(bq, fakeTransport(wbScript([{ status: 200, body: recon }]))));
+    expect(bq.lastRows()).toEqual(a1.loaded);
+    const s2 = wbScript([{ status: 200, body: later }]);
+    await runSales(statsCtx(), statsDeps(bq, fakeTransport(s2)));
+
+    expect(a1.props.WB_SALES_LAST_CHANGE_WATERMARK).toBe(W);          // сверка свойство не тронула
+    expect(s2.urls).toEqual(a2.urls);                                  // тот же dateFrom = W
+    expect(a2.loaded).toHaveLength(3);                                 // включая строку, всплывшую после сверки
+    expect(bq.lastRows()).toEqual(a2.loaded);
+    expect((await bq.salesBoundary()).watermarkStorage).toBe(a2.props.WB_SALES_LAST_CHANGE_WATERMARK);
+  });
+});
+

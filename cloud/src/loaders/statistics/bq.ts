@@ -3,10 +3,13 @@
  * (CREATE_NEVER) и пишет только в таблицу, прошедшую assertStatsTarget.
  *
  * Отличие от Apps Script, осознанное:
- *   • watermark читается из ЦЕЛЕВОЙ таблицы (MAX(last_change_date) API-строк), а не из Script
- *     Properties. В Apps Script это ровно bootstrap-значение (wb*IncrementalBootstrap); при
- *     нормальной работе свойство равно MAX таблицы (watermark двигают только после записи).
- *     Watermark и граничные ключи — ОДНИМ запросом (минимум тарификации 10 МБ на таблицу).
+ *   • watermark читается из ЦЕЛЕВОЙ таблицы, а не из Script Properties: MAX(last_change_date) строк
+ *     ИНКРЕМЕНТА (load_id ORD_INC_* / SALE_INC_*). У Apps Script свойство двигает только инкремент,
+ *     поэтому оно равно ровно этому максимуму; строки ночной сверки (SALE_RECON_*) и ручного импорта
+ *     периода (ORD_API_* / SALE_API_*) watermark не двигают — как у Apps Script. Нет ни одной строки
+ *     инкремента → MAX по всем API-строкам, кроме сверки (= wb*IncrementalBootstrap).
+ *     Граничные ключи — по ВСЕМ API-строкам на отметке watermark (как wb*BqBoundary*Keys_).
+ *     Watermark и ключи — ОДНИМ запросом (минимум тарификации 10 МБ на таблицу).
  *   • запись — ОДНИМ load job на весь пакет (у Apps Script пачки по 2000 строк = несколько job):
  *     пакет ложится целиком или не ложится вовсе, «полузаписи» не бывает.
  */
@@ -14,7 +17,9 @@ import { BigQuery, type JobLoadMetadata } from '@google-cloud/bigquery';
 import { writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ORDERS_SOURCE_API, SALES_SOURCE_API } from './constants.js';
+import {
+  ORDERS_INC_LOADID_PREFIX, ORDERS_SOURCE_API, SALES_INC_LOADID_PREFIX, SALES_RECON_LOADID_PREFIX, SALES_SOURCE_API,
+} from './constants.js';
 import type { RefSkuRow } from './common.js';
 
 export interface StatsBqLike {
@@ -57,39 +62,47 @@ export class StatsBq {
   }
 
   /**
-   * Заказы: MAX(last_change_date) API-строк (wbOrdersBqMaxLastChangeDate_) и пары srid|row_hash ровно на
-   * этой границе (wbOrdersBqBoundaryKeys_). Хранение — с пробелом вместо 'T'.
+   * Заказы: watermark = MAX(last_change_date) строк инкремента (= Script Property Apps Script; без строк
+   * инкремента — MAX всех API-строк, как wbOrdersBqMaxLastChangeDate_) и пары srid|row_hash всех API-строк
+   * ровно на этой границе (wbOrdersBqBoundaryKeys_). Хранение — с пробелом вместо 'T'.
    */
   async ordersBoundary(table: string): Promise<Boundary> {
     const t = this.fqn(table);
     const [rows] = await this.bq.query({
       query: `WITH wm AS (
-  SELECT MAX(last_change_date) AS m FROM ${t}
+  SELECT COALESCE(
+           MAX(IF(STARTS_WITH(IFNULL(load_id, ''), @inc), last_change_date, NULL)),
+           MAX(last_change_date)) AS m
+  FROM ${t}
   WHERE source_api = @src AND last_change_date <> ''
 )
 SELECT DISTINCT wm.m AS watermark, r.srid AS k1, r.row_hash AS k2
 FROM wm LEFT JOIN ${t} r ON r.source_api = @src AND r.last_change_date = wm.m`,
-      params: { src: ORDERS_SOURCE_API },
+      params: { src: ORDERS_SOURCE_API, inc: ORDERS_INC_LOADID_PREFIX },
       location: this.location,
     });
     return toBoundary(rows as Array<{ watermark: unknown; k1: unknown; k2: unknown }>);
   }
 
   /**
-   * Продажи: MAX(last_change_date) API-строк (wbSalesBqMaxLastChange_; хранение с 'T') и состояния
-   * sale_id|md5(raw_json) ровно на границе (wbSalesBqBoundaryStateKeys_).
+   * Продажи: watermark = MAX(last_change_date) строк инкремента (ночная сверка его НЕ двигает — у Apps Script
+   * сверка свойство не трогает); без строк инкремента — MAX API-строк, кроме сверки. Состояния
+   * sale_id|md5(raw_json) — по ВСЕМ API-строкам на отметке (wbSalesBqBoundaryStateKeys_). Хранение с 'T'.
    */
   async salesBoundary(table: string): Promise<Boundary> {
     const t = this.fqn(table);
     const [rows] = await this.bq.query({
       query: `WITH wm AS (
-  SELECT MAX(last_change_date) AS m FROM ${t} WHERE source_api = @src
+  SELECT COALESCE(
+           MAX(IF(STARTS_WITH(IFNULL(load_id, ''), @inc), last_change_date, NULL)),
+           MAX(IF(STARTS_WITH(IFNULL(load_id, ''), @recon), NULL, last_change_date))) AS m
+  FROM ${t} WHERE source_api = @src
 )
 SELECT DISTINCT wm.m AS watermark, r.sale_id AS k1, TO_HEX(MD5(r.raw_json)) AS k2
 FROM wm LEFT JOIN ${t} r
   ON r.source_api = @src AND r.last_change_date = wm.m
  AND r.sale_id IS NOT NULL AND TRIM(r.sale_id) <> '' AND r.raw_json IS NOT NULL`,
-      params: { src: SALES_SOURCE_API },
+      params: { src: SALES_SOURCE_API, inc: SALES_INC_LOADID_PREFIX, recon: SALES_RECON_LOADID_PREFIX },
       location: this.location,
     });
     return toBoundary(rows as Array<{ watermark: unknown; k1: unknown; k2: unknown }>);

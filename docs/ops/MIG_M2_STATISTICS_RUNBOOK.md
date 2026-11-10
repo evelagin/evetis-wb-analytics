@@ -127,20 +127,24 @@ watermark после прогона и сами URL запросов в WB (21 �
 
 ## 3. Отличия от Apps Script — каждое с обоснованием
 
-1. **Watermark читается из целевой таблицы** (`MAX(last_change_date)` API-строк), а не из Script Property.
-   Требование брифа. При штатной работе это одно и то же: свойство двигается только после записи и ровно до
-   максимума записанного. Следствия:
-   - Cloud Run **не дублирует** строки там, где Apps Script дублировал: при сбое `setProperty` после записи и после
-     ночной сверки, дописавшей состояния новее свойства (часовой прогон Apps Script берёт их повторно). Поэтому паритет
-     сравнивает состояния, а не строки.
-   - **После переключения ручной импорт периода** (`importWbOrdersFromApi` / `importWbSalesReturnsFromApi` в Apps
-     Script) **запрещён**: он пишет строки с `last_change_date` до «сейчас», отфильтрованные по дате заказа/продажи,
-     и поднял бы MAX таблицы выше реально обработанного — изменения прочих заказов в этом промежутке были бы пропущены.
+1. **Watermark читается из целевой таблицы**, а не из Script Property. Требование брифа. Watermark =
+   `MAX(last_change_date)` строк **инкремента** (`load_id` `ORD_INC_*` / `SALE_INC_*`): у Apps Script свойство двигает
+   только инкремент, поэтому при штатной работе оно ровно равно этому максимуму. Строки **ночной сверки**
+   (`SALE_RECON_*`) и **ручного импорта периода** (`ORD_API_*` / `SALE_API_*`) watermark **не двигают** — как у Apps Script
+   (иначе сверка в 04:20 подняла бы MAX до ~04:19, и строки с `lastChangeDate` из промежутка «прежний watermark … 04:19»,
+   всплывшие после сверки, инкремент пропустил бы до следующей ночи). Нет ни одной строки инкремента → MAX всех
+   API-строк, кроме сверки (= `wb*IncrementalBootstrap`). Граничные ключи на отметке — по **всем** API-строкам
+   (`wb*BqBoundary*Keys_`). У заказов других писателей, кроме инкремента и ручного импорта периода, нет.
+   Следствия:
+   - строки, которые Apps Script дублирует (после сверки — состояния новее свойства; при сбое `setProperty` после
+     записи), Cloud Run дублирует так же в первом случае и не дублирует во втором (следующий прогон видит записанное).
+     Паритет поэтому сравнивает состояния, а не строки;
+   - ручной импорт периода после переключения watermark не сдвигает (тесты `statistics_loader.test.ts`).
 2. **Один load job на пакет** вместо пачек по 2000 строк: пакет ложится целиком или не ложится — «полузаписи» нет,
    commit-маркер не нужен (watermark = сам факт записи). Число записанных строк сверяется с `statistics.load.outputRows`;
    потерянный ответ load job опознаётся по детерминированному `jobId`.
 3. **Пауза между страницами заказов 61 с** вместо 2 с: при лимите 1 запрос/мин вторая страница у Apps Script почти
-   всегда получала 429 и ждала повтора. Логика страниц та же, запросов к WB меньше. Job timeout 1800 с.
+   всегда получала 429 и ждала повтора. Логика страниц та же, запросов к WB меньше. Job timeout 3600 с (худший случай 30 страниц ≈ 1 900 с).
 4. **Справочник SKU — `wb_raw.REF_SKU_MASTER`** (BigQuery-копия листа `SKU_MASTER`, `runRefSync` ~08:22 МСК), а не лист в
    момент загрузки: у Cloud Run нет доступа к книге (M5 переносит и REF). Правило привязки то же. **Риск:** новый SKU,
    добавленный в лист после синхронизации REF, до следующей синхронизации получит `not_found` — и это замораживается
@@ -170,7 +174,8 @@ watermark после прогона и сами URL запросов в WB (21 �
     lease — STARTED старше 30 мин не блокирует новый прогон.
 12. **Стартовый watermark теневой таблицы** (`ORDERS_BOOTSTRAP_WATERMARK`, `SALES_BOOTSTRAP_WATERMARK`) — только shadow и
     только пока в `__CR` нет API-строк. В prod пустая таблица = ERROR (как `wb*IncrementalBootstrap` без строк).
-13. **`DRY_RUN=1`**: план считается, в BigQuery не пишется (Apps Script такого режима не имел).
+13. **`DRY_RUN=1`**: план считается, в BigQuery не пишется (Apps Script такого режима не имел). Значение сравнивается
+    так же, как в `cli.ts` (`=== '1'`, без trim): иначе при `' 1'` cli записал бы COMPLETE прогона, который ничего не грузил.
 14. Ветка fallback `normalizeDateKey_` (`new Date(s)` для нестандартных строк) считается в Europe/Moscow явно (Cloud Run
     живёт в UTC). WB отдаёт ISO-даты, ветка в бою не срабатывает.
 
@@ -200,38 +205,59 @@ Shadow во время паритета ходит в WB тем же токен�
 
 ## 5. Terraform (только исходники; `terraform validate -backend=false` — OK)
 
-**M2-SHADOW** (`plan` → просмотр → `apply` с теми же target'ами):
+**Свои runtime-SA** (общее правило миграции; `sa-loaders-*` не расширяются): `sa-wb-statistics-shadow` и
+`sa-wb-statistics-prod`. Права каждого: `bigquery.jobUser` (проект), `dataEditor` на `LOADER_RUNS`, `dataViewer` на
+`REF_SKU_MASTER` + `REF_SKU_MASTER_DATA` + `REF_ACTIVE_VERSION` (вью раскрывается в базовые таблицы), `dataEditor`
+только на свои две таблицы (`__CR` у shadow, боевые у prod), `secretAccessor` на `WB_TOKEN_STATISTICS`;
+`serviceAccountUser` (actAs) для `sa-deployer` и `sa-terraform-apply`.
+
+**Флаг `m2_prod_enabled`** (по умолчанию `false`). Весь prod-контур — SA, его права, доступ к секрету, Job, invoker,
+Scheduler — создаётся только при `true`. Нецелевой `infra.yml apply` до вечера переключения prod не создаст.
+Отдельного алерта нет: политики `loader_failed` и `scheduler_attempt_failed` не сужены до Job'а и покрывают новые Job'ы.
+
+**M2-SHADOW** (флаг `false`; `plan` → просмотр → `apply` с теми же target'ами):
 ```
+-target=google_service_account.wb_statistics_shadow
+-target=google_project_iam_member.wb_statistics_jobuser
+-target=google_bigquery_table_iam_member.wb_statistics_write_runs
+-target=google_bigquery_table_iam_member.wb_statistics_read_ref
+-target=google_service_account_iam_member.wb_statistics_actas_deployer
+-target=google_service_account_iam_member.wb_statistics_actas_terraform
+-target=google_secret_manager_secret_iam_member.wb_statistics_secret_access
 -target=google_bigquery_table.raw_wb_orders_cr
 -target=google_bigquery_table.raw_wb_sales_returns_cr
 -target=google_bigquery_table_iam_member.shadow_write_orders_cr
 -target=google_bigquery_table_iam_member.shadow_write_sales_cr
--target=google_secret_manager_secret_iam_member.shadow_access_wb_token_statistics
 -target=google_cloud_run_v2_job.wb_statistics_shadow
 -target=google_cloud_run_v2_job_iam_member.scheduler_statistics_shadow_invoke
 -target=google_cloud_scheduler_job.wb_statistics_shadow
 ```
-Ожидание плана: 2 таблицы, 3 IAM BigQuery/секрета, 3 Job, 3 invoker, 3 Scheduler (paused) — **все create, prod 0**.
-Переменные `statistics_shadow_orders_bootstrap_watermark` / `statistics_shadow_sales_bootstrap_watermark` — стартовый
-watermark (см. §6.1).
+Ожидание плана при `m2_prod_enabled=false`: 1 SA, 1 jobUser, 1 LOADER_RUNS, 3 REF, 2 actAs, 1 секрет, 2 таблицы,
+2 записи `__CR`, 3 Job, 3 invoker, 3 Scheduler (paused) — **все create, ни одного prod-ресурса** (у ресурсов по
+`local.statistics_sa` только ключ `shadow`). Переменные `statistics_shadow_orders_bootstrap_watermark` /
+`statistics_shadow_sales_bootstrap_watermark` — стартовый watermark (см. §6.1).
 
-**M2-CUTOVER** (вечер переключения):
+**M2-CUTOVER** (вечер переключения): `m2_prod_enabled = true` (tfvars), затем `plan` с target'ами выше плюс:
 ```
--target=google_secret_manager_secret_iam_member.prod_access_wb_token_statistics
+-target=google_service_account.wb_statistics_prod
 -target=google_bigquery_table_iam_member.prod_write_orders
 -target=google_bigquery_table_iam_member.prod_write_sales
 -target=google_cloud_run_v2_job.wb_statistics_prod
 -target=google_cloud_run_v2_job_iam_member.scheduler_statistics_prod_invoke
 -target=google_cloud_scheduler_job.wb_statistics_prod
 ```
+Ожидание: только create ключей `prod` (SA, jobUser, LOADER_RUNS, 3 REF, 2 actAs, секрет) и prod-ресурсов
+(2 записи в боевые таблицы, 3 Job, 3 invoker, 3 Scheduler на паузе); shadow без изменений.
+Возврат флага в `false` удаляет весь prod-контур одним планом — только после `pause` prod-Scheduler.
+
 Prod Job создаётся на bootstrap-образе (`var.container_image`), env фиксируется при CREATE (дальше `ignore_changes`).
 Образ продвигает `deploy-prod.yml` **только в свой Job**: нужен вход `only_job` из PR #416 (Mig1b-0) — после его слияния
 добавить `wb-orders-prod`, `wb-sales-prod`, `wb-sales-reconcile-prod` в список допустимых. В этом PR `deploy-prod.yml`
-не меняется; `deploy-shadow.yml` обновляет образ трёх shadow-Job, если они уже созданы.
+не меняется. `deploy-shadow.yml` меняет у трёх shadow-Job **только образ** (если Job созданы) и env не трогает, поэтому
+env shadow-Job остаётся во владении Terraform без дрейфа плана (в `ignore_changes` — только образ).
 
-Права: shadow-SA — `dataEditor` только на две `__CR`; prod-SA — только на `RAW_WB_ORDERS` и `RAW_WB_SALES_RETURNS`;
-`LOADER_RUNS` и чтение `REF_SKU_MASTER` (+ `REF_SKU_MASTER_DATA`, `REF_ACTIVE_VERSION`) у обоих уже есть (`bigquery.tf`);
-`secretAccessor` — поресурсно на `WB_TOKEN_STATISTICS`.
+Таймауты Job: `wb-sales*` 900 с (попытка ≈ 360 с: 4 запроса × 60 с + паузы 20/40/60 с; повтор cli через 60 с ≈ ещё
+360 с; плюс BigQuery), `wb-orders` 3600 с (пагинация с паузой 61 с).
 
 ---
 
@@ -243,7 +269,7 @@ Prod Job создаётся на bootstrap-образе (`var.container_image`),
 2. Слить PR → `deploy-shadow` соберёт образ D (shadow-Job ещё нет — шаг пропустится).
 3. Стартовый watermark: `SELECT MAX(last_change_date)` по `RAW_WB_ORDERS` (заменить пробел на `T`) и по
    `RAW_WB_SALES_RETURNS` в момент старта → в tfvars обеих переменных.
-4. `terraform plan/apply` (§5, M2-SHADOW). Затем `deploy-shadow` вручную (`workflow_dispatch`) — образ D в shadow-Job.
+4. `terraform plan/apply` (§5, M2-SHADOW, флаг `m2_prod_enabled=false`). Затем `deploy-shadow` вручную (`workflow_dispatch`) — образ D в shadow-Job.
 5. `scheduler-control.yml`: `run-now` по очереди `wb-sales`, `wb-orders`, `wb-sales-reconcile` (shadow) с интервалом ≥ 2 мин,
    проверить `LOADER_RUNS` (environment='shadow', COMPLETE) и строки в `__CR`; затем `resume` трёх shadow-Scheduler.
 
@@ -257,9 +283,9 @@ Prod Job создаётся на bootstrap-образе (`var.container_image`),
 триггеров DRO потеряет orders/sales — см. §8); `deploy-prod` умеет `only_job`.
 1. После вечернего прогона Apps Script 18:xx (в `INGEST_RUNS` COMPLETE для orders и sales) владелец **снимает три триггера**
    в редакторе Apps Script: `runWbOrdersIncremental`, `runWbSalesIncremental`, `runWbSalesNightReconcile`.
-2. Сверить watermark: Script Property (`wbOrdersIncrementalStatus` / `wbSalesIncrementalStatus`, только чтение) = MAX
-   таблицы. Если MAX таблицы **больше** свойства (ручной импорт периода) — STOP, разбор.
-3. `terraform plan/apply` (§5, M2-CUTOVER). Prod Scheduler создаются на паузе.
+2. Сверить watermark: Script Property (`wbOrdersIncrementalStatus` / `wbSalesIncrementalStatus`, только чтение) =
+   MAX(`last_change_date`) строк инкремента (`ORD_INC_*` / `SALE_INC_*`). Расхождение — STOP, разбор.
+3. `m2_prod_enabled = true` → `terraform plan/apply` (§5, M2-CUTOVER). Prod Scheduler создаются на паузе.
 4. `deploy-prod` с `only_job` для трёх prod-Job — digest D′, проверенный в shadow.
 5. `run-now` prod: `wb-sales`, через ≥ 2 мин `wb-orders`. Проверить: `LOADER_RUNS` prod COMPLETE за D-1,
    `V_INGEST_HEARTBEAT` показывает `cloud_run`, `rows_loaded` в разумных пределах (обычно 0–10).

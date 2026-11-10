@@ -117,10 +117,31 @@ describe('идемпотентность и устойчивость', () => {
     expect([a.rowsLoaded, b.rowsLoaded]).toEqual([1, 0]);
   });
 
-  it('сверка не двигает watermark инкремента: окно старше watermark не меняет MAX', async () => {
+  it('сверка, затем инкремент → dateFrom = прежний watermark (сверка watermark не двигает)', async () => {
     const bq = new FakeStatsBq(existingSales());
-    await runSalesReconcile(statsCtx(), statsDeps(bq, fakeTransport(wbScript([{ status: 200, body: [saleRow(5, { lastChangeDate: '2026-11-05T08:00:00' })] }]))));
-    expect((await bq.salesBoundary()).watermarkStorage).toBe(W);
+    // Сверка в 04:20 дописала состояния НОВЕЕ watermark инкремента (W = 12:00).
+    await runSalesReconcile(statsCtx(), statsDeps(bq, fakeTransport(wbScript([{ status: 200, body: [
+      saleRow(5, { lastChangeDate: '2026-11-09T13:00:00' }), saleRow(6, { lastChangeDate: '2026-11-10T04:19:00' }),
+    ] }]))));
+    expect(bq.table.some((r) => String(r.load_id).startsWith('SALE_RECON_') && r.last_change_date === '2026-11-10T04:19:00')).toBe(true);
+    const script = wbScript([{ status: 200, body: [] }]);
+    await runSales(statsCtx(), statsDeps(bq, fakeTransport(script)));
+    // Строки с lastChangeDate из (12:00; 04:19), всплывшие после сверки, инкремент не пропустит.
+    expect(script.urls[0]).toContain(`dateFrom=${encodeURIComponent(W)}`);
+  });
+
+  it('заказы: ручной импорт периода (ORD_API_*) watermark не двигает', async () => {
+    const manual = normalizeOrdersRows([orderRow(9, { lastChangeDate: '2026-11-10T08:00:00' })], 'ORD_API_20261110_080000', '2026-11-10 08:00:00', SKU).map(ordersBqRow);
+    const script = wbScript([{ status: 200, body: [] }]);
+    await runOrders(statsCtx(), statsDeps(new FakeStatsBq([...existingOrders(), ...manual]), fakeTransport(script)));
+    expect(script.urls[0]).toContain(`dateFrom=${encodeURIComponent(W)}`);
+  });
+
+  it('продажи: в таблице только строки сверки → они не дают watermark (ERROR без стартового значения)', async () => {
+    const recon = normalizeSalesRows([saleRow(7, { lastChangeDate: W })], 'SALE_RECON_20261110_042000', '2026-11-10 04:20:00', SKU).map(salesBqRow);
+    const script = wbScript([{ status: 200, body: [] }]);
+    expect(await codeOf(runSales(statsCtx(), statsDeps(new FakeStatsBq(recon), fakeTransport(script))))).toBe('SALES_ERROR');
+    expect(script.urls).toHaveLength(0);
   });
 
   it('сбой записи в BigQuery → исключение (cli пишет ERROR), watermark прежний', async () => {
@@ -137,6 +158,13 @@ describe('идемпотентность и устойчивость', () => {
     expect(bq.skuQueries).toBe(0);
     await runOrders(statsCtx(), statsDeps(bq, fakeTransport(wbScript([{ status: 200, body: newer }, { status: 200, body: [] }]))));
     expect(bq.skuQueries).toBe(1);
+  });
+
+  it('DRY_RUN разбирается как в cli (=== \'1\'): " 1" — обычная запись, а не сухой прогон', async () => {
+    const bq = new FakeStatsBq(existingOrders());
+    const r = await runOrders(statsCtx({ DRY_RUN: ' 1' }), statsDeps(bq, fakeTransport(wbScript([{ status: 200, body: newer }, { status: 200, body: [] }]))));
+    expect(r.rowsLoaded).toBe(2);
+    expect(bq.appended).toHaveLength(1);
   });
 
   it('DRY_RUN=1: план считается, в BigQuery не пишется', async () => {

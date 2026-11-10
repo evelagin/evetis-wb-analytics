@@ -408,7 +408,9 @@ export function loadConfig(env: Env = process.env): Config {
     salesReconcileDays: reconcileDays(env),
     ordersBootstrapWatermark: opt(env, 'ORDERS_BOOTSTRAP_WATERMARK', ''),
     salesBootstrapWatermark: opt(env, 'SALES_BOOTSTRAP_WATERMARK', ''),
-    statsDryRun: (env.DRY_RUN ?? '').trim() === '1',
+    // Ровно то же сравнение, что в cli.ts (`env.DRY_RUN === '1'`): при ' 1' cli выполнил бы обычный прогон
+    // с COMPLETE, а handler — сухой, без записи (ложный зелёный гейт).
+    statsDryRun: env.DRY_RUN === '1',
     wbPricesHost: opt(env, 'WB_PRICES_HOST', 'https://discounts-prices-api.wildberries.ru'),
     wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
     pricesRawTable: opt(env, 'PRICES_RAW_TABLE', 'RAW_WB_PRICES'),

@@ -68,3 +68,11 @@ variable "statistics_shadow_sales_bootstrap_watermark" {
   type    = string
   default = ""
 }
+
+# M2: prod-контур загрузчиков statistics-api (SA, права, секрет, Job, invoker, Scheduler).
+# false (по умолчанию) — prod не создаётся ни при каком apply. true — ТОЛЬКО в вечер переключения
+# по ACK M2-CUTOVER (docs/ops/MIG_M2_STATISTICS_RUNBOOK.md §5).
+variable "m2_prod_enabled" {
+  type    = bool
+  default = false
+}

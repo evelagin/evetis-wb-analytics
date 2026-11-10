@@ -19,6 +19,10 @@ at-least-once, привязка SKU при загрузке. Runbook: `docs/ops/
 - Сверка паритета: `sql/mig_m2_statistics_parity.sql` (только SELECT; самопроверка prod↔prod — EXACT).
 - `scheduler-control.yml`: загрузчики `wb-orders`, `wb-sales`, `wb-sales-reconcile`; `deploy-shadow.yml` обновляет образ
   трёх shadow-Job, если они созданы.
+- Ревью #420: watermark = MAX строк инкремента (`ORD_INC_*`/`SALE_INC_*`) — ночная сверка и ручной импорт периода
+  его не двигают, как у Apps Script; свои SA `sa-wb-statistics-{shadow,prod}`; весь prod-контур — только при
+  `m2_prod_enabled=true` (по умолчанию false); таймауты `wb-sales*` 900 с, `wb-orders` 3600 с; `DRY_RUN` разбирается
+  как в `cli.ts`.
 
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 

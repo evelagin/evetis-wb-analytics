@@ -105,16 +105,23 @@ export class FakeStatsBq {
 
   private api(src: string) { return this.table.filter((r) => r.source_api === src); }
 
+  /** Модель SQL StatsBq: watermark — MAX строк инкремента, иначе MAX API-строк (у продаж — кроме сверки). */
+  private watermark(rows: Obj[], inc: string, excl?: string): string {
+    const max = (rs: Obj[]) => rs.map((r) => String(r.last_change_date)).sort().pop() ?? '';
+    const lid = (r: Obj) => String(r.load_id ?? '');
+    return max(rows.filter((r) => lid(r).startsWith(inc))) || max(rows.filter((r) => !excl || !lid(r).startsWith(excl)));
+  }
+
   async ordersBoundary(): Promise<Boundary> {
     const rows = this.api('WB_API_ORDERS').filter((r) => r.last_change_date && r.last_change_date !== '');
-    const wm = rows.map((r) => String(r.last_change_date)).sort().pop() ?? '';
+    const wm = this.watermark(rows, 'ORD_INC_');
     const keys = new Set(rows.filter((r) => r.last_change_date === wm).map((r) => `${String(r.srid ?? '')}|${String(r.row_hash ?? '')}`));
     return { watermarkStorage: wm, keys };
   }
 
   async salesBoundary(): Promise<Boundary> {
     const rows = this.api('WB_API_SALES').filter((r) => r.last_change_date != null);
-    const wm = rows.map((r) => String(r.last_change_date)).sort().pop() ?? '';
+    const wm = this.watermark(rows, 'SALE_INC_', 'SALE_RECON_');
     const keys = new Set(rows.filter((r) => r.last_change_date === wm && r.sale_id && String(r.sale_id).trim() && r.raw_json != null)
       .map((r) => `${String(r.sale_id)}|${md5(String(r.raw_json))}`));
     return { watermarkStorage: wm, keys };

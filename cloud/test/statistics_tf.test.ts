@@ -24,7 +24,7 @@ function block(type: string, name: string): string {
 describe('Terraform M2', () => {
   it('shadow Job: SA shadow, таблицы __CR', () => {
     const b = block('google_cloud_run_v2_job', 'wb_statistics_shadow');
-    expect(b).toMatch(/loaders_shadow\.email/);
+    expect(b).toMatch(/wb_statistics_shadow\.email/);
     expect(b).toMatch(/ENVIRONMENT\s+= "shadow"/);
     expect(b).toMatch(/ORDERS_RAW_TABLE\s+= google_bigquery_table\.raw_wb_orders_cr\.table_id/);
     expect(b).toMatch(/SALES_RAW_TABLE\s+= google_bigquery_table\.raw_wb_sales_returns_cr\.table_id/);
@@ -34,19 +34,46 @@ describe('Terraform M2', () => {
 
   it('prod Job: SA prod, ровно боевые таблицы', () => {
     const b = block('google_cloud_run_v2_job', 'wb_statistics_prod');
-    expect(b).toMatch(/loaders_prod\.email/);
+    expect(b).toMatch(/wb_statistics_prod\[0\]\.email/);
     expect(b).toMatch(/ENVIRONMENT\s+= "prod"/);
-    expect(b).toMatch(/ORDERS_RAW_TABLE\s+= "RAW_WB_ORDERS"/);
-    expect(b).toMatch(/SALES_RAW_TABLE\s+= "RAW_WB_SALES_RETURNS"/);
+    expect(b).toMatch(/ORDERS_RAW_TABLE\s+= local\.statistics_prod_tables\.orders/);
+    expect(b).toMatch(/SALES_RAW_TABLE\s+= local\.statistics_prod_tables\.sales/);
+    expect(TF).toMatch(/statistics_prod_tables = \{ orders = "RAW_WB_ORDERS", sales = "RAW_WB_SALES_RETURNS" \}/);
     expect(b).not.toMatch(/__CR/);
   });
 
-  it('IAM: shadow-SA пишет только __CR, prod-SA — только боевые', () => {
-    expect(block('google_bigquery_table_iam_member', 'shadow_write_orders_cr')).toMatch(/loaders_shadow/);
-    expect(block('google_bigquery_table_iam_member', 'shadow_write_sales_cr')).toMatch(/loaders_shadow/);
-    expect(block('google_bigquery_table_iam_member', 'prod_write_orders')).toMatch(/table_id\s+= "RAW_WB_ORDERS"[\s\S]*loaders_prod\.email/);
-    expect(block('google_bigquery_table_iam_member', 'prod_write_sales')).toMatch(/table_id\s+= "RAW_WB_SALES_RETURNS"[\s\S]*loaders_prod\.email/);
-    for (const n of ['prod_write_orders', 'prod_write_sales']) expect(block('google_bigquery_table_iam_member', n)).not.toMatch(/loaders_shadow/);
+  it('IAM: свои SA; shadow пишет только __CR, prod — только боевые; sa-loaders-* не расширяются', () => {
+    expect(TF).not.toMatch(/loaders_(shadow|prod)/);
+    expect(block('google_bigquery_table_iam_member', 'shadow_write_orders_cr')).toMatch(/wb_statistics_shadow\.email/);
+    expect(block('google_bigquery_table_iam_member', 'shadow_write_sales_cr')).toMatch(/wb_statistics_shadow\.email/);
+    expect(block('google_bigquery_table_iam_member', 'prod_write_orders')).toMatch(/statistics_prod_tables\.orders[\s\S]*wb_statistics_prod\[0\]\.email/);
+    expect(block('google_bigquery_table_iam_member', 'prod_write_sales')).toMatch(/statistics_prod_tables\.sales[\s\S]*wb_statistics_prod\[0\]\.email/);
+    for (const r of ['wb_statistics_jobuser', 'wb_statistics_write_runs', 'wb_statistics_read_ref', 'wb_statistics_actas_deployer', 'wb_statistics_actas_terraform']) {
+      expect(TF, r).toMatch(new RegExp(`resource "[a-z_]+" "${r}"`));
+    }
+    expect(TF).toMatch(/account_id\s+= "sa-wb-statistics-shadow"/);
+    expect(TF).toMatch(/account_id\s+= "sa-wb-statistics-prod"/);
+  });
+
+  it('весь prod-контур — только при m2_prod_enabled (по умолчанию false)', () => {
+    expect(block('google_service_account', 'wb_statistics_prod')).toMatch(/count\s+= var\.m2_prod_enabled \? 1 : 0/);
+    for (const n of ['prod_write_orders', 'prod_write_sales']) {
+      expect(block('google_bigquery_table_iam_member', n)).toMatch(/count\s+= var\.m2_prod_enabled \? 1 : 0/);
+    }
+    expect(block('google_cloud_run_v2_job', 'wb_statistics_prod')).toMatch(/for_each\s+= var\.m2_prod_enabled \? local\.statistics_loaders : \{\}/);
+    expect(block('google_cloud_run_v2_job_iam_member', 'scheduler_statistics_prod_invoke')).toMatch(/var\.m2_prod_enabled \?/);
+    expect(block('google_cloud_scheduler_job', 'wb_statistics_prod')).toMatch(/var\.m2_prod_enabled \?/);
+    // SA prod (и его права/секрет через local.statistics_sa) — только при флаге.
+    expect(TF).toMatch(/var\.m2_prod_enabled \? \{ prod = google_service_account\.wb_statistics_prod\[0\] \} : \{\}/);
+    const vars = readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'infra', 'terraform', 'variables.tf'), 'utf8');
+    expect(vars).toMatch(/variable "m2_prod_enabled" \{\s*type\s+= bool\s*default = false/);
+  });
+
+  it('таймауты Job не меньше худшего случая с повтором cli', () => {
+    const t = (key: string) => Number(new RegExp(`${key} = \\{[\\s\\S]*?timeout\\s+= "(\\d+)s"`).exec(TF)![1]);
+    expect(t('sales')).toBeGreaterThanOrEqual(900);
+    expect(t('"sales-reconcile"')).toBeGreaterThanOrEqual(900);
+    expect(t('orders')).toBeGreaterThanOrEqual(3600);
   });
 
   it('все расписания созданы на паузе', () => {
