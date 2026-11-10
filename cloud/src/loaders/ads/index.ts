@@ -107,7 +107,7 @@ export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
     const todayMsk = addDays(logicalPeriod, 1);
     const costsRange = rangeBack(todayMsk, WB_ADS_COSTS_OPERATIONAL_DAYS, 1);
 
-    if ((rt.env.DRY_RUN ?? '').trim() === '1') {
+    if (rt.env.DRY_RUN === '1') { // ровно как cli.ts:159
       logger.info('ads_dry_run', { logicalPeriod, fullstats: fsRange, costs: costsRange, tables: cfg.tables });
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
@@ -168,7 +168,7 @@ export function makeAdsQueryLoader(rt: AdsRuntime = defaultRuntime) {
     const cfg = loadAdsConfig(rt.env);
     assertAdsTargets(config.environment, cfg, ADS_QUERY_KEYS);
     const qsDays = daysOf(addDays(logicalPeriod, -(WB_ADS_QSTATS_WINDOW_DAYS - 1)), logicalPeriod);
-    if ((rt.env.DRY_RUN ?? '').trim() === '1') {
+    if (rt.env.DRY_RUN === '1') { // ровно как cli.ts:159
       logger.info('ads_query_dry_run', { logicalPeriod, qstatsDays: qsDays, tables: cfg.tables });
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
@@ -202,7 +202,7 @@ export function makeAdsCostsAuditLoader(rt: AdsRuntime = defaultRuntime) {
       throw new LoaderError('Аудит расходов в prod выключен: нужен ADS_COSTS_AUDIT_ENABLED=1 после применения snapshot v2 (ACK ADS-UTC-EDGE)', 'ADS_AUDIT_DISABLED');
     }
     const r = rangeBack(logicalPeriod, cfg.auditFromDays, WB_ADS_COSTS_AUDIT_TO_DAYS);
-    if ((rt.env.DRY_RUN ?? '').trim() === '1') {
+    if (rt.env.DRY_RUN === '1') { // ровно как cli.ts:159
       logger.info('ads_audit_dry_run', { logicalPeriod, range: r, tables: { costs: cfg.tables.costs, runs: cfg.tables.costsRuns } });
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
