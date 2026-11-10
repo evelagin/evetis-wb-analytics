@@ -95,3 +95,14 @@ jobs:
               echo "$JOB ещё не создан Terraform'ом — шаг пропущен"
             fi
           done
+      - name: Deploy wb-finance-shadow (тот же digest)
+        # M4: shadow-контур финансов WB (пишет только __CR). Job создаёт Terraform (wb_finance_loader.tf);
+        # до первого apply шага нет — отсутствие Job'а не валит деплой остальных shadow.
+        run: |
+          if gcloud run jobs describe wb-finance-shadow --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update wb-finance-shadow \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ steps.push.outputs.digest }}"
+          else
+            echo "wb-finance-shadow ещё не создан Terraform'ом — шаг пропущен"
+          fi

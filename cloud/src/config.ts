@@ -274,6 +274,26 @@ export interface Config {
   unitkaCancelRestoreManifest: string;
   /** Поимённо принятые владельцем аномалии класса (nmID|дата|статус через запятую) — UNITKA_CANCEL_RESTORE_ACCEPT_ANOMALIES. */
   unitkaCancelRestoreAcceptedAnomalies: string[];
+  // ── M4 finance (финансовые отчёты WB, Finance API v1) — мягкий разбор, контур проверяет targets.ts ──
+  /** Хост категории «Финансы». */
+  wbFinanceHost: string;
+  /** Имя секрета с токеном категории «Финансы». Значение читает ТОЛЬКО runtime SA. */
+  wbFinanceSecret: string;
+  /** Целевые таблицы. По умолчанию теневые `__CR`; prod обязан явно назвать боевые (targets.ts). */
+  financeTables: { raw: string; runs: string; loads: string; weekStatus: string; weekRecon: string };
+  /** Первая неделя контура (пн). prod — строго 2026-07-13; shadow может начать позже (runbook §4). */
+  financeCutover: string;
+  /** Бюджет прогона на запросы к Finance API, мс (по умолчанию 20 мин). Мусор → NaN; допустимость проверяет targets.ts. */
+  financeBudgetMs: number;
+  /** Таймаут одного HTTP-запроса к Finance API, мс (по умолчанию 120 с). Мусор → NaN; проверяет targets.ts. */
+  financeHttpTimeoutMs: number;
+  /** trigger_type в FINANCE_LOADER_RUNS: AUTO (по умолчанию) | MANUAL. */
+  financeTriggerType: 'AUTO' | 'MANUAL';
+  /** finance-backfill: период регистрации WEEKLY-отчётов (YYYY-MM-DD), пусто — отказ. */
+  financeBackfillFrom: string;
+  financeBackfillTo: string;
+  /** DRY_RUN=1: только проверка контура и схемы; ни токена, ни WB API, ни записи. */
+  financeDryRun: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -374,6 +394,34 @@ function reconcileDays(env: Env): number {
   return Number.isNaN(n) || n < 1 || n > 90 ? 7 : n;
 }
 
+/** M4 finance: мягкий разбор. Никогда не бросает ConfigError — опечатка не роняет чужие загрузчики. */
+function financeConfig(env: Env): Pick<Config, 'wbFinanceHost' | 'wbFinanceSecret' | 'financeTables' | 'financeCutover' | 'financeBudgetMs' | 'financeHttpTimeoutMs' | 'financeTriggerType' | 'financeBackfillFrom' | 'financeBackfillTo' | 'financeDryRun'> {
+  // Пусто → значение по умолчанию; иначе — как есть (в т.ч. NaN): finance/targets.ts отклонит до любого I/O,
+  // а loadConfig чужих загрузчиков не падает.
+  const num = (name: string, fallback: number): number => {
+    const raw = (env[name] ?? '').trim();
+    return raw === '' ? fallback : Number(raw);
+  };
+  return {
+    wbFinanceHost: opt(env, 'WB_FINANCE_HOST', 'https://finance-api.wildberries.ru'),
+    wbFinanceSecret: opt(env, 'WB_FINANCE_SECRET', 'WB_TOKEN_FINANCE'),
+    financeTables: {
+      raw: opt(env, 'FINANCE_RAW_TABLE', 'RAW_WB_FINANCE__CR'),
+      runs: opt(env, 'FINANCE_RUNS_TABLE', 'FINANCE_LOADER_RUNS__CR'),
+      loads: opt(env, 'FINANCE_LOADS_TABLE', 'FINANCE_REPORT_LOADS__CR'),
+      weekStatus: opt(env, 'FINANCE_WEEK_STATUS_TABLE', 'FINANCE_WEEK_STATUS__CR'),
+      weekRecon: opt(env, 'FINANCE_WEEK_RECON_TABLE', 'FINANCE_WEEK_RECON__CR'),
+    },
+    financeCutover: opt(env, 'FINANCE_CUTOVER', '2026-07-13'),
+    financeBudgetMs: num('FINANCE_BUDGET_MS', 1_200_000),
+    financeHttpTimeoutMs: num('FINANCE_HTTP_TIMEOUT_MS', 120_000),
+    financeTriggerType: (env.FINANCE_TRIGGER_TYPE ?? '').trim().toUpperCase() === 'MANUAL' ? 'MANUAL' : 'AUTO',
+    financeBackfillFrom: (env.FINANCE_BACKFILL_FROM ?? '').trim(),
+    financeBackfillTo: (env.FINANCE_BACKFILL_TO ?? '').trim(),
+    financeDryRun: env.DRY_RUN === '1', // ровно как cli.ts:159 — иначе ' 1' дал бы COMPLETE без записи
+  };
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const environment = (env.ENVIRONMENT ?? '').trim();
   if (environment !== 'shadow' && environment !== 'prod') {
@@ -439,5 +487,6 @@ export function loadConfig(env: Env = process.env): Config {
     ...integrityConfig(env),
     ...calendarConfig(env),
     ...cancelRestoreConfig(env),
+    ...financeConfig(env),
   };
 }

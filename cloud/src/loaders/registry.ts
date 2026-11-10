@@ -34,6 +34,8 @@ import { statsSlot } from './statistics/common.js';
 
 import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
 
+import { financeLoader, financeBackfillLoader } from './finance/index.js';
+
 export interface LoaderSpec {
   handler: LoaderHandler;
   /** Логический период — идемпотентный ключ LOADER_RUNS и ctx.targetDate. */
@@ -151,6 +153,13 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // M3: недельный аудит расходов ADSAUDIT_ (loadWbAdsCostsAudit). Отдельное имя: не «последняя попытка» 'ads'.
   // Период — сегодня МСК: окно D−46…D−8 считается от сегодняшней даты, как wbAdsCostsRangeBack_.
   'ads-costs-audit': { handler: (ctx) => adsCostsAuditLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now) },
+
+  // M4 (перенос runWbFinanceDaily из Apps Script): финансовые отчёты WB DAILY/WEEKLY. Период — часовой слот МСК:
+  // три слота в сутки (07:30/12:30/18:30) — три независимых прогона, как три триггера Apps Script; повтор в том же
+  // часе после COMPLETE не нужен (следующий слот дочитает очередь). shadow → только __CR (finance/targets.ts).
+  finance: { handler: (ctx) => financeLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+  // M4: ручная регистрация WEEKLY-отчётов периода (wbFinDeepBackfillRegister). Без расписания; грузят обычные тики.
+  'finance-backfill': { handler: (ctx) => financeBackfillLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
