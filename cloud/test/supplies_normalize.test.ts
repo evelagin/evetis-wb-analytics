@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
-  entityKey, toId, headerRow, goodsRow, selectTodo, dailyRunId, mskDate, duplicateBarcodes,
+  entityKey, toId, headerRow, goodsRow, selectTodo, dailyRunId, mskDate, duplicateBarcodes, type KnownState,
 } from '../src/loaders/supplies/normalize.js';
 import { SUPPLY_LIST, SUPPLY_CARD, SUPPLY_GOODS } from './supplies_fixture.js';
 
+const done = (updMs: number): KnownState => ({ updMs, lastCompleted: true });
+const open = (updMs: number): KnownState => ({ updMs, lastCompleted: false });
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
 const RUN = 'DL_20261111_022900';
 const TS = '2026-11-10T23:29:00.000Z';
@@ -86,9 +88,9 @@ describe('поставки — выбор объектов суточного п
     const doneUpdated = { preorderID: 5, supplyID: 50, statusID: 5, factDate: '2026-10-01T10:00:00+03:00', updatedDate: '2026-11-05T10:00:00+03:00' };
     const pending = { preorderID: 6, statusID: 3, updatedDate: '2026-10-01T10:00:00+03:00' };
     const fresh = { preorderID: 7, statusID: 1 };
-    const known = new Map<string, number>([
-      ['P:3', Date.parse('2026-10-01T07:00:00Z')], ['P:4', Date.parse('2026-10-28T07:00:00Z')],
-      ['P:5', Date.parse('2026-10-01T07:00:00Z')], ['P:6', Date.parse('2026-10-01T07:00:00Z')],
+    const known = new Map<string, KnownState>([
+      ['P:3', done(Date.parse('2026-10-01T07:00:00Z'))], ['P:4', done(Date.parse('2026-10-28T07:00:00Z'))],
+      ['P:5', done(Date.parse('2026-10-01T07:00:00Z'))], ['P:6', open(Date.parse('2026-10-01T07:00:00Z'))],
     ]);
     const r = selectTodo([doneOld, doneInWindow, doneUpdated, pending, fresh], known, now);
     expect(r.todo.map((t) => [t.ek, t.why])).toEqual([
@@ -97,14 +99,14 @@ describe('поставки — выбор объектов суточного п
   });
   it('граница watermark: тот же момент в другом формате НЕ «новее» (сравнение epoch, а не строк)', () => {
     const o = { preorderID: 8, supplyID: 80, statusID: 5, factDate: '2026-09-01T10:00:00+03:00', updatedDate: '2026-09-01T10:00:00+03:00' };
-    const same = new Map([['P:8', Date.parse('2026-09-01T07:00:00.000Z')]]);
+    const same = new Map([['P:8', done(Date.parse('2026-09-01T07:00:00.000Z'))]]);
     expect(selectTodo([o], same, now).todo).toEqual([]);
-    const older = new Map([['P:8', Date.parse('2026-09-01T06:59:59.999Z')]]);
+    const older = new Map([['P:8', done(Date.parse('2026-09-01T06:59:59.999Z'))]]);
     expect(selectTodo([o], older, now).todo[0]?.why).toBe('updated_dt новее');
   });
   it('граница окна перекрытия: ровно 14 суток назад по МСК — входит, 15 — нет', () => {
     expect(mskDate(now - 14 * 86_400_000)).toBe('2026-10-28');
-    const k = new Map([['P:9', Date.parse('2026-01-01T00:00:00Z')]]);
+    const k = new Map([['P:9', done(Date.parse('2026-01-01T00:00:00Z'))]]);
     const at = (d: string) => selectTodo([{ preorderID: 9, statusID: 5, factDate: `${d}T23:00:00+03:00`, updatedDate: '2025-12-31T00:00:00+03:00' }], k, now).todo.length;
     expect(at('2026-10-28')).toBe(1);
     expect(at('2026-10-27')).toBe(0);
@@ -117,6 +119,18 @@ describe('поставки — выбор объектов суточного п
     expect(r.duplicateKeys).toEqual(['P:10']);
     expect(r.todo).toHaveLength(1);
     expect(r.todo[0]!.o).toBe(b);
+  });
+  it('в RAW не завершён: WB отдаёт состоявшуюся, последняя шапка — нет → перечитать, хотя updatedDate старый и окно прошло', () => {
+    // Сценарий простоя 31.10 → cutover: поставка была в пути (status 4) на 30.10, принята 01.11,
+    // WB не сдвинул updatedDate; к cutover после 15.11 окно 14 суток уже закрыто.
+    const o = { preorderID: 12, supplyID: 120, statusID: 5, factDate: '2026-10-20T12:00:00+03:00', updatedDate: '2026-10-20T12:00:00+03:00' };
+    const upd = Date.parse('2026-10-20T09:00:00Z');
+    expect(selectTodo([o], new Map([['P:12', open(upd)]]), now).todo[0]?.why).toBe('в RAW не завершён');
+    expect(selectTodo([o], new Map([['P:12', { updMs: upd, lastCompleted: null }]]), now).todo[0]?.why).toBe('в RAW не завершён');
+    // После записи завершённого состояния причина снимается сама.
+    expect(selectTodo([o], new Map([['P:12', done(upd)]]), now).todo).toEqual([]);
+    // statusID 5 без factDate у WB — не «состоявшаяся»: ежедневной перечитки нет (как в Apps Script).
+    expect(selectTodo([{ ...o, factDate: null }], new Map([['P:12', open(upd)]]), now).todo).toEqual([]);
   });
   it('пустой список — пустой план', () => {
     expect(selectTodo([], new Map(), now)).toEqual({ todo: [], skippedNoKey: 0, duplicateKeys: [] });

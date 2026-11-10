@@ -51,13 +51,14 @@ jobs:
         # M5: перенос поставок и REF Sync из Apps Script. Job'ы создаёт Terraform
         # (wb_supplies_loader.tf, ref_sync_loader.tf); до первого apply шаг пропускается.
         # Пишут только в __CR — контур проверяется в коде до записи (targets.ts).
+        # Только образ: env этих Job'ов принадлежит Terraform (не в ignore_changes), поэтому
+        # --update-env-vars здесь дал бы вечный дрейф plan. Как у wb-stocks-shadow.
         run: |
           for JOB in wb-supplies-shadow ref-sync-shadow; do
             if gcloud run jobs describe "${JOB}" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
               gcloud run jobs update "${JOB}" \
                 --region ${{ vars.GCP_REGION }} \
-                --image "${{ steps.push.outputs.digest }}" \
-                --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}"
+                --image "${{ steps.push.outputs.digest }}"
             else
               echo "${JOB} ещё не создан Terraform'ом — шаг пропущен"
             fi

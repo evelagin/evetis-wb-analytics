@@ -80,8 +80,9 @@ production — по отдельному OWNER ACK, Terraform — только �
 | Неразобранный состав | отказ, а не «0 позиций» | то же, `WB_SUPPLIES_SHAPE` |
 | Неразобранная карточка | `card = null`, `card_read_ok = FALSE` | то же |
 | Ключ | `P:<preorderID>` приоритетнее `S:<supplyID>`; 0 → NULL; объект без обоих пропускается | то же; счётчик пропусков пишется в лог `SUPPLIES_NO_KEY` |
-| Watermark | `MAX(UNIX_MILLIS(updated_dt))` по `entity_key` из `RAW_WB_SUPPLIES` | то же из **целевой** шапки контура: prod — боевая, shadow — `__CR` |
-| Выбор объектов | новый; `statusID ≠ 5`; `updatedDate` новее (сравниваются моменты, epoch); `factDate` в окне 14 суток МСК | то же (`selectTodo`) |
+| Watermark | `MAX(UNIX_MILLIS(updated_dt))` по `entity_key` из `RAW_WB_SUPPLIES` | то же из **целевой** шапки контура (prod — боевая, shadow — `__CR`), тем же одним запросом; дополнительно `is_completed` последней шапки |
+| Выбор объектов | новый; `statusID ≠ 5`; `updatedDate` новее (сравниваются моменты, epoch); `factDate` в окне 14 суток МСК | то же (`selectTodo`) **плюс** «в RAW не завершён»: WB отдаёт состоявшуюся поставку, а последняя шапка — `is_completed = FALSE` (§3 п. 12) |
+| Runtime-SA | личная учётка владельца | свои `sa-wb-supplies-{shadow,prod}`: секрет «Поставки», две таблицы контура и `LOADER_RUNS` |
 | Нормализация | `wbsHeaderRow_` / `wbsGoodsRow_`: `raw_json = {list, card}`, `row_hash` = MD5 склейки через «\|» | то же, побайтно (тест `supplies_normalize`) |
 | `sku_match_status` | в RAW поставок нет; маппинг SKU делает вью | не применимо |
 | run_id | `DL_yyyyMMdd_HHmmss` (МСК) | тот же формат; новый на каждую попытку обработчика |
@@ -142,6 +143,16 @@ production — по отдельному OWNER ACK, Terraform — только �
 11. **Расписание поставок: 02:29 и догоняющее окно 05:29 МСК.**
     - COMPLETE уже есть → второе окно стоит одного SELECT по `LOADER_RUNS`.
     - Первая попытка упала → второе окно даёт снимок того же дня.
+12. **Причина перечитки «в RAW не завершён».** Если поставка в пути на 30.10 принята в простой
+    31.10 → cutover и WB не сдвинул `updatedDate`, то после закрытия окна 14 суток (cutover позже
+    ~14.11) правило Apps Script её больше не перечитало бы: в RAW она навсегда осталась бы
+    `is_completed = FALSE` и не попала бы в `V_WB_SUPPLIES_DETAIL`. Новая причина перечитывает
+    объект, пока последняя шапка не станет завершённой. Это только добавляет запросы (единицы в
+    сутки) и снимается само; запрос к BigQuery тот же один. Тест — `supplies_normalize`.
+    Дополнительно на cutover обязательна сверка prod ↔ `__CR` (QUERY 4, §4 S4).
+13. **Свои SA и флаги Terraform.** Ресурсы M5 под флагами `m5_shadow_enabled` и `m5_prod_enabled`
+    (по умолчанию false, `m5_variables.tf`). Merge PR не меняет ни один plan, отсутствие секрета не
+    роняет чужие задачи. Поставки и REF работают от своих SA, а не от общих `sa-loaders-*`.
 
 ## 4. Порядок выпуска
 
@@ -154,24 +165,36 @@ Shadow → паритет 5 дней → переключение вечером
   `WB_TOKEN_SUPPLIES` тем же новым токеном. Иначе Apps Script так и пишет 0 строк, и QUERY 1
   даёт NO_RUN.
 
-**S1. Terraform (plan → ACK → apply), только shadow:**
+**S1. Terraform, только shadow (ACK MIG-M5-SHADOW).**
+1. PR: `m5_shadow_enabled` default → `true` (`infra/terraform/m5_variables.tf`). Только после того,
+   как секрет `WB_TOKEN_SUPPLIES` создан: иначе data-источник уронит plan.
+2. `infra.yml` plan с этими targets → просмотр → ACK → apply:
 
 ```
-terraform plan \
-  -target=google_bigquery_table.raw_wb_supplies_cr -target=google_bigquery_table.raw_wb_supplies_goods_cr \
-  -target=google_bigquery_table_iam_member.shadow_write_supplies_cr \
-  -target=google_secret_manager_secret_iam_member.shadow_access_wb_token_supplies \
-  -target=google_cloud_run_v2_job.wb_supplies_shadow -target=google_cloud_run_v2_job_iam_member.scheduler_supplies_shadow_invoke \
-  -target=google_cloud_scheduler_job.wb_supplies_shadow \
-  -target=google_service_account.ref_sync_shadow -target='google_project_iam_member.ref_sync_jobuser["shadow"]' \
-  -target=google_bigquery_table.ref_cr -target=google_bigquery_table_iam_member.ref_sync_shadow_write \
-  -target='google_service_account_iam_member.ref_sync_actas_deployer["shadow"]' \
-  -target='google_service_account_iam_member.ref_sync_actas_terraform["shadow"]' \
-  -target=google_cloud_run_v2_job.ref_sync_shadow -target=google_cloud_run_v2_job_iam_member.scheduler_ref_sync_shadow_invoke \
-  -target=google_cloud_scheduler_job.ref_sync_shadow
+google_service_account.wb_supplies_shadow,
+google_project_iam_member.wb_supplies_shadow_jobuser,
+google_service_account_iam_member.wb_supplies_shadow_actas_deployer,
+google_service_account_iam_member.wb_supplies_shadow_actas_terraform,
+google_bigquery_table.raw_wb_supplies_cr, google_bigquery_table.raw_wb_supplies_goods_cr,
+google_secret_manager_secret_iam_member.wb_supplies_shadow_secret,
+google_bigquery_table_iam_member.wb_supplies_shadow_write,
+google_cloud_run_v2_job.wb_supplies_shadow,
+google_cloud_run_v2_job_iam_member.scheduler_supplies_shadow_invoke,
+google_cloud_scheduler_job.wb_supplies_shadow,
+google_service_account.ref_sync_shadow,
+google_project_iam_member.ref_sync_jobuser,
+google_service_account_iam_member.ref_sync_actas_deployer,
+google_service_account_iam_member.ref_sync_actas_terraform,
+google_bigquery_table.ref_cr,
+google_bigquery_table_iam_member.ref_sync_shadow_write,
+google_cloud_run_v2_job.ref_sync_shadow,
+google_cloud_run_v2_job_iam_member.scheduler_ref_sync_shadow_invoke,
+google_cloud_scheduler_job.ref_sync_shadow
 ```
 
-В плане не должно быть prod-ресурсов и изменений существующих объектов, только `create`.
+`*_shadow_write` включают `dataEditor` на `LOADER_RUNS`: без него `cli.ts` падает 403 на acquire до
+обработчика. При `m5_prod_enabled = false` у `ref_sync_jobuser` / `ref_sync_actas_*` есть только ключ
+`shadow`. В плане — только `create`, ни одного prod-ресурса и изменения существующих объектов.
 
 **S2. Образ.**
 - Merge в `main` → `deploy-shadow.yml` обновит образ `wb-supplies-shadow` и `ref-sync-shadow`.
@@ -189,7 +212,10 @@ terraform plan \
   `__CR`, только SELECT. И1, И3, И7–И10 = 0. Число объектов `__CR` = числу в списке WB.
 
 **S4. Переключение вечером (ACK MIG-M5-CUTOVER).**
-1. prod-ресурсы через Terraform plan → apply: Job, IAM, Scheduler остаются PAUSED.
+1. PR: `m5_prod_enabled` default → `true`. `infra.yml` plan с targets — prod-аналоги списка S1
+   (`wb_supplies_prod*`, `wb_supplies_prod_secret`, `wb_supplies_prod_write`, `ref_sync_prod*`,
+   `ref_sync_prod_write`, ключ `prod` у `ref_sync_jobuser` / `ref_sync_actas_*`, invoker и Scheduler
+   prod) → ACK → apply. Job создаётся, Scheduler — PAUSED.
 2. `deploy-prod.yml` с digest, прошедшим shadow: обновятся только `wb-supplies-prod` и `ref-sync-prod`.
    Workflow обновляет все prod-Job'ы из своего списка тем же digest. Если это нежелательно,
    выполнить только два `gcloud run jobs update` из шага M5.
@@ -199,7 +225,11 @@ terraform plan \
    - `LOADER_RUNS` (prod) COMPLETE;
    - новый `DL_…` в `RAW_WB_SUPPLIES`;
    - новый `REF_…` в `REF_SYNC_RUNS` и `REF_ACTIVE_VERSION`.
-5. `resume` prod-расписаний.
+5. **Обязательная сверка поставок prod ↔ `__CR`:** `sql/mig_supplies_parity.sql`, QUERY 4.
+   Условие продолжения: нет объектов только с одной стороны и нет необъяснённых расхождений
+   `is_completed` / `status_id`. Иначе — STOP, prod-расписание не включать (разбор QUERY 2).
+   Сверка `mig_ref_parity.sql` за сегодня — EXACT или DATA_DRIFT.
+6. `resume` prod-расписаний.
 
 Двойной записи в боевые таблицы нет ни на одном шаге: prod-Scheduler включается только
 после снятия триггера Apps Script.
@@ -227,9 +257,17 @@ terraform plan \
    - **вариант А** — заменить токен в Apps Script и ждать 5 дней QUERY 1;
    - **вариант Б** — принять QUERY 3 и инварианты `__CR` как достаточное доказательство.
      Apps Script с 31.10 всё равно не пишет.
-4. **Решение по пропуску 31.10–cutover.** Первый prod-прогон читает watermark из
-   `RAW_WB_SUPPLIES`. Всё, что изменилось после 30.10, попадёт в него само: объекты будут новыми
-   или с новым `updatedDate`. Отдельный бэкфилл не нужен.
+4. **Пропуск 31.10 → cutover.** Первый prod-прогон читает watermark из `RAW_WB_SUPPLIES`.
+   Перечитаются объекты:
+   - новые;
+   - ещё не завершённые у WB;
+   - с новым `updatedDate`;
+   - завершённые в окне 14 суток;
+   - завершённые у WB, но незавершённые в последней prod-шапке («в RAW не завершён», §3 п. 12).
+
+   Остаётся одна непокрытая правилом ситуация: WB поправил карточку или состав давно завершённой
+   поставки, не сдвинув `updatedDate`. Её ловит QUERY 4 на cutover: с полным снимком `__CR` она
+   совпадёт, а prod покажет расхождение. Отдельный бэкфилл — только если QUERY 4 найдёт такие объекты.
 5. **ACK** на S1 (shadow apply), S2 (resume shadow) и S4 (cutover).
 
 ## 6. STOP и откат
@@ -253,12 +291,15 @@ Shadow-таблицы `__CR` удаляются Terraform'ом отдельно,
 
 ## 7. Что нужно для shadow-выпуска
 
-- **Terraform:** `infra/terraform/wb_supplies_loader.tf`, `infra/terraform/ref_sync_loader.tf`;
-  targets — §4 S1. `terraform validate` (`-backend=false`): Success.
-- **Секрет:** `WB_TOKEN_SUPPLIES`. Без него plan упадёт на data-источнике, это fail-closed.
+- **Terraform:** `infra/terraform/wb_supplies_loader.tf`, `infra/terraform/ref_sync_loader.tf`,
+  флаги — `infra/terraform/m5_variables.tf` (по умолчанию false); targets — §4 S1.
+  `terraform validate` (`-backend=false`): Success.
+- **Секрет:** `WB_TOKEN_SUPPLIES`. Data-источник читается только при включённом флаге; без секрета
+  plan с флагом упадёт — это fail-closed, чужие задачи не блокируются.
 - **Доступ:** «Читатель» книги для `sa-ref-sync-shadow`.
-- **Образ:** любой из `main` после merge; деплой-шаги добавлены в `deploy-shadow.yml` и
-  `deploy-prod.yml` с проверкой существования Job'а.
+- **Образ:** любой из `main` после merge; деплой-шаги добавлены в `deploy-shadow.yml` (только
+  образ — env shadow-Job'ов принадлежит Terraform) и `deploy-prod.yml` (образ + IMAGE_DIGEST/GIT_SHA,
+  env prod в `ignore_changes`) с проверкой существования Job'а.
 - **Расписания:** shadow — 02:39/05:39 и 08:32 МСК; prod — 02:29/05:29 и 08:22 МСК. Все
   создаются PAUSED, `scheduler-control` знает `wb-supplies` и `ref-sync`.
 - **Алерты:** запись `loader_failed` с непустым `code` пишется, как у остальных загрузчиков.

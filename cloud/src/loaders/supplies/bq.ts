@@ -14,6 +14,7 @@ import { BigQuery, type JobLoadMetadata } from '@google-cloud/bigquery';
 import { writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { KnownState } from './normalize.js';
 
 export interface BqLike {
   query(options: { query: string; params?: Record<string, unknown>; location?: string }): Promise<[unknown[]]>;
@@ -43,14 +44,25 @@ export class SuppliesBq {
     return `\`${this.projectId}.${this.dataset}.${t}\``;
   }
 
-  async knownUpdated(headerTable: string): Promise<Map<string, number>> {
+  /**
+   * Watermark Apps Script (MAX(UNIX_MILLIS(updated_dt)) по entity_key) + is_completed последней
+   * committed-шапки (порядок V_WB_SUPPLIES_CURRENT) — для причины «в RAW не завершён». STRUCT — потому
+   * что ARRAY_AGG падает на NULL-элементе, а is_completed формально NULLABLE.
+   * Та же одна таблица и один запрос, что у Apps Script.
+   */
+  async knownUpdated(headerTable: string): Promise<Map<string, KnownState>> {
     const [rows] = await this.bq.query({
-      query: `SELECT entity_key, MAX(UNIX_MILLIS(updated_dt)) AS upd_ms FROM ${this.fqn(headerTable)} GROUP BY entity_key`,
+      query: `SELECT entity_key, MAX(UNIX_MILLIS(updated_dt)) AS upd_ms,
+                ARRAY_AGG(STRUCT(is_completed) ORDER BY snapshot_ts DESC, run_id DESC LIMIT 1)[OFFSET(0)].is_completed AS last_completed
+              FROM ${this.fqn(headerTable)} GROUP BY entity_key`,
       location: this.location,
     });
-    const m = new Map<string, number>();
-    for (const r of rows as Array<{ entity_key: unknown; upd_ms: unknown }>) {
-      m.set(String(r.entity_key), Number(r.upd_ms ?? 0) || 0);
+    const m = new Map<string, KnownState>();
+    for (const r of rows as Array<{ entity_key: unknown; upd_ms: unknown; last_completed: unknown }>) {
+      m.set(String(r.entity_key), {
+        updMs: Number(r.upd_ms ?? 0) || 0,
+        lastCompleted: r.last_completed === null || r.last_completed === undefined ? null : r.last_completed === true,
+      });
     }
     return m;
   }

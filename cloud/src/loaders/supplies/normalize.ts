@@ -144,7 +144,10 @@ export function dailyRunId(ms: number): string {
   return `DL_${g('year')}${g('month')}${g('day')}_${hh}${g('minute')}${g('second')}`;
 }
 
-export type TodoReason = 'новый' | 'не завершён' | 'updated_dt новее' | 'окно перекрытия';
+export type TodoReason = 'новый' | 'не завершён' | 'в RAW не завершён' | 'updated_dt новее' | 'окно перекрытия';
+
+/** Известное состояние объекта в целевой шапке: watermark и is_completed ПОСЛЕДНЕЙ committed-шапки. */
+export interface KnownState { updMs: number; lastCompleted: boolean | null }
 export interface TodoItem { o: Obj; ek: string; why: TodoReason }
 
 export interface SelectResult {
@@ -158,10 +161,16 @@ export interface SelectResult {
  * Выбор объектов суточного прогона (§7.3): новые; незавершённые (statusID ≠ 5); с updatedDate
  * новее известного в RAW (сравнение моментов, epoch ms); завершённые с factDate в окне 14 суток.
  *
+ * Cloud Run добавляет причину «в RAW не завершён»: WB уже отдаёт состоявшуюся поставку (statusID 5 и
+ * factDate), а последняя шапка в RAW — is_completed = FALSE. В Apps Script такой объект перечитывался только окном 14 суток или
+ * сдвигом updatedDate; после простоя загрузчика дольше окна (31.10 → cutover) приёмка, случившаяся
+ * в простой без сдвига updatedDate, навсегда осталась бы «незавершённой». Причина лишь добавляет
+ * перечитывание и снимается сама после первой же записи завершённого состояния.
+ *
  * Дубль entity_key в списке: Apps Script писал объект дважды в одном run_id, и второй DELETE+LOAD
  * затирал первый — побеждала ПОСЛЕДНЯЯ запись списка. Здесь то же правило без двойной записи.
  */
-export function selectTodo(list: Obj[], known: ReadonlyMap<string, number>, nowMs: number): SelectResult {
+export function selectTodo(list: Obj[], known: ReadonlyMap<string, KnownState>, nowMs: number): SelectResult {
   const overlapDay = mskDate(nowMs - WB_SUPPLIES_OVERLAP_DAYS * 24 * 3600 * 1000);
   const byKey = new Map<string, TodoItem>();
   const seen = new Set<string>();
@@ -174,9 +183,11 @@ export function selectTodo(list: Obj[], known: ReadonlyMap<string, number>, nowM
     seen.add(ek);
     let why: TodoReason | '' = '';
     const apiUpdMs = Date.parse(String(o.updatedDate ?? ''));
-    if (!known.has(ek)) why = 'новый';
+    const k = known.get(ek);
+    if (!k) why = 'новый';
     else if (Number(o.statusID) !== WB_SUPPLIES_STATUS_DONE) why = 'не завершён';
-    else if (!Number.isNaN(apiUpdMs) && apiUpdMs > Number(known.get(ek) || 0)) why = 'updated_dt новее';
+    else if (isCompleted(o) && k.lastCompleted !== true) why = 'в RAW не завершён';
+    else if (!Number.isNaN(apiUpdMs) && apiUpdMs > Number(k.updMs || 0)) why = 'updated_dt новее';
     else if (String(o.factDate ?? '').substring(0, 10) >= overlapDay) why = 'окно перекрытия';
     // Повторная запись того же ключа заменяет прежнюю — как DELETE+LOAD в Apps Script. Вхождение
     // без причины Apps Script не писал вовсе, поэтому оно прежнюю запись НЕ отменяет.

@@ -10,23 +10,30 @@
 #
 # Доступ к книге Terraform НЕ выдаёт (Drive ACL вне провайдера): владелец добавляет
 # sa-ref-sync-shadow@… и sa-ref-sync-prod@… «Читателями» книги вручную (runbook §5).
+#
+# 🔴 ВСЁ ПОД ФЛАГАМИ (m5_variables.tf): shadow — var.m5_shadow_enabled, prod — var.m5_prod_enabled.
 # ============================================================================
 
 resource "google_service_account" "ref_sync_shadow" {
+  count        = local.m5_ref_shadow
   account_id   = "sa-ref-sync-shadow"
   display_name = "REF Sync runtime (SHADOW): Sheets read-only + REF *__CR"
 }
 
 resource "google_service_account" "ref_sync_prod" {
+  count        = local.m5_ref_prod
   account_id   = "sa-ref-sync-prod"
   display_name = "REF Sync runtime (PROD): Sheets read-only + REF_* production"
 }
 
 locals {
-  ref_sync_sa = {
-    shadow = google_service_account.ref_sync_shadow
-    prod   = google_service_account.ref_sync_prod
-  }
+  m5_ref_shadow = var.m5_shadow_enabled ? 1 : 0
+  m5_ref_prod   = var.m5_prod_enabled ? 1 : 0
+  # Контуры, включённые флагами: ключ → email SA (для общих прав jobUser / actAs).
+  ref_sync_sa = merge(
+    var.m5_shadow_enabled ? { shadow = google_service_account.ref_sync_shadow[0] } : {},
+    var.m5_prod_enabled ? { prod = google_service_account.ref_sync_prod[0] } : {},
+  )
   ref_prod_tables = {
     data   = "REF_SKU_MASTER_DATA"
     active = "REF_ACTIVE_VERSION"
@@ -97,7 +104,7 @@ locals {
 
 # ── Теневые таблицы (без вью: сверка паритета читает DATA + ACTIVE напрямую) ──
 resource "google_bigquery_table" "ref_cr" {
-  for_each            = local.ref_prod_tables
+  for_each            = var.m5_shadow_enabled ? local.ref_prod_tables : {}
   dataset_id          = var.raw_dataset
   table_id            = "${each.value}__CR"
   deletion_protection = false
@@ -113,20 +120,28 @@ resource "google_project_iam_member" "ref_sync_jobuser" {
   member   = "serviceAccount:${each.value.email}"
 }
 
+# Четыре REF_*__CR + LOADER_RUNS: cli.ts делает acquire/finalize lease до и после обработчика.
 resource "google_bigquery_table_iam_member" "ref_sync_shadow_write" {
-  for_each   = google_bigquery_table.ref_cr
-  dataset_id = var.raw_dataset
-  table_id   = each.value.table_id
-  role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.ref_sync_shadow.email}"
-}
-
-resource "google_bigquery_table_iam_member" "ref_sync_prod_write" {
-  for_each   = local.ref_prod_tables
+  for_each = var.m5_shadow_enabled ? merge(
+    { for k, v in local.ref_prod_tables : k => "${v}__CR" },
+    { loader_runs = google_bigquery_table.loader_runs.table_id },
+  ) : {}
   dataset_id = var.raw_dataset
   table_id   = each.value
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.ref_sync_prod.email}"
+  member     = "serviceAccount:${google_service_account.ref_sync_shadow[0].email}"
+  depends_on = [google_bigquery_table.ref_cr]
+}
+
+resource "google_bigquery_table_iam_member" "ref_sync_prod_write" {
+  for_each = var.m5_prod_enabled ? merge(
+    local.ref_prod_tables,
+    { loader_runs = google_bigquery_table.loader_runs.table_id },
+  ) : {}
+  dataset_id = var.raw_dataset
+  table_id   = each.value
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.ref_sync_prod[0].email}"
 }
 
 # actAs: deployer обновляет образ Job'а, terraform-apply создаёт Job/Scheduler с этими SA.
@@ -146,12 +161,13 @@ resource "google_service_account_iam_member" "ref_sync_actas_terraform" {
 
 # ── Jobs ────────────────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_job" "ref_sync_shadow" {
+  count               = local.m5_ref_shadow
   name                = "ref-sync-shadow"
   location            = var.region
   deletion_protection = false
   template {
     template {
-      service_account = google_service_account.ref_sync_shadow.email
+      service_account = google_service_account.ref_sync_shadow[0].email
       max_retries     = 0
       timeout         = "600s"
       containers {
@@ -160,10 +176,10 @@ resource "google_cloud_run_v2_job" "ref_sync_shadow" {
         dynamic "env" {
           for_each = merge(local.common_env, local.ref_sync_env_common, {
             ENVIRONMENT      = "shadow"
-            REF_DATA_TABLE   = google_bigquery_table.ref_cr["data"].table_id
-            REF_ACTIVE_TABLE = google_bigquery_table.ref_cr["active"].table_id
-            REF_RUNS_TABLE   = google_bigquery_table.ref_cr["runs"].table_id
-            REF_TLOG_TABLE   = google_bigquery_table.ref_cr["tlog"].table_id
+            REF_DATA_TABLE   = "${local.ref_prod_tables.data}__CR"
+            REF_ACTIVE_TABLE = "${local.ref_prod_tables.active}__CR"
+            REF_RUNS_TABLE   = "${local.ref_prod_tables.runs}__CR"
+            REF_TLOG_TABLE   = "${local.ref_prod_tables.tlog}__CR"
           })
           content {
             name  = env.key
@@ -173,23 +189,26 @@ resource "google_cloud_run_v2_job" "ref_sync_shadow" {
       }
     }
   }
+  # env принадлежит Terraform (deploy-shadow.yml меняет только образ).
   lifecycle {
     ignore_changes = [template[0].template[0].containers[0].image, client, client_version]
   }
   depends_on = [
     google_project_service.enabled,
     google_bigquery_table_iam_member.ref_sync_shadow_write,
+    google_project_iam_member.ref_sync_jobuser,
     google_service_account_iam_member.ref_sync_actas_terraform,
   ]
 }
 
 resource "google_cloud_run_v2_job" "ref_sync_prod" {
+  count               = local.m5_ref_prod
   name                = "ref-sync-prod"
   location            = var.region
   deletion_protection = false
   template {
     template {
-      service_account = google_service_account.ref_sync_prod.email
+      service_account = google_service_account.ref_sync_prod[0].email
       max_retries     = 0
       timeout         = "600s"
       containers {
@@ -223,21 +242,24 @@ resource "google_cloud_run_v2_job" "ref_sync_prod" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_ref_sync_shadow_invoke" {
+  count    = local.m5_ref_shadow
   location = var.region
-  name     = google_cloud_run_v2_job.ref_sync_shadow.name
+  name     = google_cloud_run_v2_job.ref_sync_shadow[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_shadow.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_ref_sync_prod_invoke" {
+  count    = local.m5_ref_prod
   location = var.region
-  name     = google_cloud_run_v2_job.ref_sync_prod.name
+  name     = google_cloud_run_v2_job.ref_sync_prod[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
 
 # ── Scheduler: ~08:22 МСК, как у триггера Apps Script (фактические старты 08:22:26–08:22:30) ──
 resource "google_cloud_scheduler_job" "ref_sync_shadow" {
+  count     = local.m5_ref_shadow
   name      = "ref-sync-shadow"
   region    = var.region
   schedule  = "32 8 * * *"
@@ -248,7 +270,7 @@ resource "google_cloud_scheduler_job" "ref_sync_shadow" {
   }
   http_target {
     http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.ref_sync_shadow.name}:run"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.ref_sync_shadow[0].name}:run"
     oauth_token {
       service_account_email = google_service_account.scheduler_shadow.email
     }
@@ -260,6 +282,7 @@ resource "google_cloud_scheduler_job" "ref_sync_shadow" {
 }
 
 resource "google_cloud_scheduler_job" "ref_sync_prod" {
+  count     = local.m5_ref_prod
   name      = "ref-sync-prod"
   region    = var.region
   schedule  = "22 8 * * *"
@@ -270,7 +293,7 @@ resource "google_cloud_scheduler_job" "ref_sync_prod" {
   }
   http_target {
     http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.ref_sync_prod.name}:run"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.ref_sync_prod[0].name}:run"
     oauth_token {
       service_account_email = google_service_account.scheduler_prod.email
     }

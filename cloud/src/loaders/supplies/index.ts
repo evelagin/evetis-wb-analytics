@@ -21,7 +21,7 @@ import { WbSuppliesApi, tokenExpiryMs, type SuppliesApi } from './wbApi.js';
 import { SuppliesBq, suppliesJobId } from './bq.js';
 import {
   dailyRunId, duplicateBarcodes, goodsRow, headerRow, selectTodo, toId,
-  type GoodsRow, type HeaderRow, type TodoItem,
+  type GoodsRow, type HeaderRow, type KnownState, type TodoItem,
 } from './normalize.js';
 import {
   WB_SUPPLIES_COMMIT_CHUNK, WB_SUPPLIES_HTTP_BACKOFF_BASE_MS, WB_SUPPLIES_HTTP_BACKOFF_CAP_MS,
@@ -30,7 +30,7 @@ import {
 
 /** Минимум, который нужен ядру от BigQuery (фейк в тестах). */
 export interface SuppliesStore {
-  knownUpdated(headerTable: string): Promise<Map<string, number>>;
+  knownUpdated(headerTable: string): Promise<Map<string, KnownState>>;
   load(table: string, rows: object[], jobId: string): Promise<'LOADED' | 'ALREADY_LOADED'>;
 }
 

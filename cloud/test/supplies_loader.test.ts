@@ -10,6 +10,7 @@ import { Logger } from '../src/logging.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import type { Config } from '../src/config.js';
 import { SUPPLY_LIST, SUPPLY_CARD, SUPPLY_GOODS } from './supplies_fixture.js';
+import type { KnownState } from '../src/loaders/supplies/normalize.js';
 
 const NOW = Date.parse('2026-11-10T23:29:00Z');
 const jwt = (expSec: number) => ['eyJhbGciOiJub25lIn0', Buffer.from(JSON.stringify({ exp: expSec })).toString('base64url'), 'sig'].join('.');
@@ -35,7 +36,7 @@ class FakeApi implements SuppliesApi {
 class FakeStore implements SuppliesStore {
   loads: Array<{ table: string; rows: Array<Record<string, unknown>>; jobId: string }> = [];
   knownFrom: string[] = [];
-  constructor(private readonly known = new Map<string, number>()) {}
+  constructor(private readonly known = new Map<string, KnownState>()) {}
   async knownUpdated(t: string) { this.knownFrom.push(t); return this.known; }
   async load(table: string, rows: object[], jobId: string) {
     this.loads.push({ table, rows: rows as Array<Record<string, unknown>>, jobId });
@@ -142,7 +143,7 @@ describe('поставки — запись: commit-marker, порции, иде
     expect(d.store.loads).toEqual([]);
   });
   it('всё известное и без причины — запись не нужна', async () => {
-    const known = new Map([['P:900001', Date.parse('2026-10-27T06:00:00Z')]]);
+    const known = new Map([['P:900001', { updMs: Date.parse('2026-10-27T06:00:00Z'), lastCompleted: true }]]);
     const d = deps({ api: new FakeApi([SUPPLY_LIST[0]!]), store: new FakeStore(known) });
     await suppliesLoader(ctx('shadow'), d);
     expect(d.api.calls).toEqual(['list']);
@@ -180,7 +181,11 @@ describe('поставки — load job: повтор с тем же jobId не 
   class Bq409 implements BqLike {
     metas: JobLoadMetadata[] = [];
     constructor(private readonly state: { state: string; errorResult?: { message: string } }) {}
-    async query(): Promise<[unknown[]]> { return [[{ entity_key: 'P:1', upd_ms: '1793316565000' }]]; }
+    queries: string[] = [];
+    async query(o: { query: string }): Promise<[unknown[]]> {
+      this.queries.push(o.query);
+      return [[{ entity_key: 'P:1', upd_ms: '1793316565000', last_completed: false }, { entity_key: 'P:2', upd_ms: null, last_completed: null }]];
+    }
     dataset() {
       return { table: () => ({ load: async (_s: string, m: JobLoadMetadata) => { this.metas.push(m); throw Object.assign(new Error('Already Exists: Job'), { code: 409 }); } }) };
     }
@@ -196,8 +201,12 @@ describe('поставки — load job: повтор с тем же jobId не 
     const bq = new SuppliesBq('p', 'EU', 'wb_raw', new Bq409({ state: 'DONE', errorResult: { message: 'bad' } }));
     await expect(bq.load('t', [{}], 'j2')).rejects.toThrow(/не успешен: bad/);
   });
-  it('watermark: INT64 строкой → число', async () => {
-    const bq = new SuppliesBq('p', 'EU', 'wb_raw', new Bq409({ state: 'DONE' }));
-    expect((await bq.knownUpdated('RAW_WB_SUPPLIES__CR')).get('P:1')).toBe(1793316565000);
+  it('watermark: INT64 строкой → число; is_completed последней шапки — в порядке V_WB_SUPPLIES_CURRENT', async () => {
+    const fake = new Bq409({ state: 'DONE' });
+    const known = await new SuppliesBq('p', 'EU', 'wb_raw', fake).knownUpdated('RAW_WB_SUPPLIES__CR');
+    expect(known.get('P:1')).toEqual({ updMs: 1793316565000, lastCompleted: false });
+    expect(known.get('P:2')).toEqual({ updMs: 0, lastCompleted: null });
+    expect(fake.queries[0]).toMatch(/ORDER BY snapshot_ts DESC, run_id DESC LIMIT 1/);
+    expect(fake.queries[0]).toMatch(/`p\.wb_raw\.RAW_WB_SUPPLIES__CR`/);
   });
 });

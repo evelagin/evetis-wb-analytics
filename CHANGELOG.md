@@ -12,7 +12,8 @@
 
 - `cloud/src/loaders/supplies/*` — loader `supplies`.
   - Та же нормализация, `row_hash` и выбор объектов §7.3.
-  - Watermark берётся из целевой шапки.
+  - Watermark берётся из целевой шапки; дополнительная причина перечитки «в RAW не завершён»
+    закрывает простой 31.10 → cutover дольше окна 14 суток. На cutover — обязательная сверка prod ↔ `__CR` (QUERY 4).
   - Запись порциями: goods → header (commit-marker), load job с детерминированным jobId, без DML.
   - Срок токена проверяется по `exp`; при 401/403 — `WB_SUPPLIES_AUTH`.
   - Бюджет 20 мин → `SUPPLIES_PARTIAL`.
@@ -22,11 +23,12 @@
   - Тот же all-or-nothing: DATA → валидация → MERGE указателя → журналы `REF_SYNC_*` → retention 10.
   - DDL в runtime нет.
 - `registry.ts` — два новых имени; общий `config.ts` не тронут: параметры читаются в модулях загрузчиков.
-- Terraform (не применён):
-  - `infra/terraform/wb_supplies_loader.tf` — таблицы `__CR`, Job и Scheduler shadow/prod (PAUSED),
-    табличный IAM, доступ к секрету `WB_TOKEN_SUPPLIES` (секрет создаёт владелец);
+- Terraform (не применён; всё под флагами `m5_shadow_enabled` / `m5_prod_enabled`, по умолчанию false, `m5_variables.tf`):
+  - `infra/terraform/wb_supplies_loader.tf` — SA `sa-wb-supplies-{shadow,prod}`, таблицы `__CR`, Job и Scheduler
+    shadow/prod (PAUSED), табличный IAM (включая `LOADER_RUNS`), доступ к секрету `WB_TOKEN_SUPPLIES`
+    (секрет создаёт владелец; data-источник читается только при включённом флаге);
   - `infra/terraform/ref_sync_loader.tf` — SA `sa-ref-sync-{shadow,prod}`, таблицы `REF_*__CR`,
-    Job и Scheduler (PAUSED), табличный IAM.
+    Job и Scheduler (PAUSED), табличный IAM (включая `LOADER_RUNS`).
 - `deploy-shadow.yml` и `deploy-prod.yml` — шаги для новых Job'ов с проверкой существования.
 - `scheduler-control.yml` — опции `wb-supplies` и `ref-sync`.
 - `sql/mig_supplies_parity.sql`, `sql/mig_ref_parity.sql` — только SELECT, вердикт EXACT / DATA_DRIFT / FAIL / NO_RUN.

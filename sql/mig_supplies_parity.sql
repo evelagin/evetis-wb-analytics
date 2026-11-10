@@ -174,3 +174,31 @@ LEFT JOIN p_g pg USING (entity_key) LEFT JOIN c_g cg USING (entity_key)
 WHERE p.updated_dt IS NOT DISTINCT FROM c.updated_dt
   AND p.is_completed
   AND DATE(p.fact_dt, 'Europe/Moscow') < DATE_SUB(DATE(p.snapshot_ts, 'Europe/Moscow'), INTERVAL 14 DAY);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- QUERY 4 — ОБЯЗАТЕЛЬНАЯ СВЕРКА НА CUTOVER (runbook §4 S4, шаг 5)
+-- После первого prod-прогона Cloud Run: текущее состояние prod (V_WB_SUPPLIES_CURRENT) ↔
+-- текущее состояние __CR. Shadow начинал с полного снимка, поэтому знает каждый объект «с нуля»;
+-- prod после простоя 31.10 → cutover — только то, что выбрал инкремент. Ожидание:
+--   only_prod = only_cr = 0 и completed_mismatch = status_mismatch = 0.
+-- Расхождение у объекта с разным updated_dt допустимо (WB изменил его между прогонами) и видно в
+-- колонке explained; необъяснённое (explained = FALSE) — STOP: prod-расписание не включать,
+-- разобрать объект QUERY 2 с подстановкой сегодняшней даты.
+-- ─────────────────────────────────────────────────────────────────────────
+WITH p AS (SELECT entity_key, status_id, is_completed, updated_dt, run_id FROM `wb_raw.V_WB_SUPPLIES_CURRENT`),
+c AS (
+  SELECT entity_key, status_id, is_completed, updated_dt, run_id FROM `wb_raw.RAW_WB_SUPPLIES__CR` WHERE TRUE
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY entity_key ORDER BY snapshot_ts DESC, run_id DESC) = 1
+),
+j AS (
+  SELECT entity_key,
+    CASE WHEN c.entity_key IS NULL THEN 'only_prod' WHEN p.entity_key IS NULL THEN 'only_cr' ELSE 'matched' END AS side,
+    p.status_id AS prod_status, c.status_id AS cr_status, p.is_completed AS prod_completed, c.is_completed AS cr_completed,
+    p.updated_dt AS prod_upd, c.updated_dt AS cr_upd, p.run_id AS prod_run, c.run_id AS cr_run,
+    (p.updated_dt IS DISTINCT FROM c.updated_dt) AS explained
+  FROM p FULL OUTER JOIN c USING (entity_key)
+)
+SELECT side, entity_key, prod_status, cr_status, prod_completed, cr_completed, prod_upd, cr_upd, prod_run, cr_run, explained
+FROM j
+WHERE side != 'matched' OR prod_completed IS DISTINCT FROM cr_completed OR prod_status IS DISTINCT FROM cr_status
+ORDER BY explained, side, entity_key;
