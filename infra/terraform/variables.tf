@@ -54,3 +54,17 @@ variable "unitka_alert_email" {
   type        = string
   default     = ""
 }
+
+# M2: стартовый watermark пустых теневых таблиц RAW_WB_ORDERS__CR / RAW_WB_SALES_RETURNS__CR
+# (форма API 'YYYY-MM-DDTHH:mm:ss'). Действует только в shadow и только пока в __CR нет API-строк;
+# после первой записи загрузчик берёт MAX(last_change_date) самой __CR. Значение задаёт владелец
+# в день старта паритета (runbook M2, «Старт shadow»). Пусто → пустая __CR = ERROR, как в Apps Script.
+variable "statistics_shadow_orders_bootstrap_watermark" {
+  type    = string
+  default = ""
+}
+
+variable "statistics_shadow_sales_bootstrap_watermark" {
+  type    = string
+  default = ""
+}

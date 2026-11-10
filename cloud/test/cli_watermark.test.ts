@@ -322,7 +322,9 @@ describe('проводка cli', () => {
   });
 
   it('прочие загрузчики: зонд не зовётся, ключа sourceWatermark в params НЕТ, «любой COMPLETE блокирует» как раньше', async () => {
-    for (const name of Object.keys(LOADERS).filter((n) => n !== 'mart')) {
+    // M2: orders/sales/sales-reconcile — слотовый guard (свой тест ниже).
+    const STATS = new Set(['orders', 'sales', 'sales-reconcile']);
+    for (const name of Object.keys(LOADERS).filter((n) => n !== 'mart' && !STATS.has(n))) {
       const s = new MemWatermarkStore();
       const h = harness(s, async () => W0);
       await runCli(argv(name), env({ CLOUD_RUN_EXECUTION: 'e1', DRY_RUN: '0' }), {
@@ -362,5 +364,37 @@ describe('проводка cli', () => {
     await runCli(argv('mart'), env({ CLOUD_RUN_EXECUTION: 'e2', LOG_LEVEL: 'info' }), h2.deps);
     const lines2 = out.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
     expect(lines2.find((l) => l.message === 'guard_skip')).toMatchObject({ reason: 'COMPLETE', sourceWatermark: W1 });
+  });
+});
+
+describe('M2: слотовый guard загрузчиков statistics-api (orders/sales/sales-reconcile)', () => {
+  const statsSeed = (s: MemWatermarkStore, loader: string, period: string, status: Row['status'], w: string | null, startedAt: number) =>
+    s.rows.push({ environment: 'prod', loaderName: loader, logicalPeriod: period, runId: `seed-${s.rows.length}`, executionId: `seed-${s.rows.length}`, status, startedAt, sourceWatermark: w });
+
+  it('тот же часовой слот после COMPLETE → skip; следующий слот → новый прогон ТОГО ЖЕ D-1', async () => {
+    for (const name of ['orders', 'sales', 'sales-reconcile']) {
+      const period = LOADERS[name]!.logicalPeriod();
+      const s = new MemWatermarkStore();
+      statsSeed(s, name, period, 'COMPLETE', 'stats-slot:2026-10-13T06', NOW - HOUR);
+      const same = harness(s, async () => 'stats-slot:2026-10-13T06');
+      expect(await runCli(argv(name), env({ CLOUD_RUN_EXECUTION: `${name}-b` }), same.deps)).toBe(EXIT_OK);
+      expect(same.order, name).not.toContain('handler');
+
+      const next = harness(s, async () => 'stats-slot:2026-10-13T12');
+      expect(await runCli(argv(name), env({ CLOUD_RUN_EXECUTION: `${name}-c` }), next.deps)).toBe(EXIT_OK);
+      expect(next.handled, name).toHaveLength(1);
+      expect(next.handled[0]!.logicalPeriod).toBe(period);
+      // Гейт витрины видит ПОСЛЕДНЮЮ попытку периода: это новый COMPLETE того же D-1.
+      expect(s.rows[s.rows.length - 1]).toMatchObject({ loaderName: name, logicalPeriod: period, status: 'COMPLETE', sourceWatermark: 'stats-slot:2026-10-13T12' });
+    }
+  });
+
+  it('ERROR в слоте не блокирует повтор в том же слоте (ручной перезапуск)', async () => {
+    const period = LOADERS.orders.logicalPeriod();
+    const s = new MemWatermarkStore();
+    statsSeed(s, 'orders', period, 'ERROR', 'stats-slot:2026-10-13T06', NOW - 10 * 60_000);
+    const h = harness(s, async () => 'stats-slot:2026-10-13T06');
+    expect(await runCli(argv('orders'), env({ CLOUD_RUN_EXECUTION: 'orders-r' }), h.deps)).toBe(EXIT_OK);
+    expect(h.handled).toHaveLength(1);
   });
 });

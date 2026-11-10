@@ -73,6 +73,25 @@ export interface Config {
   /** Пауза перед каждым опросом задачи T5, мс (боевое значение 9000, как в Apps Script). */
   stocksT5PollIntervalMs: number;
   refSkuTable: string;
+  // ── M2: статистика WB (заказы, продажи, ночная сверка продаж) — statistics-api ──
+  /** Хост statistics-api. У заказов и продаж он общий, лимит WB — 1 запрос в минуту. */
+  wbStatisticsHost: string;
+  /** Имя секрета с токеном категории «Статистика» (как Script Property WB_TOKEN_STATISTICS в Apps Script). */
+  wbStatisticsSecret: string;
+  /** Целевая RAW заказов. По умолчанию теневая `__CR`; prod — ровно RAW_WB_ORDERS (statistics/targets.ts). */
+  ordersRawTable: string;
+  /** Целевая RAW продаж/возвратов. По умолчанию `__CR`; prod — ровно RAW_WB_SALES_RETURNS. */
+  salesRawTable: string;
+  /** Окно ночной сверки в сутках: 1..90, иначе 7 (как WB_SALES_RECONCILE_DAYS в Apps Script). */
+  salesReconcileDays: number;
+  /**
+   * Стартовый watermark для ПУСТОЙ теневой таблицы (ORDERS_BOOTSTRAP_WATERMARK / SALES_BOOTSTRAP_WATERMARK).
+   * Используется только в shadow и только когда в таблице нет ни одной API-строки. В prod игнорируется.
+   */
+  ordersBootstrapWatermark: string;
+  salesBootstrapWatermark: string;
+  /** DRY_RUN=1: загрузчики статистики считают план, но в BigQuery не пишут. */
+  statsDryRun: boolean;
   // ── prices observer (PR-1) ────────────────────────────────────────────────
   /** Хост категории «Цены и скидки». Отличается от аналитического — не переиспользовать. */
   wbPricesHost: string;
@@ -345,6 +364,16 @@ function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirecti
   };
 }
 
+/**
+ * Окно ночной сверки: мягкий разбор, как wbSalesReconcileDays_ (WbSalesReconcile.gs) — нечисло или
+ * значение вне 1..90 даёт 7, а не ошибку конфигурации.
+ */
+function reconcileDays(env: Env): number {
+  const raw = (env.SALES_RECONCILE_DAYS ?? '').trim();
+  const n = raw ? parseInt(raw, 10) : 7;
+  return Number.isNaN(n) || n < 1 || n > 90 ? 7 : n;
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const environment = (env.ENVIRONMENT ?? '').trim();
   if (environment !== 'shadow' && environment !== 'prod') {
@@ -372,6 +401,14 @@ export function loadConfig(env: Env = process.env): Config {
     stocksT5Table: opt(env, 'STOCKS_T5_TABLE', 'RAW_WB_STOCKS_T5__CR'),
     stocksT5PollIntervalMs: intOpt(env, 'STOCKS_T5_POLL_INTERVAL_MS', 9000),
     refSkuTable: opt(env, 'REF_SKU_TABLE', 'REF_SKU_MASTER'),
+    wbStatisticsHost: opt(env, 'WB_STATISTICS_HOST', 'https://statistics-api.wildberries.ru'),
+    wbStatisticsSecret: opt(env, 'WB_STATISTICS_SECRET', 'WB_TOKEN_STATISTICS'),
+    ordersRawTable: opt(env, 'ORDERS_RAW_TABLE', 'RAW_WB_ORDERS__CR'),
+    salesRawTable: opt(env, 'SALES_RAW_TABLE', 'RAW_WB_SALES_RETURNS__CR'),
+    salesReconcileDays: reconcileDays(env),
+    ordersBootstrapWatermark: opt(env, 'ORDERS_BOOTSTRAP_WATERMARK', ''),
+    salesBootstrapWatermark: opt(env, 'SALES_BOOTSTRAP_WATERMARK', ''),
+    statsDryRun: (env.DRY_RUN ?? '').trim() === '1',
     wbPricesHost: opt(env, 'WB_PRICES_HOST', 'https://discounts-prices-api.wildberries.ru'),
     wbPricesSecret: opt(env, 'WB_PRICES_SECRET', 'WB_PRICES_READ_TOKEN'),
     pricesRawTable: opt(env, 'PRICES_RAW_TABLE', 'RAW_WB_PRICES'),
