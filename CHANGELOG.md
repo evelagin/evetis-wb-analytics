@@ -13,6 +13,37 @@
 Живые тела трёх объектов сверены с Git до правки — совпадают. Журнал отказов `V_RUN_FAILURE_LEDGER` уже читает
 `LOADER_RUNS` отдельно и не меняется. Тест-предохранитель `tools/tests/test_ingest_heartbeat_consumers.py`.
 
+## 2026-11-10 — M2: заказы, продажи и ночная сверка продаж WB в Cloud Run (код, НЕ применено)
+
+Перенос `runWbOrdersIncremental`, `runWbSalesIncremental`, `runWbSalesNightReconcile` (Apps Script) в загрузчики
+`orders`, `sales`, `sales-reconcile` (`cloud/src/loaders/statistics/*`) с той же семантикой: watermark по
+`last_change_date`, граничный дедуп (`srid|row_hash` у заказов, `sale_id|md5(raw_json)` у продаж), fail-closed,
+at-least-once, привязка SKU при загрузке. Runbook: `docs/ops/MIG_M2_STATISTICS_RUNBOOK.md`.
+- **Схема боевых таблиц не меняется.** `RAW_WB_ORDERS` и `RAW_WB_SALES_RETURNS` пишутся теми же колонками и в той же
+  форме, что Apps Script (доказано replay-паритетом с исполняемым `.gs`, `cloud/test/statistics_apps_script_parity.test.ts`).
+- Новые теневые таблицы `RAW_WB_ORDERS__CR`, `RAW_WB_SALES_RETURNS__CR` — зеркало живых схем (порядок колонок,
+  партиция, кластер); Job/Scheduler `wb-orders|wb-sales|wb-sales-reconcile-{shadow,prod}`, все расписания на паузе
+  (`infra/terraform/wb_statistics_loaders.tf`). Права — поресурсно.
+- `LOADER_RUNS`: `loader_name` = `orders`/`sales` (гейт витрины), `sales-reconcile`; `logical_period` = D-1 МСК;
+  в `source_watermark` — часовой слот МСК (повтор в том же часу пропускается, следующий слот — новый прогон D-1).
+  `cli.ts`/`runManifest.ts` не менялись; тесты «source-aware guard только у mart» дополнены исключением для M2.
+- Отличия от Apps Script (watermark из таблицы, один load job, пауза 61 с между страницами, справочник SKU из
+  `REF_SKU_MASTER`, нет общего cooldown продаж и сверки) — runbook §3.
+- Сверка паритета: `sql/mig_m2_statistics_parity.sql` (только SELECT; самопроверка prod↔prod — EXACT).
+- `scheduler-control.yml`: загрузчики `wb-orders`, `wb-sales`, `wb-sales-reconcile`; `deploy-shadow.yml` обновляет образ
+  трёх shadow-Job, если они созданы.
+- Ревью #420: watermark = MAX строк инкремента (`ORD_INC_*`/`SALE_INC_*`) — ночная сверка и ручной импорт периода
+  его не двигают, как у Apps Script; свои SA `sa-wb-statistics-{shadow,prod}`; весь prod-контур — только при
+  `m2_prod_enabled=true` (по умолчанию false); таймауты `wb-sales*` 900 с, `wb-orders` 3600 с; `DRY_RUN` разбирается
+  как в `cli.ts`.
+- После общего PR #423 (влит merge-коммитом): **F4** — второй флаг `m2_shadow_enabled` (bool, default false); под ним
+  весь shadow-контур этого PR (SA, его права и доступ к секрету, `RAW_WB_ORDERS__CR`/`RAW_WB_SALES_RETURNS__CR` и запись
+  в них, 3 Job, 3 invoker, 3 Scheduler); data секрета — только при включённом контуре; wiring — только общий `infra.yml`
+  (`vars.M2_{SHADOW,PROD}_ENABLED == 'true'`). Ресурсы из `main` не менялись. **F5** — срок токена проверяется до
+  BigQuery и WB API (`WB_STATS_TOKEN_EXPIRED`, warn `WB_TOKEN_EXPIRING_SOON`); 401/403 → `WB_STATS_AUTH` (детерминированный,
+  без повтора) вместо `ORDERS_PARTIAL`/`SALES_ERROR`. Схема колонок не менялась. Тесты: `cloud/test/statistics_token.test.ts`,
+  `cloud/test/statistics_tf.test.ts`. Выкат prod — режим `only_job=wb-statistics` общего `deploy-prod.yml`.
+
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 
 `docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.
