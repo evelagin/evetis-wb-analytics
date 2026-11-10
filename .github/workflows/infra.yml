@@ -34,10 +34,20 @@ env:
   # поведение прежнее (политики нет), а как только владелец её задаст — apply создаст
   # канал и обе политики, без правки кода.
   TF_VAR_unitka_alert_email: ${{ vars.UNITKA_ALERT_EMAIL }}
-  # M3 (реклама WB): prod-контур (sa-wb-ads-prod, IAM на боевые RAW_WB_ADV_*, Job'ы, Scheduler'ы, алерт)
-  # создаётся ТОЛЬКО при переменной репозитория M3_PROD_ENABLED=true — её ставит владелец на OWNER ACK
-  # M3-CUTOVER (docs/ops/MIG_ADS_RUNBOOK.md §7.3). Не задана → false → prod-ресурсов в плане нет.
+  # Миграция Apps Script → Cloud Run (M2–M5): ЕДИНАЯ схема включения контуров потока.
+  #   Terraform: var.mN_shadow_enabled / var.mN_prod_enabled (bool, default false) — у каждого потока оба.
+  #   GitHub Variables: MN_SHADOW_ENABLED / MN_PROD_ENABLED = 'true' — ставит владелец по OWNER ACK
+  #   (shadow — ACK SHADOW потока, prod — ACK cutover потока). Не задана → false → ресурсов контура в плане нет.
+  # Рабочий env Job'а (ENVIRONMENT, имена таблиц) Terraform ставит на CREATE; загрузчик сам отказывает при
+  # чужом контуре (targets.ts). Проверка схемы — tools/tests/test_stream_enable_flags.py.
+  TF_VAR_m2_shadow_enabled: ${{ vars.M2_SHADOW_ENABLED == 'true' }}
+  TF_VAR_m2_prod_enabled: ${{ vars.M2_PROD_ENABLED == 'true' }}
+  TF_VAR_m3_shadow_enabled: ${{ vars.M3_SHADOW_ENABLED == 'true' }}
   TF_VAR_m3_prod_enabled: ${{ vars.M3_PROD_ENABLED == 'true' }}
+  TF_VAR_m4_shadow_enabled: ${{ vars.M4_SHADOW_ENABLED == 'true' }}
+  TF_VAR_m4_prod_enabled: ${{ vars.M4_PROD_ENABLED == 'true' }}
+  TF_VAR_m5_shadow_enabled: ${{ vars.M5_SHADOW_ENABLED == 'true' }}
+  TF_VAR_m5_prod_enabled: ${{ vars.M5_PROD_ENABLED == 'true' }}
 
 jobs:
   preflight:
