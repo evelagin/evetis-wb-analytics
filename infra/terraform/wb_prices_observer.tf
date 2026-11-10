@@ -90,9 +90,9 @@ resource "google_cloud_run_v2_job" "wb_prices_prod" {
 resource "google_cloud_scheduler_job" "wb_prices_prod" {
   name      = "wb-prices-prod"
   region    = var.region
-  schedule  = "*/20 * * * *"
-  time_zone = "Etc/UTC" # окно наблюдения считается в UTC — держим планировщик в той же шкале
-  paused    = true      # снимается ТОЛЬКО после подтверждения read-only токена
+  schedule  = "0 */4 * * *" # BQ cost 2026-11-10: 6 снимков в сутки (было каждые 20 мин)
+  time_zone = "Etc/UTC"     # окно наблюдения считается в UTC — держим планировщик в той же шкале
+  paused    = true          # снимается ТОЛЬКО после подтверждения read-only токена
 
   retry_config {
     # Ретрай планировщика не нужен: следующее окно наступит через 20 минут и

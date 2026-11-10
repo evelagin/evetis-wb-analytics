@@ -75,7 +75,7 @@ resource "google_bigquery_table_iam_member" "ct_refresh_write" {
 resource "google_cloud_scheduler_job" "ct_refresh_prod" {
   name      = "ct-refresh-prod"
   region    = var.region
-  schedule  = "40 7,9,12,16,19 * * *"
+  schedule  = "40 9 * * *" # BQ cost 2026-11-10: раз в сутки после витрины 09:00 (было 5 раз)
   time_zone = "Europe/Moscow"
 
   # Как у wb-ops-health-prod: scheduler-control.yml этим job'ом не владеет, поэтому

@@ -1,0 +1,19 @@
+attemptDeadline: 320s
+httpTarget:
+  body: eyJjb25maWd1cmF0aW9uIjp7ImxhYmVscyI6eyJldmV0aXMtam9iIjoic2t1LXBlcmZvcm1hbmNlLXYyLWxheWVyIn0sInF1ZXJ5Ijp7InF1ZXJ5IjoiQ0FMTCBgd2JfbWFydC5zcF9idWlsZF9za3VfcGVyZm9ybWFuY2VfdjJfZGFpbHlgKCdzY2hlZHVsZXInKSIsInVzZUxlZ2FjeVNxbCI6ZmFsc2V9fX0=
+  headers:
+    Content-Type: application/json
+    User-Agent: Google-Cloud-Scheduler
+  httpMethod: POST
+  oauthToken:
+    scope: https://www.googleapis.com/auth/bigquery
+    serviceAccountEmail: sa-sku-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+  uri: https://bigquery.googleapis.com/bigquery/v2/projects/project-fa311fc0-4d87-4781-986/jobs
+lastAttemptTime: '2026-11-10T06:20:08.945234Z'
+name: projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/sku-performance-v2-layer-build
+schedule: 20 7-23 * * *
+scheduleTime: '2026-11-10T07:20:02.327811Z'
+state: ENABLED
+status: {}
+timeZone: Europe/Moscow
+userUpdateTime: '2026-10-09T11:06:37.149800Z'
