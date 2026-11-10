@@ -93,7 +93,7 @@ Cloud Logging вместе с метками. Проверено 2026-10-04 на
 3. Для возрастных конвейеров:
    - `FRESHNESS_STALE` → `FRESHNESS_LATE`.
 4. `RUN_FAILED` / `RUN_PARTIAL`.
-5. Причины полноты: `CONTROL_MISMATCH` / `COVERAGE_LOW`.
+5. Причины полноты: `CONTROL_MISMATCH` / `COVERAGE_LOW` / `T5_DETAIL_MISSING` (Mig1b-0: снимок остатков с `t5_rows_written = 0`).
 6. `MISSING_DATES_RECOVERABLE`.
 7. `OK`.
 
