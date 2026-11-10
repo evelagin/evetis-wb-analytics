@@ -1,5 +1,22 @@
 # CHANGELOG.md
 
+## 2026-11-10 — M3: реклама WB в Cloud Run — загрузчики `ads` и `ads-costs-audit` (НЕ применено)
+
+Перенос `runWbAdsDaily` + `runWbAdsDailyCatchUp` и недельного аудита расходов из Apps Script.
+Design & code only: Terraform не применялся, Job не запускался, Apps Script не менялся, WB API не вызывался.
+- `cloud/src/loaders/ads/*` — campaigns → costs (D−14…D−1) → fullstats (D−7…D−1), затем Ads-3 и Ads-2 (изолированы).
+  Семантика, колонки и строки — как в Apps Script (replay-тест исполняет сам `runWbAdsDaily()` из `.gs`).
+  Журнал — `LOADER_RUNS`, `loader_name='ads'`, `logical_period` = D−1 МСК: гейт витрины видит его через
+  `V_INGEST_HEARTBEAT`. Итог OK/STALE → COMPLETE, PARTIAL/ERROR → ERROR `ADS_PARTIAL`/`ADS_ERROR`.
+- Схема RAW **не меняется**; новые таблицы — только теневые `RAW_WB_ADV_*__CR` (9 шт., зеркало живых схем).
+  Вью не создаются и не меняются; `wbAdsBqCreateViews()` не воспроизведена.
+- `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
+  `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
+- `infra/terraform/wb_ads_loader.tf` — Job'ы и Scheduler'ы `wb-ads-{shadow,prod}`, `wb-ads-costs-audit-{shadow,prod}`
+  (все PAUSED), табличный IAM, алерт `wb_ads_failed`. Workflows: образ в новые Job'ы (guarded), loader в scheduler-control.
+- `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
+- Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`

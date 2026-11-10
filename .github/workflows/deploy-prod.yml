@@ -159,6 +159,21 @@ jobs:
           else
             echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy wb-ads-prod + wb-ads-costs-audit-prod (тот же digest)
+        # M3 (реклама). Тот же образ, dispatch args[0]=ads / ads-costs-audit. Пропуск оставил бы Job на
+        # bootstrap hello (урок PR-1). Боевые имена RAW_WB_ADV_* выставлены Terraform на CREATE; загрузчик
+        # сам отказывает при любом другом контуре. Шаг НЕ включает Scheduler (оба PAUSED до OWNER ACK M3).
+        run: |
+          for JOB in wb-ads-prod wb-ads-costs-audit-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
         # (решение владельца); WB_TOKEN_ANALYTICS не трогаем — на нём остатки и
