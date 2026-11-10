@@ -51,6 +51,26 @@ at-least-once, привязка SKU при загрузке. Runbook: `docs/ops/
   `m2_prod_enabled=true` (по умолчанию false); таймауты `wb-sales*` 900 с, `wb-orders` 3600 с; `DRY_RUN` разбирается
   как в `cli.ts`.
 
+## 2026-11-10 — M3: реклама WB в Cloud Run — загрузчики `ads` и `ads-costs-audit` (НЕ применено)
+
+Перенос `runWbAdsDaily` + `runWbAdsDailyCatchUp` и недельного аудита расходов из Apps Script.
+Design & code only: Terraform не применялся, Job не запускался, Apps Script не менялся, WB API не вызывался.
+- `cloud/src/loaders/ads/*` — `ads`: campaigns → costs (D−14…D−1) → fullstats (D−7…D−1); хвост Ads-3 + Ads-2 —
+  отдельный загрузчик `ads-query` (свой Job и `loader_name`), чтобы журнал `ads` закрывался до хвоста, как в эталоне.
+  Дедлайн обработчика: после него вызовы WB и их повторы не начинаются, исход пишется до таймаута Job'а.
+  Семантика, колонки и строки — как в Apps Script (replay-тест исполняет сам `runWbAdsDaily()` из `.gs`).
+  Журнал — `LOADER_RUNS`, `loader_name='ads'`, `logical_period` = D−1 МСК: гейт витрины видит его через
+  `V_INGEST_HEARTBEAT`. Итог OK/STALE → COMPLETE, PARTIAL/ERROR → ERROR `ADS_PARTIAL`/`ADS_ERROR`.
+- Схема RAW **не меняется**; новые таблицы — только теневые `RAW_WB_ADV_*__CR` (9 шт., зеркало живых схем).
+  Вью не создаются и не меняются; `wbAdsBqCreateViews()` не воспроизведена.
+- `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
+  `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
+- `infra/terraform/wb_ads_loader.tf` — свои SA `sa-wb-ads-{shadow,prod}`; Job'ы и Scheduler'ы `wb-ads`, `wb-ads-query`,
+  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Весь prod-контур — под `var.m3_prod_enabled` (по умолчанию
+  false; infra.yml ← переменная репозитория `M3_PROD_ENABLED`). Workflows: образ в новые Job'ы (guarded), loader в scheduler-control.
+- `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
+- Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`

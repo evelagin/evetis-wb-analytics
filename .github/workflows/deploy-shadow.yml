@@ -80,3 +80,18 @@ jobs:
           else
             echo "unitka-engine-shadow ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy wb-ads-shadow + wb-ads-query-shadow + wb-ads-costs-audit-shadow (тот же digest)
+        # M3 (реклама): shadow пишет только RAW_WB_ADV_*__CR (контур проверяет сам загрузчик,
+        # cloud/src/loaders/ads/targets.ts). env — Terraform (infra/terraform/wb_ads_loader.tf), здесь ТОЛЬКО образ:
+        # env не трогаем, иначе plan вечно предлагал бы его вернуть (у shadow env не в ignore_changes).
+        # До первого infra apply Job'ов нет — шаг предупреждает и не валит деплой остальных.
+        run: |
+          for JOB in wb-ads-shadow wb-ads-query-shadow wb-ads-costs-audit-shadow; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${{ steps.push.outputs.digest }}"
+            else
+              echo "$JOB ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
