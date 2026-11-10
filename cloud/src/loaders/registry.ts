@@ -32,6 +32,8 @@ import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
 import { ordersLoader, salesLoader, salesReconcileLoader } from './statistics/index.js';
 import { statsSlot } from './statistics/common.js';
 
+import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
+
 export interface LoaderSpec {
   handler: LoaderHandler;
   /** Логический период — идемпотентный ключ LOADER_RUNS и ctx.targetDate. */
@@ -138,6 +140,17 @@ export const LOADERS: Record<string, LoaderSpec> = {
   sales: { handler: (ctx) => salesLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
   // Сверка в INGEST_RUNS не писала; своё имя, чтобы её ERROR не стал LATEST-ATTEMPT для 'sales' в гейте.
   'sales-reconcile': { handler: (ctx) => salesReconcileLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+
+  // M3 (перенос из Apps Script runWbAdsDaily + catch-up): имя 'ads' = INGEST_RUNS.loader_name — на него
+  // завязан freshness-гейт витрины (mart/bq.ts REQUIRED_LOADERS). Период D−1 МСК, как rng.to эталона.
+  // retryTransient НЕТ: повтор — следующим окном Scheduler (catch-up), с новым run_id и новым снапшотом.
+  ads: { handler: (ctx) => adsLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: хвост runWbAdsDaily (Ads-3 ставки + Ads-2 query stats) — свой loader_name, чтобы журнал 'ads'
+  // закрывался до хвоста (в эталоне ingestFinalizeByStatus_ шёл раньше Ads-3). Стартует после 'ads' того же D−1.
+  'ads-query': { handler: (ctx) => adsQueryLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: недельный аудит расходов ADSAUDIT_ (loadWbAdsCostsAudit). Отдельное имя: не «последняя попытка» 'ads'.
+  // Период — сегодня МСК: окно D−46…D−8 считается от сегодняшней даты, как wbAdsCostsRangeBack_.
+  'ads-costs-audit': { handler: (ctx) => adsCostsAuditLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
