@@ -77,7 +77,7 @@ BEGIN
          MAX(i.completed_at) AS last_complete,
          TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(i.completed_at), MINUTE) AS age_min
   FROM _reg r
-  JOIN `wb_raw.INGEST_RUNS` i
+  JOIN `wb_raw.V_INGEST_HEARTBEAT` i
     ON i.loader_name = r.pipeline_id AND i.status = 'COMPLETE'
    AND i.completed_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
   WHERE r.pipeline_id IN ('orders', 'sales')
