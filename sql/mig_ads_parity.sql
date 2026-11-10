@@ -181,13 +181,26 @@ bs AS (
   GROUP BY run_day
 ),
 -- ── Ads-3 / Ads-2 (диагностика, вне вердикта дня) ──
-p_qb AS (SELECT r.run_day, b.status, b.requested_pairs, b.returned_bid_rows FROM `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS` b JOIN as_runs r USING (run_id)
-         WHERE b._PARTITIONTIME >= (SELECT p0 FROM win)),
-c_qb AS (SELECT r.run_day, b.status, b.requested_pairs, b.returned_bid_rows FROM `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS__CR` b JOIN cr_runs r USING (run_id)
-         WHERE b._PARTITIONTIME >= (SELECT p0 FROM win)),
-p_qs AS (SELECT r.run_day, q.period_from, q.status, q.requested_pairs, q.returned_rows FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS` q JOIN as_runs r USING (run_id)
+-- В Apps Script хвост пишется тем же run_id, что и прогон дня; в Cloud Run — отдельным загрузчиком
+-- `ads-query` со своим run_id (`ADSRAW_…_CRQ…`). Поэтому пара — по суткам прогона: последний ран хвоста дня.
+p_qb AS (SELECT PARSE_DATE('%Y%m%d', SUBSTR(b.run_id, 8, 8)) AS run_day, b.status, b.requested_pairs, b.returned_bid_rows
+         FROM `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS` b
+         WHERE b._PARTITIONTIME >= (SELECT p0 FROM win) AND STARTS_WITH(b.run_id, 'ADSRAW_')
+           AND NOT REGEXP_CONTAINS(b.run_id, r'_CR[0-9A-Za-z]+$')
+         QUALIFY ROW_NUMBER() OVER (PARTITION BY PARSE_DATE('%Y%m%d', SUBSTR(b.run_id, 8, 8)) ORDER BY b.run_id DESC) = 1),
+c_qb AS (SELECT PARSE_DATE('%Y%m%d', SUBSTR(b.run_id, 8, 8)) AS run_day, b.status, b.requested_pairs, b.returned_bid_rows
+         FROM `wb_raw.RAW_WB_ADV_QUERY_BIDS_RUNS__CR` b
+         WHERE b._PARTITIONTIME >= (SELECT p0 FROM win) AND STARTS_WITH(b.run_id, 'ADSRAW_')
+         QUALIFY ROW_NUMBER() OVER (PARTITION BY PARSE_DATE('%Y%m%d', SUBSTR(b.run_id, 8, 8)) ORDER BY b.run_id DESC) = 1),
+p_qs_run AS (SELECT DISTINCT run_id, PARSE_DATE('%Y%m%d', SUBSTR(run_id, 8, 8)) AS run_day FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS`
+             WHERE _PARTITIONTIME >= (SELECT p0 FROM win) AND STARTS_WITH(run_id, 'ADSRAW_') AND NOT REGEXP_CONTAINS(run_id, r'_CR[0-9A-Za-z]+$')
+             QUALIFY ROW_NUMBER() OVER (PARTITION BY PARSE_DATE('%Y%m%d', SUBSTR(run_id, 8, 8)) ORDER BY run_id DESC) = 1),
+c_qs_run AS (SELECT DISTINCT run_id, PARSE_DATE('%Y%m%d', SUBSTR(run_id, 8, 8)) AS run_day FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS__CR`
+             WHERE _PARTITIONTIME >= (SELECT p0 FROM win) AND STARTS_WITH(run_id, 'ADSRAW_')
+             QUALIFY ROW_NUMBER() OVER (PARTITION BY PARSE_DATE('%Y%m%d', SUBSTR(run_id, 8, 8)) ORDER BY run_id DESC) = 1),
+p_qs AS (SELECT r.run_day, q.period_from, q.status, q.requested_pairs, q.returned_rows FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS` q JOIN p_qs_run r USING (run_id)
          WHERE q._PARTITIONTIME >= (SELECT p0 FROM win)),
-c_qs AS (SELECT r.run_day, q.period_from, q.status, q.requested_pairs, q.returned_rows FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS__CR` q JOIN cr_runs r USING (run_id)
+c_qs AS (SELECT r.run_day, q.period_from, q.status, q.requested_pairs, q.returned_rows FROM `wb_raw.RAW_WB_ADV_QUERY_STATS_RUNS__CR` q JOIN c_qs_run r USING (run_id)
          WHERE q._PARTITIONTIME >= (SELECT p0 FROM win)),
 qs AS (
   SELECT run_day,

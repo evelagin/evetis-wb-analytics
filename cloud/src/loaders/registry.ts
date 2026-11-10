@@ -29,7 +29,7 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
-import { adsLoader, adsCostsAuditLoader } from './ads/index.js';
+import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -120,6 +120,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // завязан freshness-гейт витрины (mart/bq.ts REQUIRED_LOADERS). Период D−1 МСК, как rng.to эталона.
   // retryTransient НЕТ: повтор — следующим окном Scheduler (catch-up), с новым run_id и новым снапшотом.
   ads: { handler: (ctx) => adsLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: хвост runWbAdsDaily (Ads-3 ставки + Ads-2 query stats) — свой loader_name, чтобы журнал 'ads'
+  // закрывался до хвоста (в эталоне ingestFinalizeByStatus_ шёл раньше Ads-3). Стартует после 'ads' того же D−1.
+  'ads-query': { handler: (ctx) => adsQueryLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
   // M3: недельный аудит расходов ADSAUDIT_ (loadWbAdsCostsAudit). Отдельное имя: не «последняя попытка» 'ads'.
   // Период — сегодня МСК: окно D−46…D−8 считается от сегодняшней даты, как wbAdsCostsRangeBack_.
   'ads-costs-audit': { handler: (ctx) => adsCostsAuditLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now) },

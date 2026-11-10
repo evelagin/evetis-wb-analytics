@@ -13,7 +13,7 @@ on:
         required: true
         default: "wb-stocks"
         type: choice
-        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl, ozon-store-pnl, wb-ads, wb-ads-costs-audit]
+        options: [wb-stocks, wb-mart, wb-prices, wb-tariffs, wb-funnel, wb-paid-storage, unitka-engine, ozon-unitka, ozon-cpo-orders, unitka-store-pnl, ozon-store-pnl, wb-ads, wb-ads-query, wb-ads-costs-audit]
       action:
         description: "pause | resume | run-now"
         required: true

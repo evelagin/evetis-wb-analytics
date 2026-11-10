@@ -71,6 +71,14 @@ export interface AdsConfig {
   auditEnabled: boolean;
   enabledQueryBids: boolean;
   enabledQueryStats: boolean;
+  /**
+   * Дедлайн обработчика от старта, мс: после него не НАЧИНАЕТСЯ ни один HTTP-вызов к WB, источник
+   * завершается со своим статусом, и исход попадает в журнал ДО таймаута Job'а. Один вызов с ретраями
+   * занимает максимум ~360 c (4 × 60 c + 20/40/60 c), поэтому таймаут Job'а = дедлайн + ≥ 600 c
+   * (wb_ads_loader.tf). `ads`: 1800 c при timeout 2400 c; `ads-query`: 480 c при timeout 900 c.
+   */
+  criticalDeadlineMs: number;
+  queryDeadlineMs: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -121,6 +129,8 @@ export function loadAdsConfig(env: Env = process.env): AdsConfig {
     auditEnabled: flag(env, 'ADS_COSTS_AUDIT_ENABLED', false),
     enabledQueryBids: flag(env, 'ADS_QUERY_BIDS', true),
     enabledQueryStats: flag(env, 'ADS_QUERY_STATS', true),
+    criticalDeadlineMs: int(env, 'ADS_DEADLINE_MS', 1_800_000, 120_000, 1_800_000),
+    queryDeadlineMs: int(env, 'ADS_QUERY_DEADLINE_MS', 480_000, 60_000, 480_000),
   };
 }
 

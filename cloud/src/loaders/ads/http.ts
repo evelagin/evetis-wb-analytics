@@ -70,7 +70,12 @@ export class AdsHttp {
     this.nowMs = opts.nowMs ?? (() => Date.now());
   }
 
-  async request(method: 'get' | 'post', url: string, payload?: unknown): Promise<AdsHttpResponse> {
+  /**
+   * @param notAfterMs дедлайн прогона (мс эпохи): повтор, который не успевает закончиться до него
+   *   (сейчас + пауза + таймаут попытки), не начинается — возвращается последний ответ, как при
+   *   исчерпанных повторах. Первую попытку дедлайном отсекает withDeadline (sources.ts).
+   */
+  async request(method: 'get' | 'post', url: string, payload?: unknown, notAfterMs?: number): Promise<AdsHttpResponse> {
     const maxRetries = this.opts.maxRetries ?? WB_ADS_MAX_RETRY;
     const base = this.opts.baseDelayMs ?? WB_ADS_RETRY_BASE_MS;
     const cap = this.opts.maxDelayMs ?? WB_ADS_RETRY_MAX_DELAY_MS;
@@ -108,16 +113,18 @@ export class AdsHttp {
       if (!threw && !(WB_ADS_RETRY_CODES as readonly number[]).includes(status)) {
         return toResponse(status, text);
       }
-      if (attempt > maxRetries) {
+      const pauseNext = retryPauseMs(attempt, threw ? -1 : retryAfterMs(raHeader, this.nowMs()), base, cap);
+      const pastDeadline = notAfterMs !== undefined && this.nowMs() + pauseNext + this.opts.timeoutMs > notAfterMs;
+      if (attempt > maxRetries || pastDeadline) {
+        if (pastDeadline && attempt <= maxRetries) this.opts.logger?.warn('wb_ads_http_retry_skipped_deadline', { status, attempts: attempt, url: safeUrl });
         if (threw) throw new Error(`[WB_ADS] HTTP-исключение после ${attempt} попыток: ${errMsg}`);
         this.opts.logger?.warn('wb_ads_http_retries_exhausted', { status, attempts: attempt, url: safeUrl });
         return toResponse(status, text);
       }
-      const pause = retryPauseMs(attempt, threw ? -1 : retryAfterMs(raHeader, this.nowMs()), base, cap);
       this.opts.logger?.warn('wb_ads_http_retry', {
-        reason: threw ? `exception: ${errMsg}` : `HTTP ${status}`, attempt, pauseMs: pause, url: safeUrl,
+        reason: threw ? `exception: ${errMsg}` : `HTTP ${status}`, attempt, pauseMs: pauseNext, url: safeUrl,
       });
-      await this.sleep(pause);
+      await this.sleep(pauseNext);
     }
   }
 }

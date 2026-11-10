@@ -50,6 +50,9 @@ export class FakeReader implements AdsReader {
     return { pairs: s.map(({ advertId, nmId }) => ({ advertId, nmId })), spendRub: s.reduce((a, x) => a + x.spend, 0) };
   }
   async costsByDay(): Promise<Record<string, number>> { if (this.costsFail) throw new Error('synthetic'); return COSTS_BY_DAY(this.lp); }
+  attempt: string | null = 'COMPLETE';
+  attemptCalls: Array<[string, string, string]> = [];
+  async adsAttempt(t: string, env: string, lp: string): Promise<string | null> { this.attemptCalls.push([t, env, lp]); return this.attempt; }
 }
 
 /** Тихий логгер: тесты проверяют данные, а не вывод. */
@@ -72,8 +75,19 @@ export interface Harness {
   sleeps: number[];
 }
 
-export function harness(lp: string, env: Record<string, string | undefined> = {}, o: FixtureOpts = {}): Harness {
-  const { route, calls } = makeWbRouter(lp, o);
+/**
+ * Виртуальные часы: sleep и задержка ответа WB двигают время, ничего не ожидая на самом деле.
+ * latencyMs(url) — сколько «длится» каждая HTTP-попытка.
+ */
+export interface VClock { t: number; latencyMs: (url: string) => number; starts: Array<{ t: number; url: string }> }
+
+export function harness(lp: string, env: Record<string, string | undefined> = {}, o: FixtureOpts = {}, clock?: VClock,
+  routeOverride?: WbRoute): Harness {
+  const made = makeWbRouter(lp, o);
+  const calls = made.calls;
+  const route: WbRoute = routeOverride
+    ? (m, u, b) => { calls.push(`${m.toUpperCase()} ${new URL(u).pathname}`); return routeOverride(m, u, b); }
+    : made.route;
   const sink = new MemSink();
   const reader = new FakeReader(lp);
   const h: Harness = { rt: null as unknown as AdsRuntime, sink, reader, calls, tokenCalls: 0, sleeps: [] };
@@ -81,10 +95,17 @@ export function harness(lp: string, env: Record<string, string | undefined> = {}
     env,
     getToken: async () => { h.tokenCalls++; return 'synthetic-token'; },
     makeDeps: (ctx, cfg, token) => ({
-      http: new AdsHttp(token, { timeoutMs: 5_000, fetchFn: fetchFromRoute(route), sleep: async (ms) => { h.sleeps.push(ms); } }),
+      http: new AdsHttp(token, {
+        timeoutMs: 5_000,
+        fetchFn: clock
+          ? async (url, init) => { clock.starts.push({ t: clock.t, url }); clock.t += clock.latencyMs(url); return fetchFromRoute(route)(url, init); }
+          : fetchFromRoute(route),
+        sleep: async (ms) => { h.sleeps.push(ms); if (clock) clock.t += ms; },
+        nowMs: clock ? () => clock.t : undefined,
+      }),
       sink, reader,
-      sleep: async (ms) => { h.sleeps.push(ms); },
-      nowMs: () => Date.now(),
+      sleep: async (ms) => { h.sleeps.push(ms); if (clock) clock.t += ms; },
+      nowMs: clock ? () => clock.t : () => Date.now(),
       nowTs: () => mskNow(new Date()),
       logger: ctx.logger,
       cfg: { ...cfg, fullstatsPauseMs: 0 },

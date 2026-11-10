@@ -6,7 +6,7 @@
  *      WbAdsQueryBids,Wbadsquerystats,IngestRunLog}.gs + wbFetchWithRetry_ (Utils.gs) + bqLoadRows_/bqQuery_
  *      (WbBigQuery.gs) в node:vm — UrlFetchApp, BigQuery, Utilities и свойства подменены;
  *      точка входа — сам runWbAdsDaily();
- *   B) через Cloud Run `ads` (fetch, BigQuery и Secret Manager подменены).
+ *   B) через Cloud Run `ads` и затем `ads-query` (хвост Ads-3/Ads-2; fetch, BigQuery и Secret Manager подменены).
  * Сравниваются ВСЕ строки всех девяти RAW-таблиц после нормализации в STRING (как их видит BigQuery)
  * и итог журнала. Различаются только поля времени запуска и run_id.
  *
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
-import { makeAdsLoader } from '../src/loaders/ads/index.js';
+import { makeAdsLoader, makeAdsQueryLoader } from '../src/loaders/ads/index.js';
 import { d1Moscow } from '../src/loaders/mart/targetDate.js';
 import {
   CAMPAIGNS_COLUMNS, CAMPAIGN_STATS_COLUMNS, BOOSTER_STATS_COLUMNS, COSTS_COLUMNS, COSTS_RUNS_COLUMNS,
@@ -134,6 +134,9 @@ async function runCloud(lp: string, o: FixtureOpts) {
   let error: { code?: string } | null = null;
   let res = null;
   try { res = await makeAdsLoader(h.rt)(ctxFor('shadow', lp)); } catch (e) { error = e as { code?: string }; }
+  // Хвост эталона (Ads-3, Ads-2) в Cloud Run — отдельный загрузчик `ads-query` после 'ads' того же D−1.
+  h.reader.attempt = error ? 'ERROR' : 'COMPLETE';
+  await makeAdsQueryLoader(h.rt)(ctxFor('shadow', lp));
   return { h, res, error };
 }
 

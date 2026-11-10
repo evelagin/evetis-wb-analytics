@@ -4,7 +4,9 @@
 
 Перенос `runWbAdsDaily` + `runWbAdsDailyCatchUp` и недельного аудита расходов из Apps Script.
 Design & code only: Terraform не применялся, Job не запускался, Apps Script не менялся, WB API не вызывался.
-- `cloud/src/loaders/ads/*` — campaigns → costs (D−14…D−1) → fullstats (D−7…D−1), затем Ads-3 и Ads-2 (изолированы).
+- `cloud/src/loaders/ads/*` — `ads`: campaigns → costs (D−14…D−1) → fullstats (D−7…D−1); хвост Ads-3 + Ads-2 —
+  отдельный загрузчик `ads-query` (свой Job и `loader_name`), чтобы журнал `ads` закрывался до хвоста, как в эталоне.
+  Дедлайн обработчика: после него вызовы WB и их повторы не начинаются, исход пишется до таймаута Job'а.
   Семантика, колонки и строки — как в Apps Script (replay-тест исполняет сам `runWbAdsDaily()` из `.gs`).
   Журнал — `LOADER_RUNS`, `loader_name='ads'`, `logical_period` = D−1 МСК: гейт витрины видит его через
   `V_INGEST_HEARTBEAT`. Итог OK/STALE → COMPLETE, PARTIAL/ERROR → ERROR `ADS_PARTIAL`/`ADS_ERROR`.
@@ -12,8 +14,9 @@ Design & code only: Terraform не применялся, Job не запуска
   Вью не создаются и не меняются; `wbAdsBqCreateViews()` не воспроизведена.
 - `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
   `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
-- `infra/terraform/wb_ads_loader.tf` — Job'ы и Scheduler'ы `wb-ads-{shadow,prod}`, `wb-ads-costs-audit-{shadow,prod}`
-  (все PAUSED), табличный IAM, алерт `wb_ads_failed`. Workflows: образ в новые Job'ы (guarded), loader в scheduler-control.
+- `infra/terraform/wb_ads_loader.tf` — свои SA `sa-wb-ads-{shadow,prod}`; Job'ы и Scheduler'ы `wb-ads`, `wb-ads-query`,
+  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Весь prod-контур — под `var.m3_prod_enabled` (по умолчанию
+  false; infra.yml ← переменная репозитория `M3_PROD_ENABLED`). Workflows: образ в новые Job'ы (guarded), loader в scheduler-control.
 - `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
 - Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
 

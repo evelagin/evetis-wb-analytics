@@ -7,7 +7,8 @@
 
 | Что | Где |
 |---|---|
-| Загрузчик `ads` (суточный + catch-up) | `cloud/src/loaders/ads/index.ts` → `makeAdsLoader` |
+| Загрузчик `ads` (суточный + catch-up, журнал гейта) | `cloud/src/loaders/ads/index.ts` → `makeAdsLoader` |
+| Загрузчик `ads-query` (хвост: Ads-3 ставки + Ads-2 query stats) | там же → `makeAdsQueryLoader` |
 | Загрузчик `ads-costs-audit` (недельный аудит расходов) | там же → `makeAdsCostsAuditLoader` |
 | Источники (campaigns, fullstats, costs, Ads-3, Ads-2) | `cloud/src/loaders/ads/sources.ts` |
 | Нормализация строк RAW | `cloud/src/loaders/ads/normalize.ts` |
@@ -105,6 +106,8 @@
 | итог — `wbAdsOverallStatus_` по трём источникам | `overallStatus` (порт, те же 14 кейсов self-теста + SKIPPED) |
 | `ingestReapStaleRuns_` (15 мин) | lease `cli.ts`: STARTED старше 30 мин не блокирует |
 | catch-up: `wbAdsCatchUpDecision_` RUN / SKIP_COMPLETE / SKIP_RUNNING | окна Scheduler + lease: COMPLETE → `guard_skip`, свежий STARTED → ALREADY_RUNNING, ERROR → новый прогон |
+| `ingestFinalizeByStatus_` ДО Ads-3/Ads-2 (Wbadsdaily.gs:212-231) | Ads-3/Ads-2 — отдельный загрузчик `ads-query` (свой Job, `loader_name='ads-query'`): журнал `ads` закрывается без хвоста |
+| стена 6 мин + резервы Step 5A | дедлайн обработчика (`ADS_DEADLINE_MS` 1800 c / `ADS_QUERY_DEADLINE_MS` 480 c): новые вызовы WB и их повторы после него не начинаются; timeout Job'а = дедлайн + ≥ 420–600 c |
 | `WB_ADS_STATUS` (лист Google) | структурный лог Cloud Logging (`ads_source`, `ads_costs_window`, …) |
 
 Гейт витрины (`cloud/src/loaders/mart/bq.ts`) читает `V_INGEST_HEARTBEAT` = `INGEST_RUNS` ∪ `LOADER_RUNS`
@@ -129,7 +132,8 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 
 | Apps Script | TypeScript |
 |---|---|
-| `runWbAdsDaily` / `runWbAdsDailyCore_` | `makeAdsLoader` (`ads/index.ts`) |
+| `runWbAdsDaily` / `runWbAdsDailyCore_` (критичная часть) | `makeAdsLoader` (`ads/index.ts`) |
+| `runWbAdsDaily` после `ingestFinalizeByStatus_` (Ads-3 + Ads-2) | `makeAdsQueryLoader` (`ads/index.ts`) |
 | `runWbAdsDailyCatchUp` + `wbAdsCatchUpDecision_` + триггеры 06:15/08:15 | окна Scheduler 05:00/06:00/08:00 + lease `cli.ts` |
 | `wbAdsOverallStatus_` | `overallStatus` (`ads/status.ts`) |
 | `wbAdsDailyFreshness_` | `AdsBq.maxStatsDate` + `isStale` |
@@ -149,15 +153,22 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 
 ## 3. Отличия от Apps Script — каждое с обоснованием
 
-- **D1. Нет стены 6 минут.** Бюджет fullstats — 900 c от старта (`ADS_FULLSTATS_BUDGET_MS`), Job — 1800 c.
+- **D1. Нет стены 6 минут — есть дедлайн обработчика.** Бюджет fullstats — 900 c от старта
+  (`ADS_FULLSTATS_BUDGET_MS`); общий дедлайн `ads` — 1800 c (`ADS_DEADLINE_MS`), timeout Job'а — 2400 c.
+  После дедлайна ни один вызов WB не начинается (`withDeadline`), и повтор, не успевающий закончиться до него, тоже
+  (`AdsHttp`, `notAfterMs`): перерасход — максимум одна попытка (≤ 60 c), исход попадает в журнал до таймаута.
   В Apps Script fullstats обрывался по стене (инцидент 01.10.2026), прогон уходил в PARTIAL и закрывал гейт.
   В Cloud Run обрыва в штатном объёме нет. Бюджеты Ads-3 (90 c) и Ads-2 (120 c) оставлены как в эталоне —
   ради паритета. Наблюдение: в 3 из 8 последних прогонов Apps Script (03–10.11) Ads-3 закончился FAILED, Ads-2 —
   без OK-суток; причина не разбиралась (предположение — стена Step 5A).
-- **D2. Журнал закрывается после Ads-3/Ads-2, а не до.** Apps Script финализировал heartbeat раньше
-  необязательной части, чтобы жёсткий таймаут 6 мин не оставил STARTED. Здесь `cli.ts` финализирует после
-  возврата handler, а необязательная часть ограничена своими бюджетами; таймаута 6 мин нет. Цена: COMPLETE
-  появляется на 3–4 мин позже (~05:10 вместо ~05:07), до витрины 07:00 — два часа.
+- **D2. Ads-3/Ads-2 — отдельный загрузчик `ads-query`.** Apps Script финализировал heartbeat 'ads' ДО
+  необязательной части, чтобы таймаут на хвосте не оставил STARTED. Здесь `cli.ts` закрывает журнал по возврату
+  handler, поэтому хвост вынесен в свой Job со своим `loader_name='ads-query'` (prod 05:30/06:30/08:30 МСК).
+  Он стартует, только если последняя попытка `ads` за тот же D−1 в том же контуре терминальна (COMPLETE или ERROR —
+  эталон гонял хвост и при PARTIAL); иначе `ADS_QUERY_NOT_READY` и следующее окно. Свой `run_id` (`ADSRAW_…_CRQ…`):
+  срезы Ads-2 канонизируются по `(period, run_id)`, общий run_id с повтором смешал бы две выдачи.
+  Цена: снимок ставок снимается на ~25 мин позже, чем у Apps Script; `ads-query` COMPLETE и при FAILED отдельного
+  источника (статусы — в своих run-log), как и в эталоне, где хвост в журнал не входил.
 - **D3. Catch-up — окна Scheduler.** Отдельной функции решения нет: тот же LATEST-ATTEMPT делает lease.
   Порог «зависшего» STARTED — 30 мин вместо 15 (константа `cli.ts`, общая для всех загрузчиков).
   Окна 06:00 и 08:00 вместо ~06:15 и ~08:15: у одного cron одна минута.
@@ -223,17 +234,21 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 
 ### 7.1 Shadow (OWNER ACK M3-SHADOW)
 
-1. `infra.yml` → plan с `targets`:
-   `google_cloud_run_v2_job.wb_ads_shadow,google_cloud_run_v2_job.wb_ads_costs_audit_shadow,google_cloud_scheduler_job.wb_ads_shadow,google_cloud_scheduler_job.wb_ads_costs_audit_shadow,google_cloud_run_v2_job_iam_member.scheduler_ads_shadow_invoke,google_cloud_run_v2_job_iam_member.scheduler_ads_audit_shadow_invoke`
-   Ожидается **30 create, 0 update/delete**: 9 `google_bigquery_table.ads_cr[…]`,
-   9 `google_bigquery_table_iam_member.shadow_write_ads_cr[…]`, 6 `…shadow_read_ads_sources[…]`, 2 Job, 2 invoker,
-   2 Scheduler. Ни одного prod-ресурса. Для `expected_changes` (tools/tf_plan_guard.py) — те же 30 адресов `=create`.
+1. `infra.yml` → plan (переменная репозитория `M3_PROD_ENABLED` не задана → `m3_prod_enabled=false`) с `targets`:
+   `google_cloud_run_v2_job.wb_ads_shadow,google_cloud_scheduler_job.wb_ads_shadow,google_cloud_run_v2_job_iam_member.scheduler_ads_shadow_invoke`
+   Ожидается **39 create, 0 update/delete**: `google_service_account.wb_ads_shadow`; `wb_ads_jobuser["shadow"]`;
+   `wb_ads_loader_runs["shadow"]`; 9 `google_bigquery_table.ads_cr[…]`; 9 `wb_ads_shadow_write_cr[…]`;
+   6 `wb_ads_read_sources["shadow:…"]`; `wb_ads_token["shadow"]`; `wb_ads_actas_deployer["shadow"]`,
+   `wb_ads_actas_terraform["shadow"]`; по 3 Job / invoker / Scheduler (`wb-ads`, `wb-ads-query`, `wb-ads-costs-audit`).
+   Ни одного prod-ресурса и ни одного изменения `sa-loaders-*`. Для `expected_changes` (tools/tf_plan_guard.py) — те же
+   39 адресов `=create`.
 2. Apply тем же планом.
-3. Merge PR → `deploy-shadow.yml` обновит образ `wb-ads-shadow` и `wb-ads-costs-audit-shadow`.
+3. Merge PR → `deploy-shadow.yml` обновит образ трёх shadow-Job'ов (только образ: env shadow принадлежит Terraform).
 4. `scheduler-control`: `wb-ads` / shadow / `run-now` вне окон Apps Script (не 05:00–05:20, 06:15, 08:15) —
    первый прогон под наблюдением. Проверить `LOADER_RUNS` (`environment='shadow'`, `loader_name='ads'`) и
    строки в девяти `__CR`.
-5. `scheduler-control`: `wb-ads` / shadow / `resume` (05:40 и 07:40 МСК).
+5. `scheduler-control`: `wb-ads-query` / shadow / `run-now` после COMPLETE `ads` (проверить `RAW_WB_ADV_QUERY_*__CR`).
+6. `scheduler-control`: `resume` для `wb-ads` (05:40, 07:40 МСК) и `wb-ads-query` (06:05, 08:05) в shadow.
 
 ### 7.2 Паритет — 5 дней подряд
 
@@ -246,20 +261,31 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 
 ### 7.3 Переключение (вечер, после 20:00 МСК; OWNER ACK M3-CUTOVER)
 
-1. Предусловия: паритет 7.2 пройден; DRO-1 читает heartbeat 'ads' и из `LOADER_RUNS` (§9, п. 3).
-2. `infra.yml` plan с `targets`: `google_cloud_run_v2_job.wb_ads_prod,google_cloud_scheduler_job.wb_ads_prod,google_cloud_run_v2_job_iam_member.scheduler_ads_prod_invoke,google_monitoring_alert_policy.wb_ads_failed`
-   Ожидается **13 create, 0 update/delete**: Job, Scheduler (PAUSED), invoker, 9 `prod_write_ads[…]` (Job от них
-   зависит — подтягиваются сами), `google_monitoring_alert_policy.wb_ads_failed[0]`. Аудит prod — отдельно, после §6.
-3. `deploy-prod.yml` (тот же digest, что проверен в shadow) — образ попадёт и в `wb-ads-prod`.
-   Readback: `gcloud run jobs describe wb-ads-prod` — образ = digest, env `ADS_*_TABLE` = боевые имена,
-   `ENVIRONMENT=prod`, SA `sa-loaders-prod`.
-4. Apps Script (владелец, UI «Триггеры»): удалить триггеры `runWbAdsDaily` и оба `runWbAdsDailyCatchUp`
+1. Предусловия:
+   - паритет 7.2 пройден;
+   - **общий PR (готовит координатор миграции; в этом PR файлы не меняются)** переводит на `V_INGEST_HEARTBEAT`
+     всех читателей heartbeat `ads` из `INGEST_RUNS`: `sql/mart/dashboard_layer_v1.sql:154-155`
+     (`V_DATA_FRESHNESS`, слои `ads_query_bids` / `ads_costs` / `ads_fullstats`), `sql/health/dro1_01_contract.sql:55`
+     и пробу DRO-1 `sql/health/dro1_02_probe.sql` (§9, п. 3) — применён и проверен. Без него после переключения
+     витрина свежести и DRO-1 покажут рекламу «без прогонов», хотя гейт витрины будет открыт.
+2. Владелец ставит переменную репозитория `M3_PROD_ENABLED=true` (infra.yml → `TF_VAR_m3_prod_enabled`).
+   До этого ни одного prod-ресурса M3 в конфигурации нет.
+3. `infra.yml` plan с `targets`: `google_cloud_run_v2_job.wb_ads_prod,google_cloud_scheduler_job.wb_ads_prod,google_cloud_run_v2_job_iam_member.scheduler_ads_prod_invoke,google_monitoring_alert_policy.wb_ads_failed`
+   Ожидается **31 create, 0 update/delete**: `google_service_account.wb_ads_prod[0]`; `wb_ads_jobuser["prod"]`;
+   `wb_ads_loader_runs["prod"]`; 9 `wb_ads_prod_write[…]`; 6 `wb_ads_read_sources["prod:…"]`; `wb_ads_token["prod"]`;
+   2 actAs; по 3 Job / invoker / Scheduler (все PAUSED); `wb_ads_failed[0]` (если задан `UNITKA_ALERT_EMAIL`, иначе 30).
+   Аудит prod создаётся тем же apply, но его Scheduler остаётся PAUSED, а загрузчик без `ADS_COSTS_AUDIT_ENABLED=1`
+   отказывает (§6).
+4. `deploy-prod.yml` (тот же digest, что проверен в shadow) — образ попадёт в `wb-ads-prod`, `wb-ads-query-prod`,
+   `wb-ads-costs-audit-prod`. Readback: `gcloud run jobs describe wb-ads-prod` — образ = digest, env `ADS_*_TABLE` =
+   боевые имена, `ENVIRONMENT=prod`, SA `sa-wb-ads-prod`.
+5. Apps Script (владелец, UI «Триггеры»): удалить триггеры `runWbAdsDaily` и оба `runWbAdsDailyCatchUp`
    (или `wbAdsRemoveTrigger()` для суточного; для catch-up функции удаления нет — вручную).
-5. `scheduler-control`: `wb-ads` / prod / `run-now` — дымовой прогон за текущие D−1 (запишет новый снапшот тех же
+6. `scheduler-control`: `wb-ads` / prod / `run-now`, затем `wb-ads-query` / prod / `run-now` — дымовой прогон за текущие D−1 (запишет новый снапшот тех же
    окон; вью возьмут его как последний). Проверка: `LOADER_RUNS` prod `ads` COMPLETE; в `RAW_WB_ADV_COSTS_RUNS`
    маркер `ADSRAW_…_CR…` с `status='OK'`; `V_INGEST_HEARTBEAT` показывает `cloud_run`.
-6. `scheduler-control`: `wb-ads` / prod / `resume`; `wb-ads` / shadow / `pause` (лимиты WB общие).
-7. Утро: к 05:15 `LOADER_RUNS` prod `ads` COMPLETE за D−1; в 07:00 `MART_RUNS` COMPLETE (не FRESHNESS_GATE);
+7. `scheduler-control`: `resume` для `wb-ads` и `wb-ads-query` в prod; `pause` для обоих в shadow (лимиты WB общие).
+8. Утро: к 05:15 `LOADER_RUNS` prod `ads` COMPLETE за D−1; в 07:00 `MART_RUNS` COMPLETE (не FRESHNESS_GATE);
    `V_ADV_COSTS_DAY_COVERAGE` — без новых незакрытых дат относительно вчера.
 
 ## 8. STOP и откат
@@ -271,7 +297,8 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 - любая запись в `__CR` из prod или в боевую таблицу из shadow (проверка контура это исключает — значит дефект).
 
 **Откат** (данные не откатываются — RAW append-only, вью сами берут последний снапшот):
-1. `scheduler-control`: `wb-ads` / prod / `pause`.
+1. `scheduler-control`: `pause` для `wb-ads` и `wb-ads-query` в prod. Полный вывод prod-контура — снять
+   `M3_PROD_ENABLED` и apply (destroy только prod-ресурсов M3; боевые RAW не затрагиваются — их Terraform не создавал).
 2. Apps Script: `wbAdsInstallDailyTrigger()` и `wbAdsInstallCatchUpTriggers()`.
 3. Если D−1 ещё не закрыт: запустить `runWbAdsDaily` вручную. Catch-up Apps Script смотрит только `INGEST_RUNS`
    и Cloud Run-строк не видит — прогон будет, это безопасно (новый снапшот).
@@ -286,11 +313,16 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
    добавить новую версию секрета тем же токеном (значение не выводить). Проверить можно только запросом к WB —
    в этой работе не делалось.
 2. **ACK M3-SHADOW** на план §7.1 (30 create, только shadow).
-3. **DRO-1** (`sql/health/dro1_02_probe.sql`) берёт `ads_daily` (и `orders`/`sales`) только из `INGEST_RUNS`.
-   После переключения heartbeat переедет в `LOADER_RUNS` — DRO-1 покажет «нет прогонов». Перед cutover
-   перевести пробу на `V_INGEST_HEARTBEAT` (общая задача M2/M3, отдельный PR и ACK).
-4. **Детектор `ADS_RUNTIME_NEAR_LIMIT`** (`sql/ops/step5a_detectors.sql`) мерит fullstats от времени в `run_id`
-   против стены Apps Script 300 c. Cloud Run стены не имеет — порог надо пересмотреть или исключить `_CR`-раны.
+3. **Читатели heartbeat из `INGEST_RUNS`** — `sql/health/dro1_02_probe.sql` (`ads_daily`, `orders`, `sales`),
+   `sql/health/dro1_01_contract.sql:55`, `sql/mart/dashboard_layer_v1.sql:154-155` (`V_DATA_FRESHNESS`:
+   `ads_query_bids` / `ads_costs` / `ads_fullstats`). После переключения heartbeat переедет в `LOADER_RUNS`.
+   Перевод на `V_INGEST_HEARTBEAT` — **отдельный общий PR (M2/M3, готовит координатор)**, обязательное
+   предусловие M3-CUTOVER (§7.3, п. 1). В этом PR эти файлы не меняются.
+3a. **Флаг prod-контура** — переменная репозитория `M3_PROD_ENABLED=true` только на OWNER ACK M3-CUTOVER.
+4. **Детекторы Step 5A** (`sql/ops/step5a_detectors.sql`): `ADS_RUNTIME_NEAR_LIMIT` мерит fullstats против стены
+   Apps Script 300 c (у Cloud Run её нет), а `ADS_TAIL_MISSING` ищет снимки Ads-3/Ads-2 с тем же `run_id`, что у
+   fullstats — у Cloud Run хвост пишется своим `run_id` (`…_CRQ…`), детектор покажет MISSING. Обоим нужна правка
+   до cutover (тот же общий PR или отдельный).
 5. **Аудит расходов** — только после ACK ADS-UTC-EDGE (PR #370); затем `ADS_COSTS_AUDIT_ENABLED=1` и resume.
 6. **Триггер `WbAdsClustersJob`** — проверить и удалить, если остался (§5).
 

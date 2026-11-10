@@ -33,7 +33,7 @@ import {
 import { splitPeriod, dayCount } from './time.js';
 
 export interface HttpLike {
-  request(method: 'get' | 'post', url: string, payload?: unknown): Promise<AdsHttpResponse>;
+  request(method: 'get' | 'post', url: string, payload?: unknown, notAfterMs?: number): Promise<AdsHttpResponse>;
 }
 
 export interface AdsDeps {
@@ -46,6 +46,27 @@ export interface AdsDeps {
   nowTs: () => string;
   logger: Logger;
   cfg: AdsConfig;
+  /** Абсолютный дедлайн обработчика (мс эпохи): новые HTTP-вызовы после него не начинаются. */
+  deadlineMs?: number;
+}
+
+export const ADS_DEADLINE = 'ADS_DEADLINE';
+
+/**
+ * Обёртка HTTP с дедлайном: вызов, который уже не успевает уложиться (сейчас + резерв одного ответа
+ * > дедлайна), НЕ начинается — бросается ошибка ADS_DEADLINE. Источник ловит её, как любую ошибку
+ * WB, и возвращает свой статус (FAILED/PARTIAL), поэтому исход прогона фиксируется в журнале
+ * до таймаута Job'а, а не обрывается убийством execution.
+ */
+export function withDeadline(http: HttpLike, nowMs: () => number, deadlineMs: number): HttpLike {
+  return {
+    request: (method, url, payload) => {
+      if (nowMs() + WB_ADS_REQUEST_RESERVE_MS > deadlineMs) {
+        return Promise.reject(Object.assign(new Error(`дедлайн прогона: ${method.toUpperCase()} ${url.split('?')[0]} не начат`), { code: ADS_DEADLINE }));
+      }
+      return http.request(method, url, payload, deadlineMs); // повторы тоже не переживут дедлайн
+    },
+  };
 }
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -120,7 +141,7 @@ export async function loadFullstats(d: AdsDeps, rid: string, from: string, to: s
       return { source: src, status: 'SKIPPED', rows: 0 };
     }
 
-    const deadline = t0 + d.cfg.fullstatsBudgetMs;
+    const deadline = Math.min(t0 + d.cfg.fullstatsBudgetMs, d.deadlineMs ?? Number.POSITIVE_INFINITY);
     const windows = splitPeriod(from, to, WB_ADV_RAW_MAX_DAYS);
     let totalStat = 0, totalBoost = 0, totalNoStats = 0, totalSkipped = 0, totalFail = 0;
     let lastCode: number | '' = '';

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import type { JobLoadMetadata } from '@google-cloud/bigquery';
 import { readFileSync } from 'node:fs';
-import { makeAdsLoader, makeAdsCostsAuditLoader, adsRunId } from '../src/loaders/ads/index.js';
+import { makeAdsLoader, makeAdsQueryLoader, makeAdsCostsAuditLoader, adsRunId } from '../src/loaders/ads/index.js';
 import { loadAdsConfig, assertAdsTargets, ADS_PROD_TABLES } from '../src/loaders/ads/targets.js';
 import { AdsHttp, retryAfterMs, retryPauseMs } from '../src/loaders/ads/http.js';
 import { AdsBq, adsLoadJobId, type BqLike } from '../src/loaders/ads/bq.js';
@@ -18,7 +18,7 @@ import { COSTS_COLUMNS } from '../src/loaders/ads/constants.js';
 import { mskNow, mskCompact, fullstatsRange, rangeBack, splitPeriod, dayCount, daysOf, addDays } from '../src/loaders/ads/time.js';
 import { d1Moscow } from '../src/loaders/mart/targetDate.js';
 import { resolveLoader } from '../src/loaders/registry.js';
-import { harness, ctxFor, fetchFromRoute, PROD_ENV } from './ads_harness.js';
+import { harness, ctxFor, fetchFromRoute, PROD_ENV, type VClock } from './ads_harness.js';
 import { COUNT } from './ads_fixture.js';
 
 const LP = '2026-11-09';
@@ -169,6 +169,13 @@ describe('ads: HTTP — повторы как wbFetchWithRetry_', () => {
     }
   });
 
+  it('повтор, не успевающий до дедлайна, не начинается — последний ответ без исключения', async () => {
+    const t = seq([503, 200]);
+    const r = await t.http.request('get', 'https://x/y', undefined, 10_000); // nowMs=0, пауза 20 c > дедлайна
+    expect(r).toMatchObject({ ok: false, code: 503 });
+    expect(t.sleeps).toEqual([]);
+  });
+
   it('сетевое исключение после всех повторов — бросается (источник даст FAILED)', async () => {
     const t = seq(['throw']);
     await expect(t.http.request('get', 'https://x/y')).rejects.toThrow(/после 4 попыток/);
@@ -255,11 +262,11 @@ describe('ads: суточный прогон', () => {
     expect(h.sink.order.indexOf('RAW_WB_ADV_COSTS__CR')).toBeLessThan(h.sink.order.indexOf('RAW_WB_ADV_COSTS_RUNS__CR'));
     const stats = h.sink.rows('RAW_WB_ADV_CAMPAIGN_STATS__CR');
     expect(stats.every((r) => r.period_from === '2026-11-03' && r.period_to === '2026-11-09')).toBe(true);
-    // Ads-2 — ровно семь суток D−7…D−1, по строке run-log на сутки, от свежих к старым.
-    expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR').map((r) => r.period_from))
-      .toEqual(['2026-11-09', '2026-11-08', '2026-11-07', '2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03']);
+    // Хвост (Ads-3/Ads-2) — НЕ в 'ads': журнал закрывается сразу после критичной части.
+    expect(h.calls.some((c) => c.includes('/normquery/'))).toBe(false);
+    expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR')).toEqual([]);
     // ни одного write-вызова в WB: только чтение
-    expect(h.calls.every((c) => /^(GET \/adv\/v1\/promotion\/count|GET \/api\/advert\/v2\/adverts|GET \/adv\/v3\/fullstats|GET \/adv\/v1\/upd|POST \/adv\/v0\/normquery\/(get-bids|stats))$/.test(c))).toBe(true);
+    expect(h.calls.every((c) => /^(GET \/adv\/v1\/promotion\/count|GET \/api\/advert\/v2\/adverts|GET \/adv\/v3\/fullstats|GET \/adv\/v1\/upd)$/.test(c))).toBe(true);
   });
 
   it('пустой ответ upd: окно успешно, маркер с нулём строк (а не «не спрашивали»)', async () => {
@@ -290,26 +297,95 @@ describe('ads: суточный прогон', () => {
     expect(h.sink.rows('RAW_WB_ADV_COSTS__CR')).toHaveLength(3);
   });
 
-  it('fullstats 500 → дробление до single, PARTIAL; Ads-3/Ads-2 всё равно отработали', async () => {
+  it('fullstats 500 → дробление до single, PARTIAL', async () => {
     const h = harness(LP, {}, { fullstatsFailId: 1004 });
     await expect(makeAdsLoader(h.rt)(ctxFor('shadow', LP))).rejects.toMatchObject({ code: 'ADS_PARTIAL' });
     // пачка (4 попытки HTTP-уровня) + 4 удачных single + упавший single 1004 (4 попытки) = 12, как в эталоне
     expect(h.calls.filter((c) => c === 'GET /adv/v3/fullstats')).toHaveLength(12);
-    expect(h.sink.rows('RAW_WB_ADV_QUERY_BIDS_RUNS__CR')).toHaveLength(1);
-    expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR')).toHaveLength(7);
   });
 
-  it('сбой Ads-3 и Ads-2 не меняет итог: COMPLETE', async () => {
+  it('медленный Advert API: исход \'ads\' фиксируется до дедлайна, ни один вызов не начат после него', async () => {
+    // 120 кампаний → 3 пачки adverts; каждая попытка к WB «длится» 60 c (таймаут), всё кроме count — 503.
+    const ids = Array.from({ length: 120 }, (_, i) => ({ advertId: 2000 + i }));
+    const route = (_m: string, url: string) => (new URL(url).pathname === '/adv/v1/promotion/count'
+      ? { status: 200, body: JSON.stringify({ adverts: [{ type: 8, status: 9, advert_list: ids }] }) }
+      : { status: 503, body: '{}' });
+    const clock: VClock = { t: 0, latencyMs: () => 60_000, starts: [] };
+    const h = harness(LP, { ADS_DEADLINE_MS: '600000' }, {}, clock, route);
+    const err = await makeAdsLoader(h.rt)(ctxFor('shadow', LP)).catch((e: { code?: string }) => e);
+    expect(['ADS_PARTIAL', 'ADS_ERROR']).toContain((err as { code?: string }).code); // журнал получит ERROR, а не STARTED
+    const deadline = 600_000;
+    expect(clock.starts.length).toBeGreaterThan(3);
+    expect(clock.starts.every((s) => s.t + 30_000 <= deadline)).toBe(true);
+    // после дедлайна повторов нет: перерасход — не больше одной попытки (≤ 60 c); timeout Job'а = дедлайн + 600 c
+    expect(clock.t).toBeLessThanOrEqual(deadline + 60_000);
+    expect(h.calls.some((c) => c.includes('/normquery/'))).toBe(false);
+  });
+
+  it('штатный дедлайн 1800 c с запасом укладывается в timeout Job\'а 2400 c (Terraform)', () => {
+    const tf = readFileSync(new URL('../../infra/terraform/wb_ads_loader.tf', import.meta.url), 'utf8');
+    const jobTimeout = (job: string) => Number(new RegExp(`"${job}"\\s*=\\s*\\{[^}]*timeout\\s*=\\s*"(\\d+)s"`).exec(tf)?.[1]);
+    const cfg = loadAdsConfig({});
+    // Запас ≥ 600 c: последний вызов начат ≤ дедлайн − 30 c, повторов после дедлайна нет; финализация журнала.
+    expect(jobTimeout('wb-ads') * 1000 - cfg.criticalDeadlineMs).toBeGreaterThanOrEqual(600_000);
+    expect(jobTimeout('wb-ads-query') * 1000 - cfg.queryDeadlineMs).toBeGreaterThanOrEqual(420_000);
+    expect(jobTimeout('wb-ads-costs-audit') * 1000 - cfg.queryDeadlineMs).toBeGreaterThanOrEqual(420_000);
+    // Потолок env-переопределения дедлайна не даёт выйти за timeout.
+    expect(() => loadAdsConfig({ ADS_DEADLINE_MS: '1800001' })).toThrow();
+  });
+});
+
+describe('ads-query (Ads-3 + Ads-2)', () => {
+  it('после COMPLETE \'ads\' за тот же D−1: снимок ставок и семь суток Ads-2 от свежих к старым', async () => {
+    const h = harness(LP);
+    await makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP));
+    expect(h.reader.attemptCalls).toEqual([['LOADER_RUNS', 'shadow', LP]]);
+    expect(h.sink.rows('RAW_WB_ADV_QUERY_BIDS_RUNS__CR')[0]).toMatchObject({ status: 'OK' });
+    expect(h.sink.rows('RAW_WB_ADV_QUERY_BIDS__CR')[0]!.run_id).toMatch(/^ADSRAW_\d{8}_\d{6}_CRQab12c$/);
+    expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR').map((r) => r.period_from))
+      .toEqual(['2026-11-09', '2026-11-08', '2026-11-07', '2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03']);
+    expect(h.calls.filter((c) => !/^(GET \/adv\/v1\/promotion\/count|GET \/api\/advert\/v2\/adverts|POST \/adv\/v0\/normquery\/(get-bids|stats))$/.test(c))).toEqual([]);
+  });
+
+  it('\'ads\' ещё идёт или не начинался → ADS_QUERY_NOT_READY без токена и WB', async () => {
+    for (const st of ['STARTED', null]) {
+      const h = harness(LP);
+      h.reader.attempt = st;
+      await expect(makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP))).rejects.toMatchObject({ code: 'ADS_QUERY_NOT_READY' });
+      expect([h.tokenCalls, h.calls.length]).toEqual([0, 0]);
+    }
+  });
+
+  it('после ERROR \'ads\' хвост всё равно идёт (эталон гонял его и при PARTIAL)', async () => {
+    const h = harness(LP);
+    h.reader.attempt = 'ERROR';
+    await makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP));
+    expect(h.sink.rows('RAW_WB_ADV_QUERY_BIDS_RUNS__CR')).toHaveLength(1);
+  });
+
+  it('сбой Ads-3 и Ads-2 — COMPLETE хвоста, статусы в run-log', async () => {
     const h = harness(LP, {}, { bidsFail: true, qstatsDropPack: true });
-    await expect(makeAdsLoader(h.rt)(ctxFor('shadow', LP))).resolves.toBeTruthy();
+    await expect(makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP))).resolves.toBeTruthy();
     expect(h.sink.rows('RAW_WB_ADV_QUERY_BIDS_RUNS__CR')[0]).toMatchObject({ status: 'FAILED', http_success: 'FALSE' });
     expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR')[0]).toMatchObject({ period_from: LP, status: 'PARTIAL' });
+  });
+
+  it('медленный API: хвост укладывается в свой дедлайн', async () => {
+    const clock: VClock = { t: 0, latencyMs: () => 60_000, starts: [] };
+    const route = (_m: string, url: string) => (new URL(url).pathname === '/adv/v1/promotion/count'
+      ? { status: 200, body: JSON.stringify({ adverts: [{ status: 9, advert_list: [{ advertId: 1 }] }] }) }
+      : { status: 503, body: '{}' });
+    const h = harness(LP, {}, {}, clock, route);
+    await makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP));
+    const cfg = loadAdsConfig({});
+    expect(clock.starts.every((s) => s.t + 30_000 <= cfg.queryDeadlineMs)).toBe(true);
+    expect(clock.t).toBeLessThanOrEqual(cfg.queryDeadlineMs + 60_000);
   });
 
   it('Ads-2: недоступный scope → FAILED по каждым суткам; данные не пишутся', async () => {
     const h = harness(LP);
     h.reader.scopeFail = true;
-    await makeAdsLoader(h.rt)(ctxFor('shadow', LP));
+    await makeAdsQueryLoader(h.rt)(ctxFor('shadow', LP));
     const runs = h.sink.rows('RAW_WB_ADV_QUERY_STATS_RUNS__CR');
     expect(runs.every((r) => r.status === 'FAILED' && /Scope не получен/.test(r.error_message ?? ''))).toBe(true);
     expect(h.sink.rows('RAW_WB_ADV_QUERY_STATS__CR')).toEqual([]);

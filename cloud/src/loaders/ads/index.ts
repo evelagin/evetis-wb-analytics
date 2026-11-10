@@ -1,21 +1,26 @@
 /**
- * M3 — реклама WB в Cloud Run. Два загрузчика:
+ * M3 — реклама WB в Cloud Run. Три загрузчика:
  *
- *   `ads`              ← runWbAdsDaily + runWbAdsDailyCatchUp (Wbadsdaily.gs).
- *                        campaigns → costs (D−14…D−1) → fullstats (D−7…D−1), затем Ads-3 (ставки)
- *                        и Ads-2 (query stats D−7…D−1). Журнал — LOADER_RUNS, loader_name='ads',
- *                        logical_period = D−1 МСК: та же строка, что INGEST_RUNS 'ads', которую
- *                        freshness-гейт витрины (cloud/src/loaders/mart/bq.ts) видит через
- *                        V_INGEST_HEARTBEAT (только environment='prod').
+ *   `ads`              ← критичная часть runWbAdsDaily (Wbadsdaily.gs): campaigns → costs (D−14…D−1) →
+ *                        fullstats (D−7…D−1). Журнал — LOADER_RUNS, loader_name='ads', logical_period = D−1
+ *                        МСК: ту же роль играет INGEST_RUNS 'ads'; freshness-гейт витрины
+ *                        (cloud/src/loaders/mart/bq.ts) видит строку через V_INGEST_HEARTBEAT (только prod).
  *                        Catch-up = несколько окон Scheduler: lease cli пропускает COMPLETE
  *                        (SKIP_COMPLETE), свежий STARTED (SKIP_RUNNING) и повторяет ERROR/зависший.
+ *   `ads-query`        ← необязательная часть runWbAdsDaily: Ads-3 (снимок ставок) и Ads-2 (query stats
+ *                        D−7…D−1). В эталоне она шла ПОСЛЕ ingestFinalizeByStatus_ (Wbadsdaily.gs:212-231),
+ *                        чтобы таймаут на хвосте не оставил heartbeat 'ads' незакрытым. Здесь та же гарантия
+ *                        дана отдельным загрузчиком со своим loader_name и Job'ом: журнал 'ads' закрывается,
+ *                        не дожидаясь хвоста. Стартует, только когда последняя попытка 'ads' за тот же D−1
+ *                        в том же контуре терминальна (COMPLETE или ERROR — эталон гонял хвост в обоих).
  *   `ads-costs-audit`  ← loadWbAdsCostsAudit (WbAdsRawLoader.gs:405), ни разу не запускался в Apps Script.
- *                        ADSAUDIT_-ран расходов D−46…D−8 окнами по 30 суток. Свой loader_name, чтобы
- *                        не стать «последней попыткой» 'ads' для гейта витрины.
+ *                        ADSAUDIT_-ран расходов D−46…D−8 окнами по 30 суток.
  *
- * Итог прогона (wbAdsOverallStatus_): OK/STALE → handler возвращается → cli пишет COMPLETE;
- * PARTIAL/ERROR → LoaderError('ADS_PARTIAL'|'ADS_ERROR') → cli пишет ERROR с тем же кодом, что
- * ingestFinalizeByStatus_. Ads-3/Ads-2 изолированы: их сбой статус не меняет.
+ * У каждого обработчика дедлайн (AdsConfig.criticalDeadlineMs / queryDeadlineMs): после него новые
+ * HTTP-вызовы не начинаются, источник отдаёт свой статус, и исход пишется в журнал до таймаута Job'а.
+ *
+ * Итог `ads` (wbAdsOverallStatus_): OK/STALE → handler возвращается → cli пишет COMPLETE;
+ * PARTIAL/ERROR → LoaderError('ADS_PARTIAL'|'ADS_ERROR') → ERROR с тем же кодом, что ingestFinalizeByStatus_.
  *
  * 🔴 Реклама здесь — сырьё для АТРИБУЦИИ (fullstats → MART_SKU_DAILY.ad_spend) и для БИЛЛИНГА
  *    (upd → V_ADV_COSTS_SNAPSHOT → FACT_ADS_COSTS_DAILY, FIN CONTRACT V2). Загрузчик их не смешивает
@@ -27,7 +32,7 @@ import { SecretsClient } from '../../secrets.js';
 import { AdsHttp } from './http.js';
 import { AdsBq } from './bq.js';
 import { loadAdsConfig, assertAdsTargets, type AdsConfig, type AdsTableKey } from './targets.js';
-import { loadCampaigns, loadCosts, loadFullstats, loadQueryBids, loadQueryStats, type AdsDeps } from './sources.js';
+import { loadCampaigns, loadCosts, loadFullstats, loadQueryBids, loadQueryStats, withDeadline, type AdsDeps } from './sources.js';
 import { overallStatus, isJournalSuccess, isStale, type SourceResult } from './status.js';
 import { addDays, daysOf, fullstatsRange, mskCompact, mskDate, mskNow, rangeBack } from './time.js';
 import {
@@ -35,11 +40,9 @@ import {
   WB_ADS_DAILY_STALE_DAYS, WB_ADS_QSTATS_WINDOW_DAYS,
 } from './constants.js';
 
-/** Таблицы, которые пишет суточный прогон, — проверяются ВСЕ до первого вызова WB. */
-export const ADS_DAILY_KEYS: readonly AdsTableKey[] = [
-  'campaigns', 'campaignStats', 'boosterStats', 'costs', 'costsRuns',
-  'queryBids', 'queryBidsRuns', 'queryStats', 'queryStatsRuns',
-];
+/** Таблицы, которые пишет каждый загрузчик, — проверяются ВСЕ до первого вызова WB. */
+export const ADS_DAILY_KEYS: readonly AdsTableKey[] = ['campaigns', 'campaignStats', 'boosterStats', 'costs', 'costsRuns'];
+export const ADS_QUERY_KEYS: readonly AdsTableKey[] = ['queryBids', 'queryBidsRuns', 'queryStats', 'queryStatsRuns'];
 export const ADS_AUDIT_KEYS: readonly AdsTableKey[] = ['costs', 'costsRuns'];
 
 /** Внешние зависимости обработчика (тесты подменяют все). */
@@ -75,9 +78,14 @@ export const defaultRuntime: AdsRuntime = {
  * (`run_id LIKE 'ADSRAW_%'`, sql/ops/step5a_detectors.sql) и исключения по префиксу в
  * V_ADV_COSTS_UNION_PREBOOTSTRAP работали без правок. Суффикс `CR…` отличает строки Cloud Run.
  */
-export function adsRunId(prefix: 'ADSRAW_' | 'ADSAUDIT_', now: Date, executionId: string, rnd: () => number = Math.random): string {
+export function adsRunId(prefix: 'ADSRAW_' | 'ADSAUDIT_', now: Date, executionId: string, rnd: () => number = Math.random, tag = ''): string {
   const tail = executionId.replace(/[^A-Za-z0-9]/g, '').slice(-5) || Math.floor(rnd() * 0xffff).toString(16).padStart(4, '0');
-  return `${prefix}${mskCompact(now)}_CR${tail}`;
+  return `${prefix}${mskCompact(now)}_CR${tag}${tail}`;
+}
+
+/** Зависимости с дедлайном обработчика: HTTP после него не начинается (withDeadline). */
+function bounded(d: AdsDeps, deadlineMs: number): AdsDeps {
+  return { ...d, deadlineMs, http: withDeadline(d.http, d.nowMs, deadlineMs) };
 }
 
 async function token(rt: AdsRuntime, projectId: string, cfg: AdsConfig): Promise<string> {
@@ -98,19 +106,19 @@ export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
     const fsRange = fullstatsRange(logicalPeriod);
     const todayMsk = addDays(logicalPeriod, 1);
     const costsRange = rangeBack(todayMsk, WB_ADS_COSTS_OPERATIONAL_DAYS, 1);
-    const qsDays = daysOf(addDays(logicalPeriod, -(WB_ADS_QSTATS_WINDOW_DAYS - 1)), logicalPeriod);
 
     if ((rt.env.DRY_RUN ?? '').trim() === '1') {
-      logger.info('ads_dry_run', { logicalPeriod, fullstats: fsRange, costs: costsRange, qstatsDays: qsDays, tables: cfg.tables });
+      logger.info('ads_dry_run', { logicalPeriod, fullstats: fsRange, costs: costsRange, tables: cfg.tables });
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
 
     const tok = await token(rt, config.projectId, cfg);
     const startedAt = rt.now();
     const runId = adsRunId('ADSRAW_', startedAt, config.executionId);
-    const d = rt.makeDeps(ctx, cfg, tok, runId);
-    const t0 = d.nowMs();
-    logger.info('ads_run_start', { runId, logicalPeriod, fullstats: fsRange, costs: costsRange });
+    const d0 = rt.makeDeps(ctx, cfg, tok, runId);
+    const t0 = d0.nowMs();
+    const d = bounded(d0, t0 + cfg.criticalDeadlineMs);
+    logger.info('ads_run_start', { runId, logicalPeriod, fullstats: fsRange, costs: costsRange, deadlineMs: cfg.criticalDeadlineMs });
 
     let results: SourceResult[];
     let overall: ReturnType<typeof overallStatus>;
@@ -139,22 +147,47 @@ export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
       throw new LoaderError(`ADS_EXCEPTION: ${e instanceof Error ? e.message : String(e)}`, 'ADS_EXCEPTION', { cause: e });
     }
 
-    // ── Необязательная часть: в итог и журнал НЕ входит (WB_ADS_EXPECTED_SOURCES = 3) ──
-    // Порядок как в эталоне: Ads-3 (снимок ставок невосстановим) раньше Ads-2 (срез восстановим).
-    if (cfg.enabledQueryBids) {
-      try { await loadQueryBids(d, runId); } catch (e) {
-        logger.error('ads_query_bids_isolated_failure', { error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-    if (cfg.enabledQueryStats) {
-      try { await loadQueryStats(d, runId, qsDays); } catch (e) {
-        logger.error('ads_query_stats_isolated_failure', { error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-
+    // Ads-3/Ads-2 здесь НЕ вызываются: это загрузчик `ads-query` (свой Job и loader_name), поэтому
+    // журнал 'ads' закрывается сразу после критичной части — как ingestFinalizeByStatus_ до хвоста в эталоне.
     if (!isJournalSuccess(overall)) throw new LoaderError(note, `ADS_${overall}`);
     logger.info('ads_run_done', { runId, overall, rows: total, durationMs: d.nowMs() - t0 });
     return { rowsFetched: total, rowsLoaded: total };
+  };
+}
+
+/**
+ * `ads-query` — Ads-3 и Ads-2. Наружу статусы источников не выносит (как в эталоне, где они не входили в
+ * heartbeat): COMPLETE, если хвост отработал без исключения, даже при FAILED/PARTIAL отдельного источника —
+ * повторять раз за разом невосстановимый снимок ставок незачем, а Ads-2 добирается следующими сутками.
+ * ERROR — только «рано» (ADS_QUERY_NOT_READY: 'ads' за D−1 ещё не завершён) и сбой инфраструктуры:
+ * тогда следующее окно Scheduler повторит.
+ */
+export function makeAdsQueryLoader(rt: AdsRuntime = defaultRuntime) {
+  return async function adsQueryLoader(ctx: LoaderContext): Promise<LoaderResult> {
+    const { config, logger, logicalPeriod } = ctx;
+    const cfg = loadAdsConfig(rt.env);
+    assertAdsTargets(config.environment, cfg, ADS_QUERY_KEYS);
+    const qsDays = daysOf(addDays(logicalPeriod, -(WB_ADS_QSTATS_WINDOW_DAYS - 1)), logicalPeriod);
+    if ((rt.env.DRY_RUN ?? '').trim() === '1') {
+      logger.info('ads_query_dry_run', { logicalPeriod, qstatsDays: qsDays, tables: cfg.tables });
+      return { rowsFetched: 0, rowsLoaded: 0 };
+    }
+    // Порядок эталона: хвост — ПОСЛЕ критичной части того же D−1 (scope Ads-2 читает свежий fullstats).
+    const probe = rt.makeDeps(ctx, cfg, '', 'ADS_QUERY_PROBE');
+    const latest = await probe.reader.adsAttempt(config.manifestTable, config.environment, logicalPeriod);
+    if (latest !== 'COMPLETE' && latest !== 'ERROR') {
+      throw new LoaderError(`'ads' за ${logicalPeriod} ещё не завершён (последняя попытка: ${latest ?? 'нет'}) — хвост рано`, 'ADS_QUERY_NOT_READY');
+    }
+    const tok = await token(rt, config.projectId, cfg);
+    const runId = adsRunId('ADSRAW_', rt.now(), config.executionId, Math.random, 'Q');
+    const d0 = rt.makeDeps(ctx, cfg, tok, runId);
+    const d = bounded(d0, d0.nowMs() + cfg.queryDeadlineMs);
+    logger.info('ads_query_start', { runId, logicalPeriod, adsAttempt: latest, deadlineMs: cfg.queryDeadlineMs });
+    let rows = 0;
+    // Ads-3 раньше Ads-2: снимок ставок невосстановим, срез статистики восстановим.
+    if (cfg.enabledQueryBids) rows += (await loadQueryBids(d, runId)).rows;
+    if (cfg.enabledQueryStats) rows += (await loadQueryStats(d, runId, qsDays)).rows;
+    return { rowsFetched: rows, rowsLoaded: rows };
   };
 }
 
@@ -175,7 +208,8 @@ export function makeAdsCostsAuditLoader(rt: AdsRuntime = defaultRuntime) {
     }
     const tok = await token(rt, config.projectId, cfg);
     const runId = adsRunId('ADSAUDIT_', rt.now(), config.executionId);
-    const d = rt.makeDeps(ctx, cfg, tok, runId);
+    const d0 = rt.makeDeps(ctx, cfg, tok, runId);
+    const d = bounded(d0, d0.nowMs() + cfg.queryDeadlineMs); // timeout Job'а аудита 900 c
     logger.info('ads_audit_start', { runId, range: r, windowDays: WB_ADS_COSTS_AUDIT_WINDOW_DAYS });
     const res = await loadCosts(d, runId, r.from, r.to, WB_ADS_COSTS_AUDIT_WINDOW_DAYS);
     if (res.status !== 'OK') throw new LoaderError(`аудит расходов ${r.from}…${r.to}: ${res.status}`, `ADS_AUDIT_${res.status}`);
@@ -184,4 +218,5 @@ export function makeAdsCostsAuditLoader(rt: AdsRuntime = defaultRuntime) {
 }
 
 export const adsLoader = makeAdsLoader();
+export const adsQueryLoader = makeAdsQueryLoader();
 export const adsCostsAuditLoader = makeAdsCostsAuditLoader();

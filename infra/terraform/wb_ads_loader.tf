@@ -2,11 +2,18 @@
 # M3 — реклама WB: перенос runWbAdsDaily (+ catch-up) и недельного аудита расходов из Apps Script.
 # Код: cloud/src/loaders/ads/*. Runbook: docs/ops/MIG_ADS_RUNBOOK.md.
 #
-#   wb-ads-shadow             пишет ТОЛЬКО RAW_WB_ADV_*__CR (9 таблиц ниже), читает V_ADV_CAMPAIGN_STATS /
-#                             V_ADV_COSTS (scope и телеметрия Ads-2 — как Apps Script);
-#   wb-ads-prod               боевые RAW_WB_ADV_* — только после паритета и OWNER ACK M3;
-#   wb-ads-costs-audit-*      ADSAUDIT_ D−46…D−8 раз в неделю; prod — только после ACK ADS-UTC-EDGE (PR #370)
-#                             И ADS_COSTS_AUDIT_ENABLED=1 (без флага загрузчик отказывает сам).
+#   wb-ads-{shadow,prod}         `ads`: campaigns + costs + fullstats → журнал 'ads' (гейт витрины);
+#   wb-ads-query-{shadow,prod}   `ads-query`: хвост Ads-3 (ставки) + Ads-2 (query stats) — отдельный Job, чтобы
+#                                журнал 'ads' закрывался ДО хвоста (в эталоне ingestFinalizeByStatus_ шёл раньше Ads-3);
+#   wb-ads-costs-audit-*         ADSAUDIT_ D−46…D−8 раз в неделю; prod — только после ACK ADS-UTC-EDGE (PR #370)
+#                                И ADS_COSTS_AUDIT_ENABLED=1 (без флага загрузчик отказывает сам).
+#   shadow пишет ТОЛЬКО RAW_WB_ADV_*__CR, prod — только боевые RAW_WB_ADV_*; оба читают V_ADV_CAMPAIGN_STATS /
+#   V_ADV_COSTS (scope и телеметрия Ads-2 — как Apps Script).
+#
+# 🔴 Свои runtime-SA `sa-wb-ads-{shadow,prod}` (а не sa-loaders-*): право писать рекламу и читать WB_TOKEN_ADS
+#    получает ровно один контур, а не десяток прочих загрузчиков.
+# 🔴 ВСЕ prod-ресурсы — под `var.m3_prod_enabled` (по умолчанию false): SA, IAM на боевые таблицы, секрет,
+#    Job'ы, invoker, Scheduler, алерт. Включение — только на OWNER ACK M3-CUTOVER (runbook §7.3).
 #
 # 🔴 Все расписания создаются PAUSED. Применение этого файла НИЧЕГО не пишет в боевые таблицы:
 #    prod-Job без запуска не исполняется, а загрузчик проверяет контур до любого вызова WB/BigQuery
@@ -14,17 +21,26 @@
 # 🔴 Вью V_ADV_* здесь не создаются и не меняются. wbAdsBqCreateViews() не воспроизводится нигде.
 #
 # Почему расписания такие:
-#   prod   05:00 / 06:00 / 08:00 МСК — одна задача и три окна вместо runWbAdsDaily (~05:00) и
+#   prod   ads 05:00 / 06:00 / 08:00 МСК, ads-query 05:30 / 06:30 / 08:30 — вместо runWbAdsDaily (~05:00) и
 #          runWbAdsDailyCatchUp (~06:15, ~08:15). Повторное окно ничего не делает при COMPLETE за D−1
 #          (lease cli = SKIP_COMPLETE), ждёт свежий STARTED (< 30 мин = SKIP_RUNNING) и повторяет ERROR.
 #          Витрина (07/09/12/16 МСК) видит COMPLETE до первого окна, как сейчас.
-#   shadow 05:40 / 07:40 МСК — НЕ пересекается с Apps Script (05:00–05:15, catch-up 06:15/08:15):
+#          ads-query стартует, только когда последняя попытка 'ads' за тот же D−1 терминальна (иначе ERROR
+#          ADS_QUERY_NOT_READY → следующее окно).
+#   shadow ads 05:40 / 07:40, ads-query 06:05 / 07:55 — НЕ пересекается с Apps Script (05:00–05:15, catch-up 06:15/08:15):
 #          лимиты Advert API общие на продавца (fullstats 3 запроса/мин), параллельный прогон дал бы 429
 #          обоим. Ads-2 в shadow читает V_ADV_CAMPAIGN_STATS ПОСЛЕ загрузки Apps Script — scope одинаков.
 #   audit  воскресенье 04:30 МСК — до суточного прогона; upd 1 запрос/с, окон два.
 # ============================================================================
 
+variable "m3_prod_enabled" {
+  description = "M3 (реклама WB): создать prod-контур (SA, IAM на боевые RAW_WB_ADV_*, секрет, Job'ы, Scheduler'ы PAUSED, алерт). Только по OWNER ACK M3-CUTOVER."
+  type        = bool
+  default     = false
+}
+
 locals {
+  ads_prod_n = var.m3_prod_enabled ? 1 : 0
   # Зеркало живых таблиц wb_raw (tables.get, 10.11.2026): все колонки STRING, партиция по времени
   # загрузки (DAY, без поля), кластеризация — как у боевых. Порядок колонок = порядок живой схемы.
   ads_raw = {
@@ -113,6 +129,28 @@ locals {
   ads_prod_tables_env   = { for t, v in local.ads_table_env : v => t }
 }
 
+# ── Runtime SA ──────────────────────────────────────────────────────────────
+resource "google_service_account" "wb_ads_shadow" {
+  account_id   = "sa-wb-ads-shadow"
+  display_name = "WB ads runtime (SHADOW): Advert API read + RAW_WB_ADV_*__CR"
+}
+
+resource "google_service_account" "wb_ads_prod" {
+  count        = local.ads_prod_n
+  account_id   = "sa-wb-ads-prod"
+  display_name = "WB ads runtime (PROD): Advert API read + RAW_WB_ADV_* production"
+}
+
+locals {
+  # Контур → SA (prod — только при включённом флаге). Ключ = environment.
+  ads_sa = merge(
+    { shadow = google_service_account.wb_ads_shadow },
+    var.m3_prod_enabled ? { prod = google_service_account.wb_ads_prod[0] } : {},
+  )
+  # (контур, объект чтения) — scope и телеметрия Ads-2 нужны обоим контурам.
+  ads_read_grants = { for p in setproduct(keys(local.ads_sa), local.ads_read_objects) : "${p[0]}:${p[1]}" => { env = p[0], table = p[1] } }
+}
+
 # ── Теневые таблицы ─────────────────────────────────────────────────────────
 resource "google_bigquery_table" "ads_cr" {
   for_each            = local.ads_raw
@@ -130,53 +168,105 @@ resource "google_bigquery_table" "ads_cr" {
   schema     = jsonencode([for c in each.value.columns : { name = c, type = "STRING", mode = "NULLABLE" }])
 }
 
-# ── IAM: shadow пишет только __CR, читает ровно scope/телеметрию Ads-2 ───────
-resource "google_bigquery_table_iam_member" "shadow_write_ads_cr" {
+# ── Права: задания BigQuery, журнал, свои таблицы, объекты чтения, свой секрет ─
+resource "google_project_iam_member" "wb_ads_jobuser" {
+  for_each = local.ads_sa
+  project  = var.project_id
+  role     = "roles/bigquery.jobUser"
+  member   = "serviceAccount:${each.value.email}"
+}
+
+# LOADER_RUNS: lease cli.ts (MERGE/UPDATE) + проверка готовности 'ads' в ads-query.
+resource "google_bigquery_table_iam_member" "wb_ads_loader_runs" {
+  for_each   = local.ads_sa
+  dataset_id = var.raw_dataset
+  table_id   = google_bigquery_table.loader_runs.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${each.value.email}"
+}
+
+resource "google_bigquery_table_iam_member" "wb_ads_shadow_write_cr" {
   for_each   = google_bigquery_table.ads_cr
   dataset_id = var.raw_dataset
   table_id   = each.value.table_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
+  member     = "serviceAccount:${google_service_account.wb_ads_shadow.email}"
 }
 
-resource "google_bigquery_table_iam_member" "shadow_read_ads_sources" {
-  for_each   = toset(local.ads_read_objects)
-  dataset_id = var.raw_dataset
-  table_id   = each.value
-  role       = "roles/bigquery.dataViewer"
-  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
-}
-
-# ── IAM: prod пишет ровно девять боевых таблиц рекламы (читать wb_raw он уже может, bigquery.tf) ──
-# Сами таблицы Terraform не создаёт — ими владеет Apps Script/DDL Stage 3B.1, как RAW_WB_STOCKS в Mig1b-0.
-# Выдача права ничего не пишет: Scheduler wb-ads-prod PAUSED; первый прогон — только по OWNER ACK M3.
-resource "google_bigquery_table_iam_member" "prod_write_ads" {
-  for_each   = local.ads_raw
+# Сами боевые таблицы Terraform не создаёт — ими владеет Apps Script/DDL Stage 3B.1 (как RAW_WB_STOCKS в Mig1b-0).
+resource "google_bigquery_table_iam_member" "wb_ads_prod_write" {
+  for_each   = var.m3_prod_enabled ? local.ads_raw : {}
   dataset_id = var.raw_dataset
   table_id   = each.key
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+  member     = "serviceAccount:${google_service_account.wb_ads_prod[0].email}"
 }
-# Секрет WB_TOKEN_ADS: secretAccessor у sa-loaders-shadow/-prod уже выдан (secrets.tf, iam.tf: local.wb_secrets).
+
+# Вью не authorized → нужны и базовые таблицы. V_ADV_COSTS = V_ADV_COSTS_SNAPSHOT → COSTS + COSTS_RUNS.
+resource "google_bigquery_table_iam_member" "wb_ads_read_sources" {
+  for_each   = local.ads_read_grants
+  dataset_id = var.raw_dataset
+  table_id   = each.value.table
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${local.ads_sa[each.value.env].email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "wb_ads_token" {
+  for_each  = local.ads_sa
+  secret_id = google_secret_manager_secret.wb["WB_TOKEN_ADS"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${each.value.email}"
+}
+
+# actAs: deployer обновляет образ Job'ов, terraform-apply создаёт Job'ы с этими SA.
+resource "google_service_account_iam_member" "wb_ads_actas_deployer" {
+  for_each           = local.ads_sa
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+resource "google_service_account_iam_member" "wb_ads_actas_terraform" {
+  for_each           = local.ads_sa
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform_apply.email}"
+}
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────
 # max_retries = 0: task-retry Cloud Run идёт в ТОМ ЖЕ execution (тот же run_id в LOADER_RUNS).
 # Повтор — следующее окно Scheduler с новым run_id и новым снапшотом (как catch-up Apps Script).
+# timeout ≥ дедлайн обработчика + 600 c (ADS_DEADLINE_MS 1800 c, ADS_QUERY_DEADLINE_MS 480 c; targets.ts):
+# после дедлайна новые вызовы WB и их повторы не начинаются, исход пишется в журнал до таймаута.
+# Shadow: env принадлежит Terraform (deploy-shadow.yml меняет только образ) → в ignore_changes только image.
+# Prod: env в ignore_changes, как у остальных prod-Job'ов (deploy-prod ставит IMAGE_DIGEST/GIT_SHA).
+locals {
+  ads_jobs = {
+    "wb-ads"             = { args = "ads", loader = "ads", timeout = "2400s" }
+    "wb-ads-query"       = { args = "ads-query", loader = "ads-query", timeout = "900s" }
+    "wb-ads-costs-audit" = { args = "ads-costs-audit", loader = "ads-costs-audit", timeout = "900s" }
+  }
+  ads_schedules = {
+    shadow = { "wb-ads" = "40 5,7 * * *", "wb-ads-query" = "5 6,8 * * *", "wb-ads-costs-audit" = "30 4 * * 0" }
+    prod   = { "wb-ads" = "0 5,6,8 * * *", "wb-ads-query" = "30 5,6,8 * * *", "wb-ads-costs-audit" = "30 4 * * 0" }
+  }
+}
+
 resource "google_cloud_run_v2_job" "wb_ads_shadow" {
-  name                = "wb-ads-shadow"
+  for_each            = local.ads_jobs
+  name                = "${each.key}-shadow"
   location            = var.region
   deletion_protection = false
   template {
     template {
-      service_account = google_service_account.loaders_shadow.email
+      service_account = google_service_account.wb_ads_shadow.email
       max_retries     = 0
-      # Критичный путь ~4–6 мин (fullstats 21 c на пачку), Ads-3 ≤ 90 c, Ads-2 ≤ 120 c + паузы.
-      timeout = "1800s"
+      timeout         = each.value.timeout
       containers {
         image = var.container_image
-        args  = ["ads"]
+        args  = [each.value.args]
         dynamic "env" {
-          for_each = merge(local.common_env, local.ads_common_env, local.ads_shadow_tables_env, { LOADER_NAME = "ads", ENVIRONMENT = "shadow" })
+          for_each = merge(local.common_env, local.ads_common_env, local.ads_shadow_tables_env, { LOADER_NAME = each.value.loader, ENVIRONMENT = "shadow" })
           content {
             name  = env.key
             value = env.value
@@ -190,26 +280,31 @@ resource "google_cloud_run_v2_job" "wb_ads_shadow" {
   }
   depends_on = [
     google_project_service.enabled,
-    google_bigquery_table_iam_member.shadow_write_ads_cr,
-    google_bigquery_table_iam_member.shadow_read_ads_sources,
+    google_project_iam_member.wb_ads_jobuser,
+    google_bigquery_table_iam_member.wb_ads_loader_runs,
+    google_bigquery_table_iam_member.wb_ads_shadow_write_cr,
+    google_bigquery_table_iam_member.wb_ads_read_sources,
+    google_secret_manager_secret_iam_member.wb_ads_token,
+    google_service_account_iam_member.wb_ads_actas_terraform,
   ]
 }
 
 resource "google_cloud_run_v2_job" "wb_ads_prod" {
-  name                = "wb-ads-prod"
+  for_each            = var.m3_prod_enabled ? local.ads_jobs : {}
+  name                = "${each.key}-prod"
   location            = var.region
   deletion_protection = false
   template {
     template {
-      service_account = google_service_account.loaders_prod.email
+      service_account = google_service_account.wb_ads_prod[0].email
       max_retries     = 0
-      timeout         = "1800s"
+      timeout         = each.value.timeout
       containers {
         image = var.container_image
-        args  = ["ads"]
+        args  = [each.value.args]
         dynamic "env" {
-          # Боевые имена — только на CREATE (env в ignore_changes, как у остальных prod-Job'ов).
-          for_each = merge(local.common_env, local.ads_common_env, local.ads_prod_tables_env, local.deploy_managed_env, { LOADER_NAME = "ads", ENVIRONMENT = "prod" })
+          # ADS_COSTS_AUDIT_ENABLED нет намеренно: включение аудита — отдельный шаг после ACK ADS-UTC-EDGE.
+          for_each = merge(local.common_env, local.ads_common_env, local.ads_prod_tables_env, local.deploy_managed_env, { LOADER_NAME = each.value.loader, ENVIRONMENT = "prod" })
           content {
             name  = env.key
             value = env.value
@@ -221,101 +316,40 @@ resource "google_cloud_run_v2_job" "wb_ads_prod" {
   lifecycle {
     ignore_changes = [template[0].template[0].containers[0].image, template[0].template[0].containers[0].env, client, client_version]
   }
-  # Право записи — до Job: -target=wb_ads_prod втягивает девять prod_write_ads в тот же план.
-  depends_on = [google_project_service.enabled, google_bigquery_table_iam_member.prod_write_ads]
-}
-
-resource "google_cloud_run_v2_job" "wb_ads_costs_audit_shadow" {
-  name                = "wb-ads-costs-audit-shadow"
-  location            = var.region
-  deletion_protection = false
-  template {
-    template {
-      service_account = google_service_account.loaders_shadow.email
-      max_retries     = 0
-      timeout         = "900s"
-      containers {
-        image = var.container_image
-        args  = ["ads-costs-audit"]
-        dynamic "env" {
-          for_each = merge(local.common_env, local.ads_common_env, local.ads_shadow_tables_env, { LOADER_NAME = "ads-costs-audit", ENVIRONMENT = "shadow" })
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
-      }
-    }
-  }
-  lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image, client, client_version]
-  }
-  depends_on = [google_project_service.enabled, google_bigquery_table_iam_member.shadow_write_ads_cr]
-}
-
-resource "google_cloud_run_v2_job" "wb_ads_costs_audit_prod" {
-  name                = "wb-ads-costs-audit-prod"
-  location            = var.region
-  deletion_protection = false
-  template {
-    template {
-      service_account = google_service_account.loaders_prod.email
-      max_retries     = 0
-      timeout         = "900s"
-      containers {
-        image = var.container_image
-        args  = ["ads-costs-audit"]
-        dynamic "env" {
-          # ADS_COSTS_AUDIT_ENABLED нет намеренно: включение — отдельный шаг после ACK ADS-UTC-EDGE.
-          for_each = merge(local.common_env, local.ads_common_env, local.ads_prod_tables_env, local.deploy_managed_env, { LOADER_NAME = "ads-costs-audit", ENVIRONMENT = "prod" })
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
-      }
-    }
-  }
-  lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image, template[0].template[0].containers[0].env, client, client_version]
-  }
-  depends_on = [google_project_service.enabled]
+  depends_on = [
+    google_project_service.enabled,
+    google_project_iam_member.wb_ads_jobuser,
+    google_bigquery_table_iam_member.wb_ads_loader_runs,
+    google_bigquery_table_iam_member.wb_ads_prod_write,
+    google_bigquery_table_iam_member.wb_ads_read_sources,
+    google_secret_manager_secret_iam_member.wb_ads_token,
+    google_service_account_iam_member.wb_ads_actas_terraform,
+  ]
 }
 
 # ── Право запуска — ПОРЕСУРСНО (cloud/test/scheduler_invoker_contract.test.ts) ──
 resource "google_cloud_run_v2_job_iam_member" "scheduler_ads_shadow_invoke" {
+  for_each = google_cloud_run_v2_job.wb_ads_shadow
   location = var.region
-  name     = google_cloud_run_v2_job.wb_ads_shadow.name
+  name     = google_cloud_run_v2_job.wb_ads_shadow[each.key].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_shadow.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_ads_prod_invoke" {
+  for_each = google_cloud_run_v2_job.wb_ads_prod
   location = var.region
-  name     = google_cloud_run_v2_job.wb_ads_prod.name
+  name     = google_cloud_run_v2_job.wb_ads_prod[each.key].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
 
-resource "google_cloud_run_v2_job_iam_member" "scheduler_ads_audit_shadow_invoke" {
-  location = var.region
-  name     = google_cloud_run_v2_job.wb_ads_costs_audit_shadow.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler_shadow.email}"
-}
-
-resource "google_cloud_run_v2_job_iam_member" "scheduler_ads_audit_prod_invoke" {
-  location = var.region
-  name     = google_cloud_run_v2_job.wb_ads_costs_audit_prod.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
-}
-
-# ── Расписания (все PAUSED; pause/resume — scheduler-control.yml) ───────────
+# ── Расписания (все PAUSED; pause/resume — scheduler-control.yml, имя = <loader>-<environment>) ──
 resource "google_cloud_scheduler_job" "wb_ads_shadow" {
-  name      = "wb-ads-shadow"
+  for_each  = local.ads_jobs
+  name      = "${each.key}-shadow"
   region    = var.region
-  schedule  = "40 5,7 * * *"
+  schedule  = local.ads_schedules.shadow[each.key]
   time_zone = "Europe/Moscow"
   paused    = true
   retry_config {
@@ -323,7 +357,7 @@ resource "google_cloud_scheduler_job" "wb_ads_shadow" {
   }
   http_target {
     http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_shadow.name}:run"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_shadow[each.key].name}:run"
     oauth_token {
       service_account_email = google_service_account.scheduler_shadow.email
     }
@@ -335,61 +369,18 @@ resource "google_cloud_scheduler_job" "wb_ads_shadow" {
 }
 
 resource "google_cloud_scheduler_job" "wb_ads_prod" {
-  name      = "wb-ads-prod"
+  for_each  = var.m3_prod_enabled ? local.ads_jobs : {}
+  name      = "${each.key}-prod"
   region    = var.region
-  schedule  = "0 5,6,8 * * *"
+  schedule  = local.ads_schedules.prod[each.key]
   time_zone = "Europe/Moscow"
-  paused    = true # снимается только на переключении M3 (runbook §4)
+  paused    = true # снимается только на переключении M3 (runbook §7.3); аудит — после ACK ADS-UTC-EDGE
   retry_config {
     retry_count = 1
   }
   http_target {
     http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_prod.name}:run"
-    oauth_token {
-      service_account_email = google_service_account.scheduler_prod.email
-    }
-  }
-  lifecycle {
-    ignore_changes = [paused]
-  }
-  depends_on = [google_project_service.enabled]
-}
-
-resource "google_cloud_scheduler_job" "wb_ads_costs_audit_shadow" {
-  name      = "wb-ads-costs-audit-shadow"
-  region    = var.region
-  schedule  = "30 4 * * 0"
-  time_zone = "Europe/Moscow"
-  paused    = true
-  retry_config {
-    retry_count = 1
-  }
-  http_target {
-    http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_costs_audit_shadow.name}:run"
-    oauth_token {
-      service_account_email = google_service_account.scheduler_shadow.email
-    }
-  }
-  lifecycle {
-    ignore_changes = [paused]
-  }
-  depends_on = [google_project_service.enabled]
-}
-
-resource "google_cloud_scheduler_job" "wb_ads_costs_audit_prod" {
-  name      = "wb-ads-costs-audit-prod"
-  region    = var.region
-  schedule  = "30 4 * * 0"
-  time_zone = "Europe/Moscow"
-  paused    = true # только после ACK ADS-UTC-EDGE (snapshot v2) и ADS_COSTS_AUDIT_ENABLED=1
-  retry_config {
-    retry_count = 1
-  }
-  http_target {
-    http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_costs_audit_prod.name}:run"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_ads_prod[each.key].name}:run"
     oauth_token {
       service_account_email = google_service_account.scheduler_prod.email
     }
@@ -402,16 +393,17 @@ resource "google_cloud_scheduler_job" "wb_ads_costs_audit_prod" {
 
 # ── Алерт: падение prod-прогона рекламы (по коду LoaderError, как у Юнитки) ──
 # ADS_PARTIAL / ADS_ERROR закрывают freshness-гейт витрины за D−1 — владелец узнаёт до 07:00 МСК.
+# ADS_QUERY_NOT_READY в 05:30 при штатной работе не возникает ('ads' к ~05:10 завершён); если возникает — сигнал.
 resource "google_monitoring_alert_policy" "wb_ads_failed" {
-  count        = var.unitka_alert_email == "" ? 0 : 1
+  count        = var.m3_prod_enabled && var.unitka_alert_email != "" ? 1 : 0
   display_name = "WB реклама: прогон завершился ошибкой"
   combiner     = "OR"
   conditions {
-    display_name = "loader_failed в логах wb-ads-prod / wb-ads-costs-audit-prod"
+    display_name = "loader_failed в логах wb-ads-*-prod"
     condition_matched_log {
       filter = <<-EOT
         resource.type="cloud_run_job"
-        resource.labels.job_name=("wb-ads-prod" OR "wb-ads-costs-audit-prod")
+        resource.labels.job_name=("wb-ads-prod" OR "wb-ads-query-prod" OR "wb-ads-costs-audit-prod")
         severity>=ERROR
         jsonPayload.code!=""
       EOT
@@ -429,7 +421,7 @@ resource "google_monitoring_alert_policy" "wb_ads_failed" {
   }
   notification_channels = [google_monitoring_notification_channel.unitka_email[0].id]
   documentation {
-    content   = "Реклама WB: прогон упал (код — label error_code; ADS_PARTIAL/ADS_ERROR закрывают гейт витрины за D−1). Следующее окно (06:00/08:00 МСК) повторит само. Детали — wb_raw.LOADER_RUNS (loader_name='ads') и RAW_WB_ADV_COSTS_RUNS. Runbook: docs/ops/MIG_ADS_RUNBOOK.md"
+    content   = "Реклама WB: прогон упал (код — label error_code; ADS_PARTIAL/ADS_ERROR у wb-ads-prod закрывают гейт витрины за D−1). Следующее окно (06:00/08:00 МСК) повторит само. Детали — wb_raw.LOADER_RUNS и RAW_WB_ADV_COSTS_RUNS. Runbook: docs/ops/MIG_ADS_RUNBOOK.md"
     mime_type = "text/markdown"
   }
   depends_on = [google_project_service.enabled]

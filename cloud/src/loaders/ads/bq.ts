@@ -34,6 +34,11 @@ export interface AdsReader {
   scopePairsForDay(view: string, day: string): Promise<{ pairs: Array<{ advertId: number; nmId: number }>; spendRub: number }>;
   /** Расход по балансу по суткам окна (телеметрия Ads-2). */
   costsByDay(view: string, from: string, to: string): Promise<Record<string, number>>;
+  /**
+   * Статус ПОСЛЕДНЕЙ попытки 'ads' за logical_period в своём контуре (LOADER_RUNS, LATEST-ATTEMPT как гейт
+   * витрины, только попытки после полуночи МСК D). null — попыток нет.
+   */
+  adsAttempt(manifestTable: string, environment: string, logicalPeriod: string): Promise<string | null>;
 }
 
 export function isAlreadyExists(e: unknown): boolean {
@@ -132,6 +137,20 @@ export class AdsBq implements AdsSink, AdsReader {
       spendRub += Number(r.spend) || 0;
     }
     return { pairs, spendRub };
+  }
+
+  async adsAttempt(manifestTable: string, environment: string, logicalPeriod: string): Promise<string | null> {
+    const [rows] = await this.bq.query({
+      query: `SELECT status FROM ${this.fqn(manifestTable)}
+              WHERE environment = @env AND loader_name = 'ads' AND logical_period = @lp
+                AND started_at >= TIMESTAMP(DATE_ADD(CAST(@lp AS DATE), INTERVAL 1 DAY), 'Europe/Moscow')
+              ORDER BY started_at DESC, run_id DESC LIMIT 1`,
+      params: { env: environment, lp: logicalPeriod },
+      types: { env: 'STRING', lp: 'STRING' },
+      location: this.location,
+    });
+    const v = (rows as Array<{ status: unknown }>)[0]?.status;
+    return v == null ? null : String(v);
   }
 
   /** wbAdsQsCostsByDay_: одним запросом на всё окно. */
