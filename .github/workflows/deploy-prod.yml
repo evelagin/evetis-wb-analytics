@@ -208,12 +208,18 @@ jobs:
           REPO_PATH="${DIGEST%@*}"; REPO_PATH="${REPO_PATH#*/}"
           REG="https://${{ vars.GCP_REGION }}-docker.pkg.dev/v2/${REPO_PATH}"
           AUTH="Authorization: Bearer $(gcloud auth print-access-token)"
+          # deploy-shadow на раннерах GitHub собирает OCI index (образ linux/amd64 + attestation): digest — это
+          # index. Цепочка: index → единственный манифест linux/amd64 → конфиг → метка git-sha.
+          curl -fsS -o manifest_top.json -H "$AUTH" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json' \
+            "${REG}/manifests/${DIGEST#*@}"
+          IMAGE_MANIFEST=$(python3 tools/stocks_prod_deploy_check.py image-manifest-digest manifest_top.json)
           curl -fsS -o manifest.json -H "$AUTH" \
             -H 'Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json' \
-            "${REG}/manifests/${DIGEST#*@}"
+            "${REG}/manifests/${IMAGE_MANIFEST}"
           CONFIG_DIGEST=$(python3 tools/stocks_prod_deploy_check.py config-digest manifest.json)
           curl -fsSL -o image_config.json -H "$AUTH" "${REG}/blobs/${CONFIG_DIGEST}"
-          python3 tools/stocks_prod_deploy_check.py pre shadow.json jobs_before.json manifest.json image_config.json "$DIGEST" "$SOURCE_GIT_SHA"
+          python3 tools/stocks_prod_deploy_check.py pre shadow.json jobs_before.json manifest_top.json manifest.json image_config.json "$DIGEST" "$SOURCE_GIT_SHA"
       - name: "wb-stocks-prod: образ + боевой env остатков"
         if: inputs.only_job == 'wb-stocks-prod'
         run: |
