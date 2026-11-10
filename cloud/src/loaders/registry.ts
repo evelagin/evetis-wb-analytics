@@ -29,6 +29,8 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { suppliesLoader } from './supplies/index.js';
+import { refSyncLoader } from './refsync/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -115,6 +117,14 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // M5 (перенос из Apps Script runWbSuppliesDaily): снимок поставок WB, один COMPLETE за сутки МСК.
+  // run_id данных уникален на попытку (DL_yyyyMMdd_HHmmss), каждая порция — один load job с
+  // детерминированным jobId → повтор после транзиентного отказа добавляет новый снимок, не дубль.
+  supplies: { handler: (ctx) => suppliesLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now), retryTransient: true },
+  // M5 (перенос из Apps Script runRefSync): версия REF_SKU_MASTER из листа SKU_MASTER. Период —
+  // часовой слот МСК: ручной прогон после правки листа не упирается в COMPLETE суточного.
+  // Повтор безопасен: новая попытка — новая версия, указатель переключается одной DML.
+  'ref-sync': { handler: (ctx) => refSyncLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
