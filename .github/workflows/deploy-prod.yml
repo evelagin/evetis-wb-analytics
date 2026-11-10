@@ -188,6 +188,20 @@ jobs:
               echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
             fi
           done
+      - name: Deploy wb-supplies-prod и ref-sync-prod (тот же digest)
+        # M5: Job'ы создаёт Terraform; расписания — PAUSED до cutover (снятие триггеров Apps Script).
+        # Без этого шага Job остался бы на bootstrap hello, который выходит с 0 и ничего не грузит.
+        run: |
+          for JOB in wb-supplies-prod ref-sync-prod; do
+            if gcloud run jobs describe "${JOB}" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "${JOB}" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=${JOB}::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         if: inputs.only_job == 'all'
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS

@@ -91,6 +91,40 @@ Design & code only: Terraform не применялся, Job не запуска
   BigQuery в бюджете и проверка «budget + timeout + 5 мин < 30 мин» (`FINANCE_CONFIG_INVALID`); свои SA
   `sa-wb-finance-shadow/prod`; весь prod-контур — под `var.finance_prod_enabled` (по умолчанию false).
 
+## 2026-11-10 — M5: поставки WB и REF Sync в Cloud Run (Draft, НЕ применено)
+
+Перенос `runWbSuppliesDaily` и `runRefSync` из Apps Script, этап M5 плана PR #415.
+Колонки боевых таблиц не меняются: загрузчики пишут ту же схему, а shadow пишет в её копии `__CR`.
+
+**Диагноз 100 % отказов поставок.** С 31.10 в `JOBS_BY_PROJECT` нет ни одного задания загрузчика,
+даже первого SELECT watermark. Значит, прогон падает на токене или на списке WB. В те же минуты
+статистика и реклама получили `401 token is expired`, 02.11 их токены заменили, а
+`WB_TOKEN_SUPPLIES` в Script Properties — нет. Доказательства — `docs/ops/MIG_SUPPLIES_REF_RUNBOOK.md` §1.
+
+- `cloud/src/loaders/supplies/*` — loader `supplies`.
+  - Та же нормализация, `row_hash` и выбор объектов §7.3.
+  - Watermark берётся из целевой шапки; дополнительная причина перечитки «в RAW не завершён»
+    закрывает простой 31.10 → cutover дольше окна 14 суток. На cutover — обязательная сверка prod ↔ `__CR` (QUERY 4).
+  - Запись порциями: goods → header (commit-marker), load job с детерминированным jobId, без DML.
+  - Срок токена проверяется по `exp`; при 401/403 — `WB_SUPPLIES_AUTH`.
+  - Бюджет 20 мин → `SUPPLIES_PARTIAL`.
+  - Контур проверяется до WB и записи.
+- `cloud/src/loaders/refsync/*` — loader `ref-sync`.
+  - Лист `SKU_MASTER` книги «Evetis аналитика 2.0» читается со scope readonly.
+  - Тот же all-or-nothing: DATA → валидация → MERGE указателя → журналы `REF_SYNC_*` → retention 10.
+  - DDL в runtime нет.
+- `registry.ts` — два новых имени; общий `config.ts` не тронут: параметры читаются в модулях загрузчиков.
+- Terraform (не применён; всё под флагами `m5_shadow_enabled` / `m5_prod_enabled`, по умолчанию false, `m5_variables.tf`):
+  - `infra/terraform/wb_supplies_loader.tf` — SA `sa-wb-supplies-{shadow,prod}`, таблицы `__CR`, Job и Scheduler
+    shadow/prod (PAUSED), табличный IAM (включая `LOADER_RUNS`), доступ к секрету `WB_TOKEN_SUPPLIES`
+    (секрет создаёт владелец; data-источник читается только при включённом флаге);
+  - `infra/terraform/ref_sync_loader.tf` — SA `sa-ref-sync-{shadow,prod}`, таблицы `REF_*__CR`,
+    Job и Scheduler (PAUSED), табличный IAM (включая `LOADER_RUNS`).
+- `deploy-shadow.yml` и `deploy-prod.yml` — шаги для новых Job'ов с проверкой существования.
+- `scheduler-control.yml` — опции `wb-supplies` и `ref-sync`.
+- `sql/mig_supplies_parity.sql`, `sql/mig_ref_parity.sql` — только SELECT, вердикт EXACT / DATA_DRIFT / FAIL / NO_RUN.
+- Тесты: `cloud/test/supplies_normalize.test.ts`, `supplies_loader.test.ts`, `refsync.test.ts`; фикстуры синтетические.
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`
