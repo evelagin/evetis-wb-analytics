@@ -389,7 +389,7 @@ function financeConfig(env: Env): Pick<Config, 'wbFinanceHost' | 'wbFinanceSecre
     financeTriggerType: (env.FINANCE_TRIGGER_TYPE ?? '').trim().toUpperCase() === 'MANUAL' ? 'MANUAL' : 'AUTO',
     financeBackfillFrom: (env.FINANCE_BACKFILL_FROM ?? '').trim(),
     financeBackfillTo: (env.FINANCE_BACKFILL_TO ?? '').trim(),
-    financeDryRun: (env.DRY_RUN ?? '').trim() === '1',
+    financeDryRun: env.DRY_RUN === '1', // ровно как cli.ts:159 — иначе ' 1' дал бы COMPLETE без записи
   };
 }
 
