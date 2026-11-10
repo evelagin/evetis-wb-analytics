@@ -95,6 +95,50 @@ Design & code only: Terraform не применялся, Job не запуска
   F5 — срок `WB_TOKEN_FINANCE` проверяется до первого запроса (`WB_FINANCE_TOKEN_EXPIRED`), 401/403 Finance API —
   детерминированный `WB_FINANCE_AUTH` без повторов; значение токена в ошибку и лог не попадает.
 
+## 2026-11-10 — M5: поставки WB и REF Sync в Cloud Run (Draft, НЕ применено)
+
+Перенос `runWbSuppliesDaily` и `runRefSync` из Apps Script, этап M5 плана PR #415.
+Колонки боевых таблиц не меняются: загрузчики пишут ту же схему, а shadow пишет в её копии `__CR`.
+
+**Диагноз 100 % отказов поставок.** С 31.10 в `JOBS_BY_PROJECT` нет ни одного задания загрузчика,
+даже первого SELECT watermark. Значит, прогон падает на токене или на списке WB. В те же минуты
+статистика и реклама получили `401 token is expired`, 02.11 их токены заменили, а
+`WB_TOKEN_SUPPLIES` в Script Properties — нет. Доказательства — `docs/ops/MIG_SUPPLIES_REF_RUNBOOK.md` §1.
+
+- `cloud/src/loaders/supplies/*` — loader `supplies`.
+  - Та же нормализация, `row_hash` и выбор объектов §7.3.
+  - Watermark берётся из целевой шапки; дополнительная причина перечитки «в RAW не завершён»
+    закрывает простой 31.10 → cutover дольше окна 14 суток. На cutover — обязательная сверка prod ↔ `__CR` (QUERY 4).
+  - Запись порциями: goods → header (commit-marker), load job с детерминированным jobId, без DML.
+  - Срок токена проверяется по `exp` общим `assertWbTokenUsable` (`cloud/src/http/wbToken.ts`, #423);
+    при 401/403 — `WB_SUPPLIES_AUTH` из общего `wbAuthError`.
+  - Бюджет 20 мин → `SUPPLIES_PARTIAL`.
+  - Контур проверяется до WB и записи.
+- `cloud/src/loaders/refsync/*` — loader `ref-sync`.
+  - Лист `SKU_MASTER` книги «Evetis аналитика 2.0» читается со scope readonly.
+  - Тот же all-or-nothing: DATA → валидация → MERGE указателя → журналы `REF_SYNC_*` → retention 10.
+  - DDL в runtime нет.
+- `registry.ts` — два новых имени; общий `config.ts` не тронут: параметры читаются в модулях загрузчиков.
+- Terraform (не применён; всё под флагами `m5_shadow_enabled` / `m5_prod_enabled`, по умолчанию false, `m5_variables.tf`):
+  - `infra/terraform/wb_supplies_loader.tf` — SA `sa-wb-supplies-{shadow,prod}`, таблицы `__CR`, Job и Scheduler
+    shadow/prod (PAUSED), табличный IAM (включая `LOADER_RUNS`), доступ к секрету `WB_TOKEN_SUPPLIES`
+    (секрет создаёт владелец; data-источник читается только при включённом флаге);
+  - `infra/terraform/ref_sync_loader.tf` — SA `sa-ref-sync-{shadow,prod}`, таблицы `REF_*__CR`,
+    Job и Scheduler (PAUSED), табличный IAM (включая `LOADER_RUNS`).
+- `deploy-shadow.yml` — шаги для новых Job'ов с проверкой существования; `deploy-prod.yml` — режим
+  `only_job=wb-supplies-ref` общей ветки #423 (собственный шаг потока удалён при merge).
+- `scheduler-control.yml` — опции `wb-supplies` и `ref-sync`.
+- `sql/mig_supplies_parity.sql`, `sql/mig_ref_parity.sql` — только SELECT, вердикт EXACT / DATA_DRIFT / FAIL / NO_RUN.
+- Тесты: `cloud/test/supplies_normalize.test.ts`, `supplies_loader.test.ts`, `refsync.test.ts`; фикстуры синтетические.
+- После общих защит #423 (merge-коммитом, без rebase):
+  - F4: флаги `m5_{shadow,prod}_enabled` включаются GitHub Variables `M5_SHADOW_ENABLED` / `M5_PROD_ENABLED`
+    (`infra.yml`), default в `m5_variables.tf` остаётся false; ранбук S1/S4 переписан под переменные.
+  - F5: удалены дубли `tokenExpiryMs` (`supplies/wbApi.ts`) и `WB_TOKEN_EXPIRY_WARN_DAYS` (`supplies/constants.ts`).
+    Коды прежние: `WB_SUPPLIES_TOKEN_EXPIRED`, `WB_SUPPLIES_AUTH`, `WB_TOKEN_EXPIRING_SOON`. Имя секрета в тексте
+    ошибки — из env контура; тело ответа WB в `WB_SUPPLIES_HTTP` чистится `redactTokenLike`.
+  - `ref-sync` токен WB не использует (читает Sheets под ADC runtime-SA) — проверка срока к нему не применима.
+  - F3: поток не разбирает `DRY_RUN` сам — только `cli.ts` (`=== '1'`).
+
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 
 `docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.

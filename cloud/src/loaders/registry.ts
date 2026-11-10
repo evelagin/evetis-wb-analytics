@@ -36,6 +36,9 @@ import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
 
 import { financeLoader, financeBackfillLoader } from './finance/index.js';
 
+import { suppliesLoader } from './supplies/index.js';
+import { refSyncLoader } from './refsync/index.js';
+
 export interface LoaderSpec {
   handler: LoaderHandler;
   /** Логический период — идемпотентный ключ LOADER_RUNS и ctx.targetDate. */
@@ -160,6 +163,15 @@ export const LOADERS: Record<string, LoaderSpec> = {
   finance: { handler: (ctx) => financeLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
   // M4: ручная регистрация WEEKLY-отчётов периода (wbFinDeepBackfillRegister). Без расписания; грузят обычные тики.
   'finance-backfill': { handler: (ctx) => financeBackfillLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+
+  // M5 (перенос из Apps Script runWbSuppliesDaily): снимок поставок WB, один COMPLETE за сутки МСК.
+  // run_id данных уникален на попытку (DL_yyyyMMdd_HHmmss), каждая порция — один load job с
+  // детерминированным jobId → повтор после транзиентного отказа добавляет новый снимок, не дубль.
+  supplies: { handler: (ctx) => suppliesLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now), retryTransient: true },
+  // M5 (перенос из Apps Script runRefSync): версия REF_SKU_MASTER из листа SKU_MASTER. Период —
+  // часовой слот МСК: ручной прогон после правки листа не упирается в COMPLETE суточного.
+  // Повтор безопасен: новая попытка — новая версия, указатель переключается одной DML.
+  'ref-sync': { handler: (ctx) => refSyncLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
