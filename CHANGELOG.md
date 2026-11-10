@@ -71,6 +71,26 @@ Design & code only: Terraform не применялся, Job не запуска
 - `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
 - Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
 
+## 2026-11-10 — M4: финансовые отчёты WB в Cloud Run (shadow-готовность, НЕ применено)
+
+Перенос `runWbFinanceDaily` (`apps-script/ingestion/Wbfinancedaily.gs`, PR-Fin1 v1.3.1 + PR-A #91) в Cloud Run.
+Схема и семантика RAW/манифеста не меняются: те же `RAW_WB_FINANCE`, `FINANCE_LOADER_RUNS`, `FINANCE_REPORT_LOADS`,
+`FINANCE_WEEK_STATUS`, `FINANCE_WEEK_RECON`, те же 54 поля маппера, jobId, статусы и fail-closed проверки.
+- `cloud/src/loaders/finance/` — loader `finance` (тик DAILY/WEEKLY: очередь, discovery, orphan guard, post-load,
+  финализация недель + RECON) и `finance-backfill` (регистрация WEEKLY периода). Контур проверяется до любого I/O
+  (`FINANCE_TARGET_MISMATCH`): shadow → только свои `__CR`, prod → только боевые таблицы и cutover 2026-07-13.
+- Отличия от Apps Script (lease вместо ScriptLock, повтор 429/5xx через пейсер 61 с, бюджет 20 мин, финализация недели
+  сразу после WEEKLY, маркер `_C` в run_id) — `docs/ops/MIG_FINANCE_RUNBOOK.md` §3.
+- `infra/terraform/wb_finance_loader.tf`: 5 таблиц `__CR` (зеркало схем), `wb-finance-shadow`/`wb-finance-prod`, IAM
+  ровно на эти таблицы, Scheduler (оба PAUSED), алерт prod. `deploy-shadow.yml` — guarded-шаг; `scheduler-control.yml` —
+  loader `wb-finance`. `deploy-prod.yml` не менялся.
+- `sql/mig_finance_parity.sql` — сверка Apps Script ↔ `__CR` по отчётам (EXACT / DATA_DRIFT / FAIL), недели, журналы.
+- Колонки таблиц не меняются; новые таблицы — только теневые `__CR`.
+- Ревью PR #418: взаимоисключение `finance` ↔ `finance-backfill` (`mutex.ts`); снимок финальных недель до очереди,
+  финализация после очереди и в шаге 6 с пересчётом RECON (итог как у Apps Script); резерв таймаута HTTP и хвоста
+  BigQuery в бюджете и проверка «budget + timeout + 5 мин < 30 мин» (`FINANCE_CONFIG_INVALID`); свои SA
+  `sa-wb-finance-shadow/prod`; весь prod-контур — под `var.finance_prod_enabled` (по умолчанию false).
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`

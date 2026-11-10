@@ -76,3 +76,12 @@ variable "m2_prod_enabled" {
   type    = bool
   default = false
 }
+
+# M4 (финансы WB): prod-контур wb-finance-prod (SA, права на боевые таблицы финансов, Job, invoker, Scheduler, алерт)
+# создаётся ТОЛЬКО при true. По умолчанию false: нецелевой apply infra.yml до cutover prod не создаёт.
+# Включение — docs/ops/MIG_FINANCE_RUNBOOK.md §5 (вечер cutover, отдельный ACK).
+variable "finance_prod_enabled" {
+  description = "M4: создать prod-контур финансов WB (wb-finance-prod). Только на cutover по ACK."
+  type        = bool
+  default     = false
+}
