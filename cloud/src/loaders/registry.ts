@@ -29,6 +29,7 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { financeLoader, financeBackfillLoader } from './finance/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -115,6 +116,12 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // M4 (перенос runWbFinanceDaily из Apps Script): финансовые отчёты WB DAILY/WEEKLY. Период — часовой слот МСК:
+  // три слота в сутки (07:30/12:30/18:30) — три независимых прогона, как три триггера Apps Script; повтор в том же
+  // часе после COMPLETE не нужен (следующий слот дочитает очередь). shadow → только __CR (finance/targets.ts).
+  finance: { handler: (ctx) => financeLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+  // M4: ручная регистрация WEEKLY-отчётов периода (wbFinDeepBackfillRegister). Без расписания; грузят обычные тики.
+  'finance-backfill': { handler: (ctx) => financeBackfillLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
