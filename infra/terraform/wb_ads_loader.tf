@@ -12,8 +12,13 @@
 #
 # 🔴 Свои runtime-SA `sa-wb-ads-{shadow,prod}` (а не sa-loaders-*): право писать рекламу и читать WB_TOKEN_ADS
 #    получает ровно один контур, а не десяток прочих загрузчиков.
-# 🔴 ВСЕ prod-ресурсы — под `var.m3_prod_enabled` (по умолчанию false): SA, IAM на боевые таблицы, секрет,
-#    Job'ы, invoker, Scheduler, алерт. Включение — только на OWNER ACK M3-CUTOVER (runbook §7.3).
+# 🔴 Два флага потока по общей схеме M2–M5 (tools/tests/test_stream_enable_flags.py), оба bool, default false:
+#    `var.m3_shadow_enabled` — ВСЕ shadow-ресурсы этого файла: SA, 9 таблиц `__CR`, IAM, секрет, Job'ы, invoker,
+#      Scheduler'ы. Включение — переменная репозитория M3_SHADOW_ENABLED=true на OWNER ACK SHADOW потока (runbook §7.1);
+#    `var.m3_prod_enabled` — ВСЕ prod-ресурсы: SA, IAM на боевые таблицы, секрет, Job'ы, invoker, Scheduler, алерт.
+#      Включение — M3_PROD_ENABLED=true на OWNER ACK M3-CUTOVER (runbook §7.3).
+#    Весь файл — новый в PR #419: ни один ресурс здесь не существует в origin/main, поэтому флаг = false
+#    ничего существующего не удаляет (план без флагов — 0 ресурсов этого файла).
 #
 # 🔴 Все расписания создаются PAUSED. Применение этого файла НИЧЕГО не пишет в боевые таблицы:
 #    prod-Job без запуска не исполняется, а загрузчик проверяет контур до любого вызова WB/BigQuery
@@ -33,6 +38,12 @@
 #   audit  воскресенье 04:30 МСК — до суточного прогона; upd 1 запрос/с, окон два.
 # ============================================================================
 
+variable "m3_shadow_enabled" {
+  description = "M3 (реклама WB): создать shadow-контур (sa-wb-ads-shadow, таблицы RAW_WB_ADV_*__CR, IAM, секрет, Job'ы, Scheduler'ы PAUSED). Только по OWNER ACK SHADOW потока M3."
+  type        = bool
+  default     = false
+}
+
 variable "m3_prod_enabled" {
   description = "M3 (реклама WB): создать prod-контур (SA, IAM на боевые RAW_WB_ADV_*, секрет, Job'ы, Scheduler'ы PAUSED, алерт). Только по OWNER ACK M3-CUTOVER."
   type        = bool
@@ -40,7 +51,8 @@ variable "m3_prod_enabled" {
 }
 
 locals {
-  ads_prod_n = var.m3_prod_enabled ? 1 : 0
+  ads_shadow_n = var.m3_shadow_enabled ? 1 : 0
+  ads_prod_n   = var.m3_prod_enabled ? 1 : 0
   # Зеркало живых таблиц wb_raw (tables.get, 10.11.2026): все колонки STRING, партиция по времени
   # загрузки (DAY, без поля), кластеризация — как у боевых. Порядок колонок = порядок живой схемы.
   ads_raw = {
@@ -125,12 +137,14 @@ locals {
     WB_ADS_HOST   = "https://advert-api.wildberries.ru"
     WB_ADS_SECRET = "WB_TOKEN_ADS"
   }
-  ads_shadow_tables_env = { for t, v in local.ads_table_env : v => google_bigquery_table.ads_cr[t].table_id }
+  # Имена строкой, а не ссылкой на google_bigquery_table.ads_cr: при m3_shadow_enabled=false таблиц нет.
+  ads_shadow_tables_env = { for t, v in local.ads_table_env : v => "${t}__CR" }
   ads_prod_tables_env   = { for t, v in local.ads_table_env : v => t }
 }
 
 # ── Runtime SA ──────────────────────────────────────────────────────────────
 resource "google_service_account" "wb_ads_shadow" {
+  count        = local.ads_shadow_n
   account_id   = "sa-wb-ads-shadow"
   display_name = "WB ads runtime (SHADOW): Advert API read + RAW_WB_ADV_*__CR"
 }
@@ -142,9 +156,9 @@ resource "google_service_account" "wb_ads_prod" {
 }
 
 locals {
-  # Контур → SA (prod — только при включённом флаге). Ключ = environment.
+  # Контур → SA (каждый — только при включённом флаге своего контура). Ключ = environment.
   ads_sa = merge(
-    { shadow = google_service_account.wb_ads_shadow },
+    var.m3_shadow_enabled ? { shadow = google_service_account.wb_ads_shadow[0] } : {},
     var.m3_prod_enabled ? { prod = google_service_account.wb_ads_prod[0] } : {},
   )
   # (контур, объект чтения) — scope и телеметрия Ads-2 нужны обоим контурам.
@@ -153,7 +167,7 @@ locals {
 
 # ── Теневые таблицы ─────────────────────────────────────────────────────────
 resource "google_bigquery_table" "ads_cr" {
-  for_each            = local.ads_raw
+  for_each            = var.m3_shadow_enabled ? local.ads_raw : {}
   dataset_id          = var.raw_dataset
   table_id            = "${each.key}__CR"
   deletion_protection = false
@@ -190,7 +204,7 @@ resource "google_bigquery_table_iam_member" "wb_ads_shadow_write_cr" {
   dataset_id = var.raw_dataset
   table_id   = each.value.table_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.wb_ads_shadow.email}"
+  member     = "serviceAccount:${google_service_account.wb_ads_shadow[0].email}"
 }
 
 # Сами боевые таблицы Terraform не создаёт — ими владеет Apps Script/DDL Stage 3B.1 (как RAW_WB_STOCKS в Mig1b-0).
@@ -253,13 +267,13 @@ locals {
 }
 
 resource "google_cloud_run_v2_job" "wb_ads_shadow" {
-  for_each            = local.ads_jobs
+  for_each            = var.m3_shadow_enabled ? local.ads_jobs : {}
   name                = "${each.key}-shadow"
   location            = var.region
   deletion_protection = false
   template {
     template {
-      service_account = google_service_account.wb_ads_shadow.email
+      service_account = google_service_account.wb_ads_shadow[0].email
       max_retries     = 0
       timeout         = each.value.timeout
       containers {
@@ -346,7 +360,7 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_ads_prod_invoke" {
 
 # ── Расписания (все PAUSED; pause/resume — scheduler-control.yml, имя = <loader>-<environment>) ──
 resource "google_cloud_scheduler_job" "wb_ads_shadow" {
-  for_each  = local.ads_jobs
+  for_each  = var.m3_shadow_enabled ? local.ads_jobs : {}
   name      = "${each.key}-shadow"
   region    = var.region
   schedule  = local.ads_schedules.shadow[each.key]

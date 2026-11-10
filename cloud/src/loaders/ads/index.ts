@@ -22,6 +22,11 @@
  * Итог `ads` (wbAdsOverallStatus_): OK/STALE → handler возвращается → cli пишет COMPLETE;
  * PARTIAL/ERROR → LoaderError('ADS_PARTIAL'|'ADS_ERROR') → ERROR с тем же кодом, что ingestFinalizeByStatus_.
  *
+ * Токен (общий механизм M2–M5, cloud/src/http/wbToken.ts) — во всех трёх режимах после чтения секрета и ДО
+ * первого вызова WB: истёкший → WB_ADS_TOKEN_EXPIRED, пустой → WB_ADS_AUTH, < 14 суток → warn
+ * WB_TOKEN_EXPIRING_SOON. 401/403 любого метода → WB_ADS_AUTH без повторов (http.ts). Оба кода
+ * детерминированы (classifyFailure) и не превращаются в ADS_ERROR/ADS_EXCEPTION.
+ *
  * 🔴 Реклама здесь — сырьё для АТРИБУЦИИ (fullstats → MART_SKU_DAILY.ad_spend) и для БИЛЛИНГА
  *    (upd → V_ADV_COSTS_SNAPSHOT → FACT_ADS_COSTS_DAILY, FIN CONTRACT V2). Загрузчик их не смешивает
  *    и не пересчитывает: пишет оба RAW как есть, дальше — вью и витрина.
@@ -29,7 +34,9 @@
 import type { LoaderContext, LoaderResult } from '../types.js';
 import { LoaderError } from '../../errors.js';
 import { SecretsClient } from '../../secrets.js';
-import { AdsHttp } from './http.js';
+import type { Logger } from '../../logging.js';
+import { assertWbTokenUsable } from '../../http/wbToken.js';
+import { AdsHttp, WB_ADS_CODE_PREFIX, isAdsAuthError } from './http.js';
 import { AdsBq } from './bq.js';
 import { loadAdsConfig, assertAdsTargets, type AdsConfig, type AdsTableKey } from './targets.js';
 import { loadCampaigns, loadCosts, loadFullstats, loadQueryBids, loadQueryStats, withDeadline, type AdsDeps } from './sources.js';
@@ -60,7 +67,7 @@ export const defaultRuntime: AdsRuntime = {
     const c = ctx.config;
     const bq = new AdsBq(c.projectId, c.bqLocation, c.rawDataset, c.environment, runId);
     return {
-      http: new AdsHttp(token, { timeoutMs: c.wbHttpTimeoutMs, logger: ctx.logger }),
+      http: new AdsHttp(token, { timeoutMs: c.wbHttpTimeoutMs, logger: ctx.logger, secretName: cfg.secret }),
       sink: bq,
       reader: bq,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -88,13 +95,19 @@ function bounded(d: AdsDeps, deadlineMs: number): AdsDeps {
   return { ...d, deadlineMs, http: withDeadline(d.http, d.nowMs, deadlineMs) };
 }
 
-async function token(rt: AdsRuntime, projectId: string, cfg: AdsConfig): Promise<string> {
+/** Чтение секрета + проверка срока ДО первого вызова WB (общий assertWbTokenUsable). */
+async function token(rt: AdsRuntime, projectId: string, cfg: AdsConfig, logger: Logger): Promise<string> {
+  let tok: string;
   try {
-    return await rt.getToken(projectId, cfg.secret);
+    tok = await rt.getToken(projectId, cfg.secret);
   } catch (e) {
     // Эквивалент BLOCKED всех источников в Apps Script (нет токена) → итог ERROR.
     throw new LoaderError(`Нет токена WB Promotion (${cfg.secret}): ${e instanceof Error ? e.message : String(e)}`, 'ADS_TOKEN_UNAVAILABLE', { cause: e });
   }
+  // Вне try: WB_ADS_TOKEN_EXPIRED / WB_ADS_AUTH не должны превратиться в ADS_TOKEN_UNAVAILABLE.
+  const st = assertWbTokenUsable(tok, cfg.secret, { codePrefix: WB_ADS_CODE_PREFIX, logger, nowMs: rt.now().getTime() });
+  logger.info('wb_token_state', { secret: cfg.secret, state: st.kind, ...(st.kind === 'NO_EXPIRY' ? {} : { daysLeft: st.daysLeft }) });
+  return tok;
 }
 
 export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
@@ -112,7 +125,7 @@ export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
 
-    const tok = await token(rt, config.projectId, cfg);
+    const tok = await token(rt, config.projectId, cfg, logger);
     const startedAt = rt.now();
     const runId = adsRunId('ADSRAW_', startedAt, config.executionId);
     const d0 = rt.makeDeps(ctx, cfg, tok, runId);
@@ -144,6 +157,7 @@ export function makeAdsLoader(rt: AdsRuntime = defaultRuntime) {
       note = `${summary} | fullstats_max=${maxDate || ''} | ${((d.nowMs() - t0) / 1000).toFixed(1)}c`;
       logger.info('ads_run_critical_done', { runId, overall, note, rows: total });
     } catch (e) {
+      if (isAdsAuthError(e)) throw e; // 401/403 — свой детерминированный код, не ADS_EXCEPTION
       throw new LoaderError(`ADS_EXCEPTION: ${e instanceof Error ? e.message : String(e)}`, 'ADS_EXCEPTION', { cause: e });
     }
 
@@ -178,7 +192,7 @@ export function makeAdsQueryLoader(rt: AdsRuntime = defaultRuntime) {
     if (latest !== 'COMPLETE' && latest !== 'ERROR') {
       throw new LoaderError(`'ads' за ${logicalPeriod} ещё не завершён (последняя попытка: ${latest ?? 'нет'}) — хвост рано`, 'ADS_QUERY_NOT_READY');
     }
-    const tok = await token(rt, config.projectId, cfg);
+    const tok = await token(rt, config.projectId, cfg, logger);
     const runId = adsRunId('ADSRAW_', rt.now(), config.executionId, Math.random, 'Q');
     const d0 = rt.makeDeps(ctx, cfg, tok, runId);
     const d = bounded(d0, d0.nowMs() + cfg.queryDeadlineMs);
@@ -206,7 +220,7 @@ export function makeAdsCostsAuditLoader(rt: AdsRuntime = defaultRuntime) {
       logger.info('ads_audit_dry_run', { logicalPeriod, range: r, tables: { costs: cfg.tables.costs, runs: cfg.tables.costsRuns } });
       return { rowsFetched: 0, rowsLoaded: 0 };
     }
-    const tok = await token(rt, config.projectId, cfg);
+    const tok = await token(rt, config.projectId, cfg, logger);
     const runId = adsRunId('ADSAUDIT_', rt.now(), config.executionId);
     const d0 = rt.makeDeps(ctx, cfg, tok, runId);
     const d = bounded(d0, d0.nowMs() + cfg.queryDeadlineMs); // timeout Job'а аудита 900 c

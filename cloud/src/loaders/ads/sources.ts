@@ -7,13 +7,15 @@
  *   loadQueryStats  ← loadWbAdsQueryStatsRaw  (Wbadsquerystats.gs:94)
  * Каждый источник ловит СВОИ ошибки и возвращает статус, как в эталоне: один упавший advertId,
  * окно или пачка не роняют прогон. Строки WB_ADS_STATUS (лист Google) заменены структурным логом.
+ * Исключение — отказ авторизации `WB_ADS_AUTH` (401/403, http.ts): его источник НЕ глотает (rethrowAuth),
+ * прогон падает с этим кодом — токен один на все методы, следующий источник получил бы тот же отказ.
  *
  * 🔴 Ни одного write-вызова в WB: GET count/adverts/fullstats/upd и POST get-bids/normquery/stats —
  *    чтение (POST только потому, что список пар передаётся телом).
  */
 import type { Logger } from '../../logging.js';
 import type { AdsHttpResponse, SleepFn } from './http.js';
-import { clip } from './http.js';
+import { clip, isAdsAuthError } from './http.js';
 import type { AdsSink, AdsReader } from './bq.js';
 import type { AdsConfig } from './targets.js';
 import type { SourceResult } from './status.js';
@@ -71,6 +73,11 @@ export function withDeadline(http: HttpLike, nowMs: () => number, deadlineMs: nu
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** Отказ авторизации пробрасывается мимо статусов источника (см. шапку). */
+function rethrowAuth(e: unknown): void {
+  if (isAdsAuthError(e)) throw e;
+}
+
 // ═══════════════════════════════════════
 // CAMPAIGNS
 // ═══════════════════════════════════════
@@ -105,6 +112,7 @@ export async function loadCampaigns(d: AdsDeps, rid: string): Promise<SourceResu
     });
     return { source: src, status: 'OK', rows: written };
   } catch (e) {
+    rethrowAuth(e);
     d.logger.error('ads_source', { source: src, status: 'FAILED', error: `Исключение: ${errMsg(e)}` });
     return { source: src, status: 'FAILED', rows: 0 };
   }
@@ -179,6 +187,7 @@ export async function loadFullstats(d: AdsDeps, rid: string, from: string, to: s
     });
     return { source: src, status: st, rows: totalStat };
   } catch (e) {
+    rethrowAuth(e);
     d.logger.error('ads_source', { source: src, status: 'FAILED', error: `Исключение: ${errMsg(e)}` });
     return { source: src, status: 'FAILED', rows: 0 };
   }
@@ -269,6 +278,7 @@ export async function loadCosts(d: AdsDeps, rid: string, from: string, to: strin
     return { source: src, status: st, rows: total, windows: windows.length, empty_success_windows: emptyOk,
       failed_windows: failed, runlog_failed: journalFailed };
   } catch (e) {
+    rethrowAuth(e);
     d.logger.error('ads_source', { source: src, status: 'FAILED', error: `Исключение: ${errMsg(e)}` });
     return { source: src, status: 'FAILED', rows: 0 };
   }
@@ -328,7 +338,7 @@ async function collectCpmManualPairs(d: AdsDeps): Promise<PairsCollected> {
   return out;
 }
 
-/** Никогда не бросает: снимок ставок не влияет на итог прогона и журнал 'ads'. */
+/** Не бросает (кроме WB_ADS_AUTH): снимок ставок не влияет на итог прогона и журнал 'ads'. */
 export async function loadQueryBids(d: AdsDeps, rid: string): Promise<SourceResult> {
   const src = 'raw_query_bids';
   const t0 = d.nowMs();
@@ -403,6 +413,7 @@ export async function loadQueryBids(d: AdsDeps, rid: string): Promise<SourceResu
     else log.status = 'OK'; // в т.ч. при returned_bid_rows = 0
     return await finishQueryBids(d, src, log, t0, written);
   } catch (e) {
+    rethrowAuth(e);
     log.status = 'FAILED';
     log.error_message = `Исключение: ${errMsg(e)}`;
     try { return await finishQueryBids(d, src, log, t0, 0); } catch { return { source: src, status: 'FAILED', rows: 0, pairs: 0 }; }
@@ -438,7 +449,7 @@ function qsOutOfBudget(d: AdsDeps, st: QsState): boolean {
 
 const appendMsg = (existing: unknown, msg: string): string => (existing ? `${String(existing)}; ${msg}` : msg);
 
-/** Никогда не бросает. days — явный список суток; обход от свежих к старым (Stage 3A, 19.08.2026). */
+/** Не бросает (кроме WB_ADS_AUTH). days — явный список суток; обход от свежих к старым (Stage 3A, 19.08.2026). */
 export async function loadQueryStats(d: AdsDeps, rid: string, days: string[]): Promise<SourceResult & { days: number; days_ok: number }> {
   const src = 'raw_query_stats';
   const st: QsState = { t0: d.nowMs(), httpCalls: 0 };
@@ -460,6 +471,7 @@ export async function loadQueryStats(d: AdsDeps, rid: string, days: string[]): P
     try {
       res = await queryStatsDay(d, rid, day, costsByDay[day], st);
     } catch (e) {
+      rethrowAuth(e);
       res = { status: 'FAILED', rows: 0 };
       d.logger.error('ads_query_stats_day_exception', { day, error: errMsg(e) });
     }

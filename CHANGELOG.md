@@ -15,8 +15,14 @@ Design & code only: Terraform не применялся, Job не запуска
 - `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
   `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
 - `infra/terraform/wb_ads_loader.tf` — свои SA `sa-wb-ads-{shadow,prod}`; Job'ы и Scheduler'ы `wb-ads`, `wb-ads-query`,
-  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Весь prod-контур — под `var.m3_prod_enabled` (по умолчанию
-  false; infra.yml ← переменная репозитория `M3_PROD_ENABLED`). Workflows: образ в новые Job'ы (guarded), loader в scheduler-control.
+  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Флаги по общей схеме M2–M5 (#423): весь shadow-контур —
+  под `var.m3_shadow_enabled`, весь prod-контур — под `var.m3_prod_enabled` (оба bool, default false; infra.yml ←
+  переменные репозитория `M3_SHADOW_ENABLED` / `M3_PROD_ENABLED`). Файл новый — в `origin/main` ни одного его ресурса нет.
+  Workflows: выкат prod — общий режим `deploy-prod.yml` `only_job=wb-ads` (#423), образ shadow — `deploy-shadow.yml`
+  (guarded), loader в scheduler-control.
+- Токен (общий `cloud/src/http/wbToken.ts`, #423) во всех трёх режимах до первого вызова WB: истёкший → `WB_ADS_TOKEN_EXPIRED`,
+  пустой → `WB_ADS_AUTH`, < 14 суток → warn `WB_TOKEN_EXPIRING_SOON`; HTTP 401/403 → `WB_ADS_AUTH` без повторов, источники
+  его не глотают. `DRY_RUN` — ровно `=== '1'`, как `cli.ts`. Тесты — `cloud/test/ads_token.test.ts`.
 - `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
 - Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
 

@@ -15,7 +15,8 @@
 | Проверка контура shadow/prod | `cloud/src/loaders/ads/targets.ts` |
 | Terraform | `infra/terraform/wb_ads_loader.tf` |
 | Сверка паритета | `sql/mig_ads_parity.sql` |
-| Тесты | `cloud/test/ads_loader.test.ts`, `cloud/test/ads_apps_script_parity.test.ts` |
+| Тесты | `cloud/test/ads_loader.test.ts`, `cloud/test/ads_token.test.ts`, `cloud/test/ads_apps_script_parity.test.ts` |
+| Флаги контуров (общая схема M2–M5, PR #423) | `var.m3_shadow_enabled` ← `M3_SHADOW_ENABLED`, `var.m3_prod_enabled` ← `M3_PROD_ENABLED` |
 
 ## 1. Семантика эталона (Apps Script) и как она перенесена
 
@@ -120,6 +121,7 @@
 429/500/502/503/504 и сетевые исключения; 4 попытки; пауза `Retry-After`, иначе 20 c → 40 c → 60 c (≤ 60 c);
 исчерпанные HTTP-повторы возвращают последний ответ, исчерпанное исключение бросается (источник → FAILED).
 Свой модуль, а не `cloud/src/http/wbHttp.ts`: общий клиент не читает `Retry-After` и повторяет любые 5xx.
+**401/403** — не как эталон (D11): сразу `WB_ADS_AUTH` без повторов, прогон прерывается.
 
 ### 1.8 Лимиты WB Advert API (как в эталоне)
 
@@ -188,7 +190,16 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 - **D9. Свежесть** берётся как `MAX(date)` из целевой RAW с `processed_status='raw'` (в shadow — из `__CR`), а не
   из `V_ADV_CAMPAIGN_STATS`. Значение то же (вью — дедуп этих строк, дедуп не меняет максимум) и влияет только на
   OK ↔ STALE, оба — успех.
-- **D10. DRY_RUN=1** — только проверка контура и окон, без токена, WB и записи.
+- **D10. DRY_RUN=1** — только проверка контура и окон, без токена, WB и записи. Разбор — ровно `=== '1'`, как в
+  `cli.ts` (`' 1'`, `'true'` — обычный прогон; иначе загрузчик и `cli.ts` разошлись бы).
+- **D11. Токен — общий механизм M2–M5** (`cloud/src/http/wbToken.ts`, PR #423; урок 31.10.2026: истёкший токен поставок
+  давал Apps Script 401 и молча глушил загрузку). Во всех трёх режимах после чтения секрета и ДО первого вызова WB:
+  истёкший `exp` → `WB_ADS_TOKEN_EXPIRED`, пустой секрет → `WB_ADS_AUTH`, меньше 14 суток → warn
+  `WB_TOKEN_EXPIRING_SOON`. Любой 401/403 → `WB_ADS_AUTH` без HTTP-повторов, и источник его **не глотает**:
+  прогон падает этим кодом, а не `ADS_ERROR`/`ADS_PARTIAL`/`ADS_AUDIT_FAILED` (в эталоне — FAILED источника).
+  Все три кода детерминированы (`classifyFailure`). Значения токена нет ни в ошибке, ни в логе: только имя секрета,
+  срок, статус и обрезанная причина WB с вырезанными токеноподобными строками. Цена: окно `upd` с 401 не получает
+  строку `ERROR` в `RAW_WB_ADV_COSTS_RUNS` (на снапшот не влияет — он берёт только `OK`).
 
 ## 4. Совместимость со снапшотом расходов v1 и v2 (PR #370)
 
@@ -234,9 +245,12 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 
 ### 7.1 Shadow (OWNER ACK M3-SHADOW)
 
-1. `infra.yml` → plan (переменная репозитория `M3_PROD_ENABLED` не задана → `m3_prod_enabled=false`) с `targets`:
+0. Владелец ставит переменную репозитория `M3_SHADOW_ENABLED=true` (infra.yml → `TF_VAR_m3_shadow_enabled`).
+   До этого ни одного ресурса M3 в конфигурации нет: оба флага по умолчанию `false`, весь `wb_ads_loader.tf` новый
+   (в `origin/main` его нет), поэтому план без флагов по этому файлу — 0 ресурсов.
+1. `infra.yml` → plan (`M3_PROD_ENABLED` не задана → `m3_prod_enabled=false`) с `targets`:
    `google_cloud_run_v2_job.wb_ads_shadow,google_cloud_scheduler_job.wb_ads_shadow,google_cloud_run_v2_job_iam_member.scheduler_ads_shadow_invoke`
-   Ожидается **39 create, 0 update/delete**: `google_service_account.wb_ads_shadow`; `wb_ads_jobuser["shadow"]`;
+   Ожидается **39 create, 0 update/delete**: `google_service_account.wb_ads_shadow[0]`; `wb_ads_jobuser["shadow"]`;
    `wb_ads_loader_runs["shadow"]`; 9 `google_bigquery_table.ads_cr[…]`; 9 `wb_ads_shadow_write_cr[…]`;
    6 `wb_ads_read_sources["shadow:…"]`; `wb_ads_token["shadow"]`; `wb_ads_actas_deployer["shadow"]`,
    `wb_ads_actas_terraform["shadow"]`; по 3 Job / invoker / Scheduler (`wb-ads`, `wb-ads-query`, `wb-ads-costs-audit`).
@@ -276,8 +290,9 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
    2 actAs; по 3 Job / invoker / Scheduler (все PAUSED); `wb_ads_failed[0]` (если задан `UNITKA_ALERT_EMAIL`, иначе 30).
    Аудит prod создаётся тем же apply, но его Scheduler остаётся PAUSED, а загрузчик без `ADS_COSTS_AUDIT_ENABLED=1`
    отказывает (§6).
-4. `deploy-prod.yml` (тот же digest, что проверен в shadow) — образ попадёт в `wb-ads-prod`, `wb-ads-query-prod`,
-   `wb-ads-costs-audit-prod`. Readback: `gcloud run jobs describe wb-ads-prod` — образ = digest, env `ADS_*_TABLE` =
+4. `deploy-prod.yml` с `only_job=wb-ads` (тот же digest, что проверен в shadow; режим и проверка охвата —
+   общий PR #423, `tools/deploy_scope_check.py`) — образ попадёт ТОЛЬКО в `wb-ads-prod`, `wb-ads-query-prod`,
+   `wb-ads-costs-audit-prod`, любой другой изменившийся Job валит выкат. Readback: `gcloud run jobs describe wb-ads-prod` — образ = digest, env `ADS_*_TABLE` =
    боевые имена, `ENVIRONMENT=prod`, SA `sa-wb-ads-prod`.
 5. Apps Script (владелец, UI «Триггеры»): удалить триггеры `runWbAdsDaily` и оба `runWbAdsDailyCatchUp`
    (или `wbAdsRemoveTrigger()` для суточного; для catch-up функции удаления нет — вручную).
@@ -299,6 +314,8 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 **Откат** (данные не откатываются — RAW append-only, вью сами берут последний снапшот):
 1. `scheduler-control`: `pause` для `wb-ads` и `wb-ads-query` в prod. Полный вывод prod-контура — снять
    `M3_PROD_ENABLED` и apply (destroy только prod-ресурсов M3; боевые RAW не затрагиваются — их Terraform не создавал).
+   Полный вывод shadow-контура — снять `M3_SHADOW_ENABLED` и apply: destroy shadow-ресурсов M3, **включая 9 таблиц
+   `__CR` с их строками** (`deletion_protection = false`); выгрузить их до этого, если нужны для разбора паритета.
 2. Apps Script: `wbAdsInstallDailyTrigger()` и `wbAdsInstallCatchUpTriggers()`.
 3. Если D−1 ещё не закрыт: запустить `runWbAdsDaily` вручную. Catch-up Apps Script смотрит только `INGEST_RUNS`
    и Cloud Run-строк не видит — прогон будет, это безопасно (новый снапшот).
@@ -311,14 +328,16 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 1. **Токен.** Apps Script берёт `WB_TOKEN_PROMOTION` из Script Properties; Cloud Run — Secret Manager
    `WB_TOKEN_ADS` (версия 1 от 26.07.2026). Подтвердить, что это действующий токен категории «Продвижение», или
    добавить новую версию секрета тем же токеном (значение не выводить). Проверить можно только запросом к WB —
-   в этой работе не делалось.
-2. **ACK M3-SHADOW** на план §7.1 (30 create, только shadow).
+   в этой работе не делалось. Срок `exp` загрузчик проверяет сам до первого запроса (D11): `WB_ADS_TOKEN_EXPIRED` /
+   `WB_ADS_AUTH` в алерте = выпустить новый токен и добавить версию секрета, повтор Job'а не поможет.
+2. **ACK M3-SHADOW** на план §7.1 (39 create, только shadow) и переменная `M3_SHADOW_ENABLED=true`.
 3. **Читатели heartbeat из `INGEST_RUNS`** — `sql/health/dro1_02_probe.sql` (`ads_daily`, `orders`, `sales`),
    `sql/health/dro1_01_contract.sql:55`, `sql/mart/dashboard_layer_v1.sql:154-155` (`V_DATA_FRESHNESS`:
    `ads_query_bids` / `ads_costs` / `ads_fullstats`). После переключения heartbeat переедет в `LOADER_RUNS`.
    Перевод на `V_INGEST_HEARTBEAT` — **отдельный общий PR (M2/M3, готовит координатор)**, обязательное
    предусловие M3-CUTOVER (§7.3, п. 1). В этом PR эти файлы не меняются.
-3a. **Флаг prod-контура** — переменная репозитория `M3_PROD_ENABLED=true` только на OWNER ACK M3-CUTOVER.
+3a. **Флаги контуров** (общая схема M2–M5, `tools/tests/test_stream_enable_flags.py`): `M3_SHADOW_ENABLED=true` —
+   только на ACK M3-SHADOW, `M3_PROD_ENABLED=true` — только на OWNER ACK M3-CUTOVER. Других флагов включения у M3 нет.
 4. **Детекторы Step 5A** (`sql/ops/step5a_detectors.sql`): `ADS_RUNTIME_NEAR_LIMIT` мерит fullstats против стены
    Apps Script 300 c (у Cloud Run её нет), а `ADS_TAIL_MISSING` ищет снимки Ads-3/Ads-2 с тем же `run_id`, что у
    fullstats — у Cloud Run хвост пишется своим `run_id` (`…_CRQ…`), детектор покажет MISSING. Обоим нужна правка
@@ -331,7 +350,7 @@ get-bids ≤ 100 пар, 250 мс; normquery/stats ≤ 100 пар, 6,5 c; окн
 ```
 cd cloud
 npx tsc --noEmit -p .
-npx vitest run test/ads_loader.test.ts test/ads_apps_script_parity.test.ts
+npx vitest run test/ads_loader.test.ts test/ads_token.test.ts test/ads_apps_script_parity.test.ts
 npm run lint
 ```
 Все тесты офлайн на синтетике (`cloud/test/ads_fixture.ts`): идентификаторы, суммы и названия выдуманы.

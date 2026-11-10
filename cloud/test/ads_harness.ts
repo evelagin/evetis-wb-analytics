@@ -97,6 +97,8 @@ export function harness(lp: string, env: Record<string, string | undefined> = {}
     makeDeps: (ctx, cfg, token) => ({
       http: new AdsHttp(token, {
         timeoutMs: 5_000,
+        logger: ctx.logger,
+        secretName: cfg.secret,
         fetchFn: clock
           ? async (url, init) => { clock.starts.push({ t: clock.t, url }); clock.t += clock.latencyMs(url); return fetchFromRoute(route)(url, init); }
           : fetchFromRoute(route),

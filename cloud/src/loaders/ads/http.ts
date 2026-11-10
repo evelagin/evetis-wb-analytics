@@ -5,12 +5,17 @@
  *   • до 1 + WB_ADS_MAX_RETRY попыток;
  *   • пауза: Retry-After (секунды или HTTP-дата), иначе base·2^(n−1); обе ≤ 60 c;
  *   • повторы исчерпаны на HTTP-коде → возвращается ПОСЛЕДНИЙ ответ (ok=false), не исключение;
- *   • повторы исчерпаны на сетевом исключении → бросаем (как эталон; источник ловит и даёт FAILED).
+ *   • повторы исчерпаны на сетевом исключении → бросаем (как эталон; источник ловит и даёт FAILED);
+ *   • 401/403 — НЕ как эталон: сразу LoaderError `WB_ADS_AUTH` (cloud/src/http/wbToken.ts, wbAuthError),
+ *     без повторов. Источники его не глотают (sources.ts, rethrowAuth) — прогон падает детерминированно,
+ *     а не тихим FAILED по каждому источнику (урок 31.10.2026: истёкший токен поставок молча глушил загрузку).
  * Отдельный модуль, а не cloud/src/http/wbHttp.ts: общий клиент не умеет Retry-After и
  * повторяет любые 5xx, а менять его поведение для остальных загрузчиков здесь нельзя.
  * Токен уходит только в заголовок Authorization и нигде не логируется.
  */
 import type { Logger } from '../../logging.js';
+import { LoaderError } from '../../errors.js';
+import { isWbAuthStatus, wbAuthError } from '../../http/wbToken.js';
 import {
   WB_ADS_MAX_RETRY, WB_ADS_RETRY_BASE_MS, WB_ADS_RETRY_MAX_DELAY_MS, WB_ADS_RETRY_CODES,
 } from './constants.js';
@@ -30,8 +35,20 @@ export type SleepFn = (ms: number) => Promise<void>;
 
 export const realSleep: SleepFn = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Префикс кодов потока M3 для общих проверок токена (assertWbTokenUsable, wbAuthError). */
+export const WB_ADS_CODE_PREFIX = 'WB_ADS';
+/** Детерминированный отказ авторизации WB Advert API (401/403 или пустой секрет). */
+export const WB_ADS_AUTH = `${WB_ADS_CODE_PREFIX}_AUTH`;
+
+/** Отказ авторизации — его не глотает ни один источник: повтор и следующий источник его не вылечат. */
+export function isAdsAuthError(e: unknown): e is LoaderError {
+  return e instanceof LoaderError && e.code === WB_ADS_AUTH;
+}
+
 export interface AdsHttpOptions {
   timeoutMs: number;
+  /** Имя секрета токена — только для текста ошибки 401/403 (значение токена в ошибку не попадает). */
+  secretName?: string;
   maxRetries?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
@@ -110,6 +127,10 @@ export class AdsHttp {
         clearTimeout(timer);
       }
 
+      if (!threw && isWbAuthStatus(status)) {
+        this.opts.logger?.error('wb_ads_http_auth', { status, url: safeUrl });
+        throw wbAuthError(WB_ADS_CODE_PREFIX, this.opts.secretName ?? 'WB_TOKEN_ADS', status, `${method.toUpperCase()} ${safePath(url)}`, text);
+      }
       if (!threw && !(WB_ADS_RETRY_CODES as readonly number[]).includes(status)) {
         return toResponse(status, text);
       }
@@ -127,6 +148,11 @@ export class AdsHttp {
       await this.sleep(pauseNext);
     }
   }
+}
+
+/** Путь без хоста и query (в query — списки id) — для текста ошибки. */
+function safePath(url: string): string {
+  try { return new URL(url).pathname; } catch { return url.split('?')[0] ?? ''; }
 }
 
 function toResponse(code: number, body: string): AdsHttpResponse {
