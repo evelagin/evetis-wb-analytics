@@ -5,12 +5,18 @@
 `gcloud run jobs update`. Сам ничего не вызывает: читает JSON `gcloud run jobs describe/list
 --format=json` и байты манифеста/конфига образа, которые workflow скачал из Artifact Registry.
 
+  image-manifest-digest <top.json>
+        — по объекту, который реестр отдал на digest: для одиночного образа — его собственный digest;
+          для OCI index / manifest list — digest ЕДИНСТВЕННОГО манифеста linux/amd64 (записи attestation
+          отбрасываются). deploy-shadow на раннерах GitHub собирает именно index: образ + attestation.
   config-digest <manifest.json>
         — печатает digest конфига образа из манифеста (workflow скачивает этот blob).
-  pre   <shadow.json> <jobs_before.json> <manifest.json> <image_config.json> <digest> <git_sha>
+  pre   <shadow.json> <jobs_before.json> <top.json> <manifest.json> <image_config.json> <digest> <git_sha>
         — digest = образ wb-stocks-shadow (проверен в shadow);
-          происхождение: sha256(manifest) = digest, sha256(config) = manifest.config.digest,
+          происхождение: sha256(top) = digest; если top — index, в нём ровно один linux/amd64 и
+          sha256(manifest) = его digest, иначе manifest = top; sha256(config) = manifest.config.digest,
           метка `git-sha` конфига = git_sha (её ставит deploy-shadow при сборке);
+          прежняя форма без <top.json> (6 аргументов) — для одиночного образа;
           текущий wb-stocks-prod — точный проект, BQ_RAW_DATASET, SA prod (до любого update).
   post  <stocks_prod.json> <before_list.json> <after_list.json> <digest> <git_sha>
         — у wb-stocks-prod образ = digest, env = боевые таблицы + provenance + проект/датасет,
@@ -52,6 +58,10 @@ PROD_RUNTIME_ENV = {
 _SINGLE_IMAGE_MANIFESTS = (
     "application/vnd.docker.distribution.manifest.v2+json",
     "application/vnd.oci.image.manifest.v1+json",
+)
+_INDEX_MANIFESTS = (
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
 )
 
 
@@ -100,6 +110,33 @@ def _check_contour(job: dict, name: str) -> list[str]:
     return problems
 
 
+def _runnable_entries(index: dict) -> list[dict]:
+    """Образы linux/amd64 в index; attestation (`vnd.docker.reference.type`) и unknown/unknown — не образы."""
+    out = []
+    for m in index.get("manifests") or []:
+        ann = m.get("annotations") or {}
+        plat = m.get("platform") or {}
+        if m.get("mediaType") not in _SINGLE_IMAGE_MANIFESTS or "vnd.docker.reference.type" in ann:
+            continue
+        if plat.get("os") == "linux" and plat.get("architecture") == "amd64":
+            out.append(m)
+    return out
+
+
+def image_manifest_digest(top_raw: bytes) -> str:
+    """Digest манифеста образа, который запустит Cloud Run (см. image-manifest-digest в docstring)."""
+    top = json.loads(top_raw)
+    media = top.get("mediaType")
+    if media in _SINGLE_IMAGE_MANIFESTS:
+        return _sha256(top_raw)
+    if media in _INDEX_MANIFESTS:
+        entries = _runnable_entries(top)
+        if len(entries) != 1:
+            raise ValueError(f"index: ожидался ровно один образ linux/amd64, найдено {len(entries)}")
+        return entries[0]["digest"]
+    raise ValueError(f"манифест {media!r}: ни образ, ни index")
+
+
 def config_digest(manifest_raw: bytes) -> str:
     m = json.loads(manifest_raw)
     if m.get("mediaType") not in _SINGLE_IMAGE_MANIFESTS:
@@ -107,12 +144,21 @@ def config_digest(manifest_raw: bytes) -> str:
     return m["config"]["digest"]
 
 
-def check_provenance(manifest_raw: bytes, config_raw: bytes, digest: str, git_sha: str) -> list[str]:
-    """Образ = digest и собран из git_sha: цепочка хэшей манифест → конфиг → метка."""
+def check_provenance(manifest_raw: bytes, config_raw: bytes, digest: str, git_sha: str,
+                     top_raw: bytes | None = None) -> list[str]:
+    """Образ = digest и собран из git_sha: цепочка хэшей [index →] манифест → конфиг → метка."""
     problems: list[str] = []
     want = digest.split("@", 1)[-1]
-    if _sha256(manifest_raw) != want:
-        return [f"манифест не принадлежит digest: sha256 {_sha256(manifest_raw)} ≠ {want}"]
+    top = manifest_raw if top_raw is None else top_raw
+    if _sha256(top) != want:
+        return [f"манифест не принадлежит digest: sha256 {_sha256(top)} ≠ {want}"]
+    if top_raw is not None:
+        try:
+            img = image_manifest_digest(top_raw)
+        except (ValueError, KeyError) as e:
+            return [f"манифест: {e}"]
+        if _sha256(manifest_raw) != img:
+            return [f"манифест образа не из index: sha256 {_sha256(manifest_raw)} ≠ {img}"]
     try:
         cfg_digest = config_digest(manifest_raw)
     except (ValueError, KeyError) as e:
@@ -125,12 +171,13 @@ def check_provenance(manifest_raw: bytes, config_raw: bytes, digest: str, git_sh
     return problems
 
 
-def check_pre(shadow: dict, before: list, manifest_raw: bytes, config_raw: bytes, digest: str, git_sha: str) -> list[str]:
+def check_pre(shadow: dict, before: list, manifest_raw: bytes, config_raw: bytes, digest: str, git_sha: str,
+              top_raw: bytes | None = None) -> list[str]:
     problems = _check_digest_format(digest)
     img = _container(shadow).get("image")
     if img != digest:
         problems.append(f"digest не равен образу wb-stocks-shadow: {img} ≠ {digest}")
-    problems += check_provenance(manifest_raw, config_raw, digest, git_sha)
+    problems += check_provenance(manifest_raw, config_raw, digest, git_sha, top_raw)
     target = [j for j in before if j.get("metadata", {}).get("name") == TARGET_JOB]
     if len(target) != 1:
         problems.append(f"{TARGET_JOB} не найден в снимке Job'ов до выката")
@@ -175,10 +222,16 @@ def _raw(path: str) -> bytes:
 
 def main(argv: list[str]) -> int:
     try:
+        if len(argv) == 3 and argv[1] == "image-manifest-digest":
+            print(image_manifest_digest(_raw(argv[2])))
+            return 0
         if len(argv) == 3 and argv[1] == "config-digest":
             print(config_digest(_raw(argv[2])))
             return 0
-        if len(argv) == 8 and argv[1] == "pre":
+        if len(argv) == 9 and argv[1] == "pre":
+            problems = check_pre(_load(argv[2]), _load(argv[3]), _raw(argv[5]), _raw(argv[6]), argv[7], argv[8],
+                                 top_raw=_raw(argv[4]))
+        elif len(argv) == 8 and argv[1] == "pre":
             problems = check_pre(_load(argv[2]), _load(argv[3]), _raw(argv[4]), _raw(argv[5]), argv[6], argv[7])
         elif len(argv) == 7 and argv[1] == "post":
             problems = check_post(_load(argv[2]), _load(argv[3]), _load(argv[4]), argv[5], argv[6])

@@ -64,6 +64,56 @@ def image(git_sha=SHA, media="application/vnd.docker.distribution.manifest.v2+js
     return manifest, config, chk.IMAGE_PREFIX + hashlib.sha256(manifest).hexdigest()
 
 
+def index_of(manifest, extra=None, platform=None):
+    """OCI index, как его собирает deploy-shadow на раннере GitHub: образ linux/amd64 + attestation."""
+    import hashlib
+    att = json.dumps({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                      "config": {"digest": "sha256:" + "0" * 64}}).encode()
+    entries = [
+        {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+         "digest": "sha256:" + hashlib.sha256(manifest).hexdigest(),
+         "platform": platform or {"architecture": "amd64", "os": "linux"}},
+        {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+         "digest": "sha256:" + hashlib.sha256(att).hexdigest(),
+         "platform": {"architecture": "unknown", "os": "unknown"},
+         "annotations": {"vnd.docker.reference.type": "attestation-manifest"}},
+    ] + (extra or [])
+    top = json.dumps({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
+                      "manifests": entries}).encode()
+    return top, chk.IMAGE_PREFIX + hashlib.sha256(top).hexdigest()
+
+
+def pre_index(top, manifest, config, digest, git_sha=SHA):
+    shadow = job("wb-stocks-shadow", digest, sa=SHADOW_SA)
+    return chk.check_pre(shadow, fleet(BEFORE_TARGET), manifest, config, digest, git_sha, top_raw=top)
+
+
+def test_pre_accepts_oci_index_of_deploy_shadow():
+    manifest, config, _ = image(media="application/vnd.oci.image.manifest.v1+json")
+    top, digest = index_of(manifest)
+    assert chk.image_manifest_digest(top) == "sha256:" + __import__("hashlib").sha256(manifest).hexdigest()
+    assert pre_index(top, manifest, config, digest) == []
+    assert any("source_git_sha" in p for p in pre_index(top, manifest, config, digest, git_sha="d" * 40))
+
+
+def test_pre_index_rejects_wrong_chain_or_ambiguous_platforms():
+    manifest, config, _ = image(media="application/vnd.oci.image.manifest.v1+json")
+    other, other_cfg, _ = image(git_sha="d" * 40, media="application/vnd.oci.image.manifest.v1+json")
+    top, digest = index_of(manifest)
+    # манифест не из index; конфиг не из манифеста; index не принадлежит digest
+    assert any("не из index" in p for p in pre_index(top, other, other_cfg, digest))
+    assert any("конфиг образа не из манифеста" in p for p in pre_index(top, manifest, other_cfg, digest))
+    assert any("не принадлежит digest" in p for p in pre_index(index_of(other)[0], manifest, config, digest))
+    # два образа linux/amd64 или ни одного — неоднозначно
+    import hashlib
+    second = {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+              "digest": "sha256:" + hashlib.sha256(other).hexdigest(), "platform": {"architecture": "amd64", "os": "linux"}}
+    t2, d2 = index_of(manifest, extra=[second])
+    assert any("ровно один образ linux/amd64" in p for p in pre_index(t2, manifest, config, d2))
+    t3, d3 = index_of(manifest, platform={"architecture": "arm64", "os": "linux"})
+    assert any("ровно один образ linux/amd64" in p for p in pre_index(t3, manifest, config, d3))
+
+
 def pre(shadow_image=None, before=None, img=None, git_sha=SHA):
     manifest, config, digest = img or image()
     shadow = job("wb-stocks-shadow", shadow_image or digest, sa=SHADOW_SA)
@@ -167,6 +217,15 @@ def test_cli_exit_codes(tmp_path):
     assert chk.main(["x", "pre", shadow, before, m, c, digest, SHA]) == 0
     assert chk.main(["x", "pre", shadow, before, m, c, digest, "d" * 40]) == 1
     assert chk.main(["x", "pre", shadow, before, m, c, digest]) == 2
+    # форма с index (как у deploy-shadow): top → манифест образа → конфиг
+    om, oc, _ = image(media="application/vnd.oci.image.manifest.v1+json")
+    top, idig = index_of(om)
+    tp, omp, ocp = raw("top.json", top), raw("om.json", om), raw("oc.json", oc)
+    ishadow = dump("is.json", job("wb-stocks-shadow", idig, sa=SHADOW_SA))
+    assert chk.main(["x", "image-manifest-digest", tp]) == 0
+    assert chk.main(["x", "pre", ishadow, before, tp, omp, ocp, idig, SHA]) == 0
+    assert chk.main(["x", "pre", ishadow, before, tp, omp, ocp, idig, "d" * 40]) == 1
+    assert chk.main(["x", "image-manifest-digest", raw("bad.json", b'{"mediaType":"x"}')]) == 2
     assert chk.main(["x", "post", target]) == 2
 
 
