@@ -199,20 +199,60 @@ def _steps():
     return text, out
 
 
+# Режимы only_job: all — прежний промоушен; остальные — ровно свой поток (Mig1b-0 и потоки миграции M2–M5).
+ONLY_JOB_STREAM_JOBS = {
+    "wb-stocks-prod": {"wb-stocks-prod"},
+    "wb-statistics": {"wb-orders-prod", "wb-sales-prod", "wb-sales-reconcile-prod"},
+    "wb-ads": {"wb-ads-prod", "wb-ads-query-prod", "wb-ads-costs-audit-prod"},
+    "wb-finance": {"wb-finance-prod"},
+    "wb-supplies-ref": {"wb-supplies-prod", "ref-sync-prod"},
+}
+
+
+def _cond_true(cond, mode):
+    """Условие шага вида inputs.only_job == 'X' [|| inputs.only_job == 'Y' ...]; иного синтаксиса в workflow нет."""
+    if not cond:
+        return True
+    parts = [p.strip() for p in cond.split("||")]
+    vals = []
+    for p in parts:
+        m = re.fullmatch(r"inputs\.only_job == '([a-z0-9-]+)'", p)
+        assert m, f"неподдерживаемое условие шага: {cond}"
+        vals.append(m.group(1))
+    return mode in vals
+
+
+def _updated_jobs(run):
+    jobs = set(re.findall(r"gcloud run jobs update\s+\"?\$?\{?([A-Za-z0-9_-]+)", run))
+    loop = re.search(r"for JOB in ([^;]+); do", run)
+    if loop and {"JOB", "{JOB}"} & jobs | ({"JOB"} & jobs):
+        jobs = (jobs - {"JOB", "{JOB}"}) | set(loop.group(1).split())
+    return {j.strip('"') for j in jobs if j not in ("JOB", "{JOB}")}
+
+
 def test_only_job_input_defaults_to_all():
     text, _ = _steps()
     block = text[text.index("      only_job:"):text.index("permissions:")]
-    assert 'default: "all"' in block and 'options: ["all", "wb-stocks-prod"]' in block
+    assert 'default: "all"' in block
+    opts = re.search(r"options: \[(.*)\]", block).group(1)
+    assert [o.strip().strip('"') for o in opts.split(",")] == ["all", *ONLY_JOB_STREAM_JOBS]
 
 
 def test_default_mode_steps_unchanged_and_guarded():
     _, steps = _steps()
-    deploy_all = [n for n, c, r in steps if "gcloud run jobs update" in r and c == "inputs.only_job == 'all'"]
-    assert len(deploy_all) == 9
-    # ни один прежний шаг не работает в целевом режиме
-    for n, c, r in steps:
-        if "gcloud run jobs update" in r and "wb-stocks-prod:" not in n:
-            assert c == "inputs.only_job == 'all'", n
+    deploy = [(n, c, r) for n, c, r in steps if "gcloud run jobs update" in r]
+    # прежние 9 шагов промоушена работают только в режиме all
+    assert len([1 for n, c, r in deploy if c == "inputs.only_job == 'all'"]) == 9
+    # в любом целевом режиме обновляются ровно Job'ы своего потока — ни одного чужого
+    for mode, allowed in ONLY_JOB_STREAM_JOBS.items():
+        touched = set()
+        for n, c, r in deploy:
+            if _cond_true(c, mode):
+                touched |= _updated_jobs(r)
+        assert touched == allowed, (mode, sorted(touched))
+    # и ни один шаг не работает без условия
+    for n, c, r in deploy:
+        assert c, n
 
 
 def test_stocks_mode_touches_only_wb_stocks_prod_and_never_runs_or_schedules():
