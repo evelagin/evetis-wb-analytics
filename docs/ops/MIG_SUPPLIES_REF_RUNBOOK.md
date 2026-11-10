@@ -54,8 +54,9 @@ production — по отдельному OWNER ACK, Terraform — только �
 1. **Один носитель токена — Secret Manager с версиями.** В Script Properties версий нет. Секрет
    `WB_TOKEN_SUPPLIES` создаёт владелец (§5), и Terraform выдаёт доступ к нему отдельно
    каждому SA.
-2. **Срок проверяется до обращения к WB.** Срок берётся из claim `exp` токена (JWT); значение
-   токена не логируется.
+2. **Срок проверяется до обращения к WB.** Срок берётся из claim `exp` токена (JWT) общим
+   `assertWbTokenUsable` (`cloud/src/http/wbToken.ts`, PR #423); значение токена не логируется и
+   не попадает в текст ошибки.
    - Токен истёк → `WB_SUPPLIES_TOKEN_EXPIRED`.
    - До истечения меньше 14 суток → предупреждение `WB_TOKEN_EXPIRING_SOON` с числом дней.
 3. **Отказ авторизации получает свой код.** 401/403 → `WB_SUPPLIES_AUTH`. Это детерминированный
@@ -151,8 +152,11 @@ production — по отдельному OWNER ACK, Terraform — только �
     сутки) и снимается само; запрос к BigQuery тот же один. Тест — `supplies_normalize`.
     Дополнительно на cutover обязательна сверка prod ↔ `__CR` (QUERY 4, §4 S4).
 13. **Свои SA и флаги Terraform.** Ресурсы M5 под флагами `m5_shadow_enabled` и `m5_prod_enabled`
-    (по умолчанию false, `m5_variables.tf`). Merge PR не меняет ни один plan, отсутствие секрета не
-    роняет чужие задачи. Поставки и REF работают от своих SA, а не от общих `sa-loaders-*`.
+    (по умолчанию false, `m5_variables.tf`). Включаются GitHub Variables репозитория
+    `M5_SHADOW_ENABLED` / `M5_PROD_ENABLED` (значение `true`; `infra.yml` передаёт их как
+    `TF_VAR_m5_*`, общая схема F4 PR #423). Не заданы → false: merge PR не меняет ни один plan,
+    отсутствие секрета не роняет чужие задачи. Поставки и REF работают от своих SA, а не от общих
+    `sa-loaders-*`.
 
 ## 4. Порядок выпуска
 
@@ -166,8 +170,9 @@ Shadow → паритет 5 дней → переключение вечером
   даёт NO_RUN.
 
 **S1. Terraform, только shadow (ACK MIG-M5-SHADOW).**
-1. PR: `m5_shadow_enabled` default → `true` (`infra/terraform/m5_variables.tf`). Только после того,
-   как секрет `WB_TOKEN_SUPPLIES` создан: иначе data-источник уронит plan.
+1. GitHub Variable `M5_SHADOW_ENABLED` = `true` (Settings → Secrets and variables → Actions →
+   Variables; default в `m5_variables.tf` не меняется). Только после того, как секрет
+   `WB_TOKEN_SUPPLIES` создан: иначе data-источник уронит plan любого запуска `infra.yml`.
 2. `infra.yml` plan с этими targets → просмотр → ACK → apply:
 
 ```
@@ -212,13 +217,14 @@ google_cloud_scheduler_job.ref_sync_shadow
   `__CR`, только SELECT. И1, И3, И7–И10 = 0. Число объектов `__CR` = числу в списке WB.
 
 **S4. Переключение вечером (ACK MIG-M5-CUTOVER).**
-1. PR: `m5_prod_enabled` default → `true`. `infra.yml` plan с targets — prod-аналоги списка S1
+1. GitHub Variable `M5_PROD_ENABLED` = `true`. `infra.yml` plan с targets — prod-аналоги списка S1
    (`wb_supplies_prod*`, `wb_supplies_prod_secret`, `wb_supplies_prod_write`, `ref_sync_prod*`,
    `ref_sync_prod_write`, ключ `prod` у `ref_sync_jobuser` / `ref_sync_actas_*`, invoker и Scheduler
    prod) → ACK → apply. Job создаётся, Scheduler — PAUSED.
-2. `deploy-prod.yml` с digest, прошедшим shadow: обновятся только `wb-supplies-prod` и `ref-sync-prod`.
-   Workflow обновляет все prod-Job'ы из своего списка тем же digest. Если это нежелательно,
-   выполнить только два `gcloud run jobs update` из шага M5.
+2. `deploy-prod.yml` с digest, прошедшим shadow, режим **`only_job=wb-supplies-ref`**: обновятся только
+   `wb-supplies-prod` и `ref-sync-prod` (шаг «Deploy M5» общей ветки #423). Последний шаг workflow
+   (`tools/deploy_scope_check.py`) валит выкат, если изменился любой другой Job. Режим `all` для
+   cutover не использовать: он обновляет все prod-Job'ы и требует фразы `PROMOTE-ALL-PROD`.
 3. В Apps Script снять триггеры `runWbSuppliesDaily` и `runRefSync`. Делает владелец в
    редакторе: «Триггеры».
 4. `scheduler-control` → `run-now` для `wb-supplies` и `ref-sync` в prod. Проверить:
@@ -292,14 +298,16 @@ Shadow-таблицы `__CR` удаляются Terraform'ом отдельно,
 ## 7. Что нужно для shadow-выпуска
 
 - **Terraform:** `infra/terraform/wb_supplies_loader.tf`, `infra/terraform/ref_sync_loader.tf`,
-  флаги — `infra/terraform/m5_variables.tf` (по умолчанию false); targets — §4 S1.
+  флаги — `infra/terraform/m5_variables.tf` (по умолчанию false), включение — GitHub Variables
+  `M5_SHADOW_ENABLED` / `M5_PROD_ENABLED`; targets — §4 S1.
   `terraform validate` (`-backend=false`): Success.
 - **Секрет:** `WB_TOKEN_SUPPLIES`. Data-источник читается только при включённом флаге; без секрета
   plan с флагом упадёт — это fail-closed, чужие задачи не блокируются.
 - **Доступ:** «Читатель» книги для `sa-ref-sync-shadow`.
-- **Образ:** любой из `main` после merge; деплой-шаги добавлены в `deploy-shadow.yml` (только
-  образ — env shadow-Job'ов принадлежит Terraform) и `deploy-prod.yml` (образ + IMAGE_DIGEST/GIT_SHA,
-  env prod в `ignore_changes`) с проверкой существования Job'а.
+- **Образ:** любой из `main` после merge; деплой-шаги — `deploy-shadow.yml` (только образ — env
+  shadow-Job'ов принадлежит Terraform) и `deploy-prod.yml` режим `only_job=wb-supplies-ref` из общей
+  ветки #423 (образ + IMAGE_DIGEST/GIT_SHA, env prod в `ignore_changes`) с проверкой существования
+  Job'а.
 - **Расписания:** shadow — 02:39/05:39 и 08:32 МСК; prod — 02:29/05:29 и 08:22 МСК. Все
   создаются PAUSED, `scheduler-control` знает `wb-supplies` и `ref-sync`.
 - **Алерты:** запись `loader_failed` с непустым `code` пишется, как у остальных загрузчиков.

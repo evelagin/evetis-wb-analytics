@@ -5,7 +5,8 @@
  *
  * Порядок (каждый шаг — только после успеха предыдущего):
  *   1. проверка контура (до токена, WB и BigQuery);
- *   2. токен из Secret Manager; истёкший по claim exp — отказ ДО WB;
+ *   2. токен из Secret Manager; общий assertWbTokenUsable (http/wbToken.ts): истёкший по claim exp —
+ *      WB_SUPPLIES_TOKEN_EXPIRED ДО WB, скоро истекает — warn WB_TOKEN_EXPIRING_SOON;
  *   3. список → watermark из целевой шапки → выбор объектов (§7.3);
  *   4. по объекту: карточка и состав (пауза 900 мс), порциями по 40 объектов:
  *        LOAD goods порции → LOAD header порции (commit-marker).
@@ -14,10 +15,11 @@
  */
 import type { LoaderContext, LoaderResult } from '../types.js';
 import { LoaderError } from '../../errors.js';
+import { WB_TOKEN_EXPIRY_WARN_DAYS, assertWbTokenUsable } from '../../http/wbToken.js';
 import { SecretsClient } from '../../secrets.js';
 import type { Logger } from '../../logging.js';
 import { assertSuppliesTargets, suppliesEnv, type SuppliesEnv } from './targets.js';
-import { WbSuppliesApi, tokenExpiryMs, type SuppliesApi } from './wbApi.js';
+import { WB_SUPPLIES_CODE_PREFIX, WbSuppliesApi, type SuppliesApi } from './wbApi.js';
 import { SuppliesBq, suppliesJobId } from './bq.js';
 import {
   dailyRunId, duplicateBarcodes, goodsRow, headerRow, selectTodo, toId,
@@ -25,7 +27,7 @@ import {
 } from './normalize.js';
 import {
   WB_SUPPLIES_COMMIT_CHUNK, WB_SUPPLIES_HTTP_BACKOFF_BASE_MS, WB_SUPPLIES_HTTP_BACKOFF_CAP_MS,
-  WB_SUPPLIES_HTTP_MAX_RETRIES, WB_SUPPLIES_PAUSE_MS, WB_SUPPLIES_TIME_BUDGET_MS, WB_TOKEN_EXPIRY_WARN_DAYS,
+  WB_SUPPLIES_HTTP_MAX_RETRIES, WB_SUPPLIES_PAUSE_MS, WB_SUPPLIES_TIME_BUDGET_MS,
 } from './constants.js';
 
 /** Минимум, который нужен ядру от BigQuery (фейк в тестах). */
@@ -37,7 +39,7 @@ export interface SuppliesStore {
 export interface SuppliesDeps {
   env: NodeJS.ProcessEnv;
   readToken: (secret: string) => Promise<string>;
-  makeApi: (host: string, token: string, logger: Logger) => SuppliesApi;
+  makeApi: (host: string, token: string, logger: Logger, secretName: string) => SuppliesApi;
   makeStore: () => SuppliesStore;
   nowMs: () => number;
   sleep: (ms: number) => Promise<void>;
@@ -51,10 +53,10 @@ export function defaultSuppliesDeps(ctx: LoaderContext): SuppliesDeps {
   return {
     env: process.env,
     readToken: (s) => new SecretsClient(config.projectId).access(s),
-    makeApi: (host, token, logger) => new WbSuppliesApi(host, token, {
+    makeApi: (host, token, logger, secretName) => new WbSuppliesApi(host, token, {
       timeoutMs: config.wbHttpTimeoutMs, maxRetries: WB_SUPPLIES_HTTP_MAX_RETRIES,
       backoffBaseMs: WB_SUPPLIES_HTTP_BACKOFF_BASE_MS, backoffCapMs: WB_SUPPLIES_HTTP_BACKOFF_CAP_MS,
-    }, logger),
+    }, logger, undefined, secretName),
     makeStore: () => new SuppliesBq(config.projectId, config.bqLocation, config.rawDataset),
     nowMs: () => Date.now(),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -75,18 +77,13 @@ export async function suppliesLoader(ctx: LoaderContext, deps: SuppliesDeps = de
   const snapshotTs = new Date(t0).toISOString();
 
   // 2. Токен. Значение не логируется; в журнал — только имя секрета и срок.
+  // Пустой → WB_SUPPLIES_AUTH; истёкший → WB_SUPPLIES_TOKEN_EXPIRED; < 14 суток → warn WB_TOKEN_EXPIRING_SOON.
   const token = (await deps.readToken(e.secret)).trim();
-  if (!token) throw new LoaderError(`секрет ${e.secret} пуст`, 'WB_SUPPLIES_AUTH');
-  const exp = tokenExpiryMs(token);
-  if (exp !== null) {
-    const daysLeft = Math.floor((exp - t0) / 86_400_000);
-    if (exp <= t0) throw new LoaderError(`токен ${e.secret} истёк ${new Date(exp).toISOString()} — нужна новая версия секрета`, 'WB_SUPPLIES_TOKEN_EXPIRED');
-    if (daysLeft < WB_TOKEN_EXPIRY_WARN_DAYS) {
-      logger.warn('wb_token_expiring', { code: 'WB_TOKEN_EXPIRING_SOON', secret: e.secret, daysLeft, expiresAt: new Date(exp).toISOString() });
-    }
-  }
+  assertWbTokenUsable(token, e.secret, {
+    codePrefix: WB_SUPPLIES_CODE_PREFIX, logger, warnDays: WB_TOKEN_EXPIRY_WARN_DAYS, nowMs: t0,
+  });
 
-  const api = deps.makeApi(e.host, token, logger);
+  const api = deps.makeApi(e.host, token, logger, e.secret);
   const store = deps.makeStore();
 
   // 3. Список и watermark (из целевой таблицы контура).

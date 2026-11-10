@@ -8,12 +8,17 @@
  * 🔴 Диагноз 100 % отказов Apps Script (31.10–10.11.2026): прогон умирал ДО первого запроса
  * в BigQuery, то есть на токене или на списке; в те же минуты статистика и реклама получали
  * 401 «token is expired». Поэтому отказ авторизации здесь — отдельный код WB_SUPPLIES_AUTH
- * (детерминированный, без повторов), а срок токена проверяется ДО запроса (tokenExpiry).
+ * (детерминированный, без повторов) из общего wbAuthError, а срок токена проверяется ДО запроса
+ * общим assertWbTokenUsable (cloud/src/http/wbToken.ts, PR #423) — в index.ts.
  */
 import { wbFetch, type WbHttpOptions, type WbHttpResult } from '../../http/wbHttp.js';
+import { isWbAuthStatus, redactTokenLike, wbAuthError } from '../../http/wbToken.js';
 import type { Logger } from '../../logging.js';
 import { LoaderError } from '../../errors.js';
-import { WB_SUPPLIES_PAGE_LIMIT } from './constants.js';
+import { WB_SUPPLIES_PAGE_LIMIT, WB_SUPPLIES_SECRET } from './constants.js';
+
+/** Префикс кодов потока: WB_SUPPLIES_AUTH / WB_SUPPLIES_TOKEN_EXPIRED. */
+export const WB_SUPPLIES_CODE_PREFIX = 'WB_SUPPLIES';
 
 type Obj = Record<string, unknown>;
 export type Fetcher = (url: string, init: RequestInit, opts: WbHttpOptions, logger?: Logger) => Promise<WbHttpResult>;
@@ -42,6 +47,8 @@ export class WbSuppliesApi implements SuppliesApi {
     private readonly opts: WbHttpOptions,
     private readonly logger?: Logger,
     private readonly fetcher: Fetcher = wbFetch,
+    /** Имя секрета — только для текста ошибки; значение токена в ошибки и лог не попадает. */
+    private readonly secretName: string = WB_SUPPLIES_SECRET,
   ) {}
 
   private async call(method: 'GET' | 'POST', path: string, what: string): Promise<unknown> {
@@ -50,10 +57,8 @@ export class WbSuppliesApi implements SuppliesApi {
       : { method, headers: { Authorization: this.token } };
     const r = await this.fetcher(this.host + path, init, this.opts, this.logger);
     if (r.status === 200 || r.status === 204) return parse(r.body);
-    const tail = r.body.slice(0, 200).replace(/\s+/g, ' ');
-    if (r.status === 401 || r.status === 403) {
-      throw new LoaderError(`WB supplies ${what}: HTTP ${r.status} — токен WB_TOKEN_SUPPLIES отклонён (истёк или без категории «Поставки»): ${tail}`, 'WB_SUPPLIES_AUTH');
-    }
+    if (isWbAuthStatus(r.status)) throw wbAuthError(WB_SUPPLIES_CODE_PREFIX, this.secretName, r.status, `supplies ${what}`, r.body);
+    const tail = redactTokenLike(r.body.slice(0, 200).replace(/\s+/g, ' '));
     if (r.status === 0) throw new LoaderError(`WB supplies ${what}: сеть — ${r.error ?? 'нет ответа'}`, 'WB_SUPPLIES_NETWORK');
     throw new LoaderError(`WB supplies ${what}: HTTP ${r.status} :: ${tail}`, 'WB_SUPPLIES_HTTP');
   }
@@ -86,18 +91,3 @@ export class WbSuppliesApi implements SuppliesApi {
   }
 }
 
-/**
- * Срок токена WB из claim `exp` (токен — JWT). Значение токена не логируется и не возвращается.
- * null — срок не читается (не JWT / нет exp): проверка пропускается, решает ответ WB.
- */
-export function tokenExpiryMs(token: string): number | null {
-  const parts = token.trim().replace(/^Bearer\s+/i, '').split('.');
-  if (parts.length !== 3) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1]!.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) as { exp?: unknown };
-    const exp = Number(payload.exp);
-    return Number.isFinite(exp) && exp > 0 ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}

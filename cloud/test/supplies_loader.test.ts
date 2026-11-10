@@ -2,10 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { JobLoadMetadata } from '@google-cloud/bigquery';
 import { suppliesLoader, type SuppliesDeps, type SuppliesStore } from '../src/loaders/supplies/index.js';
 import { assertSuppliesTargets, suppliesEnv } from '../src/loaders/supplies/targets.js';
-import { WbSuppliesApi, tokenExpiryMs, rowsOf, type SuppliesApi } from '../src/loaders/supplies/wbApi.js';
+import { WbSuppliesApi, rowsOf, type Fetcher, type SuppliesApi } from '../src/loaders/supplies/wbApi.js';
 import { SuppliesBq, suppliesJobId, type BqLike } from '../src/loaders/supplies/bq.js';
 import { wbFetch } from '../src/http/wbHttp.js';
 import { LoaderError } from '../src/errors.js';
+import { classifyFailure } from '../src/failure.js';
+import { WB_TOKEN_EXPIRING_SOON } from '../src/http/wbToken.js';
 import { Logger } from '../src/logging.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import type { Config } from '../src/config.js';
@@ -77,21 +79,102 @@ describe('поставки — проверка контура до записи
   });
 });
 
-describe('поставки — токен (причина 100 % отказов Apps Script)', () => {
-  it('истёкший по exp токен — WB_SUPPLIES_TOKEN_EXPIRED до обращения к WB', async () => {
-    const d = deps({ token: jwt(Math.floor(NOW / 1000) - 60) });
-    await expect(suppliesLoader(ctx('shadow'), d)).rejects.toMatchObject({ code: 'WB_SUPPLIES_TOKEN_EXPIRED' });
-    expect(d.api.calls).toEqual([]);
+describe('поставки — токен (причина 100 % отказов Apps Script), общий http/wbToken.ts', () => {
+  /** Синтетический JWT со «секретной» подписью-маркером: её не должно быть ни в ошибке, ни в логе. */
+  const SECRET_SIG = 'c3ludGhldGljLXNpZ25hdHVyZS1kby1ub3QtbGVhaw';
+  const synth = (expSec: number) => [
+    Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ exp: expSec, id: 'synthetic-supplies' })).toString('base64url'),
+    SECRET_SIG,
+  ].join('.');
+  /** Лог в память: Logger пишет в stdout/stderr — перехватываем оба. */
+  function captureLog(): { lines: string[]; restore: () => void } {
+    const lines: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => { lines.push(String(c)); return true; });
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => { lines.push(String(c)); return true; });
+    return { lines, restore: () => { out.mockRestore(); err.mockRestore(); } };
+  }
+  function infoCtx(environment: 'shadow' | 'prod' = 'shadow'): LoaderContext {
+    return { ...ctx(environment), logger: new Logger({}, 'debug') };
+  }
+  /** Настоящий WbSuppliesApi со шпионом-fetcher: считаем фактические HTTP-запросы. */
+  function realApiDeps(token: string, fetcher: Fetcher) {
+    const store = new FakeStore();
+    const makeApi = vi.fn((host: string, tok: string, logger: Logger, secret: string) =>
+      new WbSuppliesApi(host, tok, { timeoutMs: 10, maxRetries: 3 }, logger, fetcher, secret));
+    const d: SuppliesDeps = {
+      env: {}, readToken: async () => token, makeApi, makeStore: () => store, nowMs: () => NOW,
+      sleep: async () => undefined, pauseMs: 0, budgetMs: 60_000, chunk: 40,
+    };
+    return { d, store, makeApi };
+  }
+
+  it('истёкший по exp токен — WB_SUPPLIES_TOKEN_EXPIRED, DETERMINISTIC, ни одного fetch и записи', async () => {
+    const token = synth(Math.floor(NOW / 1000) - 60);
+    const fetcher = vi.fn<Fetcher>();
+    const { d, store, makeApi } = realApiDeps(token, fetcher);
+    const cap = captureLog();
+    let err: unknown;
+    try { await suppliesLoader(infoCtx(), d); } catch (e) { err = e; } finally { cap.restore(); }
+    expect(classifyFailure(err)).toEqual({ code: 'WB_SUPPLIES_TOKEN_EXPIRED', category: 'DETERMINISTIC' });
+    expect((err as Error).message).toContain('WB_TOKEN_SUPPLIES');
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(makeApi).not.toHaveBeenCalled();
+    expect(store.loads).toEqual([]);
+    expect(store.knownFrom).toEqual([]);
+    const text = (err as Error).message + cap.lines.join('');
+    expect(text).not.toContain(SECRET_SIG);
+    expect(text).not.toContain(token.split('.')[1]!);
   });
-  it('срок читается из claim exp; не-JWT — null (решает ответ WB)', () => {
-    expect(tokenExpiryMs(jwt(1_800_000_000))).toBe(1_800_000_000_000);
-    expect(tokenExpiryMs('not-a-jwt')).toBeNull();
+
+  it('пустой секрет — WB_SUPPLIES_AUTH до WB', async () => {
+    const fetcher = vi.fn<Fetcher>();
+    const { d } = realApiDeps('  \n', fetcher);
+    await expect(suppliesLoader(ctx('shadow'), d)).rejects.toMatchObject({ code: 'WB_SUPPLIES_AUTH' });
+    expect(fetcher).not.toHaveBeenCalled();
   });
-  it('401 от WB — WB_SUPPLIES_AUTH без повторов', async () => {
-    const fetcher = vi.fn(async () => ({ ok: false, status: 401, body: '{"title":"Unauthorized","detail":"token is expired"}', attempts: 1 }));
-    const api = new WbSuppliesApi('https://h', 't', { timeoutMs: 10, maxRetries: 3 }, undefined, fetcher);
-    await expect(api.list()).rejects.toMatchObject({ code: 'WB_SUPPLIES_AUTH' });
+
+  it('скоро истекает — warn wb_token_expiring с кодом WB_TOKEN_EXPIRING_SOON, прогон идёт дальше', async () => {
+    const token = synth(Math.floor(NOW / 1000) + 3 * 86_400 + 60);
+    const fetcher = vi.fn<Fetcher>(async () => ({ ok: true, status: 200, body: '[]', attempts: 1 }));
+    const { d } = realApiDeps(token, fetcher);
+    const cap = captureLog();
+    try { await suppliesLoader(infoCtx(), d); } finally { cap.restore(); }
+    const warn = cap.lines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((r) => r.message === 'wb_token_expiring');
+    expect(warn).toHaveLength(1);
+    expect(warn[0]).toMatchObject({ severity: 'WARN', code: WB_TOKEN_EXPIRING_SOON, secret: 'WB_TOKEN_SUPPLIES', daysLeft: 3 });
+    expect(fetcher).toHaveBeenCalledTimes(1); // список
+    const log = cap.lines.join('');
+    expect(log).not.toContain(SECRET_SIG);
+    expect(log).not.toContain(token.split('.')[1]!);
+  });
+
+  it.each([401, 403])('HTTP %i от WB — WB_SUPPLIES_AUTH, DETERMINISTIC, ровно один запрос; токена нет в тексте и логе', async (status) => {
+    const token = synth(Math.floor(NOW / 1000) + 90 * 86_400);
+    // WB иногда эхом возвращает заголовок — проверяем, что и это не утекает.
+    const body = `{"title":"unauthorized","detail":"token is expired","echo":"Bearer ${token}"}`;
+    const fetcher = vi.fn<Fetcher>(async () => ({ ok: false, status, body, attempts: 1 }));
+    const { d, store } = realApiDeps(token, fetcher);
+    const cap = captureLog();
+    let err: unknown;
+    try { await suppliesLoader(infoCtx(), d); } catch (e) { err = e; } finally { cap.restore(); }
+    expect(classifyFailure(err)).toEqual({ code: 'WB_SUPPLIES_AUTH', category: 'DETERMINISTIC' });
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.loads).toEqual([]);
+    const msg = (err as Error).message;
+    expect(msg).toContain(`HTTP ${status}`);
+    expect(msg).toContain('WB_TOKEN_SUPPLIES');
+    expect(msg).toContain(status === 401 ? 'истёк или отозван' : 'нет категории доступа');
+    const text = msg + cap.lines.join('');
+    expect(text).not.toContain(SECRET_SIG);
+    expect(text).not.toContain(token.split('.')[1]!);
+  });
+
+  it('имя секрета в ошибке — из env контура (WB_SUPPLIES_SECRET), а не константа', async () => {
+    const fetcher = vi.fn<Fetcher>(async () => ({ ok: false, status: 401, body: '', attempts: 1 }));
+    const { d } = realApiDeps(synth(Math.floor(NOW / 1000) + 90 * 86_400), fetcher);
+    d.env = { WB_SUPPLIES_SECRET: 'WB_TOKEN_SUPPLIES_V2' };
+    await expect(suppliesLoader(ctx('shadow'), d)).rejects.toThrow(/WB_TOKEN_SUPPLIES_V2/);
   });
 });
 

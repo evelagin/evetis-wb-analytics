@@ -38,6 +38,4 @@ export const WB_SUPPLIES_HTTP_BACKOFF_CAP_MS = 16000;
 export const WB_SUPPLIES_TIME_BUDGET_MS = 20 * 60 * 1000;
 /** Cloud Run: объектов на один коммит (goods-load → header-load). */
 export const WB_SUPPLIES_COMMIT_CHUNK = 40;
-/** Cloud Run: предупреждать о сроке токена заранее, суток. */
-export const WB_TOKEN_EXPIRY_WARN_DAYS = 14;
 export const TZ_MSK = 'Europe/Moscow';
