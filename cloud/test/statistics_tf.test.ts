@@ -24,10 +24,10 @@ function block(type: string, name: string): string {
 describe('Terraform M2', () => {
   it('shadow Job: SA shadow, таблицы __CR', () => {
     const b = block('google_cloud_run_v2_job', 'wb_statistics_shadow');
-    expect(b).toMatch(/wb_statistics_shadow\.email/);
+    expect(b).toMatch(/wb_statistics_shadow\[0\]\.email/);
     expect(b).toMatch(/ENVIRONMENT\s+= "shadow"/);
-    expect(b).toMatch(/ORDERS_RAW_TABLE\s+= google_bigquery_table\.raw_wb_orders_cr\.table_id/);
-    expect(b).toMatch(/SALES_RAW_TABLE\s+= google_bigquery_table\.raw_wb_sales_returns_cr\.table_id/);
+    expect(b).toMatch(/ORDERS_RAW_TABLE\s+= google_bigquery_table\.raw_wb_orders_cr\[0\]\.table_id/);
+    expect(b).toMatch(/SALES_RAW_TABLE\s+= google_bigquery_table\.raw_wb_sales_returns_cr\[0\]\.table_id/);
     expect(TF).toMatch(/table_id\s+= "RAW_WB_ORDERS__CR"/);
     expect(TF).toMatch(/table_id\s+= "RAW_WB_SALES_RETURNS__CR"/);
   });
@@ -44,8 +44,8 @@ describe('Terraform M2', () => {
 
   it('IAM: свои SA; shadow пишет только __CR, prod — только боевые; sa-loaders-* не расширяются', () => {
     expect(TF).not.toMatch(/loaders_(shadow|prod)/);
-    expect(block('google_bigquery_table_iam_member', 'shadow_write_orders_cr')).toMatch(/wb_statistics_shadow\.email/);
-    expect(block('google_bigquery_table_iam_member', 'shadow_write_sales_cr')).toMatch(/wb_statistics_shadow\.email/);
+    expect(block('google_bigquery_table_iam_member', 'shadow_write_orders_cr')).toMatch(/raw_wb_orders_cr\[0\][\s\S]*wb_statistics_shadow\[0\]\.email/);
+    expect(block('google_bigquery_table_iam_member', 'shadow_write_sales_cr')).toMatch(/raw_wb_sales_returns_cr\[0\][\s\S]*wb_statistics_shadow\[0\]\.email/);
     expect(block('google_bigquery_table_iam_member', 'prod_write_orders')).toMatch(/statistics_prod_tables\.orders[\s\S]*wb_statistics_prod\[0\]\.email/);
     expect(block('google_bigquery_table_iam_member', 'prod_write_sales')).toMatch(/statistics_prod_tables\.sales[\s\S]*wb_statistics_prod\[0\]\.email/);
     for (const r of ['wb_statistics_jobuser', 'wb_statistics_write_runs', 'wb_statistics_read_ref', 'wb_statistics_actas_deployer', 'wb_statistics_actas_terraform']) {
@@ -67,6 +67,35 @@ describe('Terraform M2', () => {
     expect(TF).toMatch(/var\.m2_prod_enabled \? \{ prod = google_service_account\.wb_statistics_prod\[0\] \} : \{\}/);
     const vars = readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'infra', 'terraform', 'variables.tf'), 'utf8');
     expect(vars).toMatch(/variable "m2_prod_enabled" \{\s*type\s+= bool\s*default = false/);
+  });
+
+  it('весь shadow-контур — только при m2_shadow_enabled (по умолчанию false)', () => {
+    expect(block('google_service_account', 'wb_statistics_shadow')).toMatch(/count\s+= var\.m2_shadow_enabled \? 1 : 0/);
+    for (const [t, n] of [
+      ['google_bigquery_table', 'raw_wb_orders_cr'], ['google_bigquery_table', 'raw_wb_sales_returns_cr'],
+      ['google_bigquery_table_iam_member', 'shadow_write_orders_cr'], ['google_bigquery_table_iam_member', 'shadow_write_sales_cr'],
+    ] as const) {
+      expect(block(t, n), n).toMatch(/count\s+= var\.m2_shadow_enabled \? 1 : 0/);
+    }
+    expect(block('google_cloud_run_v2_job', 'wb_statistics_shadow')).toMatch(/for_each\s+= var\.m2_shadow_enabled \? local\.statistics_loaders : \{\}/);
+    expect(block('google_cloud_run_v2_job_iam_member', 'scheduler_statistics_shadow_invoke')).toMatch(/for_each\s+= var\.m2_shadow_enabled \? local\.statistics_loaders : \{\}/);
+    expect(block('google_cloud_scheduler_job', 'wb_statistics_shadow')).toMatch(/for_each\s+= var\.m2_shadow_enabled \? local\.statistics_loaders : \{\}/);
+    // SA shadow (и его права/секрет через local.statistics_sa) — только при флаге.
+    expect(TF).toMatch(/var\.m2_shadow_enabled \? \{ shadow = google_service_account\.wb_statistics_shadow\[0\] \} : \{\}/);
+    // Секрет читается только при включённом контуре.
+    expect(TF).toMatch(/data "google_secret_manager_secret" "wb_token_statistics" \{\s*count\s+= length\(local\.statistics_sa\) > 0 \? 1 : 0/);
+    const vars = readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'infra', 'terraform', 'variables.tf'), 'utf8');
+    expect(vars).toMatch(/variable "m2_shadow_enabled" \{\s*type\s+= bool\s*default = false/);
+  });
+
+  it('каждый resource M2 — под флагом контура: без флагов ни одного ресурса', () => {
+    const heads = [...TF.matchAll(/^resource "([a-z0-9_]+)" "([a-z0-9_]+)" \{\n([^\n]*)/gm)];
+    expect(heads.length).toBeGreaterThan(10);
+    for (const [, t, n, first] of heads) {
+      const b = block(t!, n!);
+      const gated = /(count|for_each)\s+= (var\.m2_(shadow|prod)_enabled \?|local\.statistics_(sa|ref_grants)\b)/.test(b);
+      expect(gated, `${t}.${n}: ${first}`).toBe(true);
+    }
   });
 
   it('таймауты Job не меньше худшего случая с повтором cli', () => {

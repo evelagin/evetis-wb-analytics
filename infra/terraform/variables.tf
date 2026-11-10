@@ -69,9 +69,17 @@ variable "statistics_shadow_sales_bootstrap_watermark" {
   default = ""
 }
 
-# M2: prod-контур загрузчиков statistics-api (SA, права, секрет, Job, invoker, Scheduler).
-# false (по умолчанию) — prod не создаётся ни при каком apply. true — ТОЛЬКО в вечер переключения
-# по ACK M2-CUTOVER (docs/ops/MIG_M2_STATISTICS_RUNBOOK.md §5).
+# M2: флаги контуров загрузчиков statistics-api — единая схема M2–M5 (mN_{shadow,prod}_enabled, bool,
+# default false). В infra.yml: TF_VAR_m2_*_enabled = vars.M2_*_ENABLED == 'true' (не задана → false).
+# shadow-контур (SA, права, секрет, таблицы __CR, Job, invoker, Scheduler). false (по умолчанию) —
+# shadow не создаётся ни при каком apply. true — по ACK M2-SHADOW (docs/ops/MIG_M2_STATISTICS_RUNBOOK.md §4).
+variable "m2_shadow_enabled" {
+  type    = bool
+  default = false
+}
+
+# prod-контур (SA, права, секрет, Job, invoker, Scheduler). false (по умолчанию) — prod не создаётся
+# ни при каком apply. true — ТОЛЬКО в вечер переключения по ACK M2-CUTOVER (runbook §5).
 variable "m2_prod_enabled" {
   type    = bool
   default = false

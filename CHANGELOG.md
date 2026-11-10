@@ -23,6 +23,13 @@ at-least-once, привязка SKU при загрузке. Runbook: `docs/ops/
   его не двигают, как у Apps Script; свои SA `sa-wb-statistics-{shadow,prod}`; весь prod-контур — только при
   `m2_prod_enabled=true` (по умолчанию false); таймауты `wb-sales*` 900 с, `wb-orders` 3600 с; `DRY_RUN` разбирается
   как в `cli.ts`.
+- После общего PR #423 (влит merge-коммитом): **F4** — второй флаг `m2_shadow_enabled` (bool, default false); под ним
+  весь shadow-контур этого PR (SA, его права и доступ к секрету, `RAW_WB_ORDERS__CR`/`RAW_WB_SALES_RETURNS__CR` и запись
+  в них, 3 Job, 3 invoker, 3 Scheduler); data секрета — только при включённом контуре; wiring — только общий `infra.yml`
+  (`vars.M2_{SHADOW,PROD}_ENABLED == 'true'`). Ресурсы из `main` не менялись. **F5** — срок токена проверяется до
+  BigQuery и WB API (`WB_STATS_TOKEN_EXPIRED`, warn `WB_TOKEN_EXPIRING_SOON`); 401/403 → `WB_STATS_AUTH` (детерминированный,
+  без повтора) вместо `ORDERS_PARTIAL`/`SALES_ERROR`. Схема колонок не менялась. Тесты: `cloud/test/statistics_token.test.ts`,
+  `cloud/test/statistics_tf.test.ts`. Выкат prod — режим `only_job=wb-statistics` общего `deploy-prod.yml`.
 
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 

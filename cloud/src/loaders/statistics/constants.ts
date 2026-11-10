@@ -70,4 +70,8 @@ export const SALES_BOOL_FIELDS: ReadonlySet<string> = new Set(['is_supply', 'is_
 export const STATS_HTTP_MAX_RETRIES = 3;
 export const STATS_HTTP_BASE_DELAY_MS = 20_000;
 export const STATS_HTTP_MAX_DELAY_MS = 60_000;
+// 401/403 сюда НЕ входят и входить не должны: повтор отклонённого токена не лечит, а тратит лимит WB
+// (1 запрос/мин на метод). Отказ авторизации — детерминированный WB_STATS_AUTH (index.ts).
 export const STATS_HTTP_RETRY_CODES: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
+/** Префикс кодов токена потока: WB_STATS_TOKEN_EXPIRED, WB_STATS_AUTH (http/wbToken.ts). */
+export const WB_STATS_CODE_PREFIX = 'WB_STATS';

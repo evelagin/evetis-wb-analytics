@@ -10,9 +10,14 @@
 #   *-prod   → sa-wb-statistics-prod:   пишет ТОЛЬКО боевые RAW_WB_ORDERS / RAW_WB_SALES_RETURNS.
 # Контур дополнительно проверяет код (statistics/targets.ts) ДО секрета и WB API.
 #
-# 🔴 ВЕСЬ prod-контур (SA, его права, доступ к секрету, Job, invoker, Scheduler) создаётся ТОЛЬКО при
-# var.m2_prod_enabled = true (по умолчанию false): нецелевой `infra.yml apply` до вечера переключения
-# prod не создаст. Включение флага — шаг M2-CUTOVER (runbook §5). Все Scheduler создаются НА ПАУЗЕ.
+# 🔴 Оба контура — под флагами единой схемы M2–M5 (tools/tests/test_stream_enable_flags.py), оба bool,
+# по умолчанию false; в infra.yml подключены к GitHub Variables M2_SHADOW_ENABLED / M2_PROD_ENABLED:
+#   var.m2_shadow_enabled — ВЕСЬ shadow-контур (SA, его права, доступ к секрету, таблицы __CR, Job,
+#     invoker, Scheduler). Включение — шаг M2-SHADOW (runbook §4);
+#   var.m2_prod_enabled — ВЕСЬ prod-контур (SA, его права, доступ к секрету, Job, invoker, Scheduler).
+#     Включение — шаг M2-CUTOVER (runbook §5).
+# Пока флаг не задан, нецелевой `infra.yml apply` не создаёт ни одного ресурса M2. Все Scheduler
+# создаются НА ПАУЗЕ. Ресурсы, которые уже есть в main, под флаги не поставлены.
 # Алерт отдельный не нужен: политики loader_failed и scheduler_attempt_failed не сужены до Job'а и
 # покрывают новые Job'ы сразу (scheduler.tf, unitka_monitoring.tf).
 # ============================================================================
@@ -63,6 +68,7 @@ locals {
 
 # ── Runtime-SA ───────────────────────────────────────────────────────────────
 resource "google_service_account" "wb_statistics_shadow" {
+  count        = var.m2_shadow_enabled ? 1 : 0
   account_id   = "sa-wb-statistics-shadow"
   display_name = "WB statistics loaders runtime (SHADOW): orders/sales → *__CR"
 }
@@ -75,7 +81,7 @@ resource "google_service_account" "wb_statistics_prod" {
 
 locals {
   statistics_sa = merge(
-    { shadow = google_service_account.wb_statistics_shadow },
+    var.m2_shadow_enabled ? { shadow = google_service_account.wb_statistics_shadow[0] } : {},
     var.m2_prod_enabled ? { prod = google_service_account.wb_statistics_prod[0] } : {},
   )
   statistics_ref_grants = merge([
@@ -123,14 +129,16 @@ resource "google_service_account_iam_member" "wb_statistics_actas_terraform" {
 }
 
 # ── Секрет «Статистика». Создан владельцем вручную (план M2, §2: v1 от 28.09; актуальность
-#    проверить до shadow). Terraform его НЕ создаёт и значения не хранит.
+#    проверить до shadow). Terraform его НЕ создаёт и значения не хранит. Читается (data) только
+#    при включённом контуре: при обоих флагах false план M2 не обращается к секрету вовсе.
 data "google_secret_manager_secret" "wb_token_statistics" {
+  count     = length(local.statistics_sa) > 0 ? 1 : 0
   secret_id = "WB_TOKEN_STATISTICS"
 }
 
 resource "google_secret_manager_secret_iam_member" "wb_statistics_secret_access" {
   for_each  = local.statistics_sa
-  secret_id = data.google_secret_manager_secret.wb_token_statistics.id
+  secret_id = data.google_secret_manager_secret.wb_token_statistics[0].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${each.value.email}"
 }
@@ -138,6 +146,7 @@ resource "google_secret_manager_secret_iam_member" "wb_statistics_secret_access"
 # ── Теневые RAW: зеркало живых схем (tables.get, 10.11.2026), включая ПОРЯДОК колонок,
 #    партицию и кластер. Все колонки заказов — STRING (так их пишет Apps Script).
 resource "google_bigquery_table" "raw_wb_orders_cr" {
+  count               = var.m2_shadow_enabled ? 1 : 0
   dataset_id          = var.raw_dataset
   table_id            = "RAW_WB_ORDERS__CR"
   deletion_protection = false
@@ -162,6 +171,7 @@ resource "google_bigquery_table" "raw_wb_orders_cr" {
 }
 
 resource "google_bigquery_table" "raw_wb_sales_returns_cr" {
+  count               = var.m2_shadow_enabled ? 1 : 0
   dataset_id          = var.raw_dataset
   table_id            = "RAW_WB_SALES_RETURNS__CR"
   deletion_protection = false
@@ -217,17 +227,19 @@ resource "google_bigquery_table" "raw_wb_sales_returns_cr" {
 
 # ── Запись: каждый контур — ровно в свои две таблицы ──
 resource "google_bigquery_table_iam_member" "shadow_write_orders_cr" {
+  count      = var.m2_shadow_enabled ? 1 : 0
   dataset_id = var.raw_dataset
-  table_id   = google_bigquery_table.raw_wb_orders_cr.table_id
+  table_id   = google_bigquery_table.raw_wb_orders_cr[0].table_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.wb_statistics_shadow.email}"
+  member     = "serviceAccount:${google_service_account.wb_statistics_shadow[0].email}"
 }
 
 resource "google_bigquery_table_iam_member" "shadow_write_sales_cr" {
+  count      = var.m2_shadow_enabled ? 1 : 0
   dataset_id = var.raw_dataset
-  table_id   = google_bigquery_table.raw_wb_sales_returns_cr.table_id
+  table_id   = google_bigquery_table.raw_wb_sales_returns_cr[0].table_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.wb_statistics_shadow.email}"
+  member     = "serviceAccount:${google_service_account.wb_statistics_shadow[0].email}"
 }
 
 # Боевые таблицы создал Apps Script (wbOrdersBqEnsureTable_ / wbSalesBqEnsureTable_), Terraform ими
@@ -250,14 +262,14 @@ resource "google_bigquery_table_iam_member" "prod_write_sales" {
 
 # ── Cloud Run Jobs ───────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_job" "wb_statistics_shadow" {
-  for_each            = local.statistics_loaders
+  for_each            = var.m2_shadow_enabled ? local.statistics_loaders : {}
   name                = "${each.value.job}-shadow"
   location            = var.region
   deletion_protection = false
 
   template {
     template {
-      service_account = google_service_account.wb_statistics_shadow.email
+      service_account = google_service_account.wb_statistics_shadow[0].email
       # Ретрай — следующий слот расписания и один повтор транзиентного отказа внутри прогона
       # (retryTransient в registry.ts). Task-retry Cloud Run добавил бы лишние запросы к WB.
       max_retries = 0
@@ -269,8 +281,8 @@ resource "google_cloud_run_v2_job" "wb_statistics_shadow" {
           for_each = merge(local.common_env, local.statistics_common_env, {
             LOADER_NAME      = each.key
             ENVIRONMENT      = "shadow"
-            ORDERS_RAW_TABLE = google_bigquery_table.raw_wb_orders_cr.table_id
-            SALES_RAW_TABLE  = google_bigquery_table.raw_wb_sales_returns_cr.table_id
+            ORDERS_RAW_TABLE = google_bigquery_table.raw_wb_orders_cr[0].table_id
+            SALES_RAW_TABLE  = google_bigquery_table.raw_wb_sales_returns_cr[0].table_id
             # Стартовый watermark пустой __CR (только shadow, только пока в таблице нет API-строк).
             ORDERS_BOOTSTRAP_WATERMARK = var.statistics_shadow_orders_bootstrap_watermark
             SALES_BOOTSTRAP_WATERMARK  = var.statistics_shadow_sales_bootstrap_watermark
@@ -349,7 +361,7 @@ resource "google_cloud_run_v2_job" "wb_statistics_prod" {
 
 # ── Право запуска — ПОРЕСУРСНО (контракт scheduler_invoker_contract.test.ts) ──
 resource "google_cloud_run_v2_job_iam_member" "scheduler_statistics_shadow_invoke" {
-  for_each = local.statistics_loaders
+  for_each = var.m2_shadow_enabled ? local.statistics_loaders : {}
   location = var.region
   name     = google_cloud_run_v2_job.wb_statistics_shadow[each.key].name
   role     = "roles/run.invoker"
@@ -366,7 +378,7 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_statistics_prod_invoke"
 
 # ── Scheduler: имя = имя Job (scheduler-control.yml собирает «<loader>-<environment>») ──
 resource "google_cloud_scheduler_job" "wb_statistics_shadow" {
-  for_each  = local.statistics_loaders
+  for_each  = var.m2_shadow_enabled ? local.statistics_loaders : {}
   name      = "${each.value.job}-shadow"
   region    = var.region
   schedule  = each.value.shadow_schedule

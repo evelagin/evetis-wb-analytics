@@ -7,10 +7,13 @@
  *
  * Порядок внутри прогона — fail-closed:
  *   1) контур записи (targets.ts) — до секрета, WB API и BigQuery;
- *   2) watermark и граничные ключи из целевой таблицы (один запрос);
- *   3) WB API; любая неполнота/невалидность → ERROR, ничего не пишем;
- *   4) справочник SKU — только если есть что писать;
- *   5) один load job; watermark «двигается» самим фактом записи (MAX таблицы).
+ *   2) токен (http/wbToken.ts): секрет читается и срок проверяется ДО BigQuery и WB API —
+ *      истёкший → WB_STATS_TOKEN_EXPIRED без единого запроса, скоро истекает → warn
+ *      WB_TOKEN_EXPIRING_SOON; ответ WB 401/403 → WB_STATS_AUTH (детерминированный, без повтора);
+ *   3) watermark и граничные ключи из целевой таблицы (один запрос);
+ *   4) WB API; любая неполнота/невалидность → ERROR, ничего не пишем;
+ *   5) справочник SKU — только если есть что писать;
+ *   6) один load job; watermark «двигается» самим фактом записи (MAX таблицы).
  * Повтор прогона идемпотентен: следующий запуск читает watermark из таблицы, граничные строки
  * сверяет по ключам, поэтому записанное не дублируется (Apps Script при сбое setProperty дописывал
  * строки повторно — см. runbook, «Отличия»).
@@ -18,13 +21,16 @@
 import type { LoaderContext, LoaderResult } from '../types.js';
 import type { Config } from '../../config.js';
 import { LoaderError } from '../../errors.js';
+import type { Logger } from '../../logging.js';
 import { SecretsClient } from '../../secrets.js';
+import { assertWbTokenUsable, wbAuthError } from '../../http/wbToken.js';
 import { assertStatsTarget } from './targets.js';
 import { StatsBq, statsLoadJobId } from './bq.js';
-import { defaultTransport, fetchOrders, fetchSales, type StatsTransport } from './wbApi.js';
+import { defaultTransport, fetchOrders, fetchSales, type StatsTransport, type WbAuthFailure } from './wbApi.js';
 import { buildSkuIndex, isValidWatermark, md5Hex, mskDate, mskDateTime, mskStamp, type SkuIndex } from './common.js';
 import {
   ORDERS_INC_LOADID_PREFIX, SALES_INC_LOADID_PREFIX, SALES_RECON_LOADID_PREFIX, WB_ORDERS_API_PATH, WB_SALES_API_PATH,
+  WB_STATS_CODE_PREFIX,
 } from './constants.js';
 import { normalizeOrdersRows, ordersBatchSums, ordersBqRow, precheckOrders, selectOrdersToAppend, type OrdersPlan } from './orders.js';
 import {
@@ -83,6 +89,18 @@ function resolveWatermark(
 
 const runKey = (runId: string): string => md5Hex(runId).slice(0, 12);
 
+/** Секрет → токен, годный для WB: срок проверяется до первого запроса (значение токена не логируется). */
+async function usableToken(deps: StatsDeps, config: Config, logger: Logger): Promise<string> {
+  const token = await deps.getToken();
+  assertWbTokenUsable(token, config.wbStatisticsSecret, { codePrefix: WB_STATS_CODE_PREFIX, logger, nowMs: deps.now().getTime() });
+  return token;
+}
+
+/** WB отклонил токен (401/403) → WB_STATS_AUTH: не ORDERS_PARTIAL/SALES_ERROR, повтор не лечит. */
+function throwIfAuthRejected(fetched: { auth?: WbAuthFailure }, config: Config, path: string): void {
+  if (fetched.auth) throw wbAuthError(WB_STATS_CODE_PREFIX, config.wbStatisticsSecret, fetched.auth.status, `GET ${path}`, fetched.auth.body);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // orders
 // ─────────────────────────────────────────────────────────────────────────
@@ -90,14 +108,15 @@ const runKey = (runId: string): string => md5Hex(runId).slice(0, 12);
 export async function runOrders(ctx: LoaderContext, deps: StatsDeps): Promise<LoaderResult> {
   const { config, logger } = ctx;
   const table = assertStatsTarget(config, 'orders');
+  const token = await usableToken(deps, config, logger);
   const started = deps.now();
   const loadId = `${ORDERS_INC_LOADID_PREFIX}${mskStamp(started)}`;
   const loadedAt = mskDateTime(started);
 
   const boundary = await deps.bq.ordersBoundary(table);
   const { watermark, bootstrapped } = resolveWatermark('orders', boundary.watermarkStorage, config, ORDERS_ERROR);
-  const token = await deps.getToken();
   const fetched = await fetchOrders(config.wbStatisticsHost, WB_ORDERS_API_PATH, token, watermark, config.wbHttpTimeoutMs, deps.transport, logger);
+  throwIfAuthRejected(fetched, config, WB_ORDERS_API_PATH);
 
   let plan: OrdersPlan | null = precheckOrders({
     watermark, fetchedOk: fetched.ok, fetchedPartial: fetched.partial, fetchError: fetched.error,
@@ -141,14 +160,15 @@ export async function runOrders(ctx: LoaderContext, deps: StatsDeps): Promise<Lo
 export async function runSales(ctx: LoaderContext, deps: StatsDeps): Promise<LoaderResult> {
   const { config, logger } = ctx;
   const table = assertStatsTarget(config, 'sales');
+  const token = await usableToken(deps, config, logger);
   const started = deps.now();
   const loadId = `${SALES_INC_LOADID_PREFIX}${mskStamp(started)}`;
   const loadedAt = mskDateTime(started);
 
   const boundary = await deps.bq.salesBoundary(table);
   const { watermark, bootstrapped } = resolveWatermark('sales', boundary.watermarkStorage, config, SALES_ERROR);
-  const token = await deps.getToken();
   const fetched = await fetchSales(config.wbStatisticsHost, WB_SALES_API_PATH, token, watermark, config.wbHttpTimeoutMs, deps.transport, logger);
+  throwIfAuthRejected(fetched, config, WB_SALES_API_PATH);
 
   const pre = precheckSales(watermark, fetched);
   let plan: SalesPlan;
@@ -196,8 +216,9 @@ export async function runSalesReconcile(ctx: LoaderContext, deps: StatsDeps): Pr
   const fromLcd = reconcileFromLcd(days, started.getTime(), mskDate);
   if (!isValidWatermark(fromLcd)) throw new LoaderError(`Невалидный fromLcd окна: ${fromLcd}`, SALES_RECONCILE_ERROR);
 
-  const token = await deps.getToken();
+  const token = await usableToken(deps, config, logger);
   const fetched = await fetchSales(config.wbStatisticsHost, WB_SALES_API_PATH, token, fromLcd, config.wbHttpTimeoutMs, deps.transport, logger);
+  throwIfAuthRejected(fetched, config, WB_SALES_API_PATH);
   const base = { load_id: loadId, table, days, period_from: fromLcd, period_to: loadedAt, api_rows_received: fetched.apiRowsReceived };
   const fail = (error: string): never => {
     logger.warn('sales_reconcile', { ...base, status: 'ERROR', error });

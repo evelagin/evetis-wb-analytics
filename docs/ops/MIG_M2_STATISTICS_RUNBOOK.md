@@ -170,6 +170,13 @@ watermark после прогона и сами URL запросов в WB (21 �
 9. **Load job без `ignoreUnknownValues`**: колонка, которой нет в таблице, — ошибка, а не тихая потеря поля.
 10. **Один секрет** `WB_STATISTICS_SECRET` (по умолчанию `WB_TOKEN_STATISTICS`) без запасного `WB_TOKEN_ANALYTICS`.
     Значение секрета обрезается (trim).
+    **Срок токена** (общий механизм M2–M5, `cloud/src/http/wbToken.ts`, после #423): секрет читается и срок `exp`
+    JWT проверяется ДО BigQuery и WB API в каждом из трёх загрузчиков. Истёкший → `WB_STATS_TOKEN_EXPIRED` без единого
+    запроса; меньше 14 дней до истечения → warn `WB_TOKEN_EXPIRING_SOON` (прогон идёт); пустой секрет → `WB_STATS_AUTH`.
+    Ответ WB 401/403 (на любой странице заказов) → `WB_STATS_AUTH`, а не `ORDERS_PARTIAL`/`SALES_ERROR`: код
+    детерминированный, 401/403 не повторяются ни HTTP-повтором (`STATS_HTTP_RETRY_CODES`), ни `retryTransient` cli.
+    Значения токена нет ни в тексте ошибки, ни в логе (только имя секрета, срок, статус, обрезанная причина WB).
+    Apps Script 31.10 при истёкшем токене поставок молча перестал грузить — здесь это ERROR с отдельным кодом.
 11. **Зависший прогон.** Reaper Apps Script (`ingestReapStaleRuns_`, 15 мин) Cloud Run не касается; у `LOADER_RUNS` свой
     lease — STARTED старше 30 мин не блокирует новый прогон.
 12. **Стартовый watermark теневой таблицы** (`ORDERS_BOOTSTRAP_WATERMARK`, `SALES_BOOTSTRAP_WATERMARK`) — только shadow и
@@ -211,11 +218,19 @@ Shadow во время паритета ходит в WB тем же токен�
 только на свои две таблицы (`__CR` у shadow, боевые у prod), `secretAccessor` на `WB_TOKEN_STATISTICS`;
 `serviceAccountUser` (actAs) для `sa-deployer` и `sa-terraform-apply`.
 
-**Флаг `m2_prod_enabled`** (по умолчанию `false`). Весь prod-контур — SA, его права, доступ к секрету, Job, invoker,
-Scheduler — создаётся только при `true`. Нецелевой `infra.yml apply` до вечера переключения prod не создаст.
+**Флаги `m2_shadow_enabled` и `m2_prod_enabled`** (единая схема M2–M5 из #423: `bool`, по умолчанию `false`).
+В `infra.yml` они подключены к GitHub Variables: `TF_VAR_m2_shadow_enabled = vars.M2_SHADOW_ENABLED == 'true'`,
+`TF_VAR_m2_prod_enabled = vars.M2_PROD_ENABLED == 'true'` (не задана → `false`); своих `TF_VAR_*` у потока нет.
+Variable ставит владелец по OWNER ACK: `M2_SHADOW_ENABLED` — ACK M2-SHADOW, `M2_PROD_ENABLED` — ACK M2-CUTOVER.
+- `m2_shadow_enabled` — весь shadow-контур: SA `sa-wb-statistics-shadow` и его права (jobUser, LOADER_RUNS, 3 REF,
+  2 actAs, секрет), таблицы `RAW_WB_ORDERS__CR` / `RAW_WB_SALES_RETURNS__CR` и запись в них, 3 Job, 3 invoker, 3 Scheduler.
+- `m2_prod_enabled` — весь prod-контур: SA, его права, доступ к секрету, Job, invoker, Scheduler.
+- Секрет `WB_TOKEN_STATISTICS` читается (data) только при включённом контуре.
+Пока оба флага `false`, нецелевой `infra.yml apply` не создаёт ни одного ресурса M2. Ресурсы, которые уже есть в `main`,
+под флаги не поставлены и не менялись (контракт — `cloud/test/statistics_tf.test.ts`).
 Отдельного алерта нет: политики `loader_failed` и `scheduler_attempt_failed` не сужены до Job'а и покрывают новые Job'ы.
 
-**M2-SHADOW** (флаг `false`; `plan` → просмотр → `apply` с теми же target'ами):
+**M2-SHADOW** (`M2_SHADOW_ENABLED=true`, `M2_PROD_ENABLED` не задана; `plan` → просмотр → `apply` с теми же target'ами):
 ```
 -target=google_service_account.wb_statistics_shadow
 -target=google_project_iam_member.wb_statistics_jobuser
@@ -232,12 +247,13 @@ Scheduler — создаётся только при `true`. Нецелевой 
 -target=google_cloud_run_v2_job_iam_member.scheduler_statistics_shadow_invoke
 -target=google_cloud_scheduler_job.wb_statistics_shadow
 ```
-Ожидание плана при `m2_prod_enabled=false`: 1 SA, 1 jobUser, 1 LOADER_RUNS, 3 REF, 2 actAs, 1 секрет, 2 таблицы,
+Ожидание плана при `m2_shadow_enabled=true`, `m2_prod_enabled=false`: 1 SA, 1 jobUser, 1 LOADER_RUNS, 3 REF, 2 actAs, 1 секрет, 2 таблицы,
 2 записи `__CR`, 3 Job, 3 invoker, 3 Scheduler (paused) — **все create, ни одного prod-ресурса** (у ресурсов по
 `local.statistics_sa` только ключ `shadow`). Переменные `statistics_shadow_orders_bootstrap_watermark` /
 `statistics_shadow_sales_bootstrap_watermark` — стартовый watermark (см. §6.1).
 
-**M2-CUTOVER** (вечер переключения): `m2_prod_enabled = true` (tfvars), затем `plan` с target'ами выше плюс:
+**M2-CUTOVER** (вечер переключения): `M2_PROD_ENABLED=true` (GitHub Variable; `M2_SHADOW_ENABLED` остаётся `true`),
+затем `plan` с target'ами выше плюс:
 ```
 -target=google_service_account.wb_statistics_prod
 -target=google_bigquery_table_iam_member.prod_write_orders
@@ -248,12 +264,15 @@ Scheduler — создаётся только при `true`. Нецелевой 
 ```
 Ожидание: только create ключей `prod` (SA, jobUser, LOADER_RUNS, 3 REF, 2 actAs, секрет) и prod-ресурсов
 (2 записи в боевые таблицы, 3 Job, 3 invoker, 3 Scheduler на паузе); shadow без изменений.
-Возврат флага в `false` удаляет весь prod-контур одним планом — только после `pause` prod-Scheduler.
+Возврат флага в `false` удаляет весь prod-контур одним планом — только после `pause` prod-Scheduler. Так же
+`M2_SHADOW_ENABLED=false` удаляет shadow-контур вместе с таблицами `__CR` (`deletion_protection = false`) — это и есть
+отдельный шаг удаления shadow после переключения (§6.3 п. 6).
 
 Prod Job создаётся на bootstrap-образе (`var.container_image`), env фиксируется при CREATE (дальше `ignore_changes`).
-Образ продвигает `deploy-prod.yml` **только в свой Job**: нужен вход `only_job` из PR #416 (Mig1b-0) — после его слияния
-добавить `wb-orders-prod`, `wb-sales-prod`, `wb-sales-reconcile-prod` в список допустимых. В этом PR `deploy-prod.yml`
-не меняется. `deploy-shadow.yml` меняет у трёх shadow-Job **только образ** (если Job созданы) и env не трогает, поэтому
+Образ продвигает `deploy-prod.yml` **только в свои Job'ы**: режим `only_job=wb-statistics` (общий PR #423) обновляет
+ровно `wb-orders-prod`, `wb-sales-prod`, `wb-sales-reconcile-prod`; состав режима — `tools/deploy_scope_check.py`
+(`STREAM_JOBS`), снимки Job'ов до/после проверяют, что чужие Job'ы не тронуты. Режим `all` требует фразы
+`PROMOTE-ALL-PROD`. Своих шагов в `deploy-prod.yml` у потока нет. `deploy-shadow.yml` меняет у трёх shadow-Job **только образ** (если Job созданы) и env не трогает, поэтому
 env shadow-Job остаётся во владении Terraform без дрейфа плана (в `ignore_changes` — только образ).
 
 Таймауты Job: `wb-sales*` 900 с (попытка ≈ 360 с: 4 запроса × 60 с + паузы 20/40/60 с; повтор cli через 60 с ≈ ещё
@@ -269,7 +288,7 @@ env shadow-Job остаётся во владении Terraform без дрей�
 2. Слить PR → `deploy-shadow` соберёт образ D (shadow-Job ещё нет — шаг пропустится).
 3. Стартовый watermark: `SELECT MAX(last_change_date)` по `RAW_WB_ORDERS` (заменить пробел на `T`) и по
    `RAW_WB_SALES_RETURNS` в момент старта → в tfvars обеих переменных.
-4. `terraform plan/apply` (§5, M2-SHADOW, флаг `m2_prod_enabled=false`). Затем `deploy-shadow` вручную (`workflow_dispatch`) — образ D в shadow-Job.
+4. GitHub Variable `M2_SHADOW_ENABLED=true` → `terraform plan/apply` (§5, M2-SHADOW; `M2_PROD_ENABLED` не задана). Затем `deploy-shadow` вручную (`workflow_dispatch`) — образ D в shadow-Job.
 5. `scheduler-control.yml`: `run-now` по очереди `wb-sales`, `wb-orders`, `wb-sales-reconcile` (shadow) с интервалом ≥ 2 мин,
    проверить `LOADER_RUNS` (environment='shadow', COMPLETE) и строки в `__CR`; затем `resume` трёх shadow-Scheduler.
 
@@ -280,13 +299,13 @@ env shadow-Job остаётся во владении Terraform без дрей�
 
 ### 6.3 Переключение вечером (ACK M2-CUTOVER)
 Предусловия: паритет подписан; **DRO-1 и детекторы читают `V_INGEST_HEARTBEAT`, а не `INGEST_RUNS`** (иначе после снятия
-триггеров DRO потеряет orders/sales — см. §8); `deploy-prod` умеет `only_job`.
+триггеров DRO потеряет orders/sales — см. §8); PR #423 (режим `only_job=wb-statistics`) слит.
 1. После вечернего прогона Apps Script 18:xx (в `INGEST_RUNS` COMPLETE для orders и sales) владелец **снимает три триггера**
    в редакторе Apps Script: `runWbOrdersIncremental`, `runWbSalesIncremental`, `runWbSalesNightReconcile`.
 2. Сверить watermark: Script Property (`wbOrdersIncrementalStatus` / `wbSalesIncrementalStatus`, только чтение) =
    MAX(`last_change_date`) строк инкремента (`ORD_INC_*` / `SALE_INC_*`). Расхождение — STOP, разбор.
-3. `m2_prod_enabled = true` → `terraform plan/apply` (§5, M2-CUTOVER). Prod Scheduler создаются на паузе.
-4. `deploy-prod` с `only_job` для трёх prod-Job — digest D′, проверенный в shadow.
+3. GitHub Variable `M2_PROD_ENABLED=true` → `terraform plan/apply` (§5, M2-CUTOVER). Prod Scheduler создаются на паузе.
+4. `deploy-prod` с `only_job=wb-statistics` — digest D′, проверенный в shadow.
 5. `run-now` prod: `wb-sales`, через ≥ 2 мин `wb-orders`. Проверить: `LOADER_RUNS` prod COMPLETE за D-1,
    `V_INGEST_HEARTBEAT` показывает `cloud_run`, `rows_loaded` в разумных пределах (обычно 0–10).
 6. `resume` трёх prod-Scheduler. Shadow-Scheduler — `pause` (shadow больше не нужен; удаление — отдельным PR).
@@ -298,6 +317,8 @@ env shadow-Job остаётся во владении Terraform без дрей�
 
 **STOP** (немедленно `pause` prod-Scheduler):
 - любой prod-прогон с `STATS_TARGET_MISMATCH` или с ERROR два слота подряд;
+- `WB_STATS_TOKEN_EXPIRED` / `WB_STATS_AUTH` — повтор не лечит: владелец выпускает токен и добавляет версию секрета
+  `WB_TOKEN_STATISTICS`, затем `run-now` (warn `WB_TOKEN_EXPIRING_SOON` — сигнал заранее, за 14 дней);
 - в `V_WB_ORDERS`/`V_WB_SALES_RETURNS` появились ключи, которых нет у WB (рост числа заказов дня скачком);
 - `rows_loaded` prod-прогона ≫ обычного (тысячи строк — признак сброса watermark);
 - гейт витрины красный из-за orders/sales.
@@ -319,6 +340,6 @@ append-only RAW безвредны (вью last-wins), потерь нет. Бо
 4. **Лаг справочника SKU** (§3 п. 4): принимаем «новый SKU до ночной синхронизации REF = `not_found` навсегда» или
    договариваемся, что новый SKU сначала проходит `runRefSync`, а потом появляется в продаже.
 5. **Лимит WB:** общий ли лимит statistics-api на продавца или на метод — официально не подтверждено (§1.7).
-6. **`deploy-prod.yml`:** добавить три prod-Job в `only_job` после слияния PR #416.
+6. ~~**`deploy-prod.yml`:** добавить три prod-Job в `only_job`~~ — сделано в общем PR #423 (режим `wb-statistics`).
 7. **Риск витрины** при упавшей попытке 06:xx (§4) — принять как сейчас у Apps Script или добавить резервный слот
    (это +1 запуск в сутки, против условия PR #414).

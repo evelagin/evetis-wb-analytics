@@ -4,14 +4,24 @@
  *   fetchOrdersApiData_ (WbOrdersLoader.gs:292) — пагинация по lastChangeDate;
  *   fetchSalesApiData_ (WbSalesReturnsLoader.gs.gs:293) — ровно один запрос.
  * fetch и sleep инъектируются — тесты идут без сети. Токен не логируется, URL логируется без query.
+ *
+ * 401/403 — не повторяются (их нет в STATS_HTTP_RETRY_CODES) и возвращаются полем `auth`:
+ * вызывающий (index.ts) превращает его в детерминированный WB_STATS_AUTH (http/wbToken.ts).
  */
 import type { Logger } from '../../logging.js';
+import { isWbAuthStatus } from '../../http/wbToken.js';
 import {
   STATS_HTTP_BASE_DELAY_MS, STATS_HTTP_MAX_DELAY_MS, STATS_HTTP_MAX_RETRIES, STATS_HTTP_RETRY_CODES,
   ORDERS_MAX_PAGES, ORDERS_PAGE_PAUSE_MS, ORDERS_ROWS_CAP, SALES_ROWS_CAP,
 } from './constants.js';
 
 export type WbRow = Record<string, unknown>;
+
+/** Отказ авторизации WB (401/403): статус и тело ответа (тело обрезает и чистит wbAuthError). */
+export interface WbAuthFailure { status: number; body: string }
+
+const authOf = (status: number, body: string): { auth?: WbAuthFailure } =>
+  (isWbAuthStatus(status) ? { auth: { status, body } } : {});
 
 export interface StatsTransport {
   fetch: (url: string, init: { method: string; headers: Record<string, string>; signal?: AbortSignal }) => Promise<{
@@ -98,6 +108,8 @@ export interface OrdersFetchResult {
   /** PARTIAL: данные могли не долиться (≥1 страница получена, затем сбой; упор в лимит). */
   partial: boolean;
   error?: string;
+  /** Токен отклонён (401/403) — прогон обязан отказать WB_STATS_AUTH, а не ORDERS_PARTIAL/ERROR. */
+  auth?: WbAuthFailure;
   /** Последнее состояние каждой srid в порядке первого появления (last-wins по lastChangeDate). */
   data: WbRow[];
   pages: number;
@@ -125,15 +137,15 @@ export async function fetchOrders(
   const byKey = new Map<string, WbRow>();
   const order: string[] = [];
   const snapshot = () => order.map((k) => byKey.get(k)!);
-  const fail = (partial: boolean, error: string): OrdersFetchResult => ({
-    ok: false, partial, error, data: snapshot(), pages, apiRowsReceived: apiRows, cursorEnd,
+  const fail = (partial: boolean, error: string, extra: { auth?: WbAuthFailure } = {}): OrdersFetchResult => ({
+    ok: false, partial, error, data: snapshot(), pages, apiRowsReceived: apiRows, cursorEnd, ...extra,
   });
 
   while (pages < ORDERS_MAX_PAGES) {
     const url = `${host}${path}?dateFrom=${encodeURIComponent(cursor)}&flag=0`;
     const resp = await statsGet(url, token, timeoutMs, t, logger, 'Orders');
     if (resp.status === 0) return fail(pages > 0, `HTTP исключение: ${resp.error ?? ''}`);
-    if (resp.status !== 200) return fail(pages > 0, `HTTP ${resp.status}: ${resp.body.substring(0, 200)}`);
+    if (resp.status !== 200) return fail(pages > 0, `HTTP ${resp.status}: ${resp.body.substring(0, 200)}`, authOf(resp.status, resp.body));
     let arr: unknown;
     try {
       arr = JSON.parse(resp.body);
@@ -191,6 +203,8 @@ export interface SalesFetchResult {
   ok: boolean;
   partial: boolean;
   error?: string;
+  /** Токен отклонён (401/403) — прогон обязан отказать WB_STATS_AUTH. */
+  auth?: WbAuthFailure;
   data: WbRow[];
   apiRowsReceived: number;
 }
@@ -203,7 +217,10 @@ export async function fetchSales(
   const resp = await statsGet(url, token, timeoutMs, t, logger, 'Sales');
   if (resp.status === 0) return { ok: false, partial: false, error: `HTTP исключение: ${resp.error ?? ''}`, data: [], apiRowsReceived: 0 };
   if (resp.status !== 200) {
-    return { ok: false, partial: false, error: `HTTP ${resp.status}: ${resp.body.substring(0, 200)}`, data: [], apiRowsReceived: 0 };
+    return {
+      ok: false, partial: false, error: `HTTP ${resp.status}: ${resp.body.substring(0, 200)}`, data: [], apiRowsReceived: 0,
+      ...authOf(resp.status, resp.body),
+    };
   }
   let arr: unknown;
   try {
