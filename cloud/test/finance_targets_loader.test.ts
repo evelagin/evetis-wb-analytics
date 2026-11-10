@@ -5,7 +5,13 @@
 import { describe, it, expect } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { LoaderError } from '../src/errors.js';
-import { assertFinanceTargets, WB_FINANCE_PROD_TARGETS } from '../src/loaders/finance/targets.js';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { assertFinanceTargets, assertFinanceTiming, WB_FINANCE_PROD_TARGETS } from '../src/loaders/finance/targets.js';
+import { FIN_RUN_CEILING_MS, FIN_RUN_OVERHEAD_MS } from '../src/loaders/finance/constants.js';
+import { DEFAULT_STALE_STARTED_MS } from '../src/bq/runManifest.js';
+import { peerActiveSql, type PeerProbe } from '../src/loaders/finance/mutex.js';
 import type { BigQuery } from '@google-cloud/bigquery';
 import { BqFinanceStore, BigQuerySqlRunner, type SqlRunner, type ParamType } from '../src/loaders/finance/bq.js';
 import { financeLoader, financeBackfillLoader } from '../src/loaders/finance/index.js';
@@ -48,12 +54,33 @@ describe('targets: проверка контура', () => {
     expect(() => assertFinanceTargets(cfg({ ENVIRONMENT: 'shadow', FINANCE_CUTOVER: '2026-11-03' }))).toThrow(/понедельник/);
     expect(() => assertFinanceTargets(cfg({ ENVIRONMENT: 'shadow', FINANCE_CUTOVER: 'x' }))).toThrow(/понедельник/);
   });
-  it('config: опечатки в числах не роняют loadConfig (мягкий разбор)', () => {
+  it('config: опечатки в числах не роняют loadConfig, но загрузчик финансов отказывает до I/O', () => {
     const c = cfg({ ENVIRONMENT: 'shadow', FINANCE_BUDGET_MS: 'abc', FINANCE_HTTP_TIMEOUT_MS: '1', FINANCE_TRIGGER_TYPE: 'manual' });
-    expect(c.financeBudgetMs).toBe(1_200_000);
-    expect(c.financeHttpTimeoutMs).toBe(120_000);
+    expect(Number.isNaN(c.financeBudgetMs)).toBe(true);
     expect(c.financeTriggerType).toBe('MANUAL');
     expect(c.wbFinanceSecret).toBe('WB_TOKEN_FINANCE');
+    expect(() => assertFinanceTargets(c)).toThrow(/FINANCE_BUDGET_MS=NaN.*FINANCE_HTTP_TIMEOUT_MS=1/);
+  });
+
+  it('время прогона: budget + timeout + 5 мин < потолка (timeout Job 1800 с и stale lease 30 мин)', () => {
+    const ok = cfg({ ENVIRONMENT: 'shadow' });
+    expect(ok.financeBudgetMs + ok.financeHttpTimeoutMs + FIN_RUN_OVERHEAD_MS).toBeLessThan(FIN_RUN_CEILING_MS);
+    expect(() => assertFinanceTiming(ok)).not.toThrow();
+    // 25 мин бюджета + 300 с таймаута (прежние верхние границы) — отказ
+    expect(() => assertFinanceTiming(cfg({ ENVIRONMENT: 'shadow', FINANCE_BUDGET_MS: '1500000', FINANCE_HTTP_TIMEOUT_MS: '300000' })))
+      .toThrow(/потолка/);
+    // ровно на границе — отказ (строго меньше)
+    expect(() => assertFinanceTiming(cfg({ ENVIRONMENT: 'shadow', FINANCE_BUDGET_MS: '1380000', FINANCE_HTTP_TIMEOUT_MS: '120000' }))).toThrow(LoaderError);
+    expect(() => assertFinanceTiming(cfg({ ENVIRONMENT: 'shadow', FINANCE_BUDGET_MS: '1379999', FINANCE_HTTP_TIMEOUT_MS: '120000' }))).not.toThrow();
+    try { assertFinanceTiming(cfg({ ENVIRONMENT: 'shadow', FINANCE_BUDGET_MS: '1' })); } catch (e) { expect((e as LoaderError).code).toBe('FINANCE_CONFIG_INVALID'); }
+  });
+
+  it('потолок согласован с timeout Job (Terraform) и stale-порогом lease', () => {
+    const tf = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'infra', 'terraform', 'wb_finance_loader.tf'), 'utf8');
+    const timeouts = [...tf.matchAll(/timeout\s*=\s*"(\d+)s"/g)].map((m) => Number(m[1]) * 1000);
+    expect(timeouts.length).toBe(2); // shadow и prod
+    for (const t of timeouts) expect(t).toBe(FIN_RUN_CEILING_MS);
+    expect(DEFAULT_STALE_STARTED_MS).toBeGreaterThanOrEqual(FIN_RUN_CEILING_MS);
   });
 });
 
@@ -165,6 +192,8 @@ function ctxOf(env: Record<string, string>): LoaderContext {
   return { config, logger: silentLogger, logicalPeriod: '2026-11-10T07', runId: 'shadow:finance:2026-11-10T07:x:y', targetDate: '2026-11-10T07' };
 }
 
+const noPeer: PeerProbe = async () => 0;
+
 describe('financeLoader', () => {
   it('зарегистрирован как finance / finance-backfill, не prodOnly (есть shadow)', () => {
     expect(resolveLoader('finance')?.prodOnly).toBeFalsy();
@@ -197,7 +226,7 @@ describe('financeLoader', () => {
     const store = new MemFinanceStore(clock);
     const wb = new SynthFinanceApi([{ reportId: '900000000000000401', reportType: 1, period: 'daily', dateFrom: '2026-11-09', dateTo: '2026-11-09',
       rows: [synthRow('9301000000000000001', 0, '2026-11-09'), synthRow('9301000000000000002', 1, '2026-11-09')] }], clock);
-    const deps = { makeStore: () => store, clock, fetchFn: wb.fetch, readToken: async () => 'synthetic' };
+    const deps = { makeStore: () => store, clock, fetchFn: wb.fetch, readToken: async () => 'synthetic', peerProbe: noPeer };
     const res = await financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), deps);
     expect(res).toEqual({ rowsFetched: 2, rowsLoaded: 2 });
     wb.overrides.push(() => ({ status: 401, body: 'unauthorized' }));
@@ -216,8 +245,67 @@ describe('financeLoader', () => {
 
   it('пустой токен → FINANCE_TOKEN_MISSING', async () => {
     const clock = new FakeClock(T0);
-    await expect(financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), { makeStore: () => new MemFinanceStore(clock), clock, readToken: async () => ' ' }))
+    await expect(financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), { makeStore: () => new MemFinanceStore(clock), clock, readToken: async () => ' ', peerProbe: noPeer }))
       .rejects.toMatchObject({ code: 'FINANCE_TOKEN_MISSING' });
+  });
+
+  it('finance-backfill во время тика → FINANCE_LOCKED: ни токена, ни WB API, ни записи', async () => {
+    const clock = new FakeClock(T0);
+    const store = new MemFinanceStore(clock);
+    let tokenRead = false;
+    const seen: string[] = [];
+    await expect(financeBackfillLoader(ctxOf({ ENVIRONMENT: 'shadow', FINANCE_BACKFILL_FROM: '2026-11-02', FINANCE_BACKFILL_TO: '2026-11-08' }), {
+      makeStore: () => store, clock, readToken: async () => { tokenRead = true; return 't'; },
+      fetchFn: async () => { throw new Error('WB API не должен вызываться'); },
+      peerProbe: async (_c, peer) => { seen.push(peer); return peer === 'finance' ? 1 : 0; },
+    })).rejects.toMatchObject({ code: 'FINANCE_LOCKED' });
+    expect(seen).toEqual(['finance']);
+    expect(tokenRead).toBe(false);
+    expect(store.runs.size).toBe(0);
+    expect(store.loads.size).toBe(0);
+  });
+
+  it('тик во время finance-backfill → пропуск (SKIPPED_LOCKED), без журнала и записи', async () => {
+    const clock = new FakeClock(T0);
+    const store = new MemFinanceStore(clock);
+    const seen: string[] = [];
+    const res = await financeLoader(ctxOf({ ENVIRONMENT: 'shadow' }), {
+      makeStore: () => store, clock, readToken: async () => 't',
+      fetchFn: async () => { throw new Error('WB API не должен вызываться'); },
+      peerProbe: async (_c, peer) => { seen.push(peer); return 1; },
+    });
+    expect(res).toEqual({ rowsFetched: 0, rowsLoaded: 0 });
+    expect(seen).toEqual(['finance-backfill']);
+    expect(store.runs.size).toBe(0);
+  });
+
+  it('одновременный старт: каждый пишет STARTED до проверки → хотя бы один видит соседа (оба пройти не могут)', async () => {
+    // Модель LOADER_RUNS: acquire cli вставляет STARTED ДО handler. Перебираем все порядки «вставка/проверка».
+    type Ev = ['ins' | 'chk', 'finance' | 'finance-backfill'];
+    const orders: Ev[][] = [
+      [['ins', 'finance'], ['chk', 'finance'], ['ins', 'finance-backfill'], ['chk', 'finance-backfill']],
+      [['ins', 'finance'], ['ins', 'finance-backfill'], ['chk', 'finance'], ['chk', 'finance-backfill']],
+      [['ins', 'finance'], ['ins', 'finance-backfill'], ['chk', 'finance-backfill'], ['chk', 'finance']],
+      [['ins', 'finance-backfill'], ['ins', 'finance'], ['chk', 'finance'], ['chk', 'finance-backfill']],
+      [['ins', 'finance-backfill'], ['chk', 'finance-backfill'], ['ins', 'finance'], ['chk', 'finance']],
+    ];
+    for (const order of orders) {
+      const started = new Set<string>();
+      const passed: string[] = [];
+      for (const [ev, who] of order) {
+        if (ev === 'ins') started.add(who);
+        else if (!started.has(who === 'finance' ? 'finance-backfill' : 'finance')) passed.push(who);
+      }
+      expect(passed.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('SQL проверки соседа: только SELECT по LOADER_RUNS своего окружения, свежие STARTED (30 мин)', () => {
+    const sql = peerActiveSql('proj-synthetic', 'wb_raw', 'LOADER_RUNS');
+    expect(sql.trimStart().startsWith('SELECT')).toBe(true);
+    expect(sql).toContain('`proj-synthetic.wb_raw.LOADER_RUNS`');
+    expect(sql).toContain('environment = @env AND loader_name = @peer AND status = \'STARTED\'');
+    expect(sql).toContain('INTERVAL 30 MINUTE');
   });
 
   it('finance-backfill: без периода — отказ до любого I/O', async () => {

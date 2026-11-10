@@ -15,6 +15,10 @@
   loader `wb-finance`. `deploy-prod.yml` не менялся.
 - `sql/mig_finance_parity.sql` — сверка Apps Script ↔ `__CR` по отчётам (EXACT / DATA_DRIFT / FAIL), недели, журналы.
 - Колонки таблиц не меняются; новые таблицы — только теневые `__CR`.
+- Ревью PR #418: взаимоисключение `finance` ↔ `finance-backfill` (`mutex.ts`); снимок финальных недель до очереди,
+  финализация после очереди и в шаге 6 с пересчётом RECON (итог как у Apps Script); резерв таймаута HTTP и хвоста
+  BigQuery в бюджете и проверка «budget + timeout + 5 мин < 30 мин» (`FINANCE_CONFIG_INVALID`); свои SA
+  `sa-wb-finance-shadow/prod`; весь prod-контур — под `var.finance_prod_enabled` (по умолчанию false).
 
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 

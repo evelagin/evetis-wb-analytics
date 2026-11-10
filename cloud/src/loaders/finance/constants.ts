@@ -41,6 +41,24 @@ export const FIN_LOAD_BATCH = 10_000;        // строк на load-job (отч
 export const FIN_DEFAULT_BUDGET_MS = 1_200_000;
 
 /**
+ * Хвост BigQuery после последнего запроса к API: load-job отчёта + post-load + COMPLETE (≈ 4–6 заданий по 2–20 с).
+ * canRequest резервирует его вместе с таймаутом HTTP: запрос не начинается, если отчёт не успеет дойти до COMPLETE.
+ */
+export const FIN_BQ_TAIL_MS = 120_000;
+/** Накладные прогона вне бюджета: подготовка (stale-recovery, календарь, очередь) и финализация недель, журнал. */
+export const FIN_RUN_OVERHEAD_MS = 300_000;
+/**
+ * Потолок длительности прогона: timeout Job'а (1800 с, wb_finance_loader.tf) и stale-порог lease LOADER_RUNS
+ * (DEFAULT_STALE_STARTED_MS, 30 мин). Убийство Job'а между load-job и COMPLETE оставило бы строки без владельца
+ * (ORPHANED_RAW_REPORT в следующем прогоне), а перехват lease — второй параллельный тик. Поэтому
+ * budget + timeout + FIN_RUN_OVERHEAD_MS обязаны быть строго меньше (targets.ts, тест конфигурации).
+ */
+export const FIN_RUN_CEILING_MS = 1_800_000;
+export const FIN_BUDGET_MIN_MS = 300_000;
+export const FIN_TIMEOUT_MIN_MS = 10_000;
+export const FIN_TIMEOUT_MAX_MS = 300_000;
+
+/**
  * ОТЛИЧИЕ: повтор запроса на 429/5xx/сетевой сбой (в Apps Script повтора нет: ответ ≠ 200 сразу
  * переводит отчёт в ERROR, повтор — следующим тиком). Каждый повтор проходит через тот же пейсер
  * 61 с, поэтому лимит WB не нарушается.

@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { FinanceApi } from '../src/loaders/finance/wbApi.js';
 import { runFinanceTick, runBackfillRegister, type TickDeps } from '../src/loaders/finance/run.js';
-import { FakeClock, SynthFinanceApi, MemFinanceStore, synthRow, silentLogger, type SynthReport } from './finance_fixture.js';
+import { FakeClock, SynthFinanceApi, MemFinanceStore, synthRow, silentLogger, listSums, type SynthReport } from './finance_fixture.js';
 
 // Вторник 10.11.2026 07:30 МСК. Теневой cutover — понедельник 02.11 (календарь недель: только 02.11).
 const T0 = Date.UTC(2026, 10, 10, 4, 30);
@@ -116,6 +116,65 @@ describe('тик: WEEKLY, финализация недели и RECON', () => {
     await w.tick();
     const lists = w.wb.calls.slice(calls).map((c) => JSON.parse(c.body).period);
     expect(lists).toEqual(['daily']);
+  });
+});
+
+describe('тик: WEEKLY и суточные той же недели в одном прогоне (паритет с Apps Script)', () => {
+  // list-метрики так, как их вернёт синтетический list (иначе повторный list даст IMMUTABLE_ANOMALY)
+  const listMetricsOf = (r: SynthReport) => {
+    const l = listSums(r.rows);
+    return { list_forpay: l.forPaySum!, list_retail: l.retailAmountSum!, list_delivery: l.deliveryServiceSum!, list_storage: l.paidStorageSum!,
+      list_acceptance: l.paidAcceptanceSum!, list_deduction: l.deductionSum!, list_penalty: l.penaltySum! };
+  };
+  const metricsOf = (r: SynthReport) => {
+    const sum = (k: string) => Math.round(r.rows.reduce((a, x) => a + Number(x[k] ?? 0), 0) * 100) / 100;
+    return { forPay: sum('forPay'), retail: sum('retailAmount') };
+  };
+
+  it('оба свежие: суточный недели регистрируется и грузится, неделя финальна, RECON учитывает его', async () => {
+    const w = world([D1_SUN, W1, W2]);
+    const r = await w.tick();
+    expect(r.status).toBe('OK');
+    expect(w.store.loads.get(D1_SUN.reportId)!.status).toBe('COMPLETE');
+    expect(w.store.weeks.get('2026-11-02|1')).toMatchObject({ weekly_final: true, daily_days_loaded: 1 });
+    expect(w.store.recon.get('2026-11-02|1|forPaySum')!.sum_daily).toBe(metricsOf(D1_SUN).forPay);
+    expect(w.store.recon.get('2026-11-02|1|forPaySum')!.sum_weekly).toBe(metricsOf(W1).forPay);
+  });
+
+  it('WEEKLY из очереди + суточный той же недели открыт в этом же прогоне: итог как у Apps Script, окно двух копий короче', async () => {
+    const w = world([D1_SUN, W1]);
+    // WEEKLY зарегистрирован раньше (хвост прошлого прогона / finance-backfill), но не загружен
+    await w.store.mergeDiscovered({ reportId: W1.reportId, period: 'WEEKLY', reportType: 1, dateFrom: W1.dateFrom, dateTo: W1.dateTo,
+      metrics: listMetricsOf(W1), metricsJson: '{}' }, 'R0');
+    await w.store.ensureWeekRows(CUTOVER, '2026-11-02');
+    // момент финализации относительно запросов к API
+    const marks: string[] = [];
+    const orig = w.store.markWeekFinal.bind(w.store);
+    w.store.markWeekFinal = async (...a) => { marks.push(w.wb.calls.map((c) => (c.path.includes('/detailed/') ? 'det' : JSON.parse(c.body).period)).join(',')); return orig(...a); };
+    const r = await w.tick();
+    expect(r.status).toBe('OK');
+    // 1) неделя финализирована сразу после очереди — ДО daily list (у Apps Script — только после шага 5)
+    expect(marks[0]).toBe('det');
+    // 2) суточный финальной (после очереди) недели всё равно зарегистрирован и загружен — по снимку до очереди, как в Apps Script
+    expect(w.store.loads.get(D1_SUN.reportId)!.status).toBe('COMPLETE');
+    // 3) RECON и daily_days_loaded пересчитаны после шага 5 и совпадают с итогом Apps Script
+    expect(w.store.weeks.get('2026-11-02|1')).toMatchObject({ weekly_final: true, weekly_report_id: W1.reportId, daily_days_loaded: 1 });
+    expect(w.store.recon.get('2026-11-02|1|forPaySum')!.sum_daily).toBe(metricsOf(D1_SUN).forPay);
+    expect(marks.length).toBe(2); // ранняя финализация + пересчёт
+    // 4) weekly list запрошен по снимку до очереди (неделя 02.11 type 2 открыта)
+    expect(w.wb.calls.some((c) => c.body.includes('"period":"weekly"'))).toBe(true);
+  });
+
+  it('WEEKLY из очереди без суточных той же недели: пересчёта нет (лишних запросов к BigQuery нет)', async () => {
+    const w = world([W1]);
+    await w.store.mergeDiscovered({ reportId: W1.reportId, period: 'WEEKLY', reportType: 1, dateFrom: W1.dateFrom, dateTo: W1.dateTo,
+      metrics: listMetricsOf(W1), metricsJson: '{}' }, 'R0');
+    let marks = 0;
+    const orig = w.store.markWeekFinal.bind(w.store);
+    w.store.markWeekFinal = async (...a) => { marks++; return orig(...a); };
+    await w.tick();
+    expect(marks).toBe(1);
+    expect(w.store.weeks.get('2026-11-02|1')!.daily_days_loaded).toBe(0);
   });
 });
 

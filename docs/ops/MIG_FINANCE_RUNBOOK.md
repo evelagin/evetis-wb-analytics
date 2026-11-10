@@ -84,17 +84,19 @@
 
 | # | Apps Script | Cloud Run | Почему |
 |---|---|---|---|
-| 1 | `ScriptLock` (30 с ожидания) | lease `LOADER_RUNS` (cli), период = часовой слот МСК `YYYY-MM-DDTHH` | штатный механизм Cloud Run-загрузчиков; три слота — три периода. Ручной запуск в том же часе, что слот, «съедает» слот (COMPLETE) — безвредно: работа та же, следующий слот дочитает |
+| 1 | общий `ScriptLock` тика и догона (30 с ожидания) | lease `LOADER_RUNS` (cli), период = часовой слот МСК `YYYY-MM-DDTHH`; плюс взаимоисключение `finance` ↔ `finance-backfill` (`mutex.ts`): каждый режим после своей строки STARTED ищет свежую (< 30 мин) STARTED-строку соседа; тик при активной регистрации пропускается (`FINANCE_SKIPPED_LOCKED`, как SKIPPED_LOCKED), регистрация при активном тике — отказ `FINANCE_LOCKED` | lease ключуется по имени загрузчика, общий ключ занял бы слот тика. Схема «запись → проверка» не пропускает оба режима одновременно (может отказать обоим — fail-closed). Ручной запуск в том же часе, что слот, «съедает» слот (COMPLETE) — безвредно |
 | 2 | C0-маркер в Script Properties | `assertReady()`: 5 таблиц есть, у RAW есть колонки контура (метаданные, бесплатно) | маркер живёт в Script Properties, Cloud Run его не видит; проверяется то, что маркер гарантировал |
 | 3 | персистентный пейсер в Script Properties | пейсер в памяти прогона + повтор 429 с паузой `X-Ratelimit-Retry`/`Retry-After` | прогоны сериализует lease; зазор между двумя прогонами подряд и чужой клиент того же токена (Apps Script в shadow-фазе) закрывает повтор |
 | 4 | ответ ≠ 200 → ERROR отчёта сразу; сетевое исключение UrlFetch роняет тик, отчёт висит STARTED до stale-recovery (120 мин) | до 2 повторов на 429/5xx/сеть, каждый через пейсер; после — ERROR отчёта (attempt засчитан) | требование брифа (ретраи 429/5xx с паузами WB); исключение сети больше не роняет весь тик |
-| 5 | бюджет тика 270 с | 20 мин (`FINANCE_BUDGET_MS`, 5–25 мин) | лимит исполнения Apps Script 6 мин; из-за него понедельничный тик с WEEKLY уходил в PARTIAL (2 раза за 30 сут) |
-| 6 | финализация недель только в шаге 6 | ещё и сразу после COMPLETE каждого WEEKLY | при длинном бюджете окно «WEEKLY COMPLETE, неделя не финальна» растёт; в это окно CANONICAL держит обе копии rrd_id и ASSERT витрины (#91) упал бы |
+| 5 | бюджет тика 270 с, маржа 30 с | 20 мин (`FINANCE_BUDGET_MS`); запрос начинается, только если остаток бюджета > ожидание пейсера + 30 с + таймаут HTTP (120 с) + хвост BigQuery (120 с); budget + таймаут + 5 мин накладных обязаны быть < 30 мин (timeout Job 1800 с и stale lease), иначе `FINANCE_CONFIG_INVALID` до I/O | лимит исполнения Apps Script 6 мин; из-за него понедельничный тик с WEEKLY уходил в PARTIAL (2 раза за 30 сут). Резерв не даёт убить Job между load-job и COMPLETE (строки без владельца → ORPHANED_RAW_REPORT) |
+| 6 | финализация недель только в шаге 6; снимок финальных недель — после шага 3 | снимок финальных недель и признак «есть открытые недели» — ДО шага 3; финализация — после цикла очереди (если там дошёл WEEKLY) и в шаге 6; недели, финализированные после очереди, пересчитываются (RECON, `daily_days_loaded`) после шага 5, если там грузились суточные | итог манифеста, недель и RECON — как у Apps Script (снимок «до очереди» = «после очереди» у Apps Script, где до шага 6 ничего не финализируется). Окно «WEEKLY COMPLETE, неделя не финальна» (в нём CANONICAL держит обе копии rrd_id, ASSERT витрины #91): для WEEKLY из очереди кончается с циклом очереди — без discovery и шага 5, то есть по составу короче, чем у Apps Script; для свежего WEEKLY — как у Apps Script, до конца шага 5. По времени окно ограничено бюджетом и не пересекается со слотами витрины: финансы 07:30/12:30/18:30 и кончаются < 30 мин, витрина 07/09/12/16:00 |
 | 7 | журнал только `FINANCE_LOADER_RUNS` | тот же журнал + `LOADER_RUNS` (`loader_name='finance'`) | контракт брифа. ERROR тика → LOADER_RUNS ERROR + `loader_failed` с кодом → алерт; PARTIAL → COMPLETE + WARNING `FINANCE_PARTIAL`. В `V_INGEST_HEARTBEAT` у finance `logical_period` = NULL (слот не дата) — гейт витрины финансы не читает |
 | 8 | `run_id` `FINDAILY_yyyyMMdd_HHmmss_<цифры>` | `FINDAILY_yyyyMMdd_HHmmss_C<цифры>` | строки/отчёты Cloud Run отличимы для отката без новой колонки; формат никто не разбирает |
 | 9 | `trigger_type` AUTO/MANUAL/BACKFILL по функции | AUTO по умолчанию, MANUAL — `FINANCE_TRIGGER_TYPE=MANUAL`, BACKFILL — loader `finance-backfill` | Cloud Run не отличает запуск Scheduler от ручного |
 | 10 | период догона — константы в коде | `FINANCE_BACKFILL_FROM/TO` в env исполнения | без правки кода |
 | 11 | — | алерт `wb_finance_failed` (prod) | раньше сбой финансов был виден только в DRO-1 |
+| 13 | проект Apps Script (один принципал) | свои SA `sa-wb-finance-shadow/prod`: jobUser, `LOADER_RUNS`, только свои 5 таблиц, только секрет `WB_TOKEN_FINANCE`; общие `sa-loaders-*` прав на финансы не получают | минимум прав; утечка прав одного потока не открывает другие |
+| 14 | — | повтор COMPLETE-MERGE один раз при транзиентном отказе BigQuery | строки уже в RAW: без повтора отчёт остался бы STARTED со строками и через 120 мин стал бы ORPHANED |
 | 12 | shadow нет | shadow: cutover `2026-11-09`, слоты 08:05/13:05/19:05 МСК | не перекачивать WEEKLY с июля; не делить минуту лимита с Apps Script |
 
 Отличий в данных нет: те же таблицы, колонки, ключи, jobId-схема, маппинг и статусы.
@@ -107,10 +109,15 @@
 
 Предусловия: PR слит (deploy-shadow соберёт образ и обновит `wb-finance-shadow`, если Job уже есть).
 
-1. **Terraform** (план — владельцу, apply — по ACK): `-target` ресурсов `wb_finance_loader.tf` кроме prod
-   (`google_bigquery_table.*_cr`, `google_bigquery_table_iam_member.shadow_write_finance_cr`,
+1. **Terraform** (план — владельцу, apply — по ACK), `finance_prod_enabled` = false (по умолчанию — prod-ресурсов в
+   конфигурации нет вовсе). `-target`: `google_bigquery_table.{raw_wb_finance_cr,finance_loader_runs_cr,finance_report_loads_cr,
+   finance_week_status_cr,finance_week_recon_cr}`, `google_service_account.finance_shadow`,
+   `google_project_iam_member.finance_jobuser`, `google_bigquery_table_iam_member.finance_write_loader_runs`,
+   `google_secret_manager_secret_iam_member.finance_token_access`, `google_service_account_iam_member.finance_actas_deployer`,
+   `google_service_account_iam_member.finance_actas_terraform`, `google_bigquery_table_iam_member.finance_shadow_write_cr`,
    `google_cloud_run_v2_job.wb_finance_shadow`, `google_cloud_run_v2_job_iam_member.scheduler_finance_shadow_invoke`,
-   `google_cloud_scheduler_job.wb_finance_shadow`). Ожидание плана: 5 + 5 + 1 + 1 + 1 = 13 add, 0 change, 0 destroy.
+   `google_cloud_scheduler_job.wb_finance_shadow`. Ожидание плана: 5 таблиц + 1 SA + 5 привязок SA + 5 `__CR` + Job +
+   invoker + Scheduler = 19 add, 0 change, 0 destroy.
    Перед apply сверить `FINANCE_CUTOVER` shadow: понедельник недели **перед** стартом shadow.
 2. Образ: `deploy-shadow` (workflow_dispatch) — шаг `wb-finance-shadow` продвинет тот же digest.
 3. `scheduler-control`: environment=shadow, loader=`wb-finance`, action=resume.
@@ -129,9 +136,13 @@
 1. Дождаться завершения вечернего тика Apps Script (~18:40 МСК, `FINANCE_LOADER_RUNS`: последняя строка ≠ RUNNING).
 2. Проверка манифеста (только SELECT): нет STARTED; нет ERROR c `attempt_count=5` без разбора; PK манифеста цел.
 3. Apps Script: `wbFinRemoveDailyTriggers()`; затем `wbFinanceBackfillAuditTriggers()` — триггеров финансов 0.
-4. Terraform (ACK): prod-ресурсы `wb_finance_loader.tf` (`google_bigquery_table_iam_member.prod_write_finance` ×5,
-   `google_cloud_run_v2_job.wb_finance_prod`, invoker, `google_cloud_scheduler_job.wb_finance_prod` (PAUSED),
-   `google_monitoring_alert_policy.wb_finance_failed`). Ожидание: 9 add, 0 change, 0 destroy.
+4. Terraform (ACK): включить флаг `finance_prod_enabled = true` (tfvars / `-var` infra.yml), план по prod-ресурсам
+   `wb_finance_loader.tf`: `google_service_account.finance_prod[0]`, его привязки (`finance_jobuser["prod"]`,
+   `finance_write_loader_runs["prod"]`, `finance_token_access["prod"]`, `finance_actas_deployer["prod"]`,
+   `finance_actas_terraform["prod"]`), `finance_prod_write` ×5 (боевые таблицы), `wb_finance_prod[0]`, invoker,
+   `google_cloud_scheduler_job.wb_finance_prod[0]` (PAUSED), `google_monitoring_alert_policy.wb_finance_failed[0]`.
+   Ожидание: 15 add, 0 change, 0 destroy (shadow не меняется). Флаг после cutover остаётся true; откат флагом
+   в false удалит prod-контур — только после возврата на Apps Script (§6).
 5. Образ **только в свой Job**: `gcloud run jobs update wb-finance-prod --image <digest, проверенный shadow>
    --update-env-vars IMAGE_DIGEST=…,GIT_SHA=…` (или `deploy-prod.yml only_job=wb-finance-prod`, когда механизм из
    #382/#416 будет в main). `deploy-prod.yml` в этом PR не меняется: общий промоушен двигает 12 prod-Job'ов.
@@ -154,6 +165,9 @@ Shadow после cutover: пауза `wb-finance-shadow`; таблицы `__CR`
 
 Не STOP: `PARTIAL` (хвост очереди), `DETAILED_FAILED`/`list HTTP 429|5xx` с последующим COMPLETE в следующем слоте.
 
+`finance-backfill` запускать вне слотов (`gcloud run jobs execute wb-finance-<env> --args=finance-backfill
+--update-env-vars FINANCE_BACKFILL_FROM=…,FINANCE_BACKFILL_TO=…`): при активном тике он откажет `FINANCE_LOCKED`.
+
 **Откат** (данные контуров совместимы — общий манифест, Apps Script продолжит с того же состояния):
 1. `scheduler-control` pause `wb-finance-prod`; дождаться конца текущего исполнения.
 2. Apps Script: `wbFinInstallDailyTriggers()` (C0-маркер в Script Properties не тронут, проверка пройдёт).
@@ -162,9 +176,10 @@ Shadow после cutover: пауза `wb-finance-shadow`; таблицы `__CR`
 
 ## 7. Что нужно для shadow-выпуска
 
-- **Terraform targets** — §4 п.1 (13 ресурсов, prod не затрагивается). `terraform validate -backend=false` — Success.
-- **Секрет:** `WB_TOKEN_FINANCE` уже в `local.wb_secrets`, accessor у обоих SA есть. Версия v1 от 26.07 — проверить
-  срок действия (без вывода значения) до старта shadow.
+- **Terraform targets** — §4 п.1 (19 ресурсов, prod не затрагивается: под флагом `finance_prod_enabled=false`).
+  `terraform validate -backend=false` — Success.
+- **Секрет:** `WB_TOKEN_FINANCE` уже в `local.wb_secrets`; accessor выдаётся новым SA (`finance_token_access`).
+  Версия v1 от 26.07 — проверить срок действия (без вывода значения) до старта shadow.
 - **Расписание:** shadow `5 8,13,19 * * *` Europe/Moscow (PAUSED при создании); prod `30 7,12,18 * * *` (PAUSED).
 - **Workflows:** `deploy-shadow.yml` — шаг `wb-finance-shadow` (guarded); `scheduler-control.yml` — loader `wb-finance`.
 

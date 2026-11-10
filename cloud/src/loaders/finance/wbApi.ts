@@ -14,7 +14,7 @@
 import type { Logger } from '../../logging.js';
 import {
   FIN_API_LIST_PATH, FIN_API_DET_PATH, FIN_PACER_MS, FIN_REQ_MARGIN_MS, FIN_LIST_LIMIT, FIN_PAGE_LIMIT,
-  FIN_LIST_PAGE_GUARD, FIN_DET_PAGE_GUARD, FIN_HTTP_MAX_RETRIES, FIN_RETRY_AFTER_CAP_MS,
+  FIN_LIST_PAGE_GUARD, FIN_DET_PAGE_GUARD, FIN_HTTP_MAX_RETRIES, FIN_RETRY_AFTER_CAP_MS, FIN_BQ_TAIL_MS,
 } from './constants.js';
 import { parseSafe, isDigits } from './parse.js';
 import { parseListRow, type ListReport } from './normalize.js';
@@ -44,6 +44,8 @@ export interface FinanceApiOptions {
   budgetMs: number;
   timeoutMs: number;
   maxRetries?: number;
+  /** Резерв на хвост BigQuery после запроса (по умолчанию FIN_BQ_TAIL_MS). */
+  bqTailMs?: number;
 }
 
 export interface PostResult { code: number; body: string }
@@ -87,9 +89,13 @@ export class FinanceApi {
     return Math.max(byPacer, Math.max(0, this.notBefore - now));
   }
 
-  /** finDailyCanRequest_: бюджет > будущее ожидание пейсера + маржа. */
+  /**
+   * finDailyCanRequest_: бюджет > будущее ожидание пейсера + маржа. ОТЛИЧИЕ: сверх маржи Apps Script (30 с)
+   * резервируются таймаут самого запроса и хвост BigQuery — начатый запрос всегда успевает дойти до COMPLETE.
+   */
   canRequest(): boolean {
-    return this.budgetLeft() > this.projectedWait() + FIN_REQ_MARGIN_MS;
+    const reserve = FIN_REQ_MARGIN_MS + this.o.timeoutMs + (this.o.bqTailMs ?? FIN_BQ_TAIL_MS);
+    return this.budgetLeft() > this.projectedWait() + reserve;
   }
 
   private async reserve(): Promise<void> {

@@ -8,6 +8,7 @@
  *   PK-assert → 5 свежеоткрытое → 6 финализация недель + RECON → 7 статус прогона.
  */
 import type { Logger } from '../../logging.js';
+import { classifyFailure } from '../../failure.js';
 import {
   FIN_LOOKBACK_DAYS, FIN_STALE_STARTED_MIN, FIN_MAX_ATTEMPTS, FIN_METRIC_TOL, FIN_LOAD_BATCH, FIN_LIST_METRICS,
 } from './constants.js';
@@ -16,7 +17,7 @@ import {
   checkDetailedKeys, detailedSums, mapDetailedRow, runStatusOf,
   type ListReport, type ReportPeriod, type RunCounters, type RunStatus,
 } from './normalize.js';
-import type { FinanceStore, QueueItem, ReconRow } from './store.js';
+import type { FinanceStore, QueueItem, ReconRow, WeeklyCandidate } from './store.js';
 import type { FinanceApi, Clock } from './wbApi.js';
 
 export type FinanceApiPort = Pick<FinanceApi, 'canRequest' | 'list' | 'detailed' | 'requests'>;
@@ -172,7 +173,18 @@ export async function loadReport(d: TickDeps, item: QueueItem): Promise<LoadOutc
       + `fetched=${rows.length} this_run=${pl.count}. В RAW по этому report_id больше строк, чем загрузил текущий прогон.`);
   }
 
-  if (!(await store.mergeComplete(rid, runId, rows.length, loaded, det))) {
+  // Строки уже в RAW: транзиентный отказ BigQuery на COMPLETE повторяется один раз (иначе отчёт остался бы STARTED
+  // со строками и через 120 мин ушёл бы в ORPHANED_RAW_REPORT). MERGE идемпотентен: ловит только STARTED своего прогона.
+  let completed: boolean;
+  try {
+    completed = await store.mergeComplete(rid, runId, rows.length, loaded, det);
+  } catch (e) {
+    if (classifyFailure(e).category !== 'TRANSIENT' && !/concurrent update|serialize access/i.test(String(e))) throw e;
+    log.warn('finance_complete_retry', { error: e instanceof Error ? e.message : String(e) });
+    await d.clock.sleep(5_000);
+    completed = await store.mergeComplete(rid, runId, rows.length, loaded, det);
+  }
+  if (!completed) {
     let diag = '';
     try { diag = await store.manifestDiag(rid); } catch (e) { diag = `диагностика недоступна: ${String(e)}`; }
     log.error('finance_report_error', { code: 'COMPLETE_MERGE_NOT_APPLIED', diag });
@@ -185,23 +197,27 @@ export async function loadReport(d: TickDeps, item: QueueItem): Promise<LoadOutc
   return { status: 'COMPLETE', fetched: rows.length, loaded };
 }
 
-/** Финализация недель + RECON (только SQL по манифесту — бюджета API не ест). */
-export async function finalizeWeeks(store: FinanceStore, cutover: string, logger: Logger): Promise<number> {
-  let finalized = 0;
+/** RECON + weekly_final одной недели (RECON — до weekly_final). */
+async function finalizeOne(store: FinanceStore, wk: WeeklyCandidate, logger: Logger, event: string): Promise<void> {
+  const ds = await store.dailySums(wk.report_type, wk.week_start);
+  const rows: ReconRow[] = FIN_LIST_METRICS.map(([name, col]) => ({
+    metric: name,
+    sum_daily: r2(finNum(ds.metrics[col])),
+    sum_weekly: r2(finNum(wk.metrics[col])),
+  }));
+  await store.mergeRecon(wk.week_start, wk.report_type, rows, FIN_METRIC_TOL);
+  await store.markWeekFinal(wk.week_start, wk.report_type, wk.report_id, ds.days_loaded);
+  logger.info(event, { weekStart: wk.week_start, reportType: wk.report_type, dailyDays: ds.days_loaded });
+}
+
+/** Финализация недель + RECON (только SQL по манифесту — бюджета API не ест). Возвращает финализированные недели. */
+export async function finalizeWeeks(store: FinanceStore, cutover: string, logger: Logger): Promise<WeeklyCandidate[]> {
+  const done: WeeklyCandidate[] = [];
   for (const wk of await store.finalizeCandidates(cutover)) {
-    const ds = await store.dailySums(wk.report_type, wk.week_start);
-    const rows: ReconRow[] = FIN_LIST_METRICS.map(([name, col]) => ({
-      metric: name,
-      sum_daily: r2(finNum(ds.metrics[col])),
-      sum_weekly: r2(finNum(wk.metrics[col])),
-    }));
-    // RECON — до weekly_final
-    await store.mergeRecon(wk.week_start, wk.report_type, rows, FIN_METRIC_TOL);
-    await store.markWeekFinal(wk.week_start, wk.report_type, wk.report_id, ds.days_loaded);
-    finalized++;
-    logger.info('finance_week_finalized', { weekStart: wk.week_start, reportType: wk.report_type, dailyDays: ds.days_loaded });
+    await finalizeOne(store, wk, logger, 'finance_week_finalized');
+    done.push(wk);
   }
-  return finalized;
+  return done;
 }
 
 /** Основной тик. Не бросает: отказ любой стадии закрывает журнал как ERROR (как finDailyRun_). */
@@ -217,16 +233,15 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
   let opened = false;
   const t0 = clock.now();
 
+  /** Какие слои дошли до COMPLETE в текущем цикле (для решения о финализации и пересчёте RECON). */
+  const completedIn = { WEEKLY: 0, DAILY: 0 };
   const loadOne = async (item: QueueItem): Promise<void> => {
     const res = await loadReport(d, item);
     if (res.status === 'COMPLETE') {
       counters.loaded++;
       rowsFetched += res.fetched;
       rowsLoaded += res.loaded;
-      // ОТЛИЧИЕ: неделя финализируется сразу после COMPLETE недельного отчёта (а не только в шаге 6).
-      // Пока WEEKLY COMPLETE, а неделя не финальна, V_WB_FINANCE_CANONICAL держит и DAILY, и WEEKLY
-      // строки одних rrd_id — ASSERT витрины (#91) упал бы. Бюджет Cloud Run длиннее, окно — тоже.
-      if (item.report_period === 'WEEKLY') finalized += await finalizeWeeks(store, d.cutover, logger);
+      completedIn[item.report_period]++;
     } else if (res.status === 'ERROR') counters.errors++;
   };
 
@@ -245,6 +260,12 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
 
     await store.assertManifestPk('до discovery');
 
+    // Снимок состояния недель ДО очереди. В Apps Script его читают после шага 3, но там до шага 6 неделя не
+    // финализируется, поэтому «до» и «после» очереди совпадают. Снимок нужен, чтобы ранняя финализация (ниже)
+    // не изменила ни регистрацию суточных («пропущено (final week)»), ни решение о weekly list.
+    const finalWeeks = await store.finalWeeks();
+    const needWeekly = await store.hasOpenWeeks();
+
     // 3. Очередь — до новых list-запросов
     const queue = await store.queue(FIN_MAX_ATTEMPTS);
     logger.info('finance_queue', { size: queue.length });
@@ -253,8 +274,17 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
       await loadOne(queue[i]!);
     }
 
+    // ОТЛИЧИЕ: если в очереди дошёл до COMPLETE недельный отчёт, неделя финализируется сразу после цикла очереди,
+    // а не после discovery и свежих отчётов. Пока WEEKLY COMPLETE, а неделя не финальна, V_WB_FINANCE_CANONICAL
+    // держит DAILY и WEEKLY строки одних rrd_id (ASSERT витрины #91). Окно кончается вместе с циклом очереди и
+    // не включает discovery и шаг 5 — то есть не длиннее, чем у Apps Script. Итог RECON совпадает с Apps Script:
+    // недели, финализированные здесь, пересчитываются после шага 5, если там загружались суточные.
+    const earlyFinal = completedIn.WEEKLY > 0 ? await finalizeWeeks(store, d.cutover, logger) : [];
+    finalized += earlyFinal.length;
+    completedIn.WEEKLY = 0;
+    completedIn.DAILY = 0;
+
     // 4. Discovery — при остатке бюджета
-    const finalWeeks = await store.finalWeeks();
     if (api.canRequest()) {
       const dl = await api.list('daily', todayMsk(clock.now(), -FIN_LOOKBACK_DAYS), todayMsk(clock.now(), 0));
       if (!dl.ok) {
@@ -269,7 +299,7 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
       }
     } else queueLeft = Math.max(queueLeft, 1);
 
-    if ((await store.hasOpenWeeks()) && api.canRequest()) {
+    if (needWeekly && api.canRequest()) {
       const wl = await api.list('weekly', d.cutover, todayMsk(clock.now(), 0));
       if (!wl.ok) {
         counters.errors++;
@@ -294,8 +324,12 @@ export async function runFinanceTick(d: TickDeps): Promise<TickResult> {
       }
     }
 
-    // 6. Финализация недель + RECON
-    finalized += await finalizeWeeks(store, d.cutover, logger);
+    // 6. Финализация недель + RECON (как в Apps Script — всегда, после свежих отчётов)
+    finalized += (await finalizeWeeks(store, d.cutover, logger)).length;
+    // Суточные, зарегистрированные по снимку и загруженные в шаге 5, входят в RECON недели так же, как в Apps Script.
+    if (earlyFinal.length && completedIn.DAILY > 0) {
+      for (const wk of earlyFinal) await finalizeOne(store, wk, logger, 'finance_week_recon_refreshed');
+    }
 
     // 7. Аномалии неизменяемого COMPLETE — ERROR прогона (манифест не тронут)
     if (anomalies.length) {

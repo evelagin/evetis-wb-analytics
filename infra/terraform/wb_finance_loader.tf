@@ -5,10 +5,12 @@
 #
 # Состав:
 #   • пять теневых таблиц `__CR` — зеркало схемы боевых (снимок метаданных 10.11.2026, порядок колонок как в проде);
-#   • wb-finance-shadow (sa-loaders-shadow): пишет ТОЛЬКО в `__CR` (+ LOADER_RUNS environment='shadow');
-#   • wb-finance-prod (sa-loaders-prod): пишет боевые RAW_WB_FINANCE + FINANCE_* — как Apps Script; до cutover
-#     Scheduler на ПАУЗЕ, образ — bootstrap, пока его не продвинут;
-#   • IAM ровно на эти таблицы. Секрет WB_TOKEN_FINANCE уже в local.wb_secrets (оба SA имеют accessor).
+#   • свои SA sa-wb-finance-shadow / sa-wb-finance-prod: jobUser, LOADER_RUNS, ТОЛЬКО свои таблицы, ТОЛЬКО секрет
+#     WB_TOKEN_FINANCE, actAs для deployer и terraform-apply (образец — ref_sync, PR #417). Общие sa-loaders-* прав
+#     на финансы не получают;
+#   • wb-finance-shadow: пишет ТОЛЬКО в `__CR` (+ LOADER_RUNS environment='shadow');
+#   • prod-контур (SA, его права, Job, invoker, Scheduler, алерт) создаётся ТОЛЬКО при var.finance_prod_enabled = true
+#     (по умолчанию false): нецелевой apply infra.yml до cutover prod не создаёт. Включение — runbook §5.
 #
 # Контур проверяет и сам загрузчик (finance/targets.ts): shadow → только свои `__CR`, prod → только боевые
 # и FINANCE_CUTOVER=2026-07-13. Неверный env не доходит ни до токена, ни до BigQuery.
@@ -230,39 +232,94 @@ resource "google_bigquery_table" "finance_week_recon_cr" {
   schema              = jsonencode(local.finance_week_recon_schema)
 }
 
-# ── IAM: shadow пишет только свои __CR (LOADER_RUNS — уже shadow_write_runs) ──
-resource "google_bigquery_table_iam_member" "shadow_write_finance_cr" {
-  for_each = {
+# ── Сервис-аккаунты финансов ────────────────────────────────────────────────
+resource "google_service_account" "finance_shadow" {
+  account_id   = "sa-wb-finance-shadow"
+  display_name = "WB финансы runtime (SHADOW): Finance API + FINANCE_*__CR"
+}
+
+resource "google_service_account" "finance_prod" {
+  count        = var.finance_prod_enabled ? 1 : 0
+  account_id   = "sa-wb-finance-prod"
+  display_name = "WB финансы runtime (PROD): Finance API + RAW_WB_FINANCE / FINANCE_*"
+}
+
+locals {
+  # Контуры, существующие сейчас: shadow всегда, prod — только под флагом.
+  finance_sa = merge(
+    { shadow = google_service_account.finance_shadow },
+    var.finance_prod_enabled ? { prod = google_service_account.finance_prod[0] } : {},
+  )
+  finance_cr_tables = {
     raw         = google_bigquery_table.raw_wb_finance_cr.table_id
     runs        = google_bigquery_table.finance_loader_runs_cr.table_id
     loads       = google_bigquery_table.finance_report_loads_cr.table_id
     week_status = google_bigquery_table.finance_week_status_cr.table_id
     week_recon  = google_bigquery_table.finance_week_recon_cr.table_id
   }
-  dataset_id = var.raw_dataset
-  table_id   = each.value
-  role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.loaders_shadow.email}"
-}
-
-# ── IAM: prod пишет боевые таблицы финансов (чтение wb_raw у него уже dataset-level, prod_view_raw) ──
-# Таблицы существуют в проде и Terraform ими НЕ владеет (их создал C0 Apps Script) — привязка по имени.
-resource "google_bigquery_table_iam_member" "prod_write_finance" {
-  for_each   = toset(values(local.finance_prod_env_tables))
-  dataset_id = var.raw_dataset
-  table_id   = each.value
-  role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.loaders_prod.email}"
-}
-
-locals {
-  finance_prod_env_tables = {
+  # Боевые таблицы существуют (их создал C0 Apps Script) и Terraform ими НЕ владеет — привязка по имени.
+  finance_prod_tables = {
     raw         = local.finance_prod_env.FINANCE_RAW_TABLE
     runs        = local.finance_prod_env.FINANCE_RUNS_TABLE
     loads       = local.finance_prod_env.FINANCE_LOADS_TABLE
     week_status = local.finance_prod_env.FINANCE_WEEK_STATUS_TABLE
     week_recon  = local.finance_prod_env.FINANCE_WEEK_RECON_TABLE
   }
+}
+
+resource "google_project_iam_member" "finance_jobuser" {
+  for_each = local.finance_sa
+  project  = var.project_id
+  role     = "roles/bigquery.jobUser"
+  member   = "serviceAccount:${each.value.email}"
+}
+
+# Журнал execution-guard (lease cli и проверка соседнего режима finance/finance-backfill).
+resource "google_bigquery_table_iam_member" "finance_write_loader_runs" {
+  for_each   = local.finance_sa
+  dataset_id = var.raw_dataset
+  table_id   = google_bigquery_table.loader_runs.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${each.value.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "finance_token_access" {
+  for_each  = local.finance_sa
+  secret_id = google_secret_manager_secret.wb["WB_TOKEN_FINANCE"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${each.value.email}"
+}
+
+resource "google_service_account_iam_member" "finance_actas_deployer" {
+  for_each           = local.finance_sa
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+resource "google_service_account_iam_member" "finance_actas_terraform" {
+  for_each           = local.finance_sa
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform_apply.email}"
+}
+
+# shadow: только свои __CR (чтение — тем же dataEditor; других таблиц финансы не читают)
+resource "google_bigquery_table_iam_member" "finance_shadow_write_cr" {
+  for_each   = local.finance_cr_tables
+  dataset_id = var.raw_dataset
+  table_id   = each.value
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.finance_shadow.email}"
+}
+
+# prod: только боевые таблицы финансов и только под флагом. sa-loaders-prod прав на них НЕ получает.
+resource "google_bigquery_table_iam_member" "finance_prod_write" {
+  for_each   = var.finance_prod_enabled ? local.finance_prod_tables : {}
+  dataset_id = var.raw_dataset
+  table_id   = each.value
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.finance_prod[0].email}"
 }
 
 # ── Jobs ────────────────────────────────────────────────────────────────────
@@ -273,7 +330,7 @@ resource "google_cloud_run_v2_job" "wb_finance_shadow" {
 
   template {
     template {
-      service_account = google_service_account.loaders_shadow.email
+      service_account = google_service_account.finance_shadow.email
       # 0: повтор task в том же execution дал бы тот же run_id LOADER_RUNS. Повтор — следующий слот;
       # очередь манифеста (DISCOVERED/ERROR < 5 попыток) дочитывается там же.
       max_retries = 0
@@ -291,7 +348,9 @@ resource "google_cloud_run_v2_job" "wb_finance_shadow" {
       }
     }
   }
-  # Образ ведёт deploy-shadow.yml; env shadow реконсилирует Terraform (как у wb-stocks-shadow).
+  # Образ ведёт deploy-shadow.yml (шаг wb-finance-shadow меняет ТОЛЬКО --image, env не трогает), поэтому env
+  # shadow реконсилирует Terraform без дрейфа — как у wb-stocks-shadow. Если шаг когда-нибудь начнёт ставить
+  # IMAGE_DIGEST/GIT_SHA, env нужно добавить в ignore_changes (иначе вечный дрейф плана).
   lifecycle {
     ignore_changes = [
       template[0].template[0].containers[0].image,
@@ -301,18 +360,22 @@ resource "google_cloud_run_v2_job" "wb_finance_shadow" {
   }
   depends_on = [
     google_project_service.enabled,
-    google_bigquery_table_iam_member.shadow_write_finance_cr,
+    google_bigquery_table_iam_member.finance_shadow_write_cr,
+    google_bigquery_table_iam_member.finance_write_loader_runs,
+    google_secret_manager_secret_iam_member.finance_token_access,
+    google_service_account_iam_member.finance_actas_terraform,
   ]
 }
 
 resource "google_cloud_run_v2_job" "wb_finance_prod" {
+  count               = var.finance_prod_enabled ? 1 : 0
   name                = "wb-finance-prod"
   location            = var.region
   deletion_protection = false
 
   template {
     template {
-      service_account = google_service_account.loaders_prod.email
+      service_account = google_service_account.finance_prod[0].email
       max_retries     = 0
       timeout         = "1800s"
       containers {
@@ -340,7 +403,10 @@ resource "google_cloud_run_v2_job" "wb_finance_prod" {
   }
   depends_on = [
     google_project_service.enabled,
-    google_bigquery_table_iam_member.prod_write_finance,
+    google_bigquery_table_iam_member.finance_prod_write,
+    google_bigquery_table_iam_member.finance_write_loader_runs,
+    google_secret_manager_secret_iam_member.finance_token_access,
+    google_service_account_iam_member.finance_actas_terraform,
   ]
 }
 
@@ -352,8 +418,9 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_finance_shadow_invoke" 
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_finance_prod_invoke" {
+  count    = var.finance_prod_enabled ? 1 : 0
   location = var.region
-  name     = google_cloud_run_v2_job.wb_finance_prod.name
+  name     = google_cloud_run_v2_job.wb_finance_prod[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
@@ -386,6 +453,7 @@ resource "google_cloud_scheduler_job" "wb_finance_shadow" {
 }
 
 resource "google_cloud_scheduler_job" "wb_finance_prod" {
+  count     = var.finance_prod_enabled ? 1 : 0
   name      = "wb-finance-prod"
   region    = var.region
   schedule  = "30 7,12,18 * * *"
@@ -398,7 +466,7 @@ resource "google_cloud_scheduler_job" "wb_finance_prod" {
 
   http_target {
     http_method = "POST"
-    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_finance_prod.name}:run"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.wb_finance_prod[0].name}:run"
     oauth_token {
       service_account_email = google_service_account.scheduler_prod.email
     }
@@ -412,7 +480,7 @@ resource "google_cloud_scheduler_job" "wb_finance_prod" {
 
 # ── Наблюдаемость: отказ с кодом (loader_failed, finance_report_error) или отказ исполнения prod-Job'а ──
 resource "google_monitoring_alert_policy" "wb_finance_failed" {
-  count        = var.unitka_alert_email == "" ? 0 : 1
+  count        = var.finance_prod_enabled && var.unitka_alert_email != "" ? 1 : 0
   display_name = "WB финансы: загрузка финансового отчёта не завершилась"
   combiner     = "OR"
 

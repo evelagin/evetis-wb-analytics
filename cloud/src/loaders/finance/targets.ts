@@ -11,7 +11,9 @@
  */
 import type { Config } from '../../config.js';
 import { LoaderError } from '../../errors.js';
-import { FIN_PROD_CUTOVER } from './constants.js';
+import {
+  FIN_PROD_CUTOVER, FIN_RUN_CEILING_MS, FIN_RUN_OVERHEAD_MS, FIN_BUDGET_MIN_MS, FIN_TIMEOUT_MIN_MS, FIN_TIMEOUT_MAX_MS,
+} from './constants.js';
 import { isCalendarDate, weekStart } from './parse.js';
 import type { FinanceTables } from './store.js';
 
@@ -26,7 +28,7 @@ export const WB_FINANCE_PROD_TARGETS: FinanceTables = {
 
 const SHADOW_SUFFIX = '__CR';
 
-export type FinanceTargetConfig = Pick<Config, 'environment' | 'financeTables' | 'financeCutover'>;
+export type FinanceTargetConfig = Pick<Config, 'environment' | 'financeTables' | 'financeCutover' | 'financeBudgetMs' | 'financeHttpTimeoutMs'>;
 
 const ENV_NAMES: Record<keyof FinanceTables, string> = {
   raw: 'FINANCE_RAW_TABLE',
@@ -36,7 +38,24 @@ const ENV_NAMES: Record<keyof FinanceTables, string> = {
   weekRecon: 'FINANCE_WEEK_RECON_TABLE',
 };
 
+/**
+ * Время прогона: budget + HTTP-таймаут + накладные < потолка (timeout Job'а и stale lease). Иначе Job мог бы быть
+ * убит между load-job и COMPLETE. Нарушение — FINANCE_CONFIG_INVALID до любого I/O.
+ */
+export function assertFinanceTiming(c: Pick<Config, 'financeBudgetMs' | 'financeHttpTimeoutMs'>): void {
+  const b = c.financeBudgetMs;
+  const t = c.financeHttpTimeoutMs;
+  const bad: string[] = [];
+  if (!Number.isInteger(b) || b < FIN_BUDGET_MIN_MS) bad.push(`FINANCE_BUDGET_MS=${b} (целое ≥ ${FIN_BUDGET_MIN_MS})`);
+  if (!Number.isInteger(t) || t < FIN_TIMEOUT_MIN_MS || t > FIN_TIMEOUT_MAX_MS) bad.push(`FINANCE_HTTP_TIMEOUT_MS=${t} (${FIN_TIMEOUT_MIN_MS}…${FIN_TIMEOUT_MAX_MS})`);
+  if (!bad.length && b + t + FIN_RUN_OVERHEAD_MS >= FIN_RUN_CEILING_MS) {
+    bad.push(`budget ${b} + timeout ${t} + накладные ${FIN_RUN_OVERHEAD_MS} ≥ потолка ${FIN_RUN_CEILING_MS} (timeout Job'а / stale lease)`);
+  }
+  if (bad.length) throw new LoaderError(`конфигурация времени финансов: ${bad.join('; ')}`, 'FINANCE_CONFIG_INVALID');
+}
+
 export function assertFinanceTargets(c: FinanceTargetConfig): void {
+  assertFinanceTiming(c);
   const keys = Object.keys(WB_FINANCE_PROD_TARGETS) as Array<keyof FinanceTables>;
   const cut = c.financeCutover;
   if (!isCalendarDate(cut) || weekStart(cut) !== cut) {

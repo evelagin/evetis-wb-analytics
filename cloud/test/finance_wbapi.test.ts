@@ -10,10 +10,10 @@ import { FakeClock, SynthFinanceApi, synthRow, resp, silentLogger } from './fina
 const T0 = Date.UTC(2026, 10, 10, 4, 30);
 const TOKEN = 'synthetic-token-not-real';
 
-function setup(reports: SynthFinanceApi['reports'] = [], budgetMs = 1_200_000, pageLimit?: number) {
+function setup(reports: SynthFinanceApi['reports'] = [], budgetMs = 1_200_000, pageLimit?: number, bqTailMs?: number) {
   const clock = new FakeClock(T0);
   const wb = new SynthFinanceApi(reports, clock, pageLimit);
-  const api = new FinanceApi({ host: 'https://finance.example.invalid', token: TOKEN, t0: T0, budgetMs, timeoutMs: 1000 }, clock, wb.fetch, silentLogger);
+  const api = new FinanceApi({ host: 'https://finance.example.invalid', token: TOKEN, t0: T0, budgetMs, timeoutMs: 1000, ...(bqTailMs !== undefined ? { bqTailMs } : {}) }, clock, wb.fetch, silentLogger);
   return { clock, wb, api };
 }
 
@@ -74,12 +74,20 @@ describe('FinanceApi: пейсер и лимит WB (1 запрос/мин на 
   });
 
   it('бюджет: запрос не делается, если ожидание пейсера + маржа не помещаются', async () => {
-    const { wb, api } = setup([], 90_000);
+    const { wb, api } = setup([], 90_000, undefined, 0);
     await api.list('daily', '2026-11-07', '2026-11-10'); // 204, первый запрос без ожидания
-    expect(api.canRequest()).toBe(false); // ещё 61 с ожидания + 30 с маржи > остатка
+    expect(api.canRequest()).toBe(false); // ещё 61 с ожидания + 30 с маржи + 1 с таймаута > остатка
     const r = await api.list('weekly', '2026-07-13', '2026-11-10');
     expect(r).toMatchObject({ ok: false, error: 'BUDGET_EXCEEDED (list)' });
     expect(wb.calls.length).toBe(1);
+  });
+
+  it('резерв canRequest = маржа + таймаут запроса + хвост BigQuery', () => {
+    const clock = new FakeClock(T0);
+    const mk = (budgetMs: number) => new FinanceApi({ host: 'h', token: TOKEN, t0: T0, budgetMs, timeoutMs: 120_000 }, clock, async () => resp(204, ''), silentLogger);
+    // 30 с + 120 с + 120 с = 270 с: при остатке 270 с запрос уже не начинается, при 271 с — начинается
+    expect(mk(270_000).canRequest()).toBe(false);
+    expect(mk(270_001).canRequest()).toBe(true);
   });
 
   it('retryAfterMs: заголовки WB, мусор, потолок', () => {

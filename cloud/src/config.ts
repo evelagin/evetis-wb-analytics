@@ -264,9 +264,9 @@ export interface Config {
   financeTables: { raw: string; runs: string; loads: string; weekStatus: string; weekRecon: string };
   /** Первая неделя контура (пн). prod — строго 2026-07-13; shadow может начать позже (runbook §4). */
   financeCutover: string;
-  /** Бюджет прогона на запросы к Finance API, мс (5 мин … 25 мин; иначе 20 мин). */
+  /** Бюджет прогона на запросы к Finance API, мс (по умолчанию 20 мин). Мусор → NaN; допустимость проверяет targets.ts. */
   financeBudgetMs: number;
-  /** Таймаут одного HTTP-запроса к Finance API, мс. */
+  /** Таймаут одного HTTP-запроса к Finance API, мс (по умолчанию 120 с). Мусор → NaN; проверяет targets.ts. */
   financeHttpTimeoutMs: number;
   /** trigger_type в FINANCE_LOADER_RUNS: AUTO (по умолчанию) | MANUAL. */
   financeTriggerType: 'AUTO' | 'MANUAL';
@@ -367,8 +367,12 @@ function cancelRestoreConfig(env: Env): Pick<Config, 'unitkaCancelRestoreDirecti
 
 /** M4 finance: мягкий разбор. Никогда не бросает ConfigError — опечатка не роняет чужие загрузчики. */
 function financeConfig(env: Env): Pick<Config, 'wbFinanceHost' | 'wbFinanceSecret' | 'financeTables' | 'financeCutover' | 'financeBudgetMs' | 'financeHttpTimeoutMs' | 'financeTriggerType' | 'financeBackfillFrom' | 'financeBackfillTo' | 'financeDryRun'> {
-  const budget = Number((env.FINANCE_BUDGET_MS ?? '').trim());
-  const timeout = Number((env.FINANCE_HTTP_TIMEOUT_MS ?? '').trim());
+  // Пусто → значение по умолчанию; иначе — как есть (в т.ч. NaN): finance/targets.ts отклонит до любого I/O,
+  // а loadConfig чужих загрузчиков не падает.
+  const num = (name: string, fallback: number): number => {
+    const raw = (env[name] ?? '').trim();
+    return raw === '' ? fallback : Number(raw);
+  };
   return {
     wbFinanceHost: opt(env, 'WB_FINANCE_HOST', 'https://finance-api.wildberries.ru'),
     wbFinanceSecret: opt(env, 'WB_FINANCE_SECRET', 'WB_TOKEN_FINANCE'),
@@ -380,8 +384,8 @@ function financeConfig(env: Env): Pick<Config, 'wbFinanceHost' | 'wbFinanceSecre
       weekRecon: opt(env, 'FINANCE_WEEK_RECON_TABLE', 'FINANCE_WEEK_RECON__CR'),
     },
     financeCutover: opt(env, 'FINANCE_CUTOVER', '2026-07-13'),
-    financeBudgetMs: Number.isInteger(budget) && budget >= 300_000 && budget <= 1_500_000 ? budget : 1_200_000,
-    financeHttpTimeoutMs: Number.isInteger(timeout) && timeout >= 10_000 && timeout <= 300_000 ? timeout : 120_000,
+    financeBudgetMs: num('FINANCE_BUDGET_MS', 1_200_000),
+    financeHttpTimeoutMs: num('FINANCE_HTTP_TIMEOUT_MS', 120_000),
     financeTriggerType: (env.FINANCE_TRIGGER_TYPE ?? '').trim().toUpperCase() === 'MANUAL' ? 'MANUAL' : 'AUTO',
     financeBackfillFrom: (env.FINANCE_BACKFILL_FROM ?? '').trim(),
     financeBackfillTo: (env.FINANCE_BACKFILL_TO ?? '').trim(),
