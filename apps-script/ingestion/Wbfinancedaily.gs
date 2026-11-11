@@ -1230,7 +1230,7 @@ function finDailyRun_(triggerType) {
     console.log('FinanceDaily: SKIPPED_LOCKED');
     return { status: 'SKIPPED_LOCKED' };
   }
-  var wgate = wbWriterGate_('finance'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('finance', triggerType === 'MANUAL' ? 'wbFinDailyRunManual' : 'runWbFinanceDaily'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
 
   var st = {
     t0: Date.now(), lastReqAt: 0, requests: 0,

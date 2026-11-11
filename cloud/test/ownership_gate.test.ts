@@ -161,9 +161,10 @@ describe('gate в cli.ts (только prod, до lease и handler)', () => {
   it('BqOwnershipReader: один параметризованный SELECT по своему потоку', async () => {
     const seen: Array<{ sql: string; params: unknown }> = [];
     const r = new BqOwnershipReader({ projectId: 'p', query: async (sql: string, params: unknown) => { seen.push({ sql, params }); return [{ owner: 'CLOUD_RUN', epoch: 4, state: 'COMPLETED' }]; } } as never, 'wb_ops');
-    expect(await r.read('finance')).toEqual({ owner: 'CLOUD_RUN', epoch: 4, state: 'COMPLETED' });
+    expect(await r.read('finance', 'WRITER_GATE:CR:finance:finance')).toEqual({ owner: 'CLOUD_RUN', epoch: 4, state: 'COMPLETED' });
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.sql).toBe('/* WRITER_GATE:CR:finance:v1 */ SELECT owner, epoch, state FROM `p.wb_ops.INGEST_WRITER_OWNERSHIP` WHERE stream = @stream');
+    expect(seen[0]!.sql).toBe('/* WRITER_GATE:CR:finance:finance:v1 */ SELECT owner, epoch, state FROM `p.wb_ops.INGEST_WRITER_OWNERSHIP` WHERE stream = @stream');
+    await expect(r.read('finance', "x' OR 1=1")).rejects.toThrow(/метка/);
     expect(seen[0]!.params).toEqual({ stream: 'finance' });
   });
 
@@ -310,5 +311,16 @@ describe('конкурентность Cloud Run: истечение lease и с
     });
     expect(await runCli(argv('stocks'), env(), h.deps)).toBe(EXIT_OK);
     expect(h.finals).toEqual([expect.objectContaining({ status: 'COMPLETE' })]);
+  });
+});
+
+
+describe('метки запросов gate Cloud Run (доказательство для координатора)', () => {
+  it('вход — WRITER_GATE:CR:<поток>:<загрузчик>, перечитка перед COMPLETE — WRITER_RECHECK (доказательством не считается)', async () => {
+    const marks: Array<string | undefined> = [];
+    const reader: OwnershipReader = { read: async (_s, m) => { marks.push(m); return CR(5); } };
+    const h = harness(reader);
+    expect(await runCli(argv('stocks'), env(), h.deps)).toBe(EXIT_OK);
+    expect(marks).toEqual(['WRITER_GATE:CR:stocks:stocks', 'WRITER_RECHECK:CR:stocks:stocks']);
   });
 });

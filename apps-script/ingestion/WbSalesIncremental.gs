@@ -173,7 +173,7 @@ function runWbSalesIncremental() {
     salesIncSafeLog_(r);
     return r;
   }
-  var wgate = wbWriterGate_('statistics'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('statistics', 'runWbSalesIncremental'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   // PR-Mart3a: heartbeat-журнал. Ранний SKIPPED_LOCKED выше — там ран не открываем.
   var ingestRunIdSales = ingestRunStart_('sales', ingestClosedDayMsk_(), 'SCHEDULED');
   try {

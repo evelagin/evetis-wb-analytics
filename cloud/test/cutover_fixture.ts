@@ -1,8 +1,17 @@
 /** Этап C: хранилище координатора в памяти — та же семантика CAS (epoch + state + revision), что у BigQuery. */
 import type { Stream } from '../src/ownership/streams.js';
 import type {
-  CasExpect, CasNext, CloudRun, CutoverLogEntry, CutoverStore, OwnershipRow, PendingJob, RunRecord,
+  CasExpect, CasNext, CloudRun, CutoverLogEntry, CutoverStore, GateEvidence, OwnershipRow, RunRecord, WriteJob,
 } from '../src/loaders/cutover/store.js';
+import { PROFILES } from '../src/loaders/cutover/profiles.js';
+import type { Identities } from '../src/loaders/cutover/machine.js';
+
+/** Учётные записи писателей в тестах (не настоящие). */
+export const IDS: Identities = {
+  appsScriptUser: 'owner@example.com',
+  streamSa: Object.fromEntries((['stocks', 'statistics', 'ads', 'finance', 'supplies', 'ref'] as Stream[])
+    .map((s) => [s, `sa-${s}-prod@p.iam.gserviceaccount.com`])) as Identities['streamSa'],
+};
 import type { QualRow } from '../src/loaders/cutover/qualification.js';
 
 export const T0 = Date.parse('2026-11-16T07:00:00Z'); // пн 10:00 МСК
@@ -85,16 +94,25 @@ export class MemCutoverStore implements CutoverStore {
   async continuityViolations(): Promise<number> { return this.violations; }
   async duplicates(): Promise<number> { return this.dups; }
   async downstreamAlive(kind: 'mart' | 'ref_active'): Promise<boolean> { return this.downstream[kind]; }
-  jobs: Array<PendingJob & { stream: Stream }> = [];
-  async pendingWriteJobs(stream: Stream, fromMs: number): Promise<PendingJob[]> {
-    return this.jobs.filter((j) => j.stream === stream && j.createdMs >= fromMs && j.state !== 'DONE');
+  jobs: Array<WriteJob & { stream: Stream }> = [];
+  async writeJobs(stream: Stream, fromMs: number): Promise<WriteJob[]> {
+    return this.jobs.filter((j) => j.stream === stream && j.createdMs >= fromMs);
   }
   /** Отметка, которую прочитал бы прогон со стартом beforeMs (statistics). */
   seenBefore: (beforeMs: number) => string | null = () => this.watermark.statistics ?? null;
   async statsWatermarkBefore(beforeMs: number): Promise<string | null> { return this.seenBefore(beforeMs); }
-  /** Чтения строки владения писателями за окно (метки WRITER_GATE:AS/CR). По умолчанию оба под gate. */
-  evidence = { appsScript: 3, cloudRun: 4 };
-  async gateEvidence(): Promise<{ appsScript: number; cloudRun: number }> { return this.evidence; }
+  /**
+   * Запросы gate точек входа (метки WRITER_GATE:AS/CR:<поток>:<точка входа>). null — по умолчанию: по каждой
+   * плановой точке входа профиля есть свежий запрос от своего пользователя (IDS).
+   */
+  evidence: GateEvidence[] | null = null;
+  async gateEvidence(stream: Stream): Promise<GateEvidence[]> {
+    if (this.evidence) return this.evidence;
+    return PROFILES[stream].schedules.map((e) => ({
+      writer: e.writer, entry: e.writer === 'APPS_SCRIPT' ? e.label : (e.loader ?? ''),
+      user: e.writer === 'APPS_SCRIPT' ? IDS.appsScriptUser : IDS.streamSa[stream]!, n: 4, lastMs: 9e15,
+    }));
+  }
   /** Потерянный ответ CAS: транзакция применяется, ответ — исключение. */
   loseNextCasAck = false;
 

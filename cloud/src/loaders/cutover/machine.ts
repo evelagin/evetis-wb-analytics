@@ -22,7 +22,7 @@ import {
 } from './profiles.js';
 import { evaluateQualification, type QualEvaluation } from './qualification.js';
 import { fenceWindowCheck, mskDate, mskIsoDow } from './window.js';
-import { parseStatsWatermark, type CloudRun, type CutoverStore, type OwnershipRow, type State } from './store.js';
+import { parseStatsWatermark, type CloudRun, type CutoverStore, type OwnershipRow, type State, type WriteJob } from './store.js';
 
 export const ACTIONS = ['tick', 'status', 'fence', 'activate', 'rollback', 'resolve'] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -72,6 +72,17 @@ export interface StepDeps {
    * Загрузчик ставит true раз в час; по умолчанию (команды, тесты) — true.
    */
   hourlyChecks?: boolean;
+  /**
+   * Кто есть кто в INFORMATION_SCHEMA.JOBS: учётная запись владельца, от которой работает Apps Script
+   * (CUTOVER_APPS_SCRIPT_USER), и prod-SA Cloud Run по потокам (CUTOVER_STREAM_PROD_SAS). Не задано —
+   * fence не ставится (доказательство невозможно), а чужие записи считаются нарушением.
+   */
+  identities?: Identities;
+}
+
+export interface Identities {
+  appsScriptUser: string;
+  streamSa: Partial<Record<Stream, string>>;
 }
 
 export type Outcome = 'TRANSITION' | 'OK_ALREADY' | 'NOOP' | 'REFUSED' | 'CAS_CONFLICT' | 'MISSING_ROW';
@@ -147,8 +158,37 @@ function writerLifeMin(p: StreamProfile, w: 'APPS_SCRIPT' | 'CLOUD_RUN', legacyD
  *     лимитом исполнения до fence): они в доказательствах, но cutover не блокируют. Живые-на-fence без исхода
  *     → UNKNOWN_OUTCOME.
  */
+/** Журналы, свою строку которых прогон Apps Script «в полёте» закрывает после fence (WriterGate.gs). */
+const JOURNAL_TABLES = new Set(['INGEST_RUNS', 'FINANCE_LOADER_RUNS', 'WB_STOCKS_SNAPSHOTS', 'REF_SYNC_RUNS']);
+
+/** Чья это запись: Apps Script (учётная запись владельца), prod-SA потока или посторонний. */
+function writerOf(j: WriteJob, p: StreamProfile, ids: Identities | undefined): 'APPS_SCRIPT' | 'CLOUD_RUN' | 'OTHER' {
+  const u = j.user.toLowerCase();
+  if (ids?.appsScriptUser && u === ids.appsScriptUser.toLowerCase()) return 'APPS_SCRIPT';
+  const sa = ids?.streamSa[p.stream];
+  if (sa && u === sa.toLowerCase()) return 'CLOUD_RUN';
+  return 'OTHER';
+}
+
+/**
+ * Запись после fence допустима только как хвост прогона дренируемого писателя, начатого до fence:
+ *   Apps Script — до fence + запас gate→журнал; позже — только UPDATE/MERGE своей строки журнала в пределах
+ *   времени жизни (остальное его перечитка перед записью не пропускает);
+ *   Cloud Run — в пределах времени жизни прогона (перечитки перед каждой записью у загрузчиков потоков нет).
+ * Запись второго (уже отсечённого) писателя или постороннего — нарушение.
+ */
+function allowedAfterFence(j: WriteJob, p: StreamProfile, drained: 'APPS_SCRIPT' | 'CLOUD_RUN', fenced: number,
+  legacyDrainMin: number, ids: Identities | undefined): boolean {
+  const w = writerOf(j, p, ids);
+  if (w !== drained) return false;
+  const life = fenced + writerLifeMin(p, drained, legacyDrainMin) * MIN;
+  if (drained === 'CLOUD_RUN') return j.createdMs <= life;
+  if (j.createdMs <= fenced + GATE_TO_JOURNAL_GRACE_MS.APPS_SCRIPT) return true;
+  return j.createdMs <= life && (j.statementType === 'UPDATE' || j.statementType === 'MERGE') && JOURNAL_TABLES.has(j.table);
+}
+
 async function proveDrain(store: CutoverStore, p: StreamProfile, row: OwnershipRow, drained: 'APPS_SCRIPT' | 'CLOUD_RUN',
-  nowMs: number, legacyDrainMin: number): Promise<Drain> {
+  nowMs: number, legacyDrainMin: number, ids?: Identities): Promise<Drain> {
   const fenced = row.fencedAtMs;
   if (fenced === null) return { kind: 'VIOLATION', reason: 'нет fenced_at у строки без владельца', evidence: {} };
   const waitMin = writerLifeMin(p, drained, legacyDrainMin);
@@ -167,14 +207,15 @@ async function proveDrain(store: CutoverStore, p: StreamProfile, row: OwnershipR
   if (afterFence.length > 0) {
     return { kind: 'VIOLATION', reason: `после fence стартовало ${afterFence.length} прогонов — gate не соблюдён`, evidence: { afterFence: afterFence.slice(0, 20) } };
   }
-  const jobs = await store.pendingWriteJobs(p.stream, from);
-  const lifeMs = Math.max(writerLifeMin(p, 'APPS_SCRIPT', legacyDrainMin), writerLifeMin(p, 'CLOUD_RUN', legacyDrainMin)) * MIN;
-  const jobsLate = jobs.filter((j) => j.createdMs > fenced + lifeMs);
-  if (jobsLate.length > 0) {
-    return { kind: 'VIOLATION', reason: `${jobsLate.length} записывающих заданий BigQuery создано позже, чем мог жить прогон до fence — gate не соблюдён`, evidence: { jobsAfterFence: jobsLate.slice(0, 20) } };
+  // Задания BigQuery в таблицы потока — и ВЫПОЛНЕННЫЕ (запись длится секунды, замер 7 суток: ≤ 21 с, p99 ≤ 6 с).
+  const jobs = await store.writeJobs(p.stream, from);
+  const bad = jobs.filter((j) => j.createdMs > fenced && !allowedAfterFence(j, p, drained, fenced, legacyDrainMin, ids));
+  if (bad.length > 0) {
+    return { kind: 'VIOLATION', reason: `${bad.length} записывающих заданий BigQuery после fence не объясняются прогоном «в полёте» — gate не соблюдён`, evidence: { jobsAfterFence: bad.slice(0, 20) } };
   }
-  if (jobs.length > 0) {
-    return { kind: 'WAIT', reason: `дренаж ${drained}: ${jobs.length} незавершённых заданий BigQuery в таблицы потока (${jobs.slice(0, 3).map((j) => `${j.jobId}→${j.table || j.statementType}`).join(', ')})` };
+  const pending = jobs.filter((j) => j.state !== 'DONE');
+  if (pending.length > 0) {
+    return { kind: 'WAIT', reason: `дренаж ${drained}: ${pending.length} незавершённых заданий BigQuery в таблицы потока (${pending.slice(0, 3).map((j) => `${j.jobId}→${j.table || j.statementType}`).join(', ')})` };
   }
   const lifeFrom = fenced - writerLifeMin(p, drained, legacyDrainMin) * MIN;
   const isOpen = (status: string) => status === 'STARTED' || status === 'RUNNING';
@@ -198,7 +239,7 @@ async function proveDrain(store: CutoverStore, p: StreamProfile, row: OwnershipR
 
 /** NONE → CLOUD_RUN: дренаж Apps Script доказан, legacy watermark зафиксирован. */
 async function planActivate(store: CutoverStore, p: StreamProfile, row: OwnershipRow, d: StepDeps, why: string): Promise<Plan> {
-  const drain = await proveDrain(store, p, row, 'APPS_SCRIPT', d.nowMs, d.legacyDrainMin ?? LEGACY_DRAIN_MIN);
+  const drain = await proveDrain(store, p, row, 'APPS_SCRIPT', d.nowMs, d.legacyDrainMin ?? LEGACY_DRAIN_MIN, d.identities);
   if (drain.kind === 'WAIT') return noop(drain.reason);
   if (drain.kind === 'VIOLATION') {
     if (row.state === 'STOP') return noop(`STOP: ${drain.reason}`, drain.evidence);
@@ -220,7 +261,7 @@ async function planActivate(store: CutoverStore, p: StreamProfile, row: Ownershi
 
 /** NONE → APPS_SCRIPT при откате: дренаж Cloud Run доказан. */
 async function planReturnToLegacy(store: CutoverStore, p: StreamProfile, row: OwnershipRow, d: StepDeps, why: string): Promise<Plan> {
-  const drain = await proveDrain(store, p, row, 'CLOUD_RUN', d.nowMs, d.legacyDrainMin ?? LEGACY_DRAIN_MIN);
+  const drain = await proveDrain(store, p, row, 'CLOUD_RUN', d.nowMs, d.legacyDrainMin ?? LEGACY_DRAIN_MIN, d.identities);
   if (drain.kind === 'WAIT') return noop(drain.reason);
   if (drain.kind === 'VIOLATION') {
     if (row.state === 'STOP') return noop(`STOP: ${drain.reason}`, drain.evidence);
@@ -305,7 +346,7 @@ interface Health {
 }
 
 /** Здоровье после активации: Apps Script не пишет, у Cloud Run нет ERROR/PARTIAL, нет дублей, писатель жив. */
-async function cloudHealth(store: CutoverStore, p: StreamProfile, row: OwnershipRow, nowMs: number): Promise<Health> {
+async function cloudHealth(store: CutoverStore, p: StreamProfile, row: OwnershipRow, nowMs: number, d: StepDeps): Promise<Health> {
   const since = row.activeSinceMs ?? row.changedAtMs;
   const fenced = row.fencedAtMs ?? since;
   const legacyAfter = (await store.legacyRuns(p.stream, fenced, false)).filter((r) => r.startMs > fenced && !r.shared);
@@ -326,13 +367,27 @@ async function cloudHealth(store: CutoverStore, p: StreamProfile, row: Ownership
     h.stop = { reason: `Apps Script пишет при владельце CLOUD_RUN: ${legacyAfter.length} прогонов — два писателя`, evidence: { legacyAfter: legacyAfter.slice(0, 20) } };
     return h;
   }
-  // ERROR, закрытый более поздним COMPLETE того же загрузчика и периода (повтор следующим слотом), — не отказ.
-  const lastByKey = new Map<string, CloudRun>();
-  for (const r of runs) {
-    if (r.status === 'STARTED') continue;
-    lastByKey.set(`${r.loader}|${r.logicalPeriod}`, r);
+  // Любая запись в таблицы потока не от prod-SA потока — второй писатель (Apps Script пишет от учётной записи
+  // человека — различимо). Тяжёлый запрос JOBS — раз в час и в моменты решения (переходы).
+  if (d.hourlyChecks !== false) {
+    const from = Math.max(row.activeSinceMs ?? row.changedAtMs, nowMs - GATE_EVIDENCE_H * H);
+    const foreign = (await store.writeJobs(p.stream, from)).filter((j) => writerOf(j, p, d.identities) !== 'CLOUD_RUN');
+    if (foreign.length > 0) {
+      h.stop = { reason: `запись в таблицы потока не от prod-SA Cloud Run: ${foreign.length} заданий — второй писатель`, evidence: { foreignWrites: foreign.slice(0, 20) } };
+      return h;
+    }
   }
-  const errors = [...lastByKey.values()].filter((r) => r.status === 'ERROR');
+  // ERROR, закрытый более поздним COMPLETE того же загрузчика: того же периода — всегда; любого более позднего
+  // периода — только у потоков, где следующий прогон дочитывает пропущенное (errorsSupersededByLaterPeriod).
+  const errors = runs.filter((r) => r.status === 'ERROR' && !runs.some((c) => c.loader === r.loader && c.status === 'COMPLETE'
+    && c.startMs > r.startMs && (c.logicalPeriod === r.logicalPeriod || p.errorsSupersededByLaterPeriod)));
+  // STARTED без исхода дольше времени жизни Job'а — прогон умер без исхода: это отказ, а не «ещё идёт».
+  const lifeMs = (p.cloudJobTimeoutMin + CLOUD_DRAIN_MARGIN_MIN) * MIN;
+  const dead = runs.filter((r) => r.status === 'STARTED' && r.startMs < nowMs - lifeMs);
+  if (dead.length > 0) {
+    h.rollback = { reason: `прогоны Cloud Run без исхода дольше timeout Job'а: ${dead.length}`, evidence: { deadStarted: dead.slice(0, 20) } };
+    return h;
+  }
   if (errors.length > 0) {
     h.rollback = { reason: `ERROR/PARTIAL Cloud Run после активации: ${errors.length}`, evidence: { errors: errors.slice(0, 20) } };
     return h;
@@ -356,8 +411,35 @@ async function ungatedCloudRuns(store: CutoverStore, p: StreamProfile, row: Owne
   return (await store.cloudRuns(p.stream, since)).filter((r) => r.startMs > since);
 }
 
-/** Окно доказательства «оба писателя под gate» перед fence. */
-export const GATE_EVIDENCE_H = 24;
+/** Окно доказательства «писатели под gate» перед fence: ежедневные точки входа — 26 ч, недельные — 8 суток. */
+export const GATE_EVIDENCE_H = 26;
+export const GATE_EVIDENCE_WEEKLY_H = 8 * 24;
+
+/**
+ * Доказательство по КАЖДОЙ плановой точке входа (profiles.schedules): запрос gate этой точки входа выполнен
+ * в своём окне и от своего пользователя — Apps Script от учётной записи владельца, Cloud Run от prod-SA потока.
+ * Ручной wbWriterGateStatus, перечитка перед записью и запросы других пользователей не засчитываются.
+ */
+export async function gateProof(store: CutoverStore, p: StreamProfile, nowMs: number, ids: Identities | undefined): Promise<{ missing: string[]; seen: unknown }> {
+  const sa = ids?.streamSa[p.stream];
+  if (!ids?.appsScriptUser || !sa) {
+    return { missing: [`не заданы учётные записи писателей (CUTOVER_APPS_SCRIPT_USER / CUTOVER_STREAM_PROD_SAS для ${p.stream})`], seen: [] };
+  }
+  const ev = await store.gateEvidence(p.stream, nowMs - GATE_EVIDENCE_WEEKLY_H * H);
+  const missing: string[] = [];
+  const done = new Set<string>();
+  for (const e of p.schedules) {
+    const entry = e.writer === 'APPS_SCRIPT' ? e.label : (e.loader ?? '');
+    const key = `${e.writer}:${entry}`;
+    if (done.has(key)) continue;
+    done.add(key);
+    const user = (e.writer === 'APPS_SCRIPT' ? ids.appsScriptUser : sa).toLowerCase();
+    const windowMs = (e.dow ? GATE_EVIDENCE_WEEKLY_H : GATE_EVIDENCE_H) * H;
+    const ok = ev.some((x) => x.writer === e.writer && x.entry === entry && x.user.toLowerCase() === user && x.lastMs >= nowMs - windowMs);
+    if (!ok) missing.push(`${e.writer === 'APPS_SCRIPT' ? 'Apps Script' : 'Cloud Run'} ${entry} за ${e.dow ? '8 сут' : `${GATE_EVIDENCE_H} ч`}`);
+  }
+  return { missing, seen: ev };
+}
 
 async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explicitFence: boolean): Promise<Plan> {
   const { store, nowMs } = d;
@@ -399,10 +481,8 @@ async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explic
       if (!w.allowed) return noop(`окно занято: ${w.conflicts.join(', ')}`, w);
       // Оба писателя под gate: за 24 ч и Apps Script (учётная запись владельца), и Cloud Run (SA) читали строку
       // этого потока. Иначе не обновлённый файл Apps Script или образ без gate = тихий второй писатель.
-      const g = await store.gateEvidence(p.stream, nowMs - GATE_EVIDENCE_H * H);
-      if (g.appsScript < 1 || g.cloudRun < 1) {
-        return noop(`нет доказательства gate за ${GATE_EVIDENCE_H} ч: Apps Script ${g.appsScript}, Cloud Run ${g.cloudRun} чтений владения — fence не ставим`, g);
-      }
+      const g = await gateProof(store, p, nowMs, d.identities);
+      if (g.missing.length) return noop(`нет доказательства gate: ${g.missing.join('; ')} — fence не ставим`, g);
       return {
         kind: 'transition', to: 'LEGACY_FENCED', owner: 'NONE', setFencedAt: true,
         reason: `${explicitFence ? 'команда fence' : 'auto'}: квалификация PASS, окно свободно, оба писателя под gate — Apps Script отсечён`,
@@ -415,7 +495,7 @@ async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explic
       return planReturnToLegacy(store, p, row, d, 'tick');
     case 'CLOUD_ACTIVE':
     case 'MONITORING': {
-      const h = await cloudHealth(store, p, row, nowMs);
+      const h = await cloudHealth(store, p, row, nowMs, d);
       // Apps Script пишет при владельце CLOUD_RUN — gate Apps Script не соблюдён. Отсекаем и Cloud Run (NONE):
       // писатель остаётся максимум один (тот, что нарушает gate), решение — за человеком.
       if (h.stop) return { kind: 'transition', to: 'STOP', owner: 'NONE', setFencedAt: true, reason: h.stop.reason, evidence: h.stop.evidence, attention: CUTOVER_STOP };
@@ -423,7 +503,7 @@ async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explic
       if (row.state === 'CLOUD_ACTIVE' && !h.anyComplete) return noop('ждём первый COMPLETE Cloud Run', h);
       // Покрытие. period_gap — только LOADER_RUNS (дёшево) — на каждом tick. table_watermark читает RAW
       // заказов/продаж — только в момент решения (активация первого цикла, затем перед COMPLETED), чтобы
-      // tick раз в 10 мин не сканировал RAW (экономия BigQuery, #414).
+      // плановый tick (раз в 15 мин) не сканировал RAW (экономия BigQuery, #414).
       const cheap = p.continuity.kind !== 'table_watermark';
       const missing = Object.entries(p.monitoring.cycles).filter(([l, n]) => (h.completes[l] ?? 0) < n).map(([l, n]) => `${l} ${h.completes[l] ?? 0}/${n}`);
       if (p.monitoring.mondayCycleLoader && h.mondayCompletes < 1) missing.push(`недельный цикл ${p.monitoring.mondayCycleLoader} (понедельник) 0/1`);
@@ -443,9 +523,9 @@ async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explic
       return { kind: 'transition', to: 'COMPLETED', owner: 'CLOUD_RUN', reason: 'циклы Cloud Run штатные, покрытие от legacy watermark подтверждено, дублей нет, downstream жив', evidence: h, cloudWatermark: wm };
     }
     case 'UNKNOWN_OUTCOME':
-      return noop('UNKNOWN_OUTCOME: tick не повторяет — нужна команда activate или rollback после разбора');
+      return noop('UNKNOWN_OUTCOME: tick не повторяет — после разбора команда resolve (CUTOVER_REASON, CUTOVER_RESOLVE_TO), activate или rollback');
     case 'STOP':
-      return noop('STOP: tick не продолжает — нужна команда activate или rollback после разбора');
+      return noop('STOP: tick не продолжает — после разбора команда resolve (CUTOVER_REASON, CUTOVER_RESOLVE_TO), activate или rollback');
     case 'ROLLBACK_REQUIRED':
       return noop('ROLLBACK_REQUIRED: ждём решения — rollback или activate (повторный мониторинг)');
     case 'COMPLETED':

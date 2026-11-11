@@ -69,14 +69,22 @@ export interface CloudRun {
   errorCode: string;
 }
 
-/** Незавершённое задание BigQuery, которое пишет (или скриптом может писать) в таблицы потока. */
-export interface PendingJob {
+/** Записывающее задание BigQuery в таблицы потока (любого состояния). */
+export interface WriteJob {
   jobId: string;
   user: string;
   createdMs: number;
   state: string;
   table: string;
   statementType: string;
+}
+
+export interface GateEvidence {
+  writer: 'APPS_SCRIPT' | 'CLOUD_RUN';
+  entry: string;
+  user: string;
+  n: number;
+  lastMs: number;
 }
 
 export interface CutoverStore {
@@ -96,21 +104,23 @@ export interface CutoverStore {
   duplicates(stream: Stream, sinceMs: number): Promise<number>;
   downstreamAlive(kind: 'mart' | 'ref_active', sinceMs: number): Promise<boolean>;
   /**
-   * INFORMATION_SCHEMA.JOBS_BY_PROJECT: задания со state ≠ DONE, созданные с fromMs, у которых
-   * destination — таблица потока, либо SCRIPT, чей текст упоминает таблицу потока. Фильтр по таблицам, а не
-   * по пользователю: Apps Script работает от учётной записи владельца.
+   * INFORMATION_SCHEMA.JOBS_BY_PROJECT: записывающие задания в таблицы потока, созданные с fromMs, ЛЮБОГО
+   * состояния (запись длится секунды — дренаж обязан видеть и выполненные). LOAD/COPY/DML/DDL с destination —
+   * таблица потока; SCRIPT с DML в тексте — только незавершённые (его DML — дочерние задания с destination).
+   * Фильтр по таблицам, а не по пользователю: Apps Script работает от учётной записи владельца.
    */
-  pendingWriteJobs(stream: Stream, fromMs: number): Promise<PendingJob[]>;
+  writeJobs(stream: Stream, fromMs: number): Promise<WriteJob[]>;
   /**
    * statistics: MAX(last_change_date) строк инкремента, загруженных прогонами со стартом < beforeMs, —
    * ровно то состояние, которое прочитал первый прогон Cloud Run. JSON {orders, sales} в форме хранения.
    */
   statsWatermarkBefore(beforeMs: number): Promise<string | null>;
   /**
-   * Доказательство, что оба писателя под gate: число выполненных запросов gate по потоку с fromMs
-   * (метка WRITER_GATE:AS:<поток>:v1 — Apps Script от учётной записи владельца; WRITER_GATE:CR:<поток>:v1 — SA Cloud Run).
+   * Доказательство, что писатели под gate: выполненные запросы gate ТОЧЕК ВХОДА потока с fromMs. Текст запроса
+   * обязан НАЧИНАТЬСЯ с метки `/* WRITER_GATE:AS|CR:<поток>:<точка входа или загрузчик>:v1 *\/ SELECT owner`
+   * (перечитка перед записью, wbWriterGateStatus и ручные запросы несут другие метки). Пользователь — в строке.
    */
-  gateEvidence(stream: Stream, fromMs: number): Promise<{ appsScript: number; cloudRun: number }>;
+  gateEvidence(stream: Stream, fromMs: number): Promise<GateEvidence[]>;
 }
 
 // ── BigQuery ──────────────────────────────────────────────────────────────────────────────────
@@ -304,8 +314,8 @@ END`;
   }
 
   /**
-   * Незавершённые ЗАПИСЫВАЮЩИЕ задания в таблицы потока: LOAD/COPY или DML/DDL с destination — таблица потока;
-   * либо SCRIPT, в тексте которого DML в таблицу потока. Читающие скрипты (паритет, ручные SELECT) не в счёт.
+   * ЗАПИСЫВАЮЩИЕ задания в таблицы потока любого состояния: LOAD/COPY или DML/DDL с destination — таблица потока;
+   * либо незавершённый SCRIPT, в тексте которого DML в таблицу потока. Читающие скрипты (паритет, SELECT) не в счёт.
    * Shadow-таблицы `…__CR` не совпадают: имя сравнивается целиком, с границей слова.
    */
   jobsSql(stream: Stream): string {
@@ -315,33 +325,39 @@ END`;
     return `SELECT job_id, user_email, UNIX_MILLIS(creation_time) AS created_ms, state,
        IFNULL(destination_table.table_id, '') AS dest, IFNULL(statement_type, job_type) AS stmt
 FROM \`${this.region()}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
-WHERE creation_time >= TIMESTAMP(@from_ts) AND state != 'DONE'
+WHERE creation_time >= TIMESTAMP(@from_ts)
   AND ((destination_table.dataset_id = '${this.rawDataset}' AND destination_table.table_id IN (${list})
         AND (job_type IN ('LOAD', 'COPY') OR statement_type IN ('INSERT', 'UPDATE', 'DELETE', 'MERGE', 'TRUNCATE_TABLE',
              'CREATE_TABLE', 'CREATE_TABLE_AS_SELECT', 'CREATE_VIEW', 'ALTER_TABLE', 'DROP_TABLE')))
-    OR (statement_type = 'SCRIPT' AND REGEXP_CONTAINS(query,
+    OR (statement_type = 'SCRIPT' AND state != 'DONE' AND REGEXP_CONTAINS(query,
         r'(?i)(?:INSERT\\s+(?:INTO\\s+)?|UPDATE\\s+|MERGE\\s+(?:INTO\\s+)?|DELETE\\s+(?:FROM\\s+)?|TRUNCATE\\s+TABLE\\s+)\`?(?:[A-Za-z0-9_-]+\\.)?(?:${this.rawDataset}\\.)(?:${names})\`?(?:[^A-Za-z0-9_]|$)')))`;
   }
 
-  gateEvidenceSql(stream: Stream): string {
-    // Метка в тексте шаблона разбита классом символов [:]: собственный запрос координатора её не содержит.
-    return `SELECT
-  COUNTIF(REGEXP_CONTAINS(query, r'WRITER_GATE[:]AS[:]${stream}[:]v1') AND NOT ENDS_WITH(user_email, 'gserviceaccount.com')) AS as_n,
-  COUNTIF(REGEXP_CONTAINS(query, r'WRITER_GATE[:]CR[:]${stream}[:]v1') AND ENDS_WITH(user_email, 'gserviceaccount.com')) AS cr_n
-FROM \`${this.region()}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
-WHERE creation_time >= TIMESTAMP(@from_ts) AND job_type = 'QUERY' AND state = 'DONE' AND error_result IS NULL`;
-  }
-
-  async gateEvidence(stream: Stream, fromMs: number): Promise<{ appsScript: number; cloudRun: number }> {
-    const rows = await this.q<{ as_n?: unknown; cr_n?: unknown }>(this.gateEvidenceSql(stream), { from_ts: new Date(fromMs).toISOString() }, { from_ts: 'STRING' });
-    return { appsScript: Number(rows[0]?.as_n ?? 0), cloudRun: Number(rows[0]?.cr_n ?? 0) };
-  }
-
-  async pendingWriteJobs(stream: Stream, fromMs: number): Promise<PendingJob[]> {
+  async writeJobs(stream: Stream, fromMs: number): Promise<WriteJob[]> {
     const rows = await this.q<Record<string, unknown>>(this.jobsSql(stream), { from_ts: new Date(fromMs).toISOString() }, { from_ts: 'STRING' });
     return rows.map((r) => ({
       jobId: String(r.job_id), user: String(r.user_email ?? ''), createdMs: Number(r.created_ms), state: String(r.state ?? ''),
       table: String(r.dest ?? ''), statementType: String(r.stmt ?? ''),
+    }));
+  }
+
+  gateEvidenceSql(stream: Stream): string {
+    // Якорь ^: текст запроса координатора начинается с SELECT — сам себя он не засчитает.
+    const head = (w: string, e: string) => `^/\\* WRITER_GATE:${w}:${stream}:${e}:v1 \\*/ SELECT owner`;
+    return `SELECT REGEXP_EXTRACT(query, r'${head('(AS|CR)', '[A-Za-z0-9_-]+')}') AS w,
+       REGEXP_EXTRACT(query, r'${head('(?:AS|CR)', '([A-Za-z0-9_-]+)')}') AS entry,
+       user_email, COUNT(*) AS n, UNIX_MILLIS(MAX(creation_time)) AS last_ms
+FROM \`${this.region()}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+WHERE creation_time >= TIMESTAMP(@from_ts) AND job_type = 'QUERY' AND state = 'DONE' AND error_result IS NULL
+  AND REGEXP_CONTAINS(query, r'${head('(?:AS|CR)', '[A-Za-z0-9_-]+')}')
+GROUP BY w, entry, user_email`;
+  }
+
+  async gateEvidence(stream: Stream, fromMs: number): Promise<GateEvidence[]> {
+    const rows = await this.q<Record<string, unknown>>(this.gateEvidenceSql(stream), { from_ts: new Date(fromMs).toISOString() }, { from_ts: 'STRING' });
+    return rows.map((r) => ({
+      writer: String(r.w) === 'AS' ? 'APPS_SCRIPT' as const : 'CLOUD_RUN' as const,
+      entry: String(r.entry ?? ''), user: String(r.user_email ?? ''), n: Number(r.n ?? 0), lastMs: Number(r.last_ms ?? 0),
     }));
   }
 
@@ -382,7 +398,8 @@ WHERE creation_time >= TIMESTAMP(@from_ts) AND job_type = 'QUERY' AND state = 'D
         return `SELECT CAST(MAX(DATE(SAFE_CAST(started_at AS TIMESTAMP), 'Europe/Moscow')) AS STRING) AS wm
           FROM ${this.raw('FINANCE_LOADER_RUNS')} WHERE status NOT IN ('RUNNING', 'STARTED', 'ERROR')`;
       case 'supplies':
-        return `SELECT CAST(MAX(DATE(snapshot_ts, 'Europe/Moscow')) AS STRING) AS wm FROM ${this.raw('RAW_WB_SUPPLIES')}`;
+        // Не дата снимка: Apps Script пишет только изменённые объекты (ревью #426, MAJOR-4).
+        return `SELECT CAST(MAX(updated_dt) AS STRING) AS wm FROM ${this.raw('RAW_WB_SUPPLIES')}`;
       case 'ref':
         return `SELECT active_ref_run_id AS wm FROM ${this.raw('REF_ACTIVE_VERSION')} WHERE id = 'singleton'`;
     }

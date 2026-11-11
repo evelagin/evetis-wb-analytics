@@ -253,7 +253,7 @@ function bqSelfTest() {
 
   var testTable = '_selftest';
   // Пересоздаём тестовую таблицу с нуля
-  try { BigQuery.Tables.remove(c.projectId, c.datasetId, testTable); } catch (e) {}
+  try { wbBqTablesRemove_(c.projectId, c.datasetId, testTable); } catch (e) {}
   wbBqTablesInsert_(
     {
       tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: testTable },
@@ -277,7 +277,7 @@ function bqSelfTest() {
   var cnt = q.rows.length ? q.rows[0].f[0].v : '?';
   console.log('COUNT(*) из BigQuery: ' + cnt);
 
-  try { BigQuery.Tables.remove(c.projectId, c.datasetId, testTable); } catch (e) {}
+  try { wbBqTablesRemove_(c.projectId, c.datasetId, testTable); } catch (e) {}
 
   if (String(cnt) === '2') {
     console.log('✅ SELF-TEST OK: доступ, создание, загрузка и чтение работают.');

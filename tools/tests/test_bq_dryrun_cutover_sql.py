@@ -60,3 +60,13 @@ def test_requires_token_and_never_prints_it(tmp_path):
     f.write_text("[]")
     r = subprocess.run([sys.executable, str(SRC), str(f)], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 2 and "BQ_TOKEN" in r.stderr
+
+
+def test_insert_select_into_ingest_is_script_plus_proxy():
+    sql = ("INSERT INTO `p.wb_ops.INGEST_QUALIFICATION` (stream, business_date) "
+           "SELECT JSON_VALUE(x, '$.stream'), DATE(JSON_VALUE(x, '$.d')) FROM UNNEST(JSON_QUERY_ARRAY(@payload)) AS x")
+    jobs = [(n, m, q) for n, m, q, _ in dr.plan([{"name": "ins", "sql": sql, "params": []}], DDL)]
+    assert ("ins", "SCRIPT", sql) in jobs
+    proxy = [q for n, m, q in jobs if n == "ins#proxy1"]
+    assert proxy and proxy[0].startswith("SELECT JSON_VALUE(x, '$.stream')")
+    assert dr.schema_problems(DDL, sql) == []

@@ -46,7 +46,7 @@ STREAM_JOBS = {
 # Плоскость управления (этап C): координатор cutover. Отдельный режим, НЕ входит в all — плановый
 # промоушен «во все prod-Job'ы» не должен менять логику переключения писателей посреди cutover.
 CONTROL_JOBS = {
-    "ingest-cutover": frozenset({"ingest-cutover-prod"}),
+    "ingest-cutover": frozenset({"ingest-cutover-prod", "ingest-qualify-prod"}),
 }
 
 MODES = ("all", *STREAM_JOBS, *CONTROL_JOBS)

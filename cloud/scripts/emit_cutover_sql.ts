@@ -9,7 +9,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { BqCutoverStore } from '../src/loaders/cutover/store.js';
-import { BqOwnershipReader, ownershipAssertSql } from '../src/ownership/gate.js';
+import { BqOwnershipReader, gateMark, ownershipAssertSql, recheckMark } from '../src/ownership/gate.js';
+import { insertSql, prepareStatement, shadowRunsSql } from '../src/loaders/qualify/index.js';
+import { QUALIFY_SPECS, splitStatements } from '../src/loaders/qualify/spec.js';
+import { existsSync } from 'node:fs';
 import { STREAMS, type Stream } from '../src/ownership/streams.js';
 
 const PROJECT = process.env.GCP_PROJECT_ID || 'project-fa311fc0-4d87-4781-986';
@@ -59,12 +62,14 @@ async function main(): Promise<void> {
     await store.cloudRuns(s, T - 86_400_000);
     current = `store.currentWatermark.${s}`;
     await store.currentWatermark(s);
-    current = `store.pendingWriteJobs.${s}`;
-    await store.pendingWriteJobs(s, T - 86_400_000);
+    current = `store.writeJobs.${s}`;
+    await store.writeJobs(s, T - 86_400_000);
     current = `store.gateEvidence.${s}`;
     await store.gateEvidence(s, T - 86_400_000);
     current = `gate.reader.${s}`;
-    await reader.read(s);
+    await reader.read(s, gateMark(s, 'loader'));
+    current = `gate.recheck.${s}`;
+    await reader.read(s, recheckMark(s, 'loader'));
   }
   current = 'store.continuityViolations';
   await store.continuityViolations('statistics', '{"orders":"2026-11-16 09:31:05","sales":"2026-11-16T09:22:40"}', T);
@@ -96,9 +101,25 @@ async function main(): Promise<void> {
   };
   vm.createContext(sb);
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.gs')).sort()) vm.runInContext(readFileSync(join(dir, f), 'utf8'), sb, { filename: f });
-  (sb.wbWriterGate_ as (s: string) => unknown)('statistics');
+  (sb.wbWriterGate_ as (s: string, e: string) => unknown)('statistics', 'runWbOrdersIncremental');
   const seen = new Set<string>();
   for (const st of asStmts) if (!seen.has(st.name)) { seen.add(st.name); out.push(st); }
+
+  // qualify: журнал shadow, запись вердиктов и операторы файлов паритета (если есть — QUALIFY_SQL_DIR).
+  for (const [s, spec] of Object.entries(QUALIFY_SPECS)) {
+    out.push({ name: `qualify.shadowRuns.${s}`, sql: shadowRunsSql(PROJECT, 'wb_raw', spec!.shadowLoaders), params: [] });
+  }
+  out.push({ name: 'qualify.insert', sql: insertSql(PROJECT, 'wb_ops'), params: [{ name: 'payload', type: 'STRING',
+    value: JSON.stringify([{ stream: 'ref', business_date: '2026-11-15', check_group: 'REF', verdict: 'PASS', details: { a: 1 }, image_digest: '' }]) }] });
+  const pdir = process.env.QUALIFY_SQL_DIR;
+  if (pdir) {
+    for (const [s, spec] of Object.entries(QUALIFY_SPECS)) {
+      const f = join(pdir, spec!.file);
+      if (!existsSync(f)) continue;
+      const stmts = splitStatements(readFileSync(f, 'utf8'));
+      for (const n of spec!.queries) out.push({ name: `qualify.parity.${s}.query${n}`, sql: prepareStatement(stmts[n - 1]!, undefined), params: [] });
+    }
+  }
 
   process.stdout.write(JSON.stringify(out, null, 1));
 }

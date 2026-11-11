@@ -276,13 +276,13 @@ jobs:
               echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
             fi
           done
-      - name: "Этап C: ingest-cutover-prod (координатор cutover)"
+      - name: "Этап C: ingest-cutover-prod + ingest-qualify-prod (координатор cutover и писатель квалификации)"
         if: inputs.only_job == 'ingest-cutover'
         # Плоскость управления, только свой режим (в all не входит). Job нет, пока Terraform не применён с
         # cutover_coordinator_enabled=true — тогда шаг только предупреждает. Шаг НЕ включает Scheduler
         # ingest-cutover-tick и НЕ запускает Job; env (CUTOVER_ACTION и т.п.) — Terraform/команды владельца.
         run: |
-          for JOB in ingest-cutover-prod; do
+          for JOB in ingest-cutover-prod ingest-qualify-prod; do
             if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
               gcloud run jobs update "$JOB" \
                 --region ${{ vars.GCP_REGION }} \

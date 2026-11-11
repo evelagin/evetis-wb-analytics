@@ -124,7 +124,7 @@ function makeWorld(mode: 'gated' | 'original', registry: (stream: string, n: num
     Utilities: {
       sleep: () => {}, getUuid: () => '00000000-0000-0000-0000-000000000000',
       formatDate: (_d: Date, _tz: string, f: string) => (f.includes('HH') ? '20261116_100000' : '2026-11-16'),
-      newBlob: () => ({}), base64Encode: () => '', computeDigest: () => [], DigestAlgorithm: {}, Charset: {},
+      newBlob: (data: unknown) => ({ getDataAsString: () => String(data) }), base64Encode: () => '', computeDigest: () => [], DigestAlgorithm: {}, Charset: {},
     },
   };
   vm.createContext(sb);
@@ -184,10 +184,11 @@ describe('Apps Script: gate в 10 точках входа', () => {
     for (const [fn, stream] of ENTRIES) {
       const w = makeWorld('gated', () => ({ owner: 'CLOUD_RUN', epoch: 3 }));
       const calls: string[] = [];
-      const orig = w.sb.wbWriterGate_ as (s: string) => unknown;
-      w.sb.wbWriterGate_ = (s: string) => { calls.push(s); return orig(s); };
+      const orig = w.sb.wbWriterGate_ as (s: string, e: string) => unknown;
+      w.sb.wbWriterGate_ = (s: string, e: string) => { calls.push(`${s}:${e}`); return orig(s, e); };
       call(w, fn, ENTRIES.find((e) => e[0] === fn)![2]);
-      expect(calls, fn).toEqual([stream]);
+      // Метка gate — точка входа: catch-up и аудит рекламы отличимы от суточного прогона.
+      expect(calls, fn).toEqual([`${stream}:${fn}`]);
     }
   });
 
@@ -328,7 +329,7 @@ describe('Apps Script: перед каждой записью — повторн
     for (const f of files) {
       if (outside.has(f)) continue;
       const t = source(f);
-      if (/BigQuery\.Jobs\.(insert|query)\(|BigQuery\.Tabledata\.insertAll\(|BigQuery\.Tables\.(insert|patch)\(/.test(t)) offenders.push(f);
+      if (/BigQuery\.Jobs\.(insert|query)\(|BigQuery\.Tabledata\.insertAll\(|BigQuery\.Tables\.(insert|patch|update|remove)\(/.test(t)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
     expect(source('Wbmarkingkizloader.gs')).not.toMatch(/RAW_WB_(ORDERS|SALES|STOCKS|FINANCE|SUPPLIES|ADV_)/);
@@ -369,27 +370,27 @@ describe('Apps Script: поколение и watermark заказов/прода
     q.query = (r: { query: string }) => (r.query.includes("'ORD_INC_'") && r.query.includes('AS o')
       ? { jobComplete: true, rows: [{ f: [{ v: '2026-11-20 08:41:00' }, { v: '2026-11-20T08:22:10' }] }] }
       : base(r));
-    const res = (w.sb.wbWriterGate_ as (s: string) => { allowed: boolean })('statistics');
+    const res = (w.sb.wbWriterGate_ as (s: string, e: string) => { allowed: boolean })('statistics', 'runWbOrdersIncremental');
     expect(res.allowed).toBe(true);
     expect(w.props.get(String(w.sb.WB_ORDERS_WATERMARK_PROP_))).toBe('2026-11-20T08:41:00');
     expect(w.props.get(String(w.sb.WB_SALES_WATERMARK_PROP_))).toBe('2026-11-20T08:22:10');
     expect(w.props.get('WB_WRITER_GATE_EPOCH_STATISTICS')).toBe('5');
     // Повтор с тем же поколением — без пересинхронизации.
     w.props.set(String(w.sb.WB_ORDERS_WATERMARK_PROP_), 'x');
-    (w.sb.wbWriterGate_ as (s: string) => unknown)('statistics');
+    (w.sb.wbWriterGate_ as (s: string, e: string) => unknown)('statistics', 'runWbOrdersIncremental');
     expect(w.props.get(String(w.sb.WB_ORDERS_WATERMARK_PROP_))).toBe('x');
   });
 
   it('пересинхронизация не удалась → fail-closed, отметка поколения не записана', () => {
     const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 5 }));
-    const r = (w.sb.wbWriterGate_ as (s: string) => { allowed: boolean; result: { status: string } })('statistics');
+    const r = (w.sb.wbWriterGate_ as (s: string, e: string) => { allowed: boolean; result: { status: string } })('statistics', 'runWbOrdersIncremental');
     expect(r).toMatchObject({ allowed: false, result: { status: 'SKIPPED_GATE_UNAVAILABLE' } });
     expect(w.props.has('WB_WRITER_GATE_EPOCH_STATISTICS')).toBe(false);
   });
 
   it('прочие потоки при смене поколения только запоминают его', () => {
     const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 4 }));
-    expect((w.sb.wbWriterGate_ as (s: string) => { allowed: boolean })('ads').allowed).toBe(true);
+    expect((w.sb.wbWriterGate_ as (s: string, e: string) => { allowed: boolean })('ads', 'runWbAdsDaily').allowed).toBe(true);
     expect(w.props.get('WB_WRITER_GATE_EPOCH_ADS')).toBe('4');
   });
 });
@@ -451,7 +452,7 @@ describe('одновременные писатели на одном реест
     const ins = bq.insert;
     bq.insert = (...a: unknown[]) => { timeline.push(`AS:${state.epoch}`); return ins(...a); };
     // Gate Apps Script пройден под поколением 1, затем координатор: NONE (2) → CLOUD_RUN (3).
-    const gate = (w.sb.wbWriterGate_ as (s: string) => { allowed: boolean })('stocks');
+    const gate = (w.sb.wbWriterGate_ as (s: string, e: string) => { allowed: boolean })('stocks', 'runWbStocksSnapshot');
     expect(gate.allowed).toBe(true);
     state = { owner: 'NONE', epoch: 2 };
     state = { owner: 'CLOUD_RUN', epoch: 3 };
@@ -487,13 +488,18 @@ describe('ревью #426: остатки, журналы, метки, запр�
     expect(st.stocks).toMatch(/gate выключен/);
   });
 
-  it('новая строка журнала (INSERT) после потери владения — запрещена; закрытие своей (UPDATE) — разрешено только с поколением входа', () => {
+  it('после потери владения: новая строка журнала — нет; закрыть можно только СВОЮ (открытую этим исполнением) и без вставки', () => {
     const fq = (t: string) => `\`test-proj.wb_raw.${t}\``;
-    const w = makeWorld('gated', (_s, n) => (n === 1 ? { owner: 'APPS_SCRIPT', epoch: 1 } : { owner: 'NONE', epoch: 2 }));
-    expect((w.sb.wbWriterGate_ as (s: string) => { allowed: boolean })('statistics').allowed).toBe(true);
-    const q = w.sb.ingestRunQuery_ as (s: string, p: unknown[]) => unknown;
-    expect(() => q(`INSERT INTO ${fq('INGEST_RUNS')} (run_id) VALUES ('x')`, [])).toThrow(/WRITER_NOT_OWNER/);
-    expect(() => q(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id='x'`, [])).not.toThrow();
+    const p = (name: string, value: string) => ({ name, parameterType: { type: 'STRING' }, parameterValue: { value } });
+    // чтения: 1 — gate входа, 2 — перечитка перед INSERT (ещё владелец), дальше — владение потеряно.
+    const w = makeWorld('gated', (_s, n) => (n <= 2 ? { owner: 'APPS_SCRIPT', epoch: 1 } : { owner: 'NONE', epoch: 2 }));
+    expect((w.sb.wbWriterGate_ as (s: string, e: string) => { allowed: boolean })('statistics', 'runWbOrdersIncremental').allowed).toBe(true);
+    const q = w.sb.ingestRunQuery_ as (s: string, ps: unknown[]) => unknown;
+    expect(() => q(`INSERT INTO ${fq('INGEST_RUNS')} (run_id) VALUES (@run_id)`, [p('run_id', 'own-1')])).not.toThrow();
+    expect(() => q(`INSERT INTO ${fq('INGEST_RUNS')} (run_id) VALUES (@run_id)`, [p('run_id', 'own-2')])).toThrow(/WRITER_NOT_OWNER/);
+    expect(() => q(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id=@run_id`, [p('run_id', 'own-1')])).not.toThrow();
+    expect(() => q(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id=@run_id`, [p('run_id', 'foreign')])).toThrow(/WRITER_NOT_OWNER/);
+    expect(() => q(`MERGE ${fq('INGEST_RUNS')} t USING (SELECT @run_id AS run_id) s ON t.run_id = s.run_id WHEN MATCHED THEN UPDATE SET status = 'ERROR' WHEN NOT MATCHED THEN INSERT ROW`, [p('run_id', 'own-1')])).toThrow(/WRITER_NOT_OWNER/);
     // Без точки входа (ручной путь) закрыть «чужую» строку нельзя.
     const m = makeWorld('gated', () => ({ owner: 'NONE', epoch: 2 }));
     expect(() => (m.sb.ingestRunQuery_ as (s: string, p: unknown[]) => unknown)(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id='x'`, [])).toThrow(/WRITER_NOT_OWNER/);
@@ -505,8 +511,8 @@ describe('ревью #426: остатки, журналы, метки, запр�
     const jobs = (w.sb.BigQuery as { Jobs: { query: (r: { query: string }) => unknown } }).Jobs;
     const base = jobs.query;
     jobs.query = (r: { query: string }) => { seen.push(r.query); return base(r); };
-    (w.sb.wbWriterGate_ as (s: string) => unknown)('finance');
-    expect(seen[0]).toMatch(/^\/\* WRITER_GATE:AS:finance:v1 \*\/ SELECT owner, CAST\(epoch AS STRING\) AS epoch FROM/);
+    (w.sb.wbWriterGate_ as (s: string, e: string) => unknown)('finance', 'runWbFinanceDaily');
+    expect(seen[0]).toMatch(/^\/\* WRITER_GATE:AS:finance:runWbFinanceDaily:v1 \*\/ SELECT owner, CAST\(epoch AS STRING\) AS epoch FROM/);
   });
 
   it('в путях потоков нет форм записи мимо обёрток: copy-задания, LOAD DATA, EXECUTE IMMEDIATE, CALL', () => {
@@ -518,5 +524,36 @@ describe('ревью #426: остатки, журналы, метки, запр�
       if (/\bEXECUTE\s+IMMEDIATE\b|\bLOAD\s+DATA\b|['"`]\s*CALL\s|\bcopy\s*:\s*\{|\bextract\s*:\s*\{/i.test(code)) bad.push(f);
     }
     expect(bad).toEqual([]);
+  });
+});
+
+
+describe('повторное ревью #426: метки и остатки', () => {
+  it('wbWriterGateStatus и перечитка перед записью несут свои метки — не метку gate точки входа', () => {
+    const seen: string[] = [];
+    const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 1 }));
+    const jobs = (w.sb.BigQuery as { Jobs: { query: (r: { query: string }) => unknown } }).Jobs;
+    const base = jobs.query;
+    jobs.query = (r: { query: string }) => { seen.push(r.query.slice(0, 60)); return base(r); };
+    (w.sb.wbWriterGateStatus as () => unknown)();
+    (w.sb.bqLoadRows_ as (t: string, rows: unknown[]) => number)('RAW_WB_ORDERS', [{}]);
+    expect(seen.some((q) => /^\/\* WRITER_GATE:AS:/.test(q))).toBe(false);
+    expect(seen.filter((q) => q.startsWith('/* WRITER_GATE_STATUS:AS:')).length).toBe(6);
+    expect(seen.some((q) => q.startsWith('/* WRITER_GUARD:AS:statistics:v1 */'))).toBe(true);
+  });
+
+  it('без точки входа gate не пропускает (метка обязательна)', () => {
+    const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 1 }));
+    expect((w.sb.wbWriterGate_ as (s: string) => { allowed: boolean; result: { status: string } })('ads')).toMatchObject({ allowed: false, result: { status: 'SKIPPED_GATE_UNAVAILABLE' } });
+  });
+
+  it('остатки с включённым gate: свою строку манифеста после потери владения — только исходом ERROR', () => {
+    const fq = (t: string) => `\`test-proj.wb_raw.${t}\``;
+    const w = makeWorld('gated', (_s, n) => (n <= 2 ? { owner: 'APPS_SCRIPT', epoch: 1 } : { owner: 'NONE', epoch: 2 }));
+    (w.sb.wbWriterGate_ as (s: string, e: string) => unknown)('stocks', 'runWbStocksSnapshot');
+    (w.sb.wbStocksBqManifestStart_ as (id: string, a: string, b: string, c: string) => void)('STOCK_SNAP_20261116_062300_ab12', 'x', '2026-11-16', '2026-11-16');
+    const dml = w.sb.wbStocksBqDml_ as (s: string) => unknown;
+    expect(() => dml(`UPDATE ${fq('WB_STOCKS_SNAPSHOTS')} SET status='COMPLETE' WHERE snapshot_id='STOCK_SNAP_20261116_062300_ab12' AND status='STARTED'`)).toThrow(/WRITER_NOT_OWNER/);
+    expect(() => dml(`UPDATE ${fq('WB_STOCKS_SNAPSHOTS')} SET status='ERROR' WHERE snapshot_id='STOCK_SNAP_20261116_062300_ab12' AND status='STARTED'`)).not.toThrow();
   });
 });

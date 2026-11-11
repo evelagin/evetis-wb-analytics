@@ -403,7 +403,7 @@ function loadWbAdsCostsRawOperational() {
  *    не потому, что её нет, а потому что мы перестали спрашивать.
  */
 function loadWbAdsCostsAudit() {
-  var wgate = wbWriterGate_('ads'); if (!wgate.allowed) return wgate.result;  // этап C: WriterGate.gs (своего lock нет)
+  var wgate = wbWriterGate_('ads', 'loadWbAdsCostsAudit'); if (!wgate.allowed) return wgate.result;  // этап C: WriterGate.gs (своего lock нет)
   var r = wbAdsCostsRangeBack_(WB_ADS_COSTS_AUDIT_FROM_DAYS_, WB_ADS_COSTS_AUDIT_TO_DAYS_);
   return loadWbAdsCostsRaw(r.from, r.to, wbAdsCostsRunId_('ADSAUDIT_'),
                            WB_ADS_COSTS_BOOTSTRAP_WINDOW_DAYS_);

@@ -65,8 +65,16 @@ var WB_WRITER_GATE_OPT_IN_ = { stocks: 'WB_WRITER_GATE_STOCKS' };
  */
 var WB_WRITER_JOURNAL_TABLES_ = ['INGEST_RUNS', 'FINANCE_LOADER_RUNS', 'WB_STOCKS_SNAPSHOTS', 'REF_SYNC_RUNS'];
 
-/** Метка запроса gate в INFORMATION_SCHEMA.JOBS: координатор по ней доказывает, что Apps Script под gate. */
+/**
+ * Метки запросов к таблице владения (текст запроса начинается с метки — INFORMATION_SCHEMA.JOBS):
+ *   WRITER_GATE:AS:<поток>:<точка входа>:v1 — ТОЛЬКО gate точки входа: доказательство для координатора;
+ *   WRITER_GUARD:AS:<поток>:v1             — перечитка перед записью;
+ *   WRITER_GATE_STATUS:AS:<поток>:v1       — ручной wbWriterGateStatus() (доказательством не считается).
+ */
 var WB_WRITER_GATE_MARK_VERSION_ = 'v1';
+
+/** Строки журналов, открытые ЭТИМ исполнением: { table: { id: true } } — закрыть можно только их. */
+var WB_WRITER_OWN_RUNS_ = {};
 
 function wbWriterGateEnabled_(stream) {
   var key = WB_WRITER_GATE_OPT_IN_[stream];
@@ -82,12 +90,13 @@ function wbWriterGateEnabled_(stream) {
  * Gate точки входа. Вызывать ПОСЛЕ ScriptLock и ДО любой записи.
  * @return {{allowed: boolean, result: Object}} allowed=false → вернуть result и выйти, ничего не записав.
  */
-function wbWriterGate_(stream) {
+function wbWriterGate_(stream, entry) {
   var row;
   try {
     if (!WB_WRITER_STREAM_TABLES_[stream]) throw new Error('неизвестный поток ' + stream);
+    if (!/^[A-Za-z0-9_]+$/.test(String(entry || ''))) throw new Error('не указана точка входа');
     if (!wbWriterGateEnabled_(stream)) return { allowed: true, result: null };   // gate потока выключен (M1)
-    row = wbWriterGateRead_(stream);
+    row = wbWriterGateRead_(stream, 'WRITER_GATE:AS:' + stream + ':' + entry);
   } catch (e) {
     var m = String((e && e.message) || e);
     console.error('WRITER_GATE ' + stream + ': SKIPPED_GATE_UNAVAILABLE — ' + m + ' (fail-closed: запись не выполнена)');
@@ -109,10 +118,10 @@ function wbWriterGate_(stream) {
 }
 
 /** Короткий параметризованный SELECT; кидает при любой неоднозначности (fail-closed у вызывающего). */
-function wbWriterGateRead_(stream) {
+function wbWriterGateRead_(stream, mark) {
   var c = getBqConfig_();
   var res = BigQuery.Jobs.query({
-    query: '/* WRITER_GATE:AS:' + stream + ':' + WB_WRITER_GATE_MARK_VERSION_ + ' */ ' +
+    query: '/* ' + mark + ':' + WB_WRITER_GATE_MARK_VERSION_ + ' */ ' +
       'SELECT owner, CAST(epoch AS STRING) AS epoch FROM `' + c.projectId + '.' + WB_WRITER_GATE_DATASET_ + '.' +
       WB_WRITER_GATE_TABLE_ + '` WHERE stream = @s',
     useLegacySql: false, location: c.location, parameterMode: 'NAMED',
@@ -210,23 +219,24 @@ function wbWriterTargetsOfSql_(sql) {
  * Исполнение без точки входа (меню, ручной backfill) проверяет только владельца.
  * Таблица общая у двух потоков (INGEST_RUNS): проверяется поток текущей точки входа, а без неё — оба.
  */
-function wbWriterGuard_(targets, what) {
+function wbWriterGuard_(targets, what, sqlText, params) {
   var c = getBqConfig_();
   var streams = {};
   for (var i = 0; i < targets.length; i++) {
     var t = targets[i];
     if (t.dataset && t.dataset !== c.datasetId) continue;
     var owners = wbWriterStreamsOfTable_(t.table).filter(wbWriterGateEnabled_);
-    // Закрытие своей строки журнала прогоном, открывшим её под владением (UPDATE/MERGE, есть поколение входа).
+    // Закрытие СВОЕЙ строки журнала: UPDATE/MERGE без вставки, по id строки, которую открыло это исполнение
+    // под владением (поколение входа есть). Остатки при включённом gate — только исходом ERROR.
     var ctxOwners = owners.filter(function (s) { return WB_WRITER_GATE_CTX_[s] !== undefined; });
-    if ((t.verb === 'UPDATE' || t.verb === 'MERGE') && WB_WRITER_JOURNAL_TABLES_.indexOf(t.table) >= 0 && ctxOwners.length) continue;
+    if (ctxOwners.length && wbWriterIsOwnJournalClose_(t, sqlText || '', params || [])) continue;
     var withCtx = owners.filter(function (s) { return WB_WRITER_GATE_CTX_[s] !== undefined; });
     var check = withCtx.length ? withCtx : owners;
     for (var j = 0; j < check.length; j++) streams[check[j]] = true;
   }
   for (var s in streams) {
     var row;
-    try { row = wbWriterGateRead_(s); }
+    try { row = wbWriterGateRead_(s, 'WRITER_GUARD:AS:' + s); }
     catch (e) { throw new Error('WRITER_GATE_UNAVAILABLE: ' + s + ' — ' + ((e && e.message) || e) + ' (' + what + ' не выполнен)'); }
     if (row.owner !== 'APPS_SCRIPT') {
       throw new Error('WRITER_NOT_OWNER: поток ' + s + ' принадлежит ' + row.owner + ' (epoch ' + row.epoch + ') — ' + what + ' не выполнен');
@@ -238,11 +248,43 @@ function wbWriterGuard_(targets, what) {
   }
 }
 
+/** Закрытие своей строки журнала (см. WB_WRITER_JOURNAL_TABLES_): только UPDATE/MERGE без вставки, по своему id. */
+function wbWriterIsOwnJournalClose_(t, sqlText, params) {
+  if (t.verb !== 'UPDATE' && t.verb !== 'MERGE') return false;
+  if (WB_WRITER_JOURNAL_TABLES_.indexOf(t.table) < 0) return false;
+  if (/WHEN\s+NOT\s+MATCHED/i.test(sqlText)) return false;
+  var own = WB_WRITER_OWN_RUNS_[t.table] || {};
+  var values = params.map(function (p) { return String((p && p.parameterValue && p.parameterValue.value) || ''); });
+  var mine = false;
+  for (var id in own) {
+    if (sqlText.indexOf(id) >= 0 || values.indexOf(id) >= 0) { mine = true; break; }
+  }
+  if (!mine) return false;
+  if (t.table === 'WB_STOCKS_SNAPSHOTS' && wbWriterGateEnabled_('stocks')) {
+    return /\bstatus\s*=\s*'ERROR'/.test(sqlText) && !/'COMPLETE'/.test(sqlText.replace(/status\s*=\s*'STARTED'/, ''));
+  }
+  return true;
+}
+
+/** id строки журнала, открытой этим исполнением (INSERT с параметром run_id / load строк журнала). */
+function wbWriterRememberOwnRuns_(table, ids) {
+  if (WB_WRITER_JOURNAL_TABLES_.indexOf(table) < 0) return;
+  var m = WB_WRITER_OWN_RUNS_[table] || (WB_WRITER_OWN_RUNS_[table] = {});
+  for (var i = 0; i < ids.length; i++) if (ids[i]) m[String(ids[i])] = true;
+}
+
 /** Единственный вызов BigQuery.Jobs.query загрузчиков: SELECT — как есть, запись — после wbWriterGuard_. */
 function wbBqJobsQuery_(req, projectId) {
   var targets = wbWriterTargetsOfSql_(req && req.query);
-  if (targets.length) wbWriterGuard_(targets, 'query');
-  return BigQuery.Jobs.query(req, projectId);
+  var params = (req && req.queryParameters) || [];
+  if (targets.length) wbWriterGuard_(targets, 'query', String(req.query || ''), params);
+  var res = BigQuery.Jobs.query(req, projectId);
+  for (var i = 0; i < targets.length; i++) {
+    if (targets[i].verb !== 'INSERT') continue;
+    wbWriterRememberOwnRuns_(targets[i].table, params.filter(function (p) { return p && /^(run_id|snapshot_id)$/.test(p.name); })
+      .map(function (p) { return p.parameterValue && p.parameterValue.value; }));
+  }
+  return res;
 }
 
 /** Единственный вызов BigQuery.Jobs.insert загрузчиков (load или query-задание). */
@@ -258,8 +300,19 @@ function wbBqJobsInsert_(job, projectId, blob) {
       targets.push({ dataset: conf.query.destinationTable.datasetId || '', table: conf.query.destinationTable.tableId || '' });
     }
   }
-  if (targets.length) wbWriterGuard_(targets, conf.load ? 'load' : 'query-задание');
-  return blob === undefined ? BigQuery.Jobs.insert(job, projectId) : BigQuery.Jobs.insert(job, projectId, blob);
+  var sqlText = conf.query ? String(conf.query.query || '') : '';
+  if (targets.length) wbWriterGuard_(targets, conf.load ? 'load' : 'query-задание', sqlText, []);
+  var res = blob === undefined ? BigQuery.Jobs.insert(job, projectId) : BigQuery.Jobs.insert(job, projectId, blob);
+  // load в журнал (открытие строки): запомнить её id, чтобы потом можно было закрыть только её.
+  if (conf.load && conf.load.destinationTable && blob && typeof blob.getDataAsString === 'function') {
+    try {
+      var ids = String(blob.getDataAsString()).split('\n').filter(String).map(function (l) {
+        var o = JSON.parse(l); return o.run_id || o.snapshot_id || '';
+      });
+      wbWriterRememberOwnRuns_(conf.load.destinationTable.tableId || '', ids);
+    } catch (e) { /* не журнал или не NDJSON — нечего запоминать */ }
+  }
+  return res;
 }
 
 /** Создание таблицы (DDL «ensure») — та же проверка, если таблица принадлежит потоку. */
@@ -285,7 +338,7 @@ function wbWriterGateStatus() {
   for (var s in WB_WRITER_STREAM_TABLES_) {
     if (!wbWriterGateEnabled_(s)) { out[s] = 'gate выключен (' + WB_WRITER_GATE_OPT_IN_[s] + ' ≠ 1) — Apps Script пишет без проверки'; continue; }
     try {
-      var r = wbWriterGateRead_(s);
+      var r = wbWriterGateRead_(s, 'WRITER_GATE_STATUS:AS:' + s);
       out[s] = r.owner + ' / epoch ' + r.epoch + (r.owner === 'APPS_SCRIPT' ? ' — Apps Script пишет' : ' — Apps Script НЕ пишет');
     } catch (e) {
       out[s] = 'НЕДОСТУПНО: ' + ((e && e.message) || e) + ' — Apps Script НЕ пишет (fail-closed)';
@@ -293,4 +346,10 @@ function wbWriterGateStatus() {
   }
   console.log('WRITER_GATE статус: ' + JSON.stringify(out, null, 2));
   return out;
+}
+
+/** Удаление таблицы — та же проверка, если таблица принадлежит потоку. */
+function wbBqTablesRemove_(projectId, datasetId, tableId) {
+  wbWriterGuard_([{ dataset: datasetId || '', table: tableId || '' }], 'Tables.remove');
+  return BigQuery.Tables.remove(projectId, datasetId, tableId);
 }

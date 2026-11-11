@@ -352,7 +352,7 @@ function runWbStocksSnapshot() {
     console.log('STOCKS: ' + r.status + ' | ' + r.error_message);
     return r;
   }
-  var wgate = wbWriterGate_('stocks'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('stocks', 'runWbStocksSnapshot'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   try {
     wbStocksSnapshotCore_(r);
   } catch (e) {

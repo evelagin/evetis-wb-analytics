@@ -34,7 +34,7 @@ import type { LoaderContext, LoaderResult } from './loaders/types.js';
 import { classifyFailure, fatalRecord, type FailureClass } from './failure.js';
 import { gatedStreamOfLoader, DEFAULT_OWNERSHIP_DATASET } from './ownership/streams.js';
 import {
-  BqOwnershipReader, checkWriterGate, makeWriterFence, WRITER_GATE_UNAVAILABLE, WRITER_NOT_OWNER,
+  BqOwnershipReader, checkWriterGate, gateMark, makeWriterFence, recheckMark, WRITER_GATE_UNAVAILABLE, WRITER_NOT_OWNER,
   type GateDecision, type OwnershipReader, type WriterFence,
 } from './ownership/gate.js';
 
@@ -174,7 +174,7 @@ export async function runCli(
     let decision: GateDecision;
     try {
       reader = (deps.makeOwnershipReader ?? defaultOwnershipReader)(config, env);
-      decision = await checkWriterGate(reader, stream);
+      decision = await checkWriterGate(reader, stream, gateMark(stream, loaderName));
     } catch (e) {
       decision = { kind: 'UNAVAILABLE', stream, error: e instanceof Error ? e.message : String(e) };
     }
@@ -188,7 +188,7 @@ export async function runCli(
       logger.info('writer_fenced', { code: WRITER_NOT_OWNER, stream, owner: decision.owner, epoch: decision.epoch, state: decision.state });
       return EXIT_OK;
     }
-    writerFence = makeWriterFence(reader, stream, decision.epoch);
+    writerFence = makeWriterFence(reader, stream, decision.epoch, recheckMark(stream, loaderName));
     logger.info('writer_gate_allow', { stream, epoch: decision.epoch, state: decision.state });
   }
 

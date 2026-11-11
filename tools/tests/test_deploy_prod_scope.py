@@ -170,7 +170,7 @@ def test_scope_check_runs_in_every_mode_and_after_failures():
 def _fleet(image=OLD):
     names = sorted(scope.allowed("all")) + [
         "wb-stocks-shadow", "wb-orders-shadow", "heldi-controller", "ozon-postings-prod", "unitka-web",
-        "ingest-cutover-prod",
+        "ingest-cutover-prod", "ingest-qualify-prod",
     ]
     return [job(n, image, gen=3) for n in names]
 
@@ -264,13 +264,13 @@ def test_cli_exit_codes(tmp_path):
 # ── этап C: режим ingest-cutover (плоскость управления, вне all) ───────────────────────────────
 
 def test_ingest_cutover_mode_is_exactly_the_coordinator():
-    assert scope.allowed("ingest-cutover") == {"ingest-cutover-prod"}
-    assert _touched(_steps(), "ingest-cutover") == {"ingest-cutover-prod"}
+    assert scope.allowed("ingest-cutover") == {"ingest-cutover-prod", "ingest-qualify-prod"}
+    assert _touched(_steps(), "ingest-cutover") == {"ingest-cutover-prod", "ingest-qualify-prod"}
 
 
 def test_all_mode_never_touches_the_coordinator():
-    assert "ingest-cutover-prod" not in scope.allowed("all")
-    assert "ingest-cutover-prod" not in _touched(_steps(), "all")
+    assert not {"ingest-cutover-prod", "ingest-qualify-prod"} & scope.allowed("all")
+    assert not {"ingest-cutover-prod", "ingest-qualify-prod"} & _touched(_steps(), "all")
     before = _fleet()
     problems = scope.check("all", before, _promote(before, scope.allowed("all") | {"ingest-cutover-prod"}), D)
     assert any("ingest-cutover-prod" in p and "вне режима" in p for p in problems)
@@ -291,7 +291,7 @@ def test_ingest_cutover_guard_and_absent_job():
     rc = subprocess.run(["bash", "-c", script], env={"ONLY_JOB": "ingest-cutover", "CONFIRM_ALL": "", "PATH": "/usr/bin:/bin"},
                         capture_output=True).returncode
     assert rc == 0
-    before = [j for j in _fleet() if j["metadata"]["name"] != "ingest-cutover-prod"]
+    before = [j for j in _fleet() if j["metadata"]["name"] not in ("ingest-cutover-prod", "ingest-qualify-prod")]
     assert scope.check("ingest-cutover", before, before, D) == []
 
 

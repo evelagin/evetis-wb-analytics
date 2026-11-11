@@ -8,7 +8,7 @@ import { makeCutoverLoader, parseCutoverEnv, CUTOVER_ATTENTION, CUTOVER_CONFIG }
 import { loadConfig } from '../src/config.js';
 import { Logger } from '../src/logging.js';
 import type { Owner, Stream } from '../src/ownership/streams.js';
-import { MemCutoverStore, seedRow, T0, MIN, H, DAY } from './cutover_fixture.js';
+import { IDS, MemCutoverStore, seedRow, T0, MIN, H, DAY } from './cutover_fixture.js';
 
 /**
  * Этап C — машина состояний координатора cutover на хранилище в памяти (та же CAS-семантика, что у BigQuery).
@@ -19,7 +19,7 @@ afterEach(() => vi.restoreAllMocks());
 
 const STOCKS_GROUPS = ['STOCKS_T6', 'STOCKS_T5', 'STOCKS_DIGEST'];
 const deps = (store: MemCutoverStore, nowMs: number, o: Partial<StepDeps> = {}): StepDeps =>
-  ({ store, nowMs, runId: 'run-1', changedBy: 'test', autoFromEnv: false, includeUncoordinated: true, ...o });
+  ({ store, nowMs, runId: 'run-1', changedBy: 'test', autoFromEnv: false, includeUncoordinated: true, identities: IDS, ...o });
 const tick = (stream: Stream, store: MemCutoverStore, nowMs: number, o: Partial<StepDeps> = {}) => step(stream, 'tick', deps(store, nowMs, o));
 const act = (action: Action, stream: Stream, store: MemCutoverStore, nowMs: number, o: Partial<StepDeps> = {}) => step(stream, action, deps(store, nowMs, o));
 
@@ -195,7 +195,7 @@ describe('окно fence', () => {
     const a = qualifiedStocks();
     const r = await tick('stocks', a, busy, { autoFromEnv: true });
     expect(r.outcome).toBe('NOOP');
-    expect(r.reason).toMatch(/окно занято: .*runWbStocksSnapshot@06:30/);
+    expect(r.reason).toMatch(/окно занято: .*runWbStocksSnapshot@06:23/);
     expect(await act('fence', 'stocks', a, busy)).toMatchObject({ outcome: 'NOOP' });
     expect(await act('fence', 'stocks', a, T0)).toMatchObject({ outcome: 'TRANSITION', to: 'LEGACY_FENCED', owner: 'NONE' });
     expect(a.log[0]!.reason).toMatch(/^команда fence/);
@@ -215,10 +215,11 @@ describe('окно fence', () => {
     expect(fenceWindowCheck(at('04:25'), PROFILES.ads.schedules, busyAhead).allowed).toBe(true); // пн
     expect(fenceWindowCheck(Date.parse('2026-11-15T04:25:00+03:00'), PROFILES.ads.schedules, busyAhead).allowed).toBe(false); // вс
     // Продажи — каждый час в :22 ±15: свободны только хвосты часов.
-    expect(fenceWindowCheck(at('10:30'), PROFILES.statistics.schedules, busyAhead).allowed).toBe(false);
-    expect(fenceWindowCheck(at('10:44'), PROFILES.statistics.schedules, busyAhead).allowed).toBe(true);
-    // Поставки: минута Apps Script неизвестна — занят весь час.
-    expect(fenceWindowCheck(at('05:50'), PROFILES.supplies.schedules, busyAhead).allowed).toBe(false);
+    // Живые триггеры 11.11: продажи 00/06/12/18:17, заказы :44 тех же часов.
+    expect(fenceWindowCheck(at('12:30'), PROFILES.statistics.schedules, busyAhead).allowed).toBe(false);
+    expect(fenceWindowCheck(at('10:30'), PROFILES.statistics.schedules, busyAhead).allowed).toBe(true);
+    expect(fenceWindowCheck(at('05:50'), PROFILES.supplies.schedules, busyAhead).allowed).toBe(false); // CR 05:29 + 30
+    expect(fenceWindowCheck(at('02:35'), PROFILES.supplies.schedules, busyAhead).allowed).toBe(false); // AS 02:29
   });
 });
 
@@ -715,8 +716,9 @@ describe('дополнения владельца: задания BigQuery, по
     expect(re.test('INSERT INTO `p.wb_raw.RAW_WB_SALES_RETURNS` (a) VALUES (1)')).toBe(true);
     expect(re.test('INSERT INTO `p.wb_raw.RAW_WB_ORDERS__CR` (a) VALUES (1)')).toBe(false);
     expect(re.test('SELECT * FROM `p.wb_raw.RAW_WB_ORDERS`')).toBe(false);
-    expect(st.gateEvidenceSql('ads')).toContain("r'WRITER_GATE[:]AS[:]ads[:]v1'");
-    expect(st.gateEvidenceSql('ads')).not.toContain('WRITER_GATE:AS');
+    const ev = st.gateEvidenceSql('ads');
+    expect(ev).toContain("r'^/\\* WRITER_GATE:(AS|CR):ads:[A-Za-z0-9_-]+:v1 \\*/ SELECT owner'");
+    expect(ev.startsWith('SELECT')).toBe(true); // собственный запрос координатора якорем ^ не засчитывается
   });
 });
 
@@ -763,14 +765,37 @@ describe('ревью #426: resolve, мёртвые прогоны, запас ga
     expect(await tick('stocks', store, T0 + 2 * H + MIN)).toMatchObject({ to: 'QUALIFIED' });
   });
 
-  it('перед fence: нет чтений строки владения Apps Script или Cloud Run за 24 ч → fence не ставится', async () => {
-    for (const ev of [{ appsScript: 0, cloudRun: 5 }, { appsScript: 5, cloudRun: 0 }]) {
+  it('перед fence: доказательство gate нужно по КАЖДОЙ плановой точке входа и от своего пользователя', async () => {
+    const full = (await new MemCutoverStore().gateEvidence('stocks'));
+    const cases: Array<[string, typeof full]> = [
+      ['нет Apps Script', full.filter((x) => x.writer !== 'APPS_SCRIPT')],
+      ['нет Cloud Run', full.filter((x) => x.writer !== 'CLOUD_RUN')],
+      ['Apps Script не от владельца (ручной запрос другого пользователя)', full.map((x) => (x.writer === 'APPS_SCRIPT' ? { ...x, user: 'someone@example.com' } : x))],
+      ['Cloud Run от чужого SA', full.map((x) => (x.writer === 'CLOUD_RUN' ? { ...x, user: 'sa-other@p.iam.gserviceaccount.com' } : x))],
+      ['устарело (старше 26 ч)', full.map((x) => ({ ...x, lastMs: T0 - 27 * H }))],
+    ];
+    for (const [name, ev] of cases) {
       const store = qualifiedStocks();
       store.evidence = ev;
       const r = await act('fence', 'stocks', store, T0);
-      expect(r.outcome).toBe('NOOP');
-      expect(r.reason).toMatch(/нет доказательства gate/);
+      expect(r.outcome, name).toBe('NOOP');
+      expect(r.reason, name).toMatch(/нет доказательства gate/);
     }
+    const noIds = qualifiedStocks();
+    expect((await act('fence', 'stocks', noIds, T0, { identities: undefined })).reason).toMatch(/не заданы учётные записи/);
+  });
+
+  it('доказательство по точкам входа: у рекламы — каждая плановая точка входа обоих писателей; недельный аудит — 8 суток', async () => {
+    const store = new MemCutoverStore();
+    const full = await store.gateEvidence('ads');
+    const { gateProof } = await import('../src/loaders/cutover/machine.js');
+    expect((await gateProof(store, PROFILES.ads, T0, IDS)).missing).toEqual([]);
+    store.evidence = full.filter((x) => x.entry !== 'runWbAdsDailyCatchUp');
+    expect((await gateProof(store, PROFILES.ads, T0, IDS)).missing).toEqual(['Apps Script runWbAdsDailyCatchUp за 26 ч']);
+    store.evidence = full.map((x) => (x.entry === 'ads-costs-audit' ? { ...x, lastMs: T0 - 5 * DAY } : x));
+    expect((await gateProof(store, PROFILES.ads, T0, IDS)).missing).toEqual([]);
+    store.evidence = full.filter((x) => x.entry !== 'ads-query');
+    expect((await gateProof(store, PROFILES.ads, T0, IDS)).missing).toEqual(['Cloud Run ads-query за 26 ч']);
   });
 
   it('временный ERROR, закрытый COMPLETE повтором того же периода, — не ROLLBACK_REQUIRED', async () => {
@@ -796,5 +821,82 @@ describe('ревью #426: resolve, мёртвые прогоны, запас ga
     s.cloud.push({ stream: 'statistics', id: 'o1', loader: 'orders', startMs: T0 + 2 * H + 700, status: 'COMPLETE', logicalPeriod: '2026-11-15', errorCode: '' });
     expect(await tick('statistics', s, T0 + 3 * H)).toMatchObject({ to: 'MONITORING' });
     expect(seen).toEqual([T0 + 2 * H]);
+  });
+});
+
+
+describe('повторное ревью #426: выполненные записи на дренаже, посторонний писатель, исходы', () => {
+  const wj = (o: Partial<import('../src/loaders/cutover/store.js').WriteJob> & { createdMs: number; user: string }) =>
+    ({ stream: 'stocks' as Stream, jobId: 'j', state: 'DONE', table: 'RAW_WB_STOCKS', statementType: 'LOAD', ...o });
+
+  it('ВЫПОЛНЕННАЯ запись Apps Script после fence + запас → STOP; закрытие своей строки журнала в пределах жизни — нет', async () => {
+    const a = fencedStocks();
+    a.watermark.stocks = '2026-11-16';
+    a.jobs.push(wj({ createdMs: T0 + 3 * MIN, user: IDS.appsScriptUser }));
+    expect(await tick('stocks', a, T0 + 8 * MIN)).toMatchObject({ to: 'STOP', attention: CUTOVER_STOP });
+    const b = fencedStocks();
+    b.watermark.stocks = '2026-11-16';
+    b.jobs.push(wj({ createdMs: T0 + 3 * MIN, user: IDS.appsScriptUser, table: 'WB_STOCKS_SNAPSHOTS', statementType: 'UPDATE' }));
+    b.jobs.push(wj({ createdMs: T0 + 30_000, user: IDS.appsScriptUser }));
+    expect(await tick('stocks', b, T0 + 8 * MIN)).toMatchObject({ to: 'CLOUD_ACTIVE' });
+  });
+
+  it('при откате Cloud Run «в полёте» пишет в пределах timeout — не нарушение; запись Apps Script после fence — нарушение', async () => {
+    const mk = () => new MemCutoverStore(seedRow('stocks', { owner: 'NONE', state: 'CLOUD_FENCED', epoch: 4, revision: 7, fencedAtMs: T0 }));
+    const ok = mk();
+    ok.jobs.push(wj({ createdMs: T0 + 10 * MIN, user: IDS.streamSa.stocks! }));
+    expect(await tick('stocks', ok, T0 + 40 * MIN)).toMatchObject({ to: 'LEGACY_ACTIVE' });
+    const bad = mk();
+    bad.jobs.push(wj({ createdMs: T0 + 10 * MIN, user: IDS.appsScriptUser }));
+    expect(await tick('stocks', bad, T0 + 40 * MIN)).toMatchObject({ to: 'STOP' });
+  });
+
+  it('MONITORING: запись в таблицы потока не от prod-SA (Apps Script, человек) → STOP и отсечение', async () => {
+    const s = new MemCutoverStore(seedRow('stocks', { owner: 'CLOUD_RUN', state: 'MONITORING', epoch: 3, revision: 5, fencedAtMs: T0 - DAY, activeSinceMs: T0 - DAY, legacyWatermark: '2026-11-15' }));
+    s.jobs.push(wj({ createdMs: T0 - H, user: IDS.streamSa.stocks! }));
+    expect(await tick('stocks', s, T0)).toMatchObject({ outcome: 'NOOP' });
+    s.jobs.push(wj({ createdMs: T0 - 30 * MIN, user: IDS.appsScriptUser }));
+    expect(await tick('stocks', s, T0)).toMatchObject({ to: 'STOP', owner: 'NONE', attention: CUTOVER_STOP });
+  });
+
+  it('ERROR закрывается COMPLETE более позднего периода только у потоков, где следующий прогон дочитывает; у остатков — нет', async () => {
+    const run = (stream: Stream, loader: string, id: string, h: number, status: string, period: string) =>
+      ({ stream, id, loader, startMs: T0 + h * H, status, logicalPeriod: period, errorCode: '' });
+    const ads = new MemCutoverStore(seedRow('ads', { owner: 'CLOUD_RUN', state: 'MONITORING', epoch: 3, revision: 5, fencedAtMs: T0 - H, activeSinceMs: T0, legacyWatermark: '2026-11-15' }));
+    ads.cloud.push(run('ads', 'ads', 'e', 1, 'ERROR', '2026-11-15'), run('ads', 'ads', 'c', 25, 'COMPLETE', '2026-11-16'));
+    expect(await tick('ads', ads, T0 + 26 * H)).toMatchObject({ outcome: 'NOOP' });
+    const st = new MemCutoverStore(seedRow('stocks', { owner: 'CLOUD_RUN', state: 'MONITORING', epoch: 3, revision: 5, fencedAtMs: T0 - H, activeSinceMs: T0, legacyWatermark: '2026-11-15' }));
+    st.cloud.push(run('stocks', 'stocks', 'e', 1, 'ERROR', '2026-11-16'), run('stocks', 'stocks', 'c', 25, 'COMPLETE', '2026-11-17'));
+    expect(await tick('stocks', st, T0 + 26 * H)).toMatchObject({ to: 'ROLLBACK_REQUIRED' });
+  });
+
+  it('MONITORING: STARTED дольше timeout Job без исхода — не «ещё идёт», а отказ', async () => {
+    const s = new MemCutoverStore(seedRow('ref', { owner: 'CLOUD_RUN', state: 'MONITORING', epoch: 3, revision: 5, fencedAtMs: T0 - DAY, activeSinceMs: T0 - DAY }));
+    s.cloud.push({ stream: 'ref', id: 'x', loader: 'ref-sync', startMs: T0 - H, status: 'STARTED', logicalPeriod: '', errorCode: '' });
+    expect(await tick('ref', s, T0)).toMatchObject({ to: 'ROLLBACK_REQUIRED' });
+    expect((await tick('ref', new MemCutoverStore(seedRow('ref', { owner: 'NONE', state: 'STOP', epoch: 4, revision: 6, fencedAtMs: T0 })), T0)).reason).toMatch(/resolve/);
+  });
+
+  it('поставки: отметка — не дата снимка; разрыв дат покрытие не роняет (состояние)', async () => {
+    expect(PROFILES.supplies.continuity).toEqual({ kind: 'state' });
+    const sql = new BqCutoverStore({ projectId: 'p', location: 'EU', query: async () => [] } as never, 'wb_ops', 'wb_raw').watermarkSql('supplies');
+    expect(sql).toContain('MAX(updated_dt)');
+    expect(sql).not.toContain('snapshot_ts');
+  });
+
+  it('расписания профилей — по живым триггерам 11.11', () => {
+    const at = (s: Stream, label: string) => PROFILES[s].schedules.filter((e) => e.label === label).map((e) => `${JSON.stringify(e.hours)}:${e.minute}`);
+    expect(at('statistics', 'runWbOrdersIncremental')).toEqual(['[0,6,12,18]:44']);
+    expect(at('statistics', 'runWbSalesIncremental')).toEqual(['[0,6,12,18]:17']);
+    expect(at('statistics', 'runWbSalesNightReconcile')).toEqual(['[4]:18']);
+    expect(at('ref', 'runRefSync')).toEqual(['[8]:22']);
+    expect(at('stocks', 'runWbStocksSnapshot')).toEqual(['[6]:23']);
+    expect(at('finance', 'runWbFinanceDaily')).toEqual(['[7]:26', '[12]:24', '[18]:35']);
+    expect(at('ads', 'runWbAdsDaily')).toEqual(['[5]:7']);
+    expect(at('ads', 'runWbAdsDailyCatchUp')).toEqual(['[6]:8', '[8]:18']);
+    expect(at('supplies', 'runWbSuppliesDaily')).toEqual(['[2]:29']);
+    for (const s of ['stocks', 'statistics', 'ads', 'finance', 'supplies', 'ref'] as Stream[]) {
+      for (const e of PROFILES[s].schedules.filter((x) => x.writer === 'CLOUD_RUN')) expect(PROFILES[s].cloudLoaders, `${s} ${e.label}`).toContain(e.loader);
+    }
   });
 });

@@ -65,9 +65,11 @@ def test_coordinator_sa_has_no_extra_roles():
             continue
         else:
             other.append((t, n))
-    assert sorted(project_roles) == sorted(["roles/bigquery.jobUser", "google_project_iam_custom_role.ingest_cutover_jobs_reader[0].id"])
-    custom = re.search(r'resource "google_project_iam_custom_role" "ingest_cutover_jobs_reader" \{(.*?)^\}', TF, re.S | re.M).group(1)
-    assert re.search(r'permissions\s*=\s*\["bigquery\.jobs\.listAll"\]', custom)
+    # Своя роль вместо jobUser (у jobUser побочные права — Dataform, Gemini).
+    assert project_roles == ["google_project_iam_custom_role.ingest_cutover_bigquery[0].id"]
+    custom = re.search(r'resource "google_project_iam_custom_role" "ingest_cutover_bigquery" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert re.search(r'permissions\s*=\s*\["bigquery\.jobs\.create", "bigquery\.config\.get", "bigquery\.jobs\.listAll"\]', custom)
+    assert "roles/bigquery.jobUser" not in TF
     assert other == [], other
     edit = [(n, b) for n, r, b in table_roles if r == "roles/bigquery.dataEditor"]
     view = [(n, b) for n, r, b in table_roles if r == "roles/bigquery.dataViewer"]
@@ -82,8 +84,10 @@ def test_coordinator_sa_has_no_extra_roles():
     # Нет ни Scheduler, ни Run admin, ни секретов, ни IAM-администрирования — ни в одной роли файла.
     for bad in ("scheduler", "run.admin", "run.developer", "secretmanager", "iam.serviceAccountUser", "bigquery.admin", "dataOwner"):
         assert bad not in TF.replace("google_cloud_scheduler_job", "").replace("scheduler_prod", "").replace("scheduler_ingest", ""), bad
-    # Набор BigQuery-ресурсов на датасет целиком для координатора не выдаётся.
-    assert "google_bigquery_dataset_iam_member" not in TF
+    # Датасет целиком координатору не выдаётся (писателю квалификации — только чтение wb_raw, см. ниже).
+    for t, n, body in _resources():
+        if t == "google_bigquery_dataset_iam_member":
+            assert sa not in body, n
 
 
 def test_evidence_tables_cover_what_the_coordinator_reads():
@@ -150,3 +154,39 @@ def test_no_reserved_word_columns():
     code = re.sub(r"--[^\n]*", "", DDL)
     assert not re.search(r"(?<![A-Za-z_])at\s+TIMESTAMP", code)
     assert not re.search(r"\(at\)|,\s*at\)|UNIX_MILLIS\(at\)", code + STORE)
+
+
+def test_qualify_writer_sa_and_job():
+    sa = "google_service_account.ingest_qualify[0].email"
+    roles = [(t, n, re.search(r'role\s*=\s*"?([^"\n]+)"?', b).group(1).strip(), b) for t, n, b in _resources() if sa in b and "iam" in t]
+    got = sorted((t, r) for t, _, r, _ in roles)
+    assert got == sorted([
+        ("google_project_iam_member", "google_project_iam_custom_role.ingest_qualify_bigquery[0].id"),
+        ("google_bigquery_dataset_iam_member", "roles/bigquery.dataViewer"),
+        ("google_bigquery_table_iam_member", "roles/bigquery.dataEditor"),
+    ]), got
+    write = [b for t, _, r, b in roles if r == "roles/bigquery.dataEditor"][0]
+    assert "local.cutover_qualification_table" in write and 'dataset_id = "wb_ops"' in write
+    read = [b for t, _, r, b in roles if t == "google_bigquery_dataset_iam_member"][0]
+    assert "var.raw_dataset" in read
+    custom = re.search(r'resource "google_project_iam_custom_role" "ingest_qualify_bigquery" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert re.search(r'permissions\s*=\s*\["bigquery\.jobs\.create", "bigquery\.config\.get"\]', custom)
+    job = re.search(r'resource "google_cloud_run_v2_job" "ingest_qualify_prod" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert 'args  = ["qualify"]' in job and "image = var.container_image" in job
+    sch = re.search(r'resource "google_cloud_scheduler_job" "ingest_qualify" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert "paused           = true" in sch
+
+
+def test_identities_wired_without_personal_data():
+    assert INFRA.count("TF_VAR_cutover_apps_script_user: ${{ vars.CUTOVER_APPS_SCRIPT_USER }}") == 1
+    assert re.search(r'variable "cutover_apps_script_user" \{[^}]*default\s*=\s*""', TF, re.S)
+    assert "CUTOVER_STREAM_PROD_SAS = jsonencode(local.cutover_writer_sas)" in TF
+    assert not re.search(r"[A-Za-z0-9._%+-]+@(gmail|yandex|mail|evetis)\.", TF)
+
+
+def test_parity_sql_bundled_into_image():
+    docker = (REPO / "cloud/Dockerfile").read_text(encoding="utf-8")
+    shadow = (REPO / ".github/workflows/deploy-shadow.yml").read_text(encoding="utf-8")
+    assert "COPY parity-sql ./parity-sql" in docker and (REPO / "cloud/parity-sql/.gitkeep").exists()
+    assert "cp ../sql/mig_*_parity.sql parity-sql/ 2>/dev/null || true" in shadow
+    assert shadow.index("cp ../sql/mig_*_parity.sql") < shadow.index("docker build")

@@ -5,9 +5,9 @@
  * что считать штатным циклом. Логика — machine.ts / qualification.ts / window.ts, SQL — store.ts.
  * Любое число здесь — решение, которое видно в одном месте и проверяется тестом.
  *
- * Расписания (МСК) — по коду установщиков Apps Script и Terraform потоков на 11.11.2026. Живые триггеры
- * Apps Script могли быть изменены вручную (заказы/продажи — раз в 6 ч с 10.11): перед включением
- * auto_cutover_enabled владелец сверяет их со страницей «Триггеры» (docs/ops/INGEST_CUTOVER_COORDINATOR.md §5).
+ * Расписания (МСК): Apps Script — снимок живых триггеров 11.11.2026 (страница «Триггеры», ревью #426), Cloud Run —
+ * Terraform потоков. Модель ±15 мин вокруг живой минуты исключает окна, перекрывающие живые прогоны. Перед
+ * включением auto_cutover_enabled владелец сверяет снимок заново (docs/ops/INGEST_CUTOVER_COORDINATOR.md §3.2).
  */
 import type { Stream } from '../../ownership/streams.js';
 
@@ -41,7 +41,10 @@ export interface QualRequirement {
 /** Плановый запуск писателя потока (МСК). minute 'any' — минута неизвестна: занят весь час. */
 export interface ScheduleEvent {
   writer: 'APPS_SCRIPT' | 'CLOUD_RUN';
+  /** Apps Script — имя точки входа (метка gate WRITER_GATE:AS:<поток>:<label>); Cloud Run — имя Job'а. */
   label: string;
+  /** Cloud Run: loader_name (метка gate WRITER_GATE:CR:<поток>:<loader>). */
+  loader?: string;
   hours: readonly number[] | 'any';
   minute: number | 'any';
   /** Дни недели 0..6 (0 = воскресенье, как cron). Нет — каждый день. */
@@ -100,6 +103,11 @@ export interface StreamProfile {
   cloudJobTimeoutMin: number;
   continuity: Continuity;
   monitoring: MonitoringRequirement;
+  /**
+   * ERROR прогона закрывается более поздним COMPLETE того же загрузчика ЛЮБОГО периода (инкремент/окно/очередь
+   * дочитывают пропущенное). false — только COMPLETE того же периода (остатки: пропущенные сутки не восстановить).
+   */
+  errorsSupersededByLaterPeriod: boolean;
 }
 
 /** Лимит исполнения Apps Script (консьюмерский аккаунт) — 6 мин; дренаж ждёт не меньше 7. */
@@ -115,8 +123,8 @@ const PASS: readonly Verdict[] = ['PASS'];
 const PASS_OR_EXPLAINED: readonly Verdict[] = ['PASS', 'DRIFT_EXPLAINED'];
 const AS = (label: string, hours: readonly number[] | 'any', minute: number | 'any', extra: Partial<ScheduleEvent> = {}): ScheduleEvent =>
   ({ writer: 'APPS_SCRIPT', label, hours, minute, jitterMin: 15, maxRunMin: 6, ...extra });
-const CR = (label: string, hours: readonly number[], minute: number, maxRunMin: number, extra: Partial<ScheduleEvent> = {}): ScheduleEvent =>
-  ({ writer: 'CLOUD_RUN', label, hours, minute, jitterMin: 1, maxRunMin, ...extra });
+const CR = (label: string, loader: string, hours: readonly number[], minute: number, maxRunMin: number, extra: Partial<ScheduleEvent> = {}): ScheduleEvent =>
+  ({ writer: 'CLOUD_RUN', label, loader, hours, minute, jitterMin: 1, maxRunMin, ...extra });
 
 export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
   stocks: {
@@ -136,12 +144,13 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      AS('runWbStocksSnapshot', [6], 30),
-      CR('wb-stocks-prod', [6], 30, 30),
+      AS('runWbStocksSnapshot', [6], 23),
+      CR('wb-stocks-prod', 'stocks', [6], 30, 30),
     ],
     cloudJobTimeoutMin: 30,
     continuity: { kind: 'period_gap', maxGapDays: 1 },
     monitoring: { cycles: { stocks: 3 }, firstCycleDeadlineH: 26, downstream: 'mart' },
+    errorsSupersededByLaterPeriod: false,
   },
   statistics: {
     stream: 'statistics',
@@ -160,19 +169,18 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      // Заказы с 10.11 раз в 6 ч, последний наблюдённый запуск 09:31 → фаза :31 в 03/09/15/21.
-      AS('runWbOrdersIncremental', [3, 9, 15, 21], 31),
-      // Продажи: раз в 6 ч, фаза неизвестна (наблюдались :22) — консервативно каждый час в :22.
-      AS('runWbSalesIncremental', 'any', 22),
-      AS('runWbSalesNightReconcile', [4], 20),
-      CR('wb-orders-prod', [0, 6, 12, 18], 41, 60),
-      CR('wb-sales-prod', [0, 6, 12, 18], 22, 15),
-      CR('wb-sales-reconcile-prod', [4], 20, 15),
+      AS('runWbOrdersIncremental', [0, 6, 12, 18], 44),
+      AS('runWbSalesIncremental', [0, 6, 12, 18], 17),
+      AS('runWbSalesNightReconcile', [4], 18),
+      CR('wb-orders-prod', 'orders', [0, 6, 12, 18], 41, 60),
+      CR('wb-sales-prod', 'sales', [0, 6, 12, 18], 22, 15),
+      CR('wb-sales-reconcile-prod', 'sales-reconcile', [4], 20, 15),
     ],
     cloudJobTimeoutMin: 60,
     // SALES_RECONCILE_DAYS = 7 у обоих писателей (wb_statistics_loaders.tf, WB_SALES_RECONCILE_DAYS).
     continuity: { kind: 'table_watermark', reconcileLoader: 'sales-reconcile', reconcileDays: 7 },
     monitoring: { cycles: { orders: 3, sales: 3, 'sales-reconcile': 3 }, firstCycleDeadlineH: 8, downstream: 'mart' },
+    errorsSupersededByLaterPeriod: true,
   },
   ads: {
     stream: 'ads',
@@ -193,16 +201,18 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      AS('runWbAdsDaily', [5], 0),
-      AS('runWbAdsDailyCatchUp', [6, 8], 15),
-      CR('wb-ads-prod', [5, 6, 8], 0, 40),
-      CR('wb-ads-query-prod', [5, 6, 8], 30, 15),
-      CR('wb-ads-costs-audit-prod', [4], 30, 15, { dow: [0] }),
+      AS('runWbAdsDaily', [5], 7),
+      AS('runWbAdsDailyCatchUp', [6], 8),
+      AS('runWbAdsDailyCatchUp', [8], 18),
+      CR('wb-ads-prod', 'ads', [5, 6, 8], 0, 40),
+      CR('wb-ads-query-prod', 'ads-query', [5, 6, 8], 30, 15),
+      CR('wb-ads-costs-audit-prod', 'ads-costs-audit', [4], 30, 15, { dow: [0] }),
     ],
     cloudJobTimeoutMin: 40,
     // fullstats читается окном D−7…D−1, расходы — D−14…D−1: разрыв до 7 суток перекрыт.
     continuity: { kind: 'period_gap', maxGapDays: 7 },
     monitoring: { cycles: { ads: 3, 'ads-query': 3 }, firstCycleDeadlineH: 26, downstream: 'mart' },
+    errorsSupersededByLaterPeriod: true,
   },
   finance: {
     stream: 'finance',
@@ -221,13 +231,16 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      AS('runWbFinanceDaily', [7, 12, 18], 30),
-      CR('wb-finance-prod', [7, 12, 18], 30, 30),
+      AS('runWbFinanceDaily', [7], 26),
+      AS('runWbFinanceDaily', [12], 24),
+      AS('runWbFinanceDaily', [18], 35),
+      CR('wb-finance-prod', 'finance', [7, 12, 18], 30, 30),
     ],
     cloudJobTimeoutMin: 30,
     // Очередь FINANCE_REPORT_LOADS общая (таблица); discovery DAILY смотрит сегодня−3…сегодня.
     continuity: { kind: 'period_gap', maxGapDays: 3 },
     monitoring: { cycles: { finance: 3 }, mondayCycleLoader: 'finance', firstCycleDeadlineH: 8, downstream: 'mart' },
+    errorsSupersededByLaterPeriod: true,
   },
   supplies: {
     stream: 'supplies',
@@ -241,14 +254,18 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      // Триггер поставок ставился вручную, минута в коде не зафиксирована: консервативно — весь час.
-      AS('runWbSuppliesDaily', [2, 5], 'any'),
-      CR('wb-supplies-prod', [2, 5], 29, 30),
+      AS('runWbSuppliesDaily', [2], 29),
+      CR('wb-supplies-prod', 'supplies', [2, 5], 29, 30),
     ],
     cloudJobTimeoutMin: 30,
-    // Перекрытие 14 суток по factDate + правило «в RAW не завершён».
-    continuity: { kind: 'period_gap', maxGapDays: 14 },
+    // Ревью #426 (MAJOR-4): дата последнего снимка в RAW — не отметка. Apps Script пишет только изменённые
+    // объекты и с 31.10 не пишет вовсе (токен) — MAX(snapshot_ts) устаревает, а разрыв по датам дал бы ложный
+    // ROLLBACK_REQUIRED. Cloud Run выбирает объекты сравнением списка WB с известным состоянием RAW (новый /
+    // не завершён / updated_dt новее / окно 14 суток) — от даты прошлого прогона это не зависит, поэтому
+    // проверка — «состояние», а отметка — MAX(updated_dt) в RAW (для журнала, не для разрыва).
+    continuity: { kind: 'state' },
     monitoring: { cycles: { supplies: 3 }, firstCycleDeadlineH: 26, downstream: null },
+    errorsSupersededByLaterPeriod: true,
   },
   ref: {
     stream: 'ref',
@@ -262,11 +279,12 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
       maxStaleDays: 2,
     },
     schedules: [
-      AS('runRefSync', [7], 30),
-      CR('ref-sync-prod', [8], 22, 10),
+      AS('runRefSync', [8], 22),
+      CR('ref-sync-prod', 'ref-sync', [8], 22, 10),
     ],
     cloudJobTimeoutMin: 10,
     continuity: { kind: 'state' },
     monitoring: { cycles: { 'ref-sync': 3 }, firstCycleDeadlineH: 26, downstream: 'ref_active' },
+    errorsSupersededByLaterPeriod: true,
   },
 });

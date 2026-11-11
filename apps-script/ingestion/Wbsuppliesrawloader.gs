@@ -571,7 +571,7 @@ function runWbSuppliesDaily() {
   var t0 = new Date().getTime();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) { wbsLog_('SKIPPED_LOCKED'); return; }
-  var wgate = wbWriterGate_('supplies'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('supplies', 'runWbSuppliesDaily'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
 
   try {
     var c = getBqConfig_();

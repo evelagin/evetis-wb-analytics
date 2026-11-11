@@ -321,7 +321,7 @@ function runRefSync() {
     console.log('REF Sync: SKIPPED_LOCKED (активен другой запуск)');
     return { status: 'SKIPPED_LOCKED' };
   }
-  var wgate = wbWriterGate_('ref'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('ref', 'runRefSync'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   try {
     refSyncCore_(r);
   } catch (e) {

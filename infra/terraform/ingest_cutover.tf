@@ -8,8 +8,8 @@
 # CUTOVER_COORDINATOR_ENABLED = 'true' → infra.yml). Флаг false → ни одного ресурса этого файла.
 #
 # Права координатора (sa-ingest-cutover) — минимальные:
-#   • jobUser (запуск query-заданий) + своя роль ТОЛЬКО с bigquery.jobs.listAll (INFORMATION_SCHEMA.JOBS_BY_PROJECT:
-#     дренаж доказывает, что у старого писателя нет незавершённых заданий в таблицы потока);
+#   • своя роль: bigquery.jobs.create + config.get (запуск SELECT/CAS, без побочных прав jobUser — Dataform,
+#     Gemini) и bigquery.jobs.listAll (INFORMATION_SCHEMA.JOBS_BY_PROJECT: дренаж и доказательство gate);
 #   • dataEditor ТОЛЬКО на две таблицы wb_ops (владение, журнал переходов); квалификацию — только чтение;
 #   • dataViewer ТОЛЬКО на журналы и RAW, нужные для доказательств (поресурсно, не на датасет);
 #   • НИКАКИХ прав на Cloud Scheduler, Cloud Run admin и секреты WB: координатор не трогает ни триггеры,
@@ -37,6 +37,8 @@ locals {
     supplies   = "sa-wb-supplies-prod@${var.project_id}.iam.gserviceaccount.com"
     ref        = "sa-ref-sync-prod@${var.project_id}.iam.gserviceaccount.com"
   }
+  # Кто законно пишет таблицы потока (INFORMATION_SCHEMA.JOBS.user_email): prod-SA Cloud Run по потокам.
+  cutover_writer_sas = merge(local.cutover_stream_prod_sas, { stocks = "sa-loaders-prod@${var.project_id}.iam.gserviceaccount.com" })
   cutover_env = {
     LOADER_NAME              = "cutover"
     WRITER_OWNERSHIP_DATASET = "wb_ops"
@@ -44,7 +46,15 @@ locals {
     # --update-env-vars CUTOVER_ACTION=…,CUTOVER_STREAM=… (docs/ops/INGEST_CUTOVER_COORDINATOR.md §6).
     CUTOVER_ACTION = "tick"
     # Пусто: tick сам fence не ставит ни одному потоку (колонка auto_cutover_enabled тоже false).
-    CUTOVER_AUTO_STREAMS = ""
+    CUTOVER_AUTO_STREAMS    = ""
+    CUTOVER_STREAM_PROD_SAS = jsonencode(local.cutover_writer_sas)
+    # Учётная запись владельца, от которой работает Apps Script (персональные данные — не в репозитории:
+    # GitHub Variable CUTOVER_APPS_SCRIPT_USER). Пусто — fence не ставится: доказательство gate невозможно.
+    CUTOVER_APPS_SCRIPT_USER = var.cutover_apps_script_user
+  }
+  qualify_env = {
+    LOADER_NAME              = "qualify"
+    WRITER_OWNERSHIP_DATASET = "wb_ops"
   }
 }
 
@@ -54,26 +64,19 @@ resource "google_service_account" "ingest_cutover" {
   display_name = "WB ingest cutover coordinator (PROD)"
 }
 
-resource "google_project_iam_member" "ingest_cutover_job_user" {
-  count   = var.cutover_coordinator_enabled ? 1 : 0
-  project = var.project_id
-  role    = "roles/bigquery.jobUser"
-  member  = "serviceAccount:${google_service_account.ingest_cutover[0].email}"
-}
-
-resource "google_project_iam_custom_role" "ingest_cutover_jobs_reader" {
+resource "google_project_iam_custom_role" "ingest_cutover_bigquery" {
   count       = var.cutover_coordinator_enabled ? 1 : 0
   project     = var.project_id
-  role_id     = "ingestCutoverJobsReader"
-  title       = "Ingest cutover: чтение списка заданий BigQuery"
-  description = "Этап C: INFORMATION_SCHEMA.JOBS_BY_PROJECT для доказательства дренажа. Только список заданий, без данных."
-  permissions = ["bigquery.jobs.listAll"]
+  role_id     = "ingestCutoverBigQuery"
+  title       = "Ingest cutover: задания BigQuery и список заданий"
+  description = "Этап C: запуск заданий (без побочных прав jobUser) и INFORMATION_SCHEMA.JOBS_BY_PROJECT для дренажа и доказательства gate."
+  permissions = ["bigquery.jobs.create", "bigquery.config.get", "bigquery.jobs.listAll"]
 }
 
-resource "google_project_iam_member" "ingest_cutover_jobs_reader" {
+resource "google_project_iam_member" "ingest_cutover_bigquery" {
   count   = var.cutover_coordinator_enabled ? 1 : 0
   project = var.project_id
-  role    = google_project_iam_custom_role.ingest_cutover_jobs_reader[0].id
+  role    = google_project_iam_custom_role.ingest_cutover_bigquery[0].id
   member  = "serviceAccount:${google_service_account.ingest_cutover[0].email}"
 }
 
@@ -251,4 +254,127 @@ variable "cutover_gate_reader_streams" {
     condition     = alltrue([for s in var.cutover_gate_reader_streams : contains(["statistics", "ads", "finance", "supplies", "ref"], s)])
     error_message = "cutover_gate_reader_streams: только statistics, ads, finance, supplies, ref."
   }
+}
+
+variable "cutover_apps_script_user" {
+  type        = string
+  default     = ""
+  description = "Этап C: email учётной записи, от которой работает Apps Script (INFORMATION_SCHEMA.JOBS.user_email). GitHub Variable CUTOVER_APPS_SCRIPT_USER; в репозиторий не пишется."
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Писатель квалификации (повторное ревью #426): Job ingest-qualify-prod, тот же образ, args ["qualify"].
+# Паритет shadow ↔ prod по sql/mig_*_parity.sql потоков (в образе — /app/parity-sql) → INGEST_QUALIFICATION.
+# Права: свои задания BigQuery; чтение wb_raw ЦЕЛИКОМ (таблицы __CR появляются и исчезают с флагами
+# shadow — табличную привязку к ним не выдать); запись ТОЛЬКО в INGEST_QUALIFICATION. Ни Scheduler, ни Run, ни секретов.
+# ══════════════════════════════════════════════════════════════════════════════
+
+resource "google_service_account" "ingest_qualify" {
+  count        = var.cutover_coordinator_enabled ? 1 : 0
+  account_id   = "sa-ingest-qualify"
+  display_name = "WB ingest qualification writer (PROD)"
+}
+
+resource "google_project_iam_custom_role" "ingest_qualify_bigquery" {
+  count       = var.cutover_coordinator_enabled ? 1 : 0
+  project     = var.project_id
+  role_id     = "ingestQualifyBigQuery"
+  title       = "Ingest qualify: задания BigQuery"
+  description = "Этап C: запуск SELECT паритета и INSERT вердиктов без побочных прав jobUser."
+  permissions = ["bigquery.jobs.create", "bigquery.config.get"]
+}
+
+resource "google_project_iam_member" "ingest_qualify_bigquery" {
+  count   = var.cutover_coordinator_enabled ? 1 : 0
+  project = var.project_id
+  role    = google_project_iam_custom_role.ingest_qualify_bigquery[0].id
+  member  = "serviceAccount:${google_service_account.ingest_qualify[0].email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "ingest_qualify_read_raw" {
+  count      = var.cutover_coordinator_enabled ? 1 : 0
+  dataset_id = var.raw_dataset
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.ingest_qualify[0].email}"
+}
+
+resource "google_bigquery_table_iam_member" "ingest_qualify_write" {
+  count      = var.cutover_coordinator_enabled ? 1 : 0
+  dataset_id = "wb_ops"
+  table_id   = local.cutover_qualification_table
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.ingest_qualify[0].email}"
+}
+
+resource "google_cloud_run_v2_job" "ingest_qualify_prod" {
+  count               = var.cutover_coordinator_enabled ? 1 : 0
+  name                = "ingest-qualify-prod"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    template {
+      service_account = google_service_account.ingest_qualify[0].email
+      max_retries     = 0
+      timeout         = "1800s"
+      containers {
+        image = var.container_image
+        args  = ["qualify"]
+        dynamic "env" {
+          for_each = merge(local.common_env, local.qualify_env, local.deploy_managed_env, { ENVIRONMENT = "prod" })
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      template[0].template[0].containers[0].env,
+      client,
+      client_version,
+    ]
+  }
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_cloud_run_v2_job_iam_member" "scheduler_ingest_qualify_invoke" {
+  count    = var.cutover_coordinator_enabled ? 1 : 0
+  location = var.region
+  name     = google_cloud_run_v2_job.ingest_qualify_prod[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
+}
+
+# 10:40 МСК: после утренних shadow-прогонов потоков (самый поздний — ref 08:32) и до дневных. Раз в сутки
+# (паритет ~0,1 ГБ на поток). Создаётся НА ПАУЗЕ.
+resource "google_cloud_scheduler_job" "ingest_qualify" {
+  count            = var.cutover_coordinator_enabled ? 1 : 0
+  name             = "ingest-qualify"
+  region           = var.region
+  schedule         = "40 10 * * *"
+  time_zone        = "Europe/Moscow"
+  paused           = true
+  attempt_deadline = "600s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.run_v2_base}/${google_cloud_run_v2_job.ingest_qualify_prod[0].name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler_prod.email
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
+  depends_on = [google_project_service.enabled]
 }

@@ -27,10 +27,17 @@ export interface OwnershipSnapshot {
   state: string;
 }
 
-/** Чтение владельца. null — строки потока нет (fail-closed у вызывающего). */
+/**
+ * Чтение владельца. null — строки потока нет (fail-closed у вызывающего).
+ * mark — метка в начале текста запроса (INFORMATION_SCHEMA.JOBS): WRITER_GATE:CR:<поток>:<загрузчик> у gate
+ * входа (доказательство для координатора), WRITER_RECHECK:CR:… у перечитки перед COMPLETE.
+ */
 export interface OwnershipReader {
-  read(stream: Stream): Promise<OwnershipSnapshot | null>;
+  read(stream: Stream, mark?: string): Promise<OwnershipSnapshot | null>;
 }
+
+export const gateMark = (stream: Stream, loader: string): string => `WRITER_GATE:CR:${stream}:${loader}`;
+export const recheckMark = (stream: Stream, loader: string): string => `WRITER_RECHECK:CR:${stream}:${loader}`;
 
 /** Серверный таймаут чтения: gate не должен съедать окно прогона. */
 export const OWNERSHIP_READ_TIMEOUT_MS = 30_000;
@@ -41,10 +48,12 @@ export class BqOwnershipReader implements OwnershipReader {
     private readonly dataset: string,
   ) {}
 
-  async read(stream: Stream): Promise<OwnershipSnapshot | null> {
+  async read(stream: Stream, mark?: string): Promise<OwnershipSnapshot | null> {
+    const m = mark ?? `WRITER_READ:CR:${stream}`;
+    if (!/^[A-Z_]+:CR:[a-z]+(:[a-z0-9-]+)?$/.test(m)) throw new Error(`невалидная метка запроса владения: ${m}`);
     const rows = await this.bq.query<{ owner?: unknown; epoch?: unknown; state?: unknown }>(
       // Метка — для координатора: по INFORMATION_SCHEMA.JOBS он доказывает, что prod-писатели под gate.
-      `/* WRITER_GATE:CR:${stream}:v1 */ SELECT owner, epoch, state FROM \`${this.bq.projectId}.${this.dataset}.${OWNERSHIP_TABLE}\` WHERE stream = @stream`,
+      `/* ${m}:v1 */ SELECT owner, epoch, state FROM \`${this.bq.projectId}.${this.dataset}.${OWNERSHIP_TABLE}\` WHERE stream = @stream`,
       { stream },
       { stream: 'STRING' },
       { jobTimeoutMs: OWNERSHIP_READ_TIMEOUT_MS },
@@ -70,10 +79,10 @@ export type GateDecision =
   | { kind: 'UNAVAILABLE'; stream: Stream; error: string };
 
 /** Решение gate. Никогда не бросает: отказ чтения — UNAVAILABLE (fail-closed). */
-export async function checkWriterGate(reader: OwnershipReader, stream: Stream): Promise<GateDecision> {
+export async function checkWriterGate(reader: OwnershipReader, stream: Stream, mark?: string): Promise<GateDecision> {
   let snap: OwnershipSnapshot | null;
   try {
-    snap = await reader.read(stream);
+    snap = await reader.read(stream, mark);
   } catch (e) {
     return { kind: 'UNAVAILABLE', stream, error: e instanceof Error ? e.message : String(e) };
   }
@@ -93,12 +102,12 @@ export interface WriterFence {
   assertEpoch(stage: string): Promise<void>;
 }
 
-export function makeWriterFence(reader: OwnershipReader, stream: Stream, epoch: number): WriterFence {
+export function makeWriterFence(reader: OwnershipReader, stream: Stream, epoch: number, mark?: string): WriterFence {
   return {
     stream,
     epoch,
     async assertEpoch(stage: string): Promise<void> {
-      const d = await checkWriterGate(reader, stream);
+      const d = await checkWriterGate(reader, stream, mark);
       if (d.kind === 'UNAVAILABLE') {
         throw new LoaderError(`${stage}: владение потоком ${stream} не подтверждено перед коммитом — ${d.error}`, WRITER_GATE_UNAVAILABLE);
       }

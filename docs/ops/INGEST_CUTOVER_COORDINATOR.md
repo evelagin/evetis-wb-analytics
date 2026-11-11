@@ -58,7 +58,7 @@ LEGACY_ACTIVE(AS) → SHADOW_VALIDATING(AS) → QUALIFIED(AS) → LEGACY_FENCED(
 | LEGACY_ACTIVE → SHADOW_VALIDATING | появились вердикты квалификации |
 | SHADOW_VALIDATING → QUALIFIED | `PASS` по всем обязательным группам за окно потока, §3.1 |
 | → BLOCKED | недопустимый вердикт в самых свежих сутках — снимается сам, когда свежий день снова чистый. **Или** prod-прогон Cloud Run в `LOADER_RUNS` при владельце не CLOUD_RUN (образ без gate, gate выключен) — код `CUTOVER_WRITER_NOT_GATED`, снимается только командой `resolve` |
-| QUALIFIED → LEGACY_FENCED | `auto_cutover_enabled` (колонка или `CUTOVER_AUTO_STREAMS`) **или** команда `fence`; окно свободно, §3.2; **оба писателя под gate** — за 24 ч в `JOBS_BY_PROJECT` есть выполненные запросы gate этого потока и от Apps Script (метка `WRITER_GATE:AS:<поток>:v1`, учётная запись владельца), и от Cloud Run (`WRITER_GATE:CR:<поток>:v1`, SA). CAS `owner = NONE`, `epoch + 1` |
+| QUALIFIED → LEGACY_FENCED | `auto_cutover_enabled` (колонка или `CUTOVER_AUTO_STREAMS`) **или** команда `fence`; окно свободно, §3.2; **писатели под gate по каждой плановой точке входа** (§3.4). CAS `owner = NONE`, `epoch + 1` |
 | LEGACY_FENCED → CLOUD_ACTIVE | доказанный дренаж Apps Script, §3.3; фиксируется legacy watermark. CAS `owner = CLOUD_RUN`, `epoch + 1` |
 | CLOUD_ACTIVE → MONITORING | первый COMPLETE Cloud Run; покрытие от legacy watermark подтверждено на данных, §4 |
 | MONITORING → COMPLETED | ≥ 3 штатных цикла каждого загрузчика (finance — плюс цикл понедельника), без ERROR/PARTIAL, без дублей, покрытие подтверждено, downstream жив |
@@ -100,8 +100,8 @@ LEGACY_ACTIVE(AS) → SHADOW_VALIDATING(AS) → QUALIFIED(AS) → LEGACY_FENCED(
 - Занятость запуска: [старт − разброс, старт + разброс + длительность]:
   - Apps Script: ±15 мин (`nearMinute`), длительность 6 мин;
   - Cloud Run: ±1 мин, длительность = timeout Job'а.
-- Расписания взяты из установщиков триггеров и Terraform потоков (`profiles.ts`). Неизвестная минута (продажи раз в
-  6 ч, поставки) — консервативно: занят весь час.
+- Расписания: Apps Script — снимок живых триггеров 11.11.2026 (страница «Триггеры»), Cloud Run — Terraform потоков
+  (`profiles.ts`). Модель ±15 мин вокруг живой минуты исключает окна, перекрывающие живые прогоны.
 - Перед `auto_cutover_enabled` владелец сверяет расписания со страницей «Триггеры», см. §9.
 
 ### 3.3 Дренаж (доказательно, а не по времени)
@@ -123,18 +123,42 @@ LEGACY_ACTIVE(AS) → SHADOW_VALIDATING(AS) → QUALIFIED(AS) → LEGACY_FENCED(
    | ref | `REF_SYNC_RUNS` |
 
    Плюс `LOADER_RUNS` prod загрузчиков потока. Старт после fence → **STOP**.
-3. **Нет незавершённых ЗАПИСЫВАЮЩИХ заданий BigQuery в таблицы потока** — `region-eu.INFORMATION_SCHEMA.JOBS_BY_PROJECT`:
-   - условие: `state ≠ DONE` и либо LOAD/COPY/DML/DDL с `destination_table` — таблица потока, либо `SCRIPT` с DML в
-     таблицу потока в тексте. Читающие скрипты (паритет, ручные SELECT) не в счёт;
-   - фильтр по таблицам, а не по пользователю: Apps Script работает от учётной записи владельца;
-   - только таблицы, которые не делит другой поток: `INGEST_RUNS` общий у statistics и ads, его дренаж различает по
-     `loader_name` (п. 2). Shadow `…__CR` не совпадают (имя сравнивается целиком);
-   - задание, созданное позже, чем мог жить прогон, начатый до fence → STOP; иначе ждём DONE.
+3. **ЗАПИСЫВАЮЩИЕ задания BigQuery в таблицы потока — и выполненные, и незавершённые** —
+   `region-eu.INFORMATION_SCHEMA.JOBS_BY_PROJECT`. Запись в таблицы потоков длится секунды (замер ревьюера за 7 суток:
+   ≤ 21 с, p99 ≤ 6 с), поэтому проверки одних незавершённых недостаточно.
+   - Какие задания: LOAD/COPY/DML/DDL с `destination_table` — таблица потока; `SCRIPT` с DML в таблицу потока в
+     тексте — только незавершённый (его DML — дочерние задания со своим destination). Читающие скрипты не в счёт.
+   - Фильтр по таблицам, а не по пользователю; только таблицы, которые не делит другой поток (`INGEST_RUNS` —
+     по `loader_name`, п. 2). Shadow `…__CR` не совпадают (имя сравнивается целиком).
+   - Чьё задание — по `user_email`: учётная запись владельца (`CUTOVER_APPS_SCRIPT_USER`) = Apps Script, prod-SA
+     потока (`CUTOVER_STREAM_PROD_SAS`) = Cloud Run, иначе — посторонний.
+   - Запись после fence допустима только как хвост прогона **дренируемого** писателя, начатого до fence:
+     Apps Script — до fence + 1 мин, позже — только UPDATE/MERGE своей строки журнала в пределах 7 мин;
+     Cloud Run — в пределах timeout Job'а + 5 мин (перечитки перед каждой записью у загрузчиков потоков нет).
+     Запись второго (уже отсечённого) писателя или постороннего — **STOP**.
+   - Незавершённые задания — ждём DONE.
 4. **«Без исхода» — только живые на момент fence.** STARTED/RUNNING считается, если прогон стартовал не раньше
    fence − время жизни писателя (Apps Script — дренаж 7 мин, Cloud Run — timeout + 5). Такой без исхода →
    **UNKNOWN_OUTCOME**. Более старые STARTED — мёртвые прогоны (убиты лимитом до fence): они в доказательствах
    (`deadStartedBeforeFence`), но cutover не блокируют.
 5. Только после этого — legacy watermark (MAX по журналу или RAW) и CAS на нового владельца.
+
+### 3.4 Доказательство «писатели под gate» (перед fence)
+
+`JOBS_BY_PROJECT`, выполненные запросы без ошибки, текст **начинается** с метки gate точки входа и `SELECT owner`.
+По **каждой плановой точке входа** потока (`profiles.schedules`):
+- Apps Script — метка `WRITER_GATE:AS:<поток>:<точка входа>:v1`, пользователь = `CUTOVER_APPS_SCRIPT_USER`;
+- Cloud Run — метка `WRITER_GATE:CR:<поток>:<загрузчик>:v1`, пользователь = prod-SA потока
+  (`CUTOVER_STREAM_PROD_SAS`);
+- окно: ежедневная точка входа — 26 ч, недельная (аудит рекламы) — 8 суток.
+
+Не засчитываются: `wbWriterGateStatus()` (своя метка), перечитка перед записью, ручные запросы других пользователей,
+сам координатор (его запрос начинается с `SELECT`). Нет доказательства хотя бы по одной точке входа или не заданы
+учётные записи — fence не ставится. Поэтому до fence prod-Scheduler'ы Cloud Run потока должны работать: при
+владельце APPS_SCRIPT их прогоны штатно отсекаются (`WRITER_NOT_OWNER`) и тем самым дают доказательство (§7 п. 6).
+
+После активации (CLOUD_ACTIVE/MONITORING) любое записывающее задание в таблицы потока не от prod-SA потока → **STOP**
+с отсечением: Apps Script пишет от учётной записи человека, это различимо (проверка раз в час и в моменты решения).
 
 ## 4. Gate Cloud Run, commit-маркеры и первый прогон
 
@@ -149,8 +173,9 @@ LEGACY_ACTIVE(AS) → SHADOW_VALIDATING(AS) → QUALIFIED(AS) → LEGACY_FENCED(
 | перед COMPLETE в `LOADER_RUNS` | повторная проверка. Владелец или epoch сменились → `WRITER_EPOCH_CHANGED`: COMPLETE не пишется, lease закрывается ERROR (это исход, не данные), exit 1 |
 
 Shadow gate не проверяет: он пишет только `__CR`. Карта загрузчик → поток: `cloud/src/ownership/streams.ts`.
-Остатки (`stocks`) проверяются только при `WRITER_GATE_STOCKS=1` у Job'а (§8). Запрос gate несёт метку
-`/* WRITER_GATE:CR:<поток>:v1 */` — по ней координатор доказывает, что Cloud Run под gate (§3).
+Остатки (`stocks`) проверяются только при `WRITER_GATE_STOCKS=1` у Job'а (§8). Запрос gate входа начинается с
+метки `/* WRITER_GATE:CR:<поток>:<загрузчик>:v1 */` — доказательство для координатора (§3.4); перечитка перед
+COMPLETE — `WRITER_RECHECK:CR:…` (не доказательство).
 
 **Остаточное окно Cloud Run.** Между перечиткой перед COMPLETE и самим UPDATE — миллисекунды. Окно между gate и
 записью данных закрывает дренаж Cloud Run при откате: timeout Job'а + 5 мин, задания BigQuery, запас gate→журнал.
@@ -167,7 +192,7 @@ Shadow gate не проверяет: он пишет только `__CR`. Кар
 | statistics | один load job пакета в RAW (`statistics/index.ts` `appendRows`) — сам он и есть коммит; `LOADER_RUNS` COMPLETE | Загрузчик читает watermark из **таблицы**: `MAX(last_change_date)` строк `ORD_INC_`/`SALE_INC_` (`statistics/bq.ts`). Это та же таблица и те же префиксы, что у инкремента Apps Script. Legacy фиксируется тем же выражением после дренажа | (а) отметка не откатилась; (б) Cloud Run не писал строк старше legacy; (в) MAX строк инкремента со стартом **до** первого прогона Cloud Run = legacy, т.е. первый прогон прочитал ровно её; (г) первая ночная сверка (7 суток) накрыла legacy продаж |
 | ads | маркер `RAW_WB_ADV_COSTS_RUNS` после данных окна (`ads/sources.ts`); `LOADER_RUNS` 'ads' COMPLETE | Окно от даты запуска: расходы D−14…D−1, fullstats D−7…D−1. Legacy = MAX `logical_period` COMPLETE 'ads' | Разрыв между legacy и COMPLETE-периодами Cloud Run ≤ 7 суток (перекрытие окна) |
 | finance | MERGE COMPLETE отчёта в `FINANCE_REPORT_LOADS` (`finance/run.ts` `mergeComplete`), финализация недели | Очередь `FINANCE_REPORT_LOADS` общая: DISCOVERED/ERROR, оставленные Apps Script, Cloud Run дочитывает. Discovery смотрит сегодня−3…сегодня | Разрыв ≤ 3 суток + цикл понедельника |
-| supplies | шапка `RAW_WB_SUPPLIES` после goods (`supplies/index.ts`) | Известное состояние — `updated_dt` из RAW + «не завершён» + перекрытие 14 суток по `factDate` | Разрыв ≤ 14 суток |
+| supplies | шапка `RAW_WB_SUPPLIES` после goods (`supplies/index.ts`) | Объекты выбираются сравнением списка WB с известным состоянием RAW: новый / не завершён / `updated_dt` новее / окно 14 суток по `factDate` — от даты прошлого прогона не зависит. Отметка — `MAX(updated_dt)` (для журнала) | «Состояние»: разрыва по датам не проверяем — `MAX(snapshot_ts)` устаревает (Apps Script пишет только изменённые объекты и с 31.10 не пишет вовсе, токен), см. §8.1 |
 | ref | указатель `REF_ACTIVE_VERSION` — одна DML (`refsync/index.ts` `activate`) | Каждая версия — полное состояние листа | Пропуска быть не может; downstream — указатель переключён версией Cloud Run |
 
 Проверки покрытия statistics читают RAW. Поэтому они идут не на каждом tick, а в момент решения: CLOUD_ACTIVE →
@@ -194,10 +219,14 @@ Properties. Вставлена в 10 точек входа одной строк
 **Остатки (M1).** Gate потока `stocks` по умолчанию **выключен** (Script Property `WB_WRITER_GATE_STOCKS ≠ '1'`):
 ни в точке входа, ни перед записью строка владения не читается. Ручная процедура MIG1B работает как раньше (§8).
 
-**Метка.** Запрос gate несёт `/* WRITER_GATE:AS:<поток>:v1 */` — доказательство для координатора перед fence.
+**Метки.** Текст запроса к таблице владения начинается с метки:
+- `/* WRITER_GATE:AS:<поток>:<точка входа>:v1 */` — **только** gate точки входа (`wbWriterGate_(stream, entry)`,
+  точка входа обязательна): доказательство для координатора (§3.4);
+- `WRITER_GUARD:AS:<поток>:v1` — перечитка перед записью;
+- `WRITER_GATE_STATUS:AS:<поток>:v1` — ручной `wbWriterGateStatus()`.
 
 **Перед каждой записью.** Все записывающие вызовы BigQuery в коде загрузки идут через `wbBqJobsQuery_`,
-`wbBqJobsInsert_`, `wbBqTablesInsert_`, `wbBqTablesPatch_`. Это 15 файлов, замена одного токена. Статический тест
+`wbBqJobsInsert_`, `wbBqTablesInsert_`, `wbBqTablesPatch_`, `wbBqTablesRemove_`. Это 15 файлов, замена одного токена. Статический тест
 запрещает прямые вызовы вне `WriterGate.gs`; исключения — Unitka R3 и КИЗ, у них свои таблицы вне потоков.
 
 Если запись идёт в таблицу потока (load, DML, DDL, патч схемы), владелец перечитывается **непосредственно перед**
@@ -213,10 +242,15 @@ Properties. Вставлена в 10 точек входа одной строк
 подготовкой load и его отправкой. Цена — один SELECT ~10 МБ на запись.
 
 **Исключение — закрыть свою строку журнала.** UPDATE/MERGE в `INGEST_RUNS`, `FINANCE_LOADER_RUNS`,
-`WB_STOCKS_SNAPSHOTS`, `REF_SYNC_RUNS` пропускается, если это исполнение прошло gate точки входа (есть поколение
-входа): прогон, открывший строку под владением, закрывает её исходом и после потери владения. Без этого строка
-осталась бы STARTED навсегда и дренаж почти всегда давал бы UNKNOWN_OUTCOME. Новые строки журналов (INSERT/load) и
-данные — под проверкой. Исполнение без точки входа (меню) закрыть «чужую» строку не может.
+`WB_STOCKS_SNAPSHOTS`, `REF_SYNC_RUNS` пропускается, только если одновременно:
+- исполнение прошло gate точки входа (есть поколение входа);
+- запрос ссылается (в тексте или параметре) на id строки, которую **открыло это исполнение** под владением.
+  Id запоминается при INSERT с параметром `run_id`/`snapshot_id` и при load строк журнала;
+- в MERGE нет `WHEN NOT MATCHED` (вставки);
+- для остатков при включённом gate — только исходом `ERROR` (COMPLETE снимка после потери владения запрещён).
+
+Без исключения строка осталась бы STARTED навсегда и дренаж почти всегда давал бы UNKNOWN_OUTCOME. Новые строки
+журналов (INSERT/load), чужие строки и данные — под проверкой.
 
 **Таблицы рекламы — ровно 9 таблиц M3** (`ads/targets.ts`), без префикса. `RAW_WB_ADV_SEARCH_CLUSTERS` M3 не
 переносит: кластеры остаются за Apps Script и после cutover рекламы, gate их не отсекает.
@@ -318,16 +352,44 @@ Scheduler `ingest-cutover-tick` срабатывает каждые 15 мин и
    `wb-stocks-prod` — только с `WRITER_GATE_STOCKS=1`), то таблица владения обязана содержать 6 строк, а SA каждого
    такого Job'а — иметь табличное чтение. Иначе выката нет. Только чтение: `bq head`, `bq get-iam-policy`.
    Остатки: gate выключен, выкат образа на поведение M1 не влияет.
-6. **Проверка: все prod-писатели видят своего владельца.**
+6. **Снять паузу prod-Scheduler'ов потока при владельце APPS_SCRIPT** (образ с gate уже выкачен, п. 5).
+   В ветках потоков prod-Scheduler'ы создаются `paused = true` с пометкой «снимать на cutover после снятия
+   триггера Apps Script». С координатором порядок другой: при владельце APPS_SCRIPT prod-прогоны Cloud Run штатно
+   получают `WRITER_NOT_OWNER` (exit 0, ничего не пишут) и дают доказательство gate (§3.4). Без этого fence не
+   ставится. Триггеры Apps Script **не снимаются** вовсе.
+7. **Проверка: все prod-писатели видят своего владельца.**
    - Apps Script: `wbWriterGateStatus()`.
    - Cloud Run: в логах ближайших штатных прогонов — `writer_gate_allow` / `writer_fenced` с ожидаемым owner и epoch,
      ни одного `WRITER_GATE_UNAVAILABLE`.
-7. **Координатор:** `deploy-prod only_job=ingest-cutover` → разовый `CUTOVER_ACTION=status` → resume
-   `ingest-cutover-tick`.
-8. **Только потом автоматика:** для конкретного потока `auto_cutover_enabled = true` (колонка) или
+8. **Координатор и квалификация:** GitHub Variable `CUTOVER_APPS_SCRIPT_USER` (email учётной записи, от которой
+   работает Apps Script; в репозиторий не пишется) → apply; `deploy-prod only_job=ingest-cutover` (оба Job'а) →
+   разовый `CUTOVER_ACTION=status` и разовый `ingest-qualify-prod` с `QUALIFY_DRY_RUN=1` → resume
+   `ingest-qualify` и `ingest-cutover-tick`.
+9. **Только потом автоматика:** для конкретного потока `auto_cutover_enabled = true` (колонка) или
    `CUTOVER_AUTO_STREAMS`. До этого fence — только командой `fence` по ACK cutover потока.
 
 ## 8. Остатки (M1) и потоки M2–M5
+
+### 8.0 Что поменять в runbook'ах M2–M5 (ветки потоков здесь не правятся)
+| Runbook | Сейчас | С координатором |
+|---|---|---|
+| `MIG_M2_STATISTICS_RUNBOOK.md`, `MIG_ADS_RUNBOOK.md`, `MIG_FINANCE_RUNBOOK.md`, `MIG_SUPPLIES_REF_RUNBOOK.md` — cutover | снять триггер Apps Script → resume prod-Scheduler | resume prod-Scheduler'ов потока **заранее**, при владельце APPS_SCRIPT (они отсекаются gate и дают доказательство); переключение — `fence` координатора (или `auto_cutover_enabled`), триггеры Apps Script не снимать |
+| те же — откат | pause prod-Scheduler → вернуть триггер | `CUTOVER_ACTION=rollback`: дренаж Cloud Run и возврат Apps Script; Scheduler и триггеры не трогать |
+| те же — приёмка паритета | ручной запуск `sql/mig_*_parity.sql`, отчёт в PR | вердикты пишет `ingest-qualify-prod` в `INGEST_QUALIFICATION` (§13); ручной запуск — для разбора |
+| те же — Terraform prod | prod-SA без чтения таблицы владения | `CUTOVER_GATE_READER_STREAMS` += поток (чтение строки владения), иначе Job fail-closed |
+| те же — выкат prod | — | предпроверка `deploy-prod` (§7 п. 5) требует таблицу и чтение у SA Job'а |
+| `MIG_SUPPLIES_REF_RUNBOOK.md` | журнала прогонов Apps Script у поставок нет | см. §8.1 |
+
+### 8.1 Поставки: журнал прогонов Apps Script (описание, не сделано)
+У `runWbSuppliesDaily` нет журнала прогонов: дренаж видит Apps Script только по `run_id DL_…` в RAW и по заданиям
+BigQuery, а «STARTED без исхода» у поставок не бывает. Нужно (отдельная правка Apps Script по ACK, вне этой ветки):
+- в `runWbSuppliesDaily` после gate — `ingestRunStart_('supplies', <сегодня МСК>, 'SCHEDULED')` и в конце
+  `ingestFinalizeByStatus_` (тот же `INGEST_RUNS`, что у заказов/продаж/рекламы); `run_id` = `DL_…` прогона;
+- `ingestFinalizeByStatus_` по исходу: COMPLETE, если все объекты списка обработаны, иначе ERROR с кодом
+  (`SUPPLIES_TOKEN`, `SUPPLIES_PARTIAL`);
+- координатор: `INGEST_RUNS (loader_name = 'supplies')` добавить в журналы поставок (§3.3 п. 2), а легаси-отметкой
+  поставок брать время последнего COMPLETE прогона из журнала (не `MAX(snapshot_ts)`).
+До этого отметка поставок — `MAX(updated_dt)` (только журнал), а непрерывность — «состояние» (§4).
 
 - **M1: выбран вариант «gate остатков выключен по умолчанию в обоих писателях».** До приёмки координатора:
   - Apps Script не читает строку `stocks` (Script Property `WB_WRITER_GATE_STOCKS` не задана);
@@ -372,7 +434,7 @@ service BigQuery уже подключён.
 4. Gate Cloud Run: выкатить предыдущий digest. Без строки владения новый образ fail-closed, поэтому таблицы
    удалять **после** отката образов.
 5. Terraform: `CUTOVER_COORDINATOR_ENABLED=false` → plan: только destroy ресурсов файла. Своя роль
-   `ingestCutoverJobsReader` при удалении уходит в soft-delete на 7 дней (37 дней до окончательного удаления):
+   `ingestCutoverBigQuery` и `ingestQualifyBigQuery` при удалении уходят в soft-delete на 7 дней (37 дней до окончательного удаления):
    повторное включение флага в это время либо восстанавливает её (`gcloud iam roles undelete`, делает владелец),
    либо требует нового `role_id`. Учитывать перед повторным включением.
 6. Таблицы `wb_ops.INGEST_*` удаляются вручную и последними. Журнал переходов — сохранить экспортом.
@@ -386,21 +448,21 @@ service BigQuery уже подключён.
 - Собственные commit-маркеры потоков в Cloud Run не проверяют epoch, пока в ветках потоков не добавлены
   `assertEpoch` / `ownershipAssertSql` (§4). Окно закрывает дренаж Cloud Run при откате: timeout Job'а + 5 мин +
   задания BigQuery.
-- Квалификацию координатор только читает (dataViewer). Писатель `INGEST_QUALIFICATION` (запуск
-  `sql/mig_*_parity.sql` и запись вердиктов) — отдельная задача.
-- Доказательство «оба писателя под gate» — по меткам в тексте запросов `JOBS_BY_PROJECT` за 24 ч. Оно подтверждает,
-  что код с gate исполнялся, но не что **каждый** путь записи обновлён. Это закрывают обёртки Apps Script и
-  статический тест.
-- Закрытие своей строки журнала (UPDATE/MERGE) после потери владения разрешено (§5). У остатков это COMPLETE
-  снимка, данные которого записаны до потери владения: такой снимок может стать видимым после fence. Дренаж его
-  ждёт; следующий снимок нового владельца его заменяет. Пока gate остатков выключен, это не проявляется.
+- Квалификацию координатор только читает (dataViewer). Пишет её загрузчик `qualify` (§13): его вердикты не
+  сильнее файлов паритета потоков — их логика проверена в ветках потоков, а не здесь.
+- Доказательство gate — по меткам в начале текста запросов `JOBS_BY_PROJECT` от своих пользователей. Его может
+  подделать только тот, кто выполнит запрос **от учётной записи владельца или prod-SA** с точной меткой точки
+  входа. Оно подтверждает, что код gate исполнялся по каждой плановой точке входа, но не что **каждый** путь
+  записи обновлён — это закрывают обёртки Apps Script и статический тест.
+- Закрытие своей строки журнала после потери владения разрешено (§5): у журналов это исход, не данные.
 - Предпроверка `deploy-prod` видит только табличные права на строку владения. Чтение через права на датасет она
   не засчитывает (ложный отказ — в безопасную сторону).
 - В MONITORING Apps Script отличим от Cloud Run не для всех потоков. У поставок и REF одинаковый формат `run_id` у
   обоих писателей, поэтому после активации «второй писатель» там виден только через gate, а не через журналы.
   У ночной сверки продаж журнала нет вовсе.
-- Расписания в окне fence для триггеров, поставленных вручную (продажи, поставки), заданы консервативно. Живые
-  минуты сверяет владелец.
+- Расписания в окне fence — снимок живых триггеров 11.11.2026: orders 00/06/12/18:44, sales 00/06/12/18:17,
+  reconcile 04:18, stocks 06:23, ads 05:07, catch-up 06:08 и 08:18, finance 07:26/12:24/18:35, ref 08:22,
+  supplies 02:29. Модель ±15 мин. Живые триггеры меняются вручную — перед `auto_cutover_enabled` снимок сверить заново.
 
 ## 12. Проверка SQL парсером BigQuery (dry-run)
 
@@ -424,3 +486,38 @@ service BigQuery уже подключён.
 
 Результат 11.11.2026: `docs/ops/evidence/INGEST_CUTOVER_SQL_DRYRUN_2026-11-11.txt`. Ошибки ревью B1 (`at`) и B2
 (UNION DATE/STRING) этим прогоном ловятся; проверено на старом тексте CAS: `Unexpected keyword AT`.
+
+## 13. Писатель квалификации — загрузчик `qualify`
+
+Job `ingest-qualify-prod` (тот же образ, `args = ["qualify"]`, плоскость управления: без lease и `LOADER_RUNS`),
+Scheduler `ingest-qualify` 10:40 МСК, создаётся PAUSED. Под тем же флагом `cutover_coordinator_enabled`.
+
+- **SQL паритета** — файлы потоков `sql/mig_m2_statistics_parity.sql`, `mig_ads_parity.sql`, `mig_finance_parity.sql`,
+  `mig_supplies_parity.sql`, `mig_ref_parity.sql` (в ветках потоков). `deploy-shadow` копирует `sql/mig_*_parity.sql`
+  в `cloud/parity-sql/` перед сборкой, образ — `/app/parity-sql`. **Нет файла — поток пропускается**
+  (`MISSING_PARITY_SQL`, warn): потоки будут слиты позже.
+- Исполняются только операторы `SELECT`/`WITH` (иначе отказ), по порядку `QUERY 1…`. Статистика: первые полные
+  сутки shadow — `QUALIFY_D_FROM_STATISTICS` (подставляется в `DATE '…' AS d_from`).
+- **Группы — ровно группы профиля координатора** (тест):
+
+| Поток | Группа | Источник |
+|---|---|---|
+| statistics | `STATS_ORDERS`, `STATS_SALES` | QUERY 1 (`stream`, `day`, `verdict`) |
+| statistics | `STATS_SALES_RECONCILE` | журнал shadow `sales-reconcile`: COMPLETE за сутки → PASS, только ERROR → FAIL |
+| ads | `ADS_COSTS` / `ADS_STATS` | QUERY 1 `costs_verdict` / `verdict` |
+| ads | `ADS_COSTS_AUDIT` | журнал shadow `ads-costs-audit` |
+| finance | `FINANCE_DAILY` | QUERY 1 `verdict` |
+| finance | `FINANCE_MONEY` | QUERY 1: `rows_mismatch + manifest_diff + dup_rrd > 0` → **FAIL** (необъяснённое денежное расхождение); отчёт только на одной стороне → DRIFT_EXPLAINED; иначе PASS |
+| finance | `FINANCE_WEEKLY` | QUERY 3: неделя × тип, худший по типам; сутки = понедельник после недели (`week_start + 7`) |
+| supplies / ref | `SUPPLIES` / `REF` | QUERY 1 `verdict` |
+
+- Вердикты: EXACT → PASS, DATA_DRIFT → DRIFT_EXPLAINED, FAIL → FAIL; NO_DATA, NO_RUN, MISSING, SOURCE_GAP,
+  PENDING, REVIEW → MISSING (день не засчитывается).
+- `image_digest` — образ последнего shadow-прогона потока за сутки (`LOADER_RUNS`, environment = 'shadow').
+- **Запись** — один `INSERT … SELECT … FROM UNNEST(JSON_QUERY_ARRAY(@payload))` в `INGEST_QUALIFICATION`, только
+  добавление. `QUALIFY_DRY_RUN=1` — посчитать и записать в лог, без INSERT.
+- **Права** `sa-ingest-qualify`: своя роль (`bigquery.jobs.create`, `config.get`); чтение `wb_raw` целиком (таблицы
+  `__CR` появляются и исчезают с флагами shadow — табличную привязку к ним не выдать); запись — только
+  `INGEST_QUALIFICATION`. Ни Scheduler, ни Run, ни секретов.
+- Отказ запроса одного потока не мешает остальным; итог — `QUALIFY_FAILED` (exit 1, алерт).
+- Стоимость: ~0,1 ГБ на поток в сутки (минимум 10 МБ на таблицу).

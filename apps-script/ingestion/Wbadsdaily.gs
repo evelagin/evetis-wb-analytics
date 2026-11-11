@@ -132,7 +132,7 @@ function runWbAdsDailyCore_(triggerType, recheckAfterLock) {
     console.log('WB Ads daily: SKIPPED_LOCKED (общий ScriptLock занят)');
     return { status: 'SKIPPED_LOCKED' };
   }
-  var wgate = wbWriterGate_('ads'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
+  var wgate = wbWriterGate_('ads', triggerType === 'CATCHUP' ? 'runWbAdsDailyCatchUp' : 'runWbAdsDaily'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
 
   // 🔴 PRE-PR REVIEW — TOCTOU. Решение catch-up принимается ДО ожидания ScriptLock.
   // За время ожидания (до 30 c) конкурирующий прогон мог успеть закрыться COMPLETE.

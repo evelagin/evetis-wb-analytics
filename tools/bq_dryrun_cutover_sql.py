@@ -64,6 +64,9 @@ def proxies(schemas: dict[str, str], sql: str) -> list[str]:
     for m in re.finditer(r"MERGE\s+(`[^`]+`)\s+(\w+)\s+USING\s+\((.*?)\)\s+(\w+)\s+ON\s+(.*?)\s+WHEN NOT MATCHED THEN\s+INSERT\s*\((.*?)\)\s*VALUES\s*\((.*?)\);", sql, re.S):
         _tbl, _ta, using, sa, _on, _cols, vals = m.groups()
         out.append(derived(schemas, f"SELECT {vals} FROM ({using}) {sa}"))
+    m = re.match(r"\s*INSERT INTO\s+(`[^`]+`)\s*\((.*?)\)\s*(SELECT\b.*)$", sql, re.S)
+    if m:
+        out.append(derived(schemas, m.group(3)))
     for m in re.finditer(r"INSERT INTO\s+(`[^`]+`)\s*\((.*?)\)\s*VALUES\s*\((.*?)\);", sql, re.S):
         _tbl, cols, vals = m.groups()
         names = [c.strip() for c in cols.split(",")]
@@ -113,7 +116,7 @@ def plan(stmts: list[dict], ddl: str) -> list[tuple[str, str, str, list]]:
     jobs = []
     for s in stmts:
         sql, params = s["sql"], s["params"]
-        is_script = bool(re.match(r"\s*(BEGIN|DECLARE|ASSERT)\b", sql)) or ";" in sql.strip().rstrip(";")
+        is_script = bool(re.match(r"\s*(BEGIN|DECLARE|ASSERT|INSERT|UPDATE|MERGE|DELETE)\b", sql)) or ";" in sql.strip().rstrip(";")
         if not refs_ingest(sql):
             jobs.append((s["name"], "FULL", sql, params))
         elif not is_script:
@@ -160,6 +163,9 @@ def main(argv: list[str]) -> int:
         # синтаксис подтверждён, семантика DML — в PROXY.
         if not ok and mode == "SCRIPT" and re.search(r"Not found: Table [\w:.-]+wb_ops\.INGEST_\w+ was not found", msg):
             ok, msg = True, f"синтаксис OK; таблицы ещё нет ({msg.split(' at ')[0]}) — семантика в PROXY"
+        # Файлы паритета потоков читают shadow-таблицы __CR: пока shadow потока не включён, их нет.
+        elif not ok and name.startswith("qualify.parity.") and re.search(r"Not found: Table [\w:.-]+__CR was not found", msg):
+            ok, msg = True, f"синтаксис OK; shadow-таблиц ещё нет ({msg.split(' at ')[0]})"
         bad += 0 if ok else 1
         print(f"{'OK  ' if ok else 'FAIL'} {mode:6} {name}: {msg}")
     print(f"итого: {'ошибок ' + str(bad) if bad else 'все OK'}")

@@ -32,6 +32,8 @@ jobs:
         working-directory: cloud
         run: |
           IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/wb-loader"
+          # Этап C: SQL паритета потоков — в образ (загрузчик qualify). Нет файлов — qualify пропускает поток (MISSING_PARITY_SQL).
+          cp ../sql/mig_*_parity.sql parity-sql/ 2>/dev/null || true
           docker build --label "git-sha=${GITHUB_SHA}" -t "$IMAGE:${GITHUB_SHA}" .
           docker push "$IMAGE:${GITHUB_SHA}"
           DIGEST=$(gcloud artifacts docker images describe "$IMAGE:${GITHUB_SHA}" --format='value(image_summary.digest)')

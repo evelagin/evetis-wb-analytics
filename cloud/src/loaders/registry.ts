@@ -30,6 +30,7 @@ import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
 import { cutoverLoader } from './cutover/index.js';
+import { qualifyLoader } from './qualify/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -124,6 +125,9 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // Этап C (OWNER ACK 11.11.2026): координатор переключения писателей WB Apps Script ↔ Cloud Run. Job
   // ingest-cutover-prod, CUTOVER_ACTION/CUTOVER_STREAM в env. Только prod; без lease и LOADER_RUNS.
   cutover: { handler: (ctx) => cutoverLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, controlPlane: true },
+  // Этап C: писатель wb_ops.INGEST_QUALIFICATION — паритет shadow ↔ prod по файлам sql/mig_*_parity.sql потоков.
+  // Job ingest-qualify-prod. Только prod; без lease и LOADER_RUNS; пишет только таблицу квалификации.
+  qualify: { handler: (ctx) => qualifyLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, controlPlane: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
