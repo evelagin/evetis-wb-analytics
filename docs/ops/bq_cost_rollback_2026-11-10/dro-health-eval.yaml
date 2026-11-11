@@ -1,0 +1,25 @@
+attemptDeadline: 320s
+httpTarget:
+  body: eyJjb25maWd1cmF0aW9uIjp7ImxhYmVscyI6eyJkcm9fY29tcG9uZW50IjoiZGV0ZWN0b3IifSwicXVlcnkiOnsicXVlcnkiOiJDQUxMIGBldmV0aXNfaGVhbHRoLnNwX2V2YWx1YXRlX2RhdGFfaGVhbHRoYCgpIiwidXNlTGVnYWN5U3FsIjpmYWxzZX19fQ==
+  headers:
+    Content-Type: application/json
+    User-Agent: Google-Cloud-Scheduler
+  httpMethod: POST
+  oauthToken:
+    scope: https://www.googleapis.com/auth/bigquery
+    serviceAccountEmail: sa-ops-health@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+  uri: https://bigquery.googleapis.com/bigquery/v2/projects/project-fa311fc0-4d87-4781-986/jobs
+lastAttemptTime: '2026-11-10T06:30:03.171058Z'
+name: projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/dro-health-eval
+retryConfig:
+  maxBackoffDuration: 3600s
+  maxDoublings: 5
+  maxRetryDuration: 0s
+  minBackoffDuration: 5s
+  retryCount: 1
+schedule: '*/30 * * * *'
+scheduleTime: '2026-11-10T07:00:02.166724Z'
+state: ENABLED
+status: {}
+timeZone: Europe/Moscow
+userUpdateTime: '2026-10-09T11:06:37.280059Z'

@@ -1,0 +1,23 @@
+attemptDeadline: 180s
+httpTarget:
+  headers:
+    User-Agent: Google-Cloud-Scheduler
+  httpMethod: POST
+  oauthToken:
+    scope: https://www.googleapis.com/auth/cloud-platform
+    serviceAccountEmail: sa-scheduler-prod@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+  uri: https://europe-west1-run.googleapis.com/v2/projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/wb-mart-prod:run
+lastAttemptTime: '2026-11-10T06:00:06.921192Z'
+name: projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/wb-mart-prod
+retryConfig:
+  maxBackoffDuration: 3600s
+  maxDoublings: 5
+  maxRetryDuration: 0s
+  minBackoffDuration: 5s
+  retryCount: 1
+schedule: 0 7,9,12,16 * * *
+scheduleTime: '2026-11-10T09:00:04.869775Z'
+state: ENABLED
+status: {}
+timeZone: Europe/Moscow
+userUpdateTime: '2026-10-09T11:06:36.990600Z'
