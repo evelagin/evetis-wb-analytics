@@ -52,8 +52,9 @@ env:
   # CUTOVER_GATE_READER_STREAMS — JSON-список потоков, чьим prod-SA выдать чтение строки владения (не задан → []).
   TF_VAR_cutover_coordinator_enabled: ${{ vars.CUTOVER_COORDINATOR_ENABLED == 'true' }}
   TF_VAR_cutover_gate_reader_streams: ${{ vars.CUTOVER_GATE_READER_STREAMS || '[]' }}
-  # Email учётной записи, от которой работает Apps Script (для доказательства gate координатором). Не в репозитории.
-  TF_VAR_cutover_apps_script_user: ${{ vars.CUTOVER_APPS_SCRIPT_USER }}
+  # Email учётной записи, от которой работает Apps Script (доказательство gate координатором) — персональные данные:
+  # GitHub SECRET (маскируется в логах Actions), не Variable. В Terraform — sensitive, в plan не печатается.
+  TF_VAR_cutover_apps_script_user: ${{ secrets.CUTOVER_APPS_SCRIPT_USER }}
 
 jobs:
   preflight:

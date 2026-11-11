@@ -48,9 +48,6 @@ locals {
     # Пусто: tick сам fence не ставит ни одному потоку (колонка auto_cutover_enabled тоже false).
     CUTOVER_AUTO_STREAMS    = ""
     CUTOVER_STREAM_PROD_SAS = jsonencode(local.cutover_writer_sas)
-    # Учётная запись владельца, от которой работает Apps Script (персональные данные — не в репозитории:
-    # GitHub Variable CUTOVER_APPS_SCRIPT_USER). Пусто — fence не ставится: доказательство gate невозможно.
-    CUTOVER_APPS_SCRIPT_USER = var.cutover_apps_script_user
   }
   qualify_env = {
     LOADER_NAME              = "qualify"
@@ -151,6 +148,13 @@ resource "google_cloud_run_v2_job" "ingest_cutover_prod" {
             name  = env.key
             value = env.value
           }
+        }
+        # Учётная запись владельца, от которой работает Apps Script — персональные данные: sensitive-переменная
+        # (GitHub Secret), отдельным блоком — sensitive-значение нельзя класть в for_each. В plan — «(sensitive value)».
+        # Пусто — fence не ставится: доказательство gate невозможно.
+        env {
+          name  = "CUTOVER_APPS_SCRIPT_USER"
+          value = var.cutover_apps_script_user
         }
       }
     }
@@ -259,7 +263,8 @@ variable "cutover_gate_reader_streams" {
 variable "cutover_apps_script_user" {
   type        = string
   default     = ""
-  description = "Этап C: email учётной записи, от которой работает Apps Script (INFORMATION_SCHEMA.JOBS.user_email). GitHub Variable CUTOVER_APPS_SCRIPT_USER; в репозиторий не пишется."
+  sensitive   = true
+  description = "Этап C: email учётной записи, от которой работает Apps Script (INFORMATION_SCHEMA.JOBS.user_email). Персональные данные: GitHub Secret CUTOVER_APPS_SCRIPT_USER, в plan и логах не печатается."
 }
 
 # ══════════════════════════════════════════════════════════════════════════════

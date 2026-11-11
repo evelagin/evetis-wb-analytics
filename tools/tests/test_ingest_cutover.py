@@ -177,11 +177,31 @@ def test_qualify_writer_sa_and_job():
     assert "paused           = true" in sch
 
 
-def test_identities_wired_without_personal_data():
-    assert INFRA.count("TF_VAR_cutover_apps_script_user: ${{ vars.CUTOVER_APPS_SCRIPT_USER }}") == 1
-    assert re.search(r'variable "cutover_apps_script_user" \{[^}]*default\s*=\s*""', TF, re.S)
+def test_apps_script_user_is_a_masked_secret_and_sensitive():
+    # Email человека, репозиторий публичный: GitHub SECRET (маскируется в логах Actions), не Variable.
+    assert INFRA.count("TF_VAR_cutover_apps_script_user: ${{ secrets.CUTOVER_APPS_SCRIPT_USER }}") == 1
+    workflows = REPO / ".github/workflows"
+    for wf in workflows.glob("*.yml"):
+        assert "vars.CUTOVER_APPS_SCRIPT_USER" not in wf.read_text(encoding="utf-8"), wf.name
+    var = re.search(r'variable "cutover_apps_script_user" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert re.search(r"sensitive\s*=\s*true", var) and re.search(r'default\s*=\s*""', var)
+    # sensitive-значение — отдельным блоком env, не в for_each (иначе Terraform отказывает; в plan — «(sensitive value)»).
+    locals_block = re.search(r"cutover_env = \{(.*?)\n  \}", TF, re.S).group(1)
+    assert "cutover_apps_script_user" not in locals_block and "CUTOVER_APPS_SCRIPT_USER" not in locals_block
+    job = re.search(r'resource "google_cloud_run_v2_job" "ingest_cutover_prod" \{(.*?)^\}', TF, re.S | re.M).group(1)
+    assert re.search(r'env \{\s*name\s*=\s*"CUTOVER_APPS_SCRIPT_USER"\s*value\s*=\s*var\.cutover_apps_script_user\s*\}', job)
+    assert TF.count("var.cutover_apps_script_user") == 1  # только в env Job'а: ни в output, ни в local, ни в описаниях
     assert "CUTOVER_STREAM_PROD_SAS = jsonencode(local.cutover_writer_sas)" in TF
-    assert not re.search(r"[A-Za-z0-9._%+-]+@(gmail|yandex|mail|evetis)\.", TF)
+
+
+def test_no_personal_emails_in_stage_c_files():
+    files = [TF, INFRA, DDL, STORE, GATE_GS, (REPO / "docs/ops/INGEST_CUTOVER_COORDINATOR.md").read_text(encoding="utf-8"),
+             (REPO / "docs/ops/evidence/INGEST_CUTOVER_SQL_DRYRUN_2026-11-11.txt").read_text(encoding="utf-8"),
+             (REPO / "cloud/src/loaders/cutover/machine.ts").read_text(encoding="utf-8"),
+             (REPO / "cloud/src/loaders/cutover/index.ts").read_text(encoding="utf-8")]
+    for text in files:
+        for email in re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}", text):
+            assert email.endswith((".gserviceaccount.com", "@example.com", "@anthropic.com")), email
 
 
 def test_parity_sql_bundled_into_image():

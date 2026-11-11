@@ -361,10 +361,20 @@ Scheduler `ingest-cutover-tick` срабатывает каждые 15 мин и
    - Apps Script: `wbWriterGateStatus()`.
    - Cloud Run: в логах ближайших штатных прогонов — `writer_gate_allow` / `writer_fenced` с ожидаемым owner и epoch,
      ни одного `WRITER_GATE_UNAVAILABLE`.
-8. **Координатор и квалификация:** GitHub Variable `CUTOVER_APPS_SCRIPT_USER` (email учётной записи, от которой
-   работает Apps Script; в репозиторий не пишется) → apply; `deploy-prod only_job=ingest-cutover` (оба Job'а) →
-   разовый `CUTOVER_ACTION=status` и разовый `ingest-qualify-prod` с `QUALIFY_DRY_RUN=1` → resume
-   `ingest-qualify` и `ingest-cutover-tick`.
+8. **Координатор и квалификация.**
+   - **Email учётной записи, от которой работает Apps Script, — персональные данные, репозиторий публичный.**
+     Владелец заводит **GitHub Secret** `CUTOVER_APPS_SCRIPT_USER` (Settings → Secrets and variables → Actions →
+     Secrets), не Variable: значения Variables в логах Actions не маскируются, Secrets — маскируются.
+   - `infra.yml` передаёт его как `TF_VAR_cutover_apps_script_user: ${{ secrets.CUTOVER_APPS_SCRIPT_USER }}`.
+     В Terraform переменная `sensitive`: в plan — «(sensitive value)». В env Job'а `ingest-cutover-prod` идёт
+     отдельным блоком (sensitive-значение нельзя класть в `for_each`). Env Job'а под `ignore_changes`: значение
+     ставится при создании Job'а. Смена значения — пересоздание Job'а или `gcloud run jobs update
+     --update-env-vars` владельцем, без печати значения.
+   - Координатор email не печатает: в лог, журнал переходов (`INGEST_CUTOVER_LOG.evidence`) и доказательства идёт
+     только `apps-script-owner:<sha256, 12 hex>`; посторонний человек — `user:<хэш>`. Сервисные аккаунты видны как
+     есть. Это закреплено тестами (vitest и pytest).
+   - Порядок: secret → apply → `deploy-prod only_job=ingest-cutover` (оба Job'а) → разовый `CUTOVER_ACTION=status` и
+     разовый `ingest-qualify-prod` с `QUALIFY_DRY_RUN=1` → resume `ingest-qualify` и `ingest-cutover-tick`.
 9. **Только потом автоматика:** для конкретного потока `auto_cutover_enabled = true` (колонка) или
    `CUTOVER_AUTO_STREAMS`. До этого fence — только командой `fence` по ACK cutover потока.
 

@@ -16,6 +16,7 @@
  *   • UNKNOWN_OUTCOME и STOP tick не трогает: слепого повтора нет, решает человек (activate/rollback);
  *   • QUALIFIED → LEGACY_FENCED tick делает только при auto_cutover_enabled и в свободном окне.
  */
+import { createHash } from 'node:crypto';
 import type { Owner, Stream } from '../../ownership/streams.js';
 import {
   CLOUD_DRAIN_MARGIN_MIN, DRAIN_LOOKBACK_H, FENCE_GUARD_MIN, LEGACY_DRAIN_MIN, PROFILES, type StreamProfile,
@@ -158,6 +159,19 @@ function writerLifeMin(p: StreamProfile, w: 'APPS_SCRIPT' | 'CLOUD_RUN', legacyD
  *     лимитом исполнения до fence): они в доказательствах, но cutover не блокируют. Живые-на-fence без исхода
  *     → UNKNOWN_OUTCOME.
  */
+/**
+ * Email человека (учётная запись, от которой работает Apps Script, или посторонний пользователь) — персональные
+ * данные: в доказательства, журнал переходов и лог — только хэш. Сервисные аккаунты показываются как есть.
+ */
+export function redactUser(user: string, ids: Identities | undefined): string {
+  const u = user.trim().toLowerCase();
+  if (u.endsWith('.gserviceaccount.com')) return u;
+  const h = createHash('sha256').update(u).digest('hex').slice(0, 12);
+  return ids?.appsScriptUser && u === ids.appsScriptUser.trim().toLowerCase() ? `apps-script-owner:${h}` : `user:${h}`;
+}
+
+const redactJobs = (jobs: WriteJob[], ids: Identities | undefined) => jobs.map((j) => ({ ...j, user: redactUser(j.user, ids) }));
+
 /** Журналы, свою строку которых прогон Apps Script «в полёте» закрывает после fence (WriterGate.gs). */
 const JOURNAL_TABLES = new Set(['INGEST_RUNS', 'FINANCE_LOADER_RUNS', 'WB_STOCKS_SNAPSHOTS', 'REF_SYNC_RUNS']);
 
@@ -211,7 +225,7 @@ async function proveDrain(store: CutoverStore, p: StreamProfile, row: OwnershipR
   const jobs = await store.writeJobs(p.stream, from);
   const bad = jobs.filter((j) => j.createdMs > fenced && !allowedAfterFence(j, p, drained, fenced, legacyDrainMin, ids));
   if (bad.length > 0) {
-    return { kind: 'VIOLATION', reason: `${bad.length} записывающих заданий BigQuery после fence не объясняются прогоном «в полёте» — gate не соблюдён`, evidence: { jobsAfterFence: bad.slice(0, 20) } };
+    return { kind: 'VIOLATION', reason: `${bad.length} записывающих заданий BigQuery после fence не объясняются прогоном «в полёте» — gate не соблюдён`, evidence: { jobsAfterFence: redactJobs(bad.slice(0, 20), ids) } };
   }
   const pending = jobs.filter((j) => j.state !== 'DONE');
   if (pending.length > 0) {
@@ -373,7 +387,7 @@ async function cloudHealth(store: CutoverStore, p: StreamProfile, row: Ownership
     const from = Math.max(row.activeSinceMs ?? row.changedAtMs, nowMs - GATE_EVIDENCE_H * H);
     const foreign = (await store.writeJobs(p.stream, from)).filter((j) => writerOf(j, p, d.identities) !== 'CLOUD_RUN');
     if (foreign.length > 0) {
-      h.stop = { reason: `запись в таблицы потока не от prod-SA Cloud Run: ${foreign.length} заданий — второй писатель`, evidence: { foreignWrites: foreign.slice(0, 20) } };
+      h.stop = { reason: `запись в таблицы потока не от prod-SA Cloud Run: ${foreign.length} заданий — второй писатель`, evidence: { foreignWrites: redactJobs(foreign.slice(0, 20), d.identities) } };
       return h;
     }
   }
@@ -438,7 +452,7 @@ export async function gateProof(store: CutoverStore, p: StreamProfile, nowMs: nu
     const ok = ev.some((x) => x.writer === e.writer && x.entry === entry && x.user.toLowerCase() === user && x.lastMs >= nowMs - windowMs);
     if (!ok) missing.push(`${e.writer === 'APPS_SCRIPT' ? 'Apps Script' : 'Cloud Run'} ${entry} за ${e.dow ? '8 сут' : `${GATE_EVIDENCE_H} ч`}`);
   }
-  return { missing, seen: ev };
+  return { missing, seen: ev.map((x) => ({ ...x, user: redactUser(x.user, ids) })) };
 }
 
 async function planTick(row: OwnershipRow, d: StepDeps, p: StreamProfile, explicitFence: boolean): Promise<Plan> {

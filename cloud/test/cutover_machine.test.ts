@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { step, OWNER_OF_STATE, ACTIONS, CUTOVER_STOP, CUTOVER_UNKNOWN_OUTCOME, CUTOVER_ROLLBACK_REQUIRED, CUTOVER_INVARIANT, type Action, type StepDeps } from '../src/loaders/cutover/machine.js';
+import { step, redactUser, OWNER_OF_STATE, ACTIONS, CUTOVER_STOP, CUTOVER_UNKNOWN_OUTCOME, CUTOVER_ROLLBACK_REQUIRED, CUTOVER_INVARIANT, type Action, type StepDeps } from '../src/loaders/cutover/machine.js';
 import { evaluateQualification } from '../src/loaders/cutover/qualification.js';
 import { fenceWindowCheck, mskDate } from '../src/loaders/cutover/window.js';
 import { PROFILES, LEGACY_DRAIN_MIN, CLOUD_DRAIN_MARGIN_MIN, type StreamProfile } from '../src/loaders/cutover/profiles.js';
@@ -898,5 +898,51 @@ describe('повторное ревью #426: выполненные запис�
     for (const s of ['stocks', 'statistics', 'ads', 'finance', 'supplies', 'ref'] as Stream[]) {
       for (const e of PROFILES[s].schedules.filter((x) => x.writer === 'CLOUD_RUN')) expect(PROFILES[s].cloudLoaders, `${s} ${e.label}`).toContain(e.loader);
     }
+  });
+});
+
+describe('email учётной записи Apps Script не печатается (лог, журнал переходов, доказательства)', () => {
+  const EMAIL = 'secret.owner@example.com';
+  const ids = { ...IDS, appsScriptUser: EMAIL };
+
+  it('fence с доказательством gate, нарушение дренажа и чужая запись в мониторинге — только хэш', async () => {
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation(((c: unknown) => { lines.push(String(c)); return true; }) as typeof process.stdout.write);
+    vi.spyOn(process.stderr, 'write').mockImplementation(((c: unknown) => { lines.push(String(c)); return true; }) as typeof process.stderr.write);
+    const env = { CUTOVER_INCLUDE_STOCKS: '1', CUTOVER_APPS_SCRIPT_USER: EMAIL, CUTOVER_STREAM_PROD_SAS: JSON.stringify(IDS.streamSa) };
+    const ctx = () => ({ config: loadConfig({ ENVIRONMENT: 'prod', GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw' }), logger: new Logger({}, 'info'), logicalPeriod: 'x', runId: 'r', targetDate: 'x' });
+
+    // 1) fence: доказательство содержит пользователей.
+    const q = qualifiedStocks();
+    q.evidence = (await new MemCutoverStore().gateEvidence('stocks')).map((x) => (x.writer === 'APPS_SCRIPT' ? { ...x, user: EMAIL } : x));
+    await makeCutoverLoader({ env: { ...env, CUTOVER_ACTION: 'fence', CUTOVER_STREAM: 'stocks' }, makeStore: () => q, now: () => T0 })(ctx());
+    expect(q.rows.get('stocks')!.state).toBe('LEGACY_FENCED');
+    // 2) дренаж: выполненная запись Apps Script после fence → STOP с доказательством.
+    q.jobs.push({ stream: 'stocks', jobId: 'j', state: 'DONE', table: 'RAW_WB_STOCKS', statementType: 'LOAD', createdMs: T0 + 3 * MIN, user: EMAIL });
+    await makeCutoverLoader({ env: { ...env, CUTOVER_ACTION: 'tick' }, makeStore: () => q, now: () => T0 + 8 * MIN })(ctx()).catch(() => {});
+    expect(q.rows.get('stocks')!.state).toBe('STOP');
+    // 3) мониторинг: чужая запись.
+    const m = new MemCutoverStore(seedRow('stocks', { owner: 'CLOUD_RUN', state: 'MONITORING', epoch: 3, revision: 5, fencedAtMs: T0 - DAY, activeSinceMs: T0 - DAY, legacyWatermark: '2026-11-15' }));
+    m.jobs.push({ stream: 'stocks', jobId: 'k', state: 'DONE', table: 'RAW_WB_STOCKS', statementType: 'LOAD', createdMs: T0 - H, user: EMAIL });
+    await makeCutoverLoader({ env: { ...env, CUTOVER_ACTION: 'tick' }, makeStore: () => m, now: () => Date.parse('2026-11-16T07:05:00Z') })(ctx()).catch(() => {});
+    expect(m.rows.get('stocks')!.state).toBe('STOP');
+
+    const journal = JSON.stringify([...q.log, ...m.log]);
+    const log = lines.join('');
+    for (const text of [journal, log]) {
+      expect(text).not.toContain(EMAIL);
+      expect(text.toLowerCase()).not.toContain('secret.owner');
+    }
+    expect(journal).toMatch(/apps-script-owner:[0-9a-f]{12}/);
+    expect(journal).toContain(IDS.streamSa.stocks!); // SA — не персональные данные, видны как есть
+  });
+
+  it('невалидное значение в env — ошибка без самого значения', () => {
+    try { parseCutoverEnv({ CUTOVER_APPS_SCRIPT_USER: 'not an email secret.owner' }); throw new Error('ожидался отказ'); } catch (e) {
+      expect(String((e as Error).message)).not.toContain('secret.owner');
+    }
+    expect(redactUser(EMAIL, ids)).toMatch(/^apps-script-owner:[0-9a-f]{12}$/);
+    expect(redactUser('Other.Person@example.com', ids)).toMatch(/^user:[0-9a-f]{12}$/);
+    expect(redactUser('sa-x@p.iam.gserviceaccount.com', ids)).toBe('sa-x@p.iam.gserviceaccount.com');
   });
 });
