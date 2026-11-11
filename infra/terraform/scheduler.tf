@@ -65,7 +65,7 @@ resource "google_cloud_scheduler_job" "wb_stocks_shadow" {
 resource "google_cloud_scheduler_job" "wb_mart_prod" {
   name      = "wb-mart-prod"
   region    = var.region
-  schedule  = "0 7,9,12,16 * * *"
+  schedule  = "0 9,12 * * *" # BQ cost 2026-11-10: два окна перед Юниткой 10:00 и резервом 12:30 (было 07/09/12/16)
   time_zone = "Europe/Moscow"
   paused    = true # включается на rollout (PR-Mart3b-4) через scheduler-control.yml
 
