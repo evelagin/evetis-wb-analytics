@@ -63,7 +63,7 @@ resource "google_bigquery_table_iam_member" "sku_v2_layer_write" {
 resource "google_cloud_scheduler_job" "sku_v2_layer_build" {
   name      = "sku-performance-v2-layer-build"
   region    = var.region
-  schedule  = "20 7-23 * * *"
+  schedule  = "30 12 * * *" # BQ cost 2026-11-10: раз в сутки после витрины 12:00 (было ежечасно 07–23)
   time_zone = "Europe/Moscow"
 
   paused = false

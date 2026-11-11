@@ -68,10 +68,12 @@ resource "google_bigquery_dataset_iam_member" "ops_health_read_evetis_ref" {
 # 2026-10-07 07:00 UTC (resume → одно исполнение → pause) доказал цепочку целиком: задания
 # под sa-ops-health, письма пакета и дайджеста, пульс, срабатывание сторожа.
 # Gate C (owner ACK 2026-10-07): регулярная оценка включена, paused = false.
+# 2026-11-10 (BQ_COST_AUDIT §9 п.3, ACK владельца): каждые 6 ч со сдвигом сетки — сводка 09:30 и
+# тревоги не попадают в тихие часы 23–07. Было "*/30 * * * *". Код приведён к live (PR #414-дополнение).
 resource "google_cloud_scheduler_job" "dro_health_eval" {
   name      = "dro-health-eval"
   region    = var.region
-  schedule  = "*/30 * * * *"
+  schedule  = "0 4,10,16,22 * * *"
   time_zone = "Europe/Moscow"
   paused    = false
 
@@ -143,10 +145,11 @@ resource "google_monitoring_alert_policy" "dro_detector_watchdog" {
   combiner     = "OR"
 
   conditions {
-    display_name = "Нет пульса dro_detector_heartbeat 90 минут"
+    # 2026-11-10 (§9 п.3a): окно пульса под шаг 6 ч — 7 ч (было 90 мин / 5400s при шаге 30 мин).
+    display_name = "Нет пульса dro_detector_heartbeat 7 часов"
     condition_absent {
       filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.dro_detector_heartbeat.name}\" AND resource.type=\"bigquery_project\""
-      duration = "5400s"
+      duration = "25200s"
       aggregations {
         alignment_period   = "600s"
         per_series_aligner = "ALIGN_SUM"
