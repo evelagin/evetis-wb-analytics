@@ -205,6 +205,10 @@ resource "google_cloud_run_v2_job" "wb_mart_prod" {
     ignore_changes = [
       template[0].template[0].containers[0].image,
       template[0].template[0].containers[0].env,
+      # client/client_version — отметка инструмента последней записи (gcloud у deploy-prod), не
+      # конфигурация; без этого каждый plan показывает «update» (как у wb_stocks_prod в #416).
+      client,
+      client_version,
     ]
   }
   depends_on = [google_project_service.enabled]
