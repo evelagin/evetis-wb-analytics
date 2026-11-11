@@ -11,9 +11,9 @@ on:
         description: "SHA коммита, из которого собран этот образ (из summary deploy-shadow)"
         required: true
       only_job:
-        description: "all — промоушен во все prod-Job'ы (нужна фраза в confirm_all); wb-stocks-prod — ТОЛЬКО остатки (Mig1b-0); wb-statistics / wb-ads / wb-finance / wb-supplies-ref — ТОЛЬКО Job'ы своего потока миграции. Состав режимов — tools/deploy_scope_check.py"
+        description: "all — промоушен во все prod-Job'ы (нужна фраза в confirm_all); wb-stocks-prod — ТОЛЬКО остатки (Mig1b-0); wb-statistics / wb-ads / wb-finance / wb-supplies-ref — ТОЛЬКО Job'ы своего потока миграции; ingest-cutover — ТОЛЬКО координатор cutover (в all не входит). Состав режимов — tools/deploy_scope_check.py"
         type: choice
-        options: ["all", "wb-stocks-prod", "wb-statistics", "wb-ads", "wb-finance", "wb-supplies-ref"]
+        options: ["all", "wb-stocks-prod", "wb-statistics", "wb-ads", "wb-finance", "wb-supplies-ref", "ingest-cutover"]
         default: "all"
       confirm_all:
         description: "Только для only_job=all: впиши PROMOTE-ALL-PROD. Без фразы режим all ничего не обновляет (защита от выката во все prod-Job'ы значениями формы по умолчанию)"
@@ -254,6 +254,22 @@ jobs:
         # на bootstrap hello (урок PR-1).
         run: |
           for JOB in wb-supplies-prod ref-sync-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: "Этап C: ingest-cutover-prod (координатор cutover)"
+        if: inputs.only_job == 'ingest-cutover'
+        # Плоскость управления, только свой режим (в all не входит). Job нет, пока Terraform не применён с
+        # cutover_coordinator_enabled=true — тогда шаг только предупреждает. Шаг НЕ включает Scheduler
+        # ingest-cutover-tick и НЕ запускает Job; env (CUTOVER_ACTION и т.п.) — Terraform/команды владельца.
+        run: |
+          for JOB in ingest-cutover-prod; do
             if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
               gcloud run jobs update "$JOB" \
                 --region ${{ vars.GCP_REGION }} \

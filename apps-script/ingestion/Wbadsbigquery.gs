@@ -130,7 +130,7 @@ function wbAdvBqCreateTable_(tableId, headers) {
     timePartitioning: { type: 'DAY' } // партиция по времени загрузки (поле не нужно)
   };
   if (cluster.length) req.clustering = { fields: cluster };
-  BigQuery.Tables.insert(req, c.projectId, c.datasetId);
+  wbBqTablesInsert_(req, c.projectId, c.datasetId);
   console.log('✅ BQ таблица создана: ' + tableId +
     (cluster.length ? ' (кластер: ' + cluster.join(',') + ')' : ''));
   return true;
@@ -163,7 +163,7 @@ function wbAdvBqAuditAndExtendSchema_(tableId, table, headers) {
   if (!missing.length) return;
 
   var newFields = existing.concat(missing);
-  BigQuery.Tables.patch(
+  wbBqTablesPatch_(
     { schema: { fields: newFields } }, c.projectId, c.datasetId, tableId
   );
   console.log('  BQ таблица ' + tableId + ': добавлены колонки → ' +

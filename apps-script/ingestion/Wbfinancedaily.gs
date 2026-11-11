@@ -259,7 +259,7 @@ function finDailyQuery_(sql, params) {
     parameterMode: 'NAMED', timeoutMs: 30000
   };
   if (params && params.length) req.queryParameters = params;
-  var res = BigQuery.Jobs.query(req, c.projectId);
+  var res = wbBqJobsQuery_(req, c.projectId);
 
   var jobId = res.jobReference && res.jobReference.jobId;
   var loc = (res.jobReference && res.jobReference.location) || c.location;
@@ -740,7 +740,7 @@ function finDailyLoadRowsDeterministic_(tableId, rows, jobId) {
   while (!submitted) {
     attempt++;
     try {
-      var ins = BigQuery.Jobs.insert(job, c.projectId, blob);
+      var ins = wbBqJobsInsert_(job, c.projectId, blob);
       jobLocation = (ins.jobReference && ins.jobReference.location) || c.location;
       submitted = true;
     } catch (e) {
@@ -1230,6 +1230,7 @@ function finDailyRun_(triggerType) {
     console.log('FinanceDaily: SKIPPED_LOCKED');
     return { status: 'SKIPPED_LOCKED' };
   }
+  var wgate = wbWriterGate_('finance'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
 
   var st = {
     t0: Date.now(), lastReqAt: 0, requests: 0,

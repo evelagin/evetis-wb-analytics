@@ -7,6 +7,7 @@ import type {
   AcquireParams, AcquireResult, FinalizePatch, ManifestKey, ManifestStore,
 } from '../src/bq/runManifest.js';
 import type { LoaderContext } from '../src/loaders/types.js';
+import { CLOUD_RUN_OWNER } from './ownership_fixture.js';
 
 /**
  * Source-aware guard витрины (2026-10-12): матрица решений и проводка cli.
@@ -87,6 +88,7 @@ function harness(store: MemWatermarkStore, probeArg: (() => Promise<string>) | A
     },
     runHandler: async (_spec, ctx) => { order.push('handler'); handled.push(ctx); return { rowsFetched: 1, rowsLoaded: 1 }; },
     nowMs: () => nowMs,
+    makeOwnershipReader: CLOUD_RUN_OWNER,
     probeWatermark: async () => { order.push('probe'); return probe(); },
   };
   return { deps, order, handled };

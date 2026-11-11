@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { runCli, type CliDeps } from '../src/cli.js';
 import { EXIT_OK, EXIT_ERROR } from '../src/errors.js';
 import type { ManifestStore } from '../src/bq/runManifest.js';
+import { CLOUD_RUN_OWNER } from './ownership_fixture.js';
 
 /**
  * PR-Mart3b-2 REV2 (аудит, блокер #4): DRY_RUN=1 для prodOnly-загрузчика (mart) НЕ должен
@@ -34,6 +35,7 @@ function spies() {
       return { rowsFetched: 1, rowsLoaded: 1 };
     },
     nowMs: () => 0,
+    makeOwnershipReader: CLOUD_RUN_OWNER,
   };
   return { calls, deps };
 }

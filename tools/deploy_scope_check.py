@@ -43,7 +43,13 @@ STREAM_JOBS = {
     "wb-supplies-ref": frozenset({"wb-supplies-prod", "ref-sync-prod"}),
 }
 
-MODES = ("all", *STREAM_JOBS)
+# Плоскость управления (этап C): координатор cutover. Отдельный режим, НЕ входит в all — плановый
+# промоушен «во все prod-Job'ы» не должен менять логику переключения писателей посреди cutover.
+CONTROL_JOBS = {
+    "ingest-cutover": frozenset({"ingest-cutover-prod"}),
+}
+
+MODES = ("all", *STREAM_JOBS, *CONTROL_JOBS)
 # Широкий режим требует набрать эту фразу в форме dispatch (deploy-prod.yml, вход confirm_all).
 CONFIRM_ALL_PHRASE = "PROMOTE-ALL-PROD"
 
@@ -53,6 +59,8 @@ def allowed(mode: str) -> frozenset[str]:
         return LEGACY_ALL_JOBS.union(*STREAM_JOBS.values())
     if mode in STREAM_JOBS:
         return STREAM_JOBS[mode]
+    if mode in CONTROL_JOBS:
+        return CONTROL_JOBS[mode]
     raise ValueError(f"неизвестный режим only_job: {mode!r}; допустимы {', '.join(MODES)}")
 
 

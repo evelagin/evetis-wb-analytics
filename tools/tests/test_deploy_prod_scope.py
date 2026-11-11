@@ -170,6 +170,7 @@ def test_scope_check_runs_in_every_mode_and_after_failures():
 def _fleet(image=OLD):
     names = sorted(scope.allowed("all")) + [
         "wb-stocks-shadow", "wb-orders-shadow", "heldi-controller", "ozon-postings-prod", "unitka-web",
+        "ingest-cutover-prod",
     ]
     return [job(n, image, gen=3) for n in names]
 
@@ -258,3 +259,37 @@ def test_cli_exit_codes(tmp_path):
     cmd = [sys.executable, str(REPO / "tools/deploy_scope_check.py"), "check", "wb-stocks-prod", str(b)]
     assert subprocess.run(cmd + [str(ok), D], capture_output=True).returncode == 0
     assert subprocess.run(cmd + [str(bad), D], capture_output=True).returncode == 1
+
+
+# ── этап C: режим ingest-cutover (плоскость управления, вне all) ───────────────────────────────
+
+def test_ingest_cutover_mode_is_exactly_the_coordinator():
+    assert scope.allowed("ingest-cutover") == {"ingest-cutover-prod"}
+    assert _touched(_steps(), "ingest-cutover") == {"ingest-cutover-prod"}
+
+
+def test_all_mode_never_touches_the_coordinator():
+    assert "ingest-cutover-prod" not in scope.allowed("all")
+    assert "ingest-cutover-prod" not in _touched(_steps(), "all")
+    before = _fleet()
+    problems = scope.check("all", before, _promote(before, scope.allowed("all") | {"ingest-cutover-prod"}), D)
+    assert any("ingest-cutover-prod" in p and "вне режима" in p for p in problems)
+
+
+def test_no_stream_mode_touches_the_coordinator_and_vice_versa():
+    for mode in scope.STREAM_JOBS:
+        assert "ingest-cutover-prod" not in _touched(_steps(), mode), mode
+    before = _fleet()
+    for other in sorted(scope.allowed("all")):
+        after = _promote(before, {"ingest-cutover-prod", other})
+        assert any(other in p and "вне режима" in p for p in scope.check("ingest-cutover", before, after, D)), other
+
+
+def test_ingest_cutover_guard_and_absent_job():
+    run = _steps()[0][2]
+    script = "\n".join(line[10:] if line.startswith("          ") else line for line in run.splitlines())
+    rc = subprocess.run(["bash", "-c", script], env={"ONLY_JOB": "ingest-cutover", "CONFIRM_ALL": "", "PATH": "/usr/bin:/bin"},
+                        capture_output=True).returncode
+    assert rc == 0
+    before = [j for j in _fleet() if j["metadata"]["name"] != "ingest-cutover-prod"]
+    assert scope.check("ingest-cutover", before, before, D) == []

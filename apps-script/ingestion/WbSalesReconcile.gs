@@ -168,6 +168,7 @@ function runWbSalesNightReconcile() {
     salesReconSafeLog_(r);
     return r;
   }
+  var wgate = wbWriterGate_('statistics'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   try {
     wbSalesNightReconcileCore_(r);
   } catch (e) {

@@ -816,6 +816,7 @@ function runWbOrdersIncremental() {
     r.duration_ms = Date.now() - t0;
     return r;   // без lock в лог не пишем (гонка watermark недопустима)
   }
+  var wgate = wbWriterGate_('statistics'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   // PR-Mart3a: heartbeat-журнал. Открываем ПОСЛЕ захвата lock — пропуск по локу это не ран.
   var ingestRunIdOrders = ingestRunStart_('orders', ingestClosedDayMsk_(), 'SCHEDULED');
   try {

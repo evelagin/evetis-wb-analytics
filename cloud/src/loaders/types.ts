@@ -1,6 +1,7 @@
 /** Контракт загрузчика (PR-Mig0). Реальные загрузчики появятся в PR-Mig1+. */
 import type { Config } from '../config.js';
 import type { Logger } from '../logging.js';
+import type { WriterFence } from '../ownership/gate.js';
 
 export interface LoaderContext {
   config: Config;
@@ -21,6 +22,13 @@ export interface LoaderContext {
    * равенства сохраняется; наблюдатель цен targetDate не использует.
    */
   targetDate: string;
+  /**
+   * Этап C (writer-ownership gate): fencing-токен прогона. Есть только у prod-прогона загрузчика потока
+   * (ownership/streams.ts), допущенного gate'ом. Загрузчик с собственным commit-маркером зовёт
+   * `await ctx.writerFence?.assertEpoch('<стадия>')` непосредственно перед ним: владение сменилось →
+   * WRITER_EPOCH_CHANGED, коммит не делается. Финальный COMPLETE в LOADER_RUNS cli.ts проверяет сам.
+   */
+  writerFence?: WriterFence;
 }
 
 export interface LoaderResult {

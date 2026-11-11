@@ -79,7 +79,7 @@ function ingestRunQuery_(sql, params) {
   };
   if (params && params.length) req.queryParameters = params;
 
-  var res = BigQuery.Jobs.query(req, c.projectId);
+  var res = wbBqJobsQuery_(req, c.projectId);
   var jobId = res.jobReference && res.jobReference.jobId;
   var loc = (res.jobReference && res.jobReference.location) || c.location;
 

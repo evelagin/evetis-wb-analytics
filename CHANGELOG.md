@@ -1,5 +1,26 @@
 # CHANGELOG.md
 
+## 2026-11-11 — Этап C: координатор cutover и единый writer-ownership gate WB (Draft, НЕ применено)
+
+`docs/ops/INGEST_CUTOVER_COORDINATOR.md`. Ничего не применено: DDL, Apps Script, Terraform и выкат — решения владельца.
+- **Новые таблицы** (`sql/ops/ingest_writer_ownership.sql`, применяет владелец): `wb_ops.INGEST_WRITER_OWNERSHIP`
+  (stream, owner, state, epoch, revision, legacy_watermark, cloud_watermark, auto_cutover_enabled, fenced_at,
+  active_since, changed_at, changed_by, reason), `wb_ops.INGEST_CUTOVER_LOG` (append-only, партиция по `at`),
+  `wb_ops.INGEST_QUALIFICATION` (партиция по `business_date`). Seed — шесть потоков, `APPS_SCRIPT`/`LEGACY_ACTIVE`/epoch 1;
+  остатки — по факту MIG1B (`stocks_owner`). Существующие таблицы не меняются.
+- Cloud Run: `cloud/src/ownership/` — gate в `cli.ts` для prod-загрузчиков потоков до lease и handler
+  (`WRITER_NOT_OWNER` → exit 0 без записи; `WRITER_GATE_UNAVAILABLE` → exit 1; перед COMPLETE —
+  `WRITER_EPOCH_CHANGED`). `LoaderContext.writerFence` и `ownershipAssertSql` для commit-маркеров потоков.
+- Загрузчик `cutover` (плоскость управления, без lease/LOADER_RUNS): машина состояний, CAS по epoch+state+revision,
+  дренаж с проверкой незавершённых заданий BigQuery (`JOBS_BY_PROJECT`), проверка покрытия от legacy watermark.
+  Остатки (M1) координатор по умолчанию не ведёт.
+- Apps Script: `WriterGate.gs` — gate в 10 точках входа и проверка владельца/поколения перед КАЖДОЙ записью в BigQuery
+  через обёртки `wbBqJobsQuery_`/`wbBqJobsInsert_`/`wbBqTablesInsert_`/`wbBqTablesPatch_` (покрывает меню, backfill,
+  catch-up, refresh). Поведение при владельце `APPS_SCRIPT` прежнее (replay-тест node:vm).
+- Terraform `ingest_cutover.tf` под `cutover_coordinator_enabled` (default false): SA `sa-ingest-cutover`, Job
+  `ingest-cutover-prod` (hello), Scheduler `ingest-cutover-tick` (PAUSED), чтение строки владения prod-SA писателей.
+  `deploy-prod.yml`: режим `only_job=ingest-cutover` (вне `all`).
+
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 
 `docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.

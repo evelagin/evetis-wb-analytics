@@ -143,7 +143,7 @@ function wbSalesBqEnsureTable_(headers) {
       return { name: h, type: salesBqFieldType_(h), mode: 'NULLABLE' };
     });
     fields.push({ name: '_sale_date', type: 'DATE', mode: 'NULLABLE' });
-    BigQuery.Tables.insert({
+    wbBqTablesInsert_({
       tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_SALES_BQ_TABLE_ },
       schema: { fields: fields },
       timePartitioning: { type: 'DAY', field: '_sale_date' },
@@ -187,7 +187,7 @@ function wbSalesBqEnsureTable_(headers) {
       'Пересоздайте таблицу (patch партицию не добавляет).');
   }
   if (missing.length) {
-    BigQuery.Tables.patch({ schema: { fields: existing.concat(missing) } },
+    wbBqTablesPatch_({ schema: { fields: existing.concat(missing) } },
       c.projectId, c.datasetId, WB_SALES_BQ_TABLE_);
     console.log('  RAW_WB_SALES_RETURNS: добавлены колонки → ' + missing.map(function (m) { return m.name; }).join(', '));
   }
