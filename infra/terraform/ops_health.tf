@@ -96,7 +96,7 @@ resource "google_cloud_scheduler_job" "ops_health_prod" {
   # НИКЕМ, кроме Terraform. Поэтому здесь ни `ignore_changes`, ни стартовой паузы нет:
   # иначе repo объявлял бы paused, а production работал бы enabled — ровно то
   # расхождение repo↔production, которое чинили в ADS-1A.
-  paused = false
+  paused = true # BQ cost 2026-11-10: выключен решением владельца (дублирует DRO); включить — false
 
   attempt_deadline = "320s"
 
