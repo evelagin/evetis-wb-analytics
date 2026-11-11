@@ -1,0 +1,40 @@
+{
+  "name": "projects/project-fa311fc0-4d87-4781-986/alertPolicies/17273251700172697474",
+  "displayName": "DRO-1: детектор здоровья данных не работает",
+  "combiner": "OR",
+  "creationRecord": {
+    "mutateTime": "2026-10-05T12:05:15.669215046Z",
+    "mutatedBy": "sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  },
+  "mutationRecord": {
+    "mutateTime": "2026-10-05T12:05:15.669215046Z",
+    "mutatedBy": "sa-terraform-apply@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com"
+  },
+  "conditions": [
+    {
+      "conditionAbsent": {
+        "filter": "metric.type=\"logging.googleapis.com/user/dro_detector_heartbeat\" AND resource.type=\"bigquery_project\"",
+        "duration": "5400s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM"
+          }
+        ]
+      },
+      "displayName": "Нет пульса dro_detector_heartbeat 90 минут",
+      "name": "projects/project-fa311fc0-4d87-4781-986/alertPolicies/17273251700172697474/conditions/17273251700172697259"
+    }
+  ],
+  "documentation": {
+    "content": "Детектор DRO-1 не прислал пульс 90 минут: состояние данных EVETIS сейчас НЕИЗВЕСТНО, evetis_health.V_DATA_HEALTH_CURRENT показывает UNKNOWN (DETECTOR_STALE). Проверить Scheduler dro-health-eval и последние задания sa-ops-health в BigQuery. Runbook: docs/ops/DRO1_DETECTION_ALERTING_2026-10-04.md",
+    "mimeType": "text/markdown"
+  },
+  "notificationChannels": [
+    "projects/project-fa311fc0-4d87-4781-986/notificationChannels/6592765745436218275"
+  ],
+  "enabled": true,
+  "alertStrategy": {
+    "autoClose": "86400s"
+  }
+}

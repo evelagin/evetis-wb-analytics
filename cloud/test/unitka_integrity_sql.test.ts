@@ -101,8 +101,9 @@ describe('Terraform: loaders не получают evetis_ref; публикац�
     const eng = code(read('infra/terraform/unitka_engine.tf'), '#');
     expect([...eng.matchAll(/UNITKA_INTEGRITY_MODE = "(\w+)"/g)].map((m) => m[1])).toEqual(['off', 'off']);
   });
-  it('расписание публикации — :50, 07–23 МСК', () => {
-    expect(pub).toMatch(/schedule\s+= "50 7-23 \* \* \*"/);
+  // 2026-11-10 (BQ_COST_AUDIT §9 п.7, #414): раз в сутки в 09:50 МСК перед Юниткой 10:00; порог устаревания 26 ч.
+  it('расписание публикации — 09:50 МСК, раз в сутки', () => {
+    expect(pub).toMatch(/schedule\s+= "50 9 \* \* \*"/);
     expect(pub).toMatch(/time_zone = "Europe\/Moscow"/);
   });
 });
