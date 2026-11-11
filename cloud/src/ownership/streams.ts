@@ -32,6 +32,21 @@ export function streamOfLoader(loaderName: string): Stream | undefined {
   return Object.prototype.hasOwnProperty.call(LOADER_STREAM, loaderName) ? LOADER_STREAM[loaderName] : undefined;
 }
 
+/**
+ * Потоки, у которых gate ВЫКЛЮЧЕН по умолчанию: остатки (M1) до приёмки координатора переключаются ручной
+ * процедурой MIG1B. Включение — env WRITER_GATE_STOCKS=1 у wb-stocks-prod вместе со Script Property
+ * WB_WRITER_GATE_STOCKS = '1' в Apps Script (docs/ops/INGEST_CUTOVER_COORDINATOR.md §8).
+ */
+export const GATE_OPT_IN: Readonly<Partial<Record<Stream, string>>> = Object.freeze({ stocks: 'WRITER_GATE_STOCKS' });
+
+/** Поток, который cli.ts проверяет: загрузчик потока и gate потока включён. */
+export function gatedStreamOfLoader(loaderName: string, env: Record<string, string | undefined>): Stream | undefined {
+  const s = streamOfLoader(loaderName);
+  if (!s) return undefined;
+  const key = GATE_OPT_IN[s];
+  return key && (env[key] ?? '').trim() !== '1' ? undefined : s;
+}
+
 export function loadersOfStream(stream: Stream): string[] {
   return Object.keys(LOADER_STREAM).filter((l) => LOADER_STREAM[l] === stream).sort();
 }

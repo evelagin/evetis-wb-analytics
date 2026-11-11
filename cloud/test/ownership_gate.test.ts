@@ -4,7 +4,7 @@ import { EXIT_OK, EXIT_ERROR, LoaderError } from '../src/errors.js';
 import type { ManifestStore, FinalizePatch } from '../src/bq/runManifest.js';
 import type { LoaderContext } from '../src/loaders/types.js';
 import { LOADERS } from '../src/loaders/registry.js';
-import { LOADER_STREAM, STREAMS, loadersOfStream, streamOfLoader } from '../src/ownership/streams.js';
+import { LOADER_STREAM, STREAMS, gatedStreamOfLoader, loadersOfStream, streamOfLoader } from '../src/ownership/streams.js';
 import {
   BqOwnershipReader, checkWriterGate, parseSnapshot, WRITER_EPOCH_CHANGED, WRITER_GATE_UNAVAILABLE, WRITER_NOT_OWNER,
   type OwnershipReader, type OwnershipSnapshot,
@@ -20,7 +20,8 @@ import { fixedOwner } from './ownership_fixture.js';
 
 const argv = (loader: string) => ['node', 'cli.js', loader];
 const env = (o: Record<string, string> = {}) =>
-  ({ GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', LOG_LEVEL: 'info', GIT_SHA: 'sha', ENVIRONMENT: 'prod', CLOUD_RUN_EXECUTION: 'e1', ...o });
+  // Остатки — единственный поток, чей загрузчик есть в базовой ветке; его gate включается явно (M1, §8).
+  ({ GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', LOG_LEVEL: 'info', GIT_SHA: 'sha', ENVIRONMENT: 'prod', CLOUD_RUN_EXECUTION: 'e1', WRITER_GATE_STOCKS: '1', ...o });
 
 let lines: Array<Record<string, unknown>> = [];
 function capture() {
@@ -94,6 +95,18 @@ describe('карта загрузчик → поток', () => {
   });
 });
 
+describe('остатки (M1): gate выключен по умолчанию', () => {
+  it('без WRITER_GATE_STOCKS=1 stocks не проверяется — ручная процедура MIG1B работает как раньше', async () => {
+    const h = harness(fixedOwner({ owner: 'APPS_SCRIPT', epoch: 1, state: 'LEGACY_ACTIVE' }));
+    expect(await runCli(argv('stocks'), env({ WRITER_GATE_STOCKS: '' }), h.deps)).toBe(EXIT_OK);
+    expect(h.calls).toMatchObject({ reader: 0, handler: 1 });
+    expect(h.ctxs[0]!.writerFence).toBeUndefined();
+    expect(gatedStreamOfLoader('stocks', {})).toBeUndefined();
+    expect(gatedStreamOfLoader('stocks', { WRITER_GATE_STOCKS: '1' })).toBe('stocks');
+    expect(gatedStreamOfLoader('orders', {})).toBe('statistics');
+  });
+});
+
 describe('gate в cli.ts (только prod, до lease и handler)', () => {
   for (const owner of ['APPS_SCRIPT', 'NONE'] as const) {
     it(`owner = ${owner}: exit 0, ни lease, ни LOADER_RUNS, ни handler; writer_fenced / WRITER_NOT_OWNER`, async () => {
@@ -150,7 +163,7 @@ describe('gate в cli.ts (только prod, до lease и handler)', () => {
     const r = new BqOwnershipReader({ projectId: 'p', query: async (sql: string, params: unknown) => { seen.push({ sql, params }); return [{ owner: 'CLOUD_RUN', epoch: 4, state: 'COMPLETED' }]; } } as never, 'wb_ops');
     expect(await r.read('finance')).toEqual({ owner: 'CLOUD_RUN', epoch: 4, state: 'COMPLETED' });
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.sql).toMatch(/^SELECT owner, epoch, state FROM `p\.wb_ops\.INGEST_WRITER_OWNERSHIP` WHERE stream = @stream$/);
+    expect(seen[0]!.sql).toBe('/* WRITER_GATE:CR:finance:v1 */ SELECT owner, epoch, state FROM `p.wb_ops.INGEST_WRITER_OWNERSHIP` WHERE stream = @stream');
     expect(seen[0]!.params).toEqual({ stream: 'finance' });
   });
 

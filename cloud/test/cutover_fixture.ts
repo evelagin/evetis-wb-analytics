@@ -14,7 +14,7 @@ export function seedRow(stream: Stream, o: Partial<OwnershipRow> = {}): Ownershi
   return {
     stream, owner: 'APPS_SCRIPT', state: 'LEGACY_ACTIVE', epoch: 1, revision: 0,
     legacyWatermark: null, cloudWatermark: null, autoCutoverEnabled: false,
-    fencedAtMs: null, activeSinceMs: null, changedAtMs: T0 - 30 * DAY, changedBy: 'seed', reason: 'seed', ...o,
+    fencedAtMs: null, activeSinceMs: null, checksSinceMs: T0 - 30 * DAY, changedAtMs: T0 - 30 * DAY, changedBy: 'seed', reason: 'seed', ...o,
   };
 }
 
@@ -58,7 +58,7 @@ export class MemCutoverStore implements CutoverStore {
     this.rows.set(expect.stream, {
       ...cur, owner: next.owner, state: next.state, epoch: next.epoch, revision: next.revision,
       legacyWatermark: next.legacyWatermark, cloudWatermark: next.cloudWatermark,
-      fencedAtMs: next.fencedAtMs, activeSinceMs: next.activeSinceMs,
+      fencedAtMs: next.fencedAtMs, activeSinceMs: next.activeSinceMs, checksSinceMs: next.checksSinceMs,
       changedAtMs: Date.now(), changedBy: next.changedBy, reason: next.reason,
     });
     this.log.push(log);
@@ -92,6 +92,9 @@ export class MemCutoverStore implements CutoverStore {
   /** Отметка, которую прочитал бы прогон со стартом beforeMs (statistics). */
   seenBefore: (beforeMs: number) => string | null = () => this.watermark.statistics ?? null;
   async statsWatermarkBefore(beforeMs: number): Promise<string | null> { return this.seenBefore(beforeMs); }
+  /** Чтения строки владения писателями за окно (метки WRITER_GATE:AS/CR). По умолчанию оба под gate. */
+  evidence = { appsScript: 3, cloudRun: 4 };
+  async gateEvidence(): Promise<{ appsScript: number; cloudRun: number }> { return this.evidence; }
   /** Потерянный ответ CAS: транзакция применяется, ответ — исключение. */
   loseNextCasAck = false;
 

@@ -71,6 +71,19 @@ jobs:
         run: |
           python3 tools/deploy_scope_check.py allowed "$ONLY_JOB" | sed 's/^/может обновить: /'
           gcloud run jobs list --region ${{ vars.GCP_REGION }} --format=json > scope_before.json
+      # Этап C: образ с gate владения не продвигается в prod-Job потока, пока нет таблицы владения (6 строк) и права
+      # её чтения у SA Job'а — иначе Job fail-closed и поток встанет. Только чтение (bq head / get-iam-policy, без заданий).
+      # Нечего проверять (в охвате нет Job'ов под gate) — шаг проходит. Любой отказ → выката нет.
+      - name: "Этап C: предпроверка gate владения (таблица и права SA Job'ов режима)"
+        run: |
+          NEED=$(python3 tools/writer_gate_deploy_check.py needs "$ONLY_JOB" scope_before.json)
+          if [ "$NEED" = "no" ]; then
+            echo "в охвате ${ONLY_JOB} нет prod-Job'ов под gate — проверять нечего"
+            exit 0
+          fi
+          bq head --format=json -n 50 "${{ vars.GCP_PROJECT_ID }}:wb_ops.INGEST_WRITER_OWNERSHIP" > ownership_rows.json
+          bq get-iam-policy --format=json "${{ vars.GCP_PROJECT_ID }}:wb_ops.INGEST_WRITER_OWNERSHIP" > ownership_policy.json
+          python3 tools/writer_gate_deploy_check.py check "$ONLY_JOB" scope_before.json ownership_rows.json ownership_policy.json
       - name: Deploy prod Jobs (промоушен того же digest, source sha)
         if: inputs.only_job == 'all'
         # PR-Mart3b-2 (аудит REV2, блокер #1): продвигаем ОДИН и тот же проверенный digest во ВСЕ

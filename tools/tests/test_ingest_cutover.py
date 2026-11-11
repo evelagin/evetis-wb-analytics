@@ -72,10 +72,13 @@ def test_coordinator_sa_has_no_extra_roles():
     edit = [(n, b) for n, r, b in table_roles if r == "roles/bigquery.dataEditor"]
     view = [(n, b) for n, r, b in table_roles if r == "roles/bigquery.dataViewer"]
     assert [n for n, _ in edit] == ["ingest_cutover_edit_ops"] and 'dataset_id = "wb_ops"' in edit[0][1]
-    assert [n for n, _ in view] == ["ingest_cutover_read_evidence"] and "var.raw_dataset" in view[0][1]
+    assert sorted(n for n, _ in view) == ["ingest_cutover_read_evidence", "ingest_cutover_read_qualification"]
+    assert "var.raw_dataset" in dict(view)["ingest_cutover_read_evidence"]
+    assert "local.cutover_qualification_table" in dict(view)["ingest_cutover_read_qualification"]
     assert {r for _, r, _ in table_roles} == {"roles/bigquery.dataEditor", "roles/bigquery.dataViewer"}
     ops = re.search(r"cutover_ops_tables\s*=\s*\{(.*?)\}", TF, re.S).group(1)
-    assert sorted(re.findall(r'"([A-Z_]+)"', ops)) == ["INGEST_CUTOVER_LOG", "INGEST_QUALIFICATION", "INGEST_WRITER_OWNERSHIP"]
+    # Пишет координатор только владение и журнал; квалификацию — читает (ревью #426).
+    assert sorted(re.findall(r'"([A-Z_]+)"', ops)) == ["INGEST_CUTOVER_LOG", "INGEST_WRITER_OWNERSHIP"]
     # Нет ни Scheduler, ни Run admin, ни секретов, ни IAM-администрирования — ни в одной роли файла.
     for bad in ("scheduler", "run.admin", "run.developer", "secretmanager", "iam.serviceAccountUser", "bigquery.admin", "dataOwner"):
         assert bad not in TF.replace("google_cloud_scheduler_job", "").replace("scheduler_prod", "").replace("scheduler_ingest", ""), bad
@@ -91,7 +94,7 @@ def test_evidence_tables_cover_what_the_coordinator_reads():
 
 
 def test_loader_sa_reads_only_the_ownership_table():
-    for name in ("writer_gate_read_loaders_prod", "writer_gate_read_stream_prod"):
+    for name in ("writer_gate_read_loaders_prod", "writer_gate_read_stream_prod", "writer_gate_read_deployer"):
         body = re.search(rf'resource "google_bigquery_table_iam_member" "{name}" \{{(.*?)^\}}', TF, re.S | re.M).group(1)
         assert "local.cutover_ops_tables.ownership" in body and 'roles/bigquery.dataViewer' in body
 
@@ -112,14 +115,14 @@ def test_ddl_tables_columns_and_seed():
         assert f"CREATE TABLE IF NOT EXISTS `wb_ops.{t}`" in DDL, t
     own = DDL[DDL.index("`wb_ops.INGEST_WRITER_OWNERSHIP` ("):DDL.index("OPTIONS (description = 'Этап C: единственный")]
     for col in ("stream", "owner", "state", "epoch", "revision", "legacy_watermark", "cloud_watermark",
-                "auto_cutover_enabled", "fenced_at", "active_since", "changed_at", "changed_by", "reason"):
+                "auto_cutover_enabled", "fenced_at", "active_since", "checks_since", "changed_at", "changed_by", "reason"):
         assert re.search(rf"^\s+{col}\s", own, re.M), col
         assert col in STORE, f"колонка {col} не используется store.ts"
-    log = DDL[DDL.index("`wb_ops.INGEST_CUTOVER_LOG` ("):DDL.index("PARTITION BY DATE(at)")]
-    for col in ("transition_id", "stream", "from_state", "to_state", "epoch", "run_id", "source_watermark", "reason", "evidence", "at"):
+    log = DDL[DDL.index("`wb_ops.INGEST_CUTOVER_LOG` ("):DDL.index("PARTITION BY DATE(transition_at)")]
+    for col in ("transition_id", "stream", "from_state", "to_state", "epoch", "run_id", "source_watermark", "reason", "evidence", "transition_at"):
         assert re.search(rf"^\s+{col}\s", log, re.M), col
     q = DDL[DDL.index("`wb_ops.INGEST_QUALIFICATION` ("):DDL.index("PARTITION BY business_date")]
-    for col in ("stream", "business_date", "check_group", "verdict", "details", "image_digest", "at"):
+    for col in ("stream", "business_date", "check_group", "verdict", "details", "image_digest", "verdict_at"):
         assert re.search(rf"^\s+{col}\s", q, re.M), col
     # Seed: шесть потоков, Apps Script, LEGACY_ACTIVE, epoch 1; существующие строки не трогаются.
     assert "UNNEST(['stocks', 'statistics', 'ads', 'finance', 'supplies', 'ref'])" in DDL
@@ -140,3 +143,10 @@ def test_one_table_name_everywhere():
     # Gate Apps Script — короткий параметризованный SELECT с потолком тарификации.
     assert "WHERE stream = @s" in GATE_GS and "maximumBytesBilled" in GATE_GS
     assert "WRITER_EPOCH_CHANGED" in GATE_TS and "WRITER_EPOCH_CHANGED" in GATE_GS
+
+
+def test_no_reserved_word_columns():
+    # Ревью #426 (B1): `at` — зарезервированное слово BigQuery; ни в DDL, ни в SQL координатора.
+    code = re.sub(r"--[^\n]*", "", DDL)
+    assert not re.search(r"(?<![A-Za-z_])at\s+TIMESTAMP", code)
+    assert not re.search(r"\(at\)|,\s*at\)|UNIX_MILLIS\(at\)", code + STORE)

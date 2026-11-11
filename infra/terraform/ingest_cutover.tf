@@ -10,18 +10,19 @@
 # Права координатора (sa-ingest-cutover) — минимальные:
 #   • jobUser (запуск query-заданий) + своя роль ТОЛЬКО с bigquery.jobs.listAll (INFORMATION_SCHEMA.JOBS_BY_PROJECT:
 #     дренаж доказывает, что у старого писателя нет незавершённых заданий в таблицы потока);
-#   • dataEditor ТОЛЬКО на три таблицы wb_ops (владение, журнал переходов, квалификация);
+#   • dataEditor ТОЛЬКО на две таблицы wb_ops (владение, журнал переходов); квалификацию — только чтение;
 #   • dataViewer ТОЛЬКО на журналы и RAW, нужные для доказательств (поресурсно, не на датасет);
 #   • НИКАКИХ прав на Cloud Scheduler, Cloud Run admin и секреты WB: координатор не трогает ни триггеры,
 #     ни расписания, ни Job'ы — только строку владения.
 # ══════════════════════════════════════════════════════════════════════════════
 
 locals {
+  # Пишет координатор: только владение и журнал переходов. Квалификацию — только читает.
   cutover_ops_tables = {
-    ownership     = "INGEST_WRITER_OWNERSHIP"
-    log           = "INGEST_CUTOVER_LOG"
-    qualification = "INGEST_QUALIFICATION"
+    ownership = "INGEST_WRITER_OWNERSHIP"
+    log       = "INGEST_CUTOVER_LOG"
   }
+  cutover_qualification_table = "INGEST_QUALIFICATION"
   # Журналы и RAW потоков в wb_raw — ровно то, что читают доказательства (cloud/src/loaders/cutover/store.ts).
   cutover_evidence_tables = toset([
     "LOADER_RUNS", "INGEST_RUNS", "WB_STOCKS_SNAPSHOTS", "RAW_WB_ORDERS", "RAW_WB_SALES_RETURNS",
@@ -84,6 +85,14 @@ resource "google_bigquery_table_iam_member" "ingest_cutover_edit_ops" {
   member     = "serviceAccount:${google_service_account.ingest_cutover[0].email}"
 }
 
+resource "google_bigquery_table_iam_member" "ingest_cutover_read_qualification" {
+  count      = var.cutover_coordinator_enabled ? 1 : 0
+  dataset_id = "wb_ops"
+  table_id   = local.cutover_qualification_table
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.ingest_cutover[0].email}"
+}
+
 resource "google_bigquery_table_iam_member" "ingest_cutover_read_evidence" {
   for_each   = var.cutover_coordinator_enabled ? local.cutover_evidence_tables : toset([])
   dataset_id = var.raw_dataset
@@ -99,6 +108,15 @@ resource "google_bigquery_table_iam_member" "writer_gate_read_loaders_prod" {
   table_id   = local.cutover_ops_tables.ownership
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.loaders_prod.email}"
+}
+
+# deploy-prod: предпроверка «таблица есть, у SA Job'а есть чтение» (bq head / get-iam-policy) — до выката образа с gate.
+resource "google_bigquery_table_iam_member" "writer_gate_read_deployer" {
+  count      = var.cutover_coordinator_enabled ? 1 : 0
+  dataset_id = "wb_ops"
+  table_id   = local.cutover_ops_tables.ownership
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.deployer.email}"
 }
 
 resource "google_bigquery_table_iam_member" "writer_gate_read_stream_prod" {
@@ -155,13 +173,13 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_ingest_cutover_invoke" 
   member   = "serviceAccount:${google_service_account.scheduler_prod.email}"
 }
 
-# tick раз в 10 минут. Создаётся НА ПАУЗЕ: снимает владелец после проверки «все prod-писатели видят своего
+# tick раз в 15 минут (тяжёлые проверки в состояниях Apps Script — раз в час). Создаётся НА ПАУЗЕ: снимает владелец после проверки «все prod-писатели видят своего
 # владельца» (док §5). tick продвигает каждый поток максимум на один шаг; без auto_cutover_enabled fence не ставит.
 resource "google_cloud_scheduler_job" "ingest_cutover_tick" {
   count            = var.cutover_coordinator_enabled ? 1 : 0
   name             = "ingest-cutover-tick"
   region           = var.region
-  schedule         = "*/10 * * * *"
+  schedule         = "*/15 * * * *"
   time_zone        = "Europe/Moscow"
   paused           = true
   attempt_deadline = "600s"

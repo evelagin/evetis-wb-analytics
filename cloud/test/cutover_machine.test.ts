@@ -588,8 +588,13 @@ describe('дополнения владельца: задания BigQuery, по
 
   it('дренаж: задание в таблицы потока, созданное после fence → STOP (любой пользователь)', async () => {
     const store = fencedStocks();
-    store.jobs.push(job({ createdMs: T0 + MIN, user: 'sa-loaders-prod@p.iam.gserviceaccount.com' }));
-    expect(await tick('stocks', store, T0 + 8 * MIN)).toMatchObject({ to: 'STOP', attention: CUTOVER_STOP });
+    // Создано позже, чем мог жить любой прогон, начатый до fence (Cloud Run: timeout 30 + 5 мин).
+    store.jobs.push(job({ createdMs: T0 + 36 * MIN, user: 'sa-loaders-prod@p.iam.gserviceaccount.com' }));
+    expect(await tick('stocks', store, T0 + 37 * MIN)).toMatchObject({ to: 'STOP', attention: CUTOVER_STOP });
+    // Задание прогона «в полёте» (gate пройден до fence) — ждём, а не STOP.
+    const s2 = fencedStocks();
+    s2.jobs.push(job({ createdMs: T0 + MIN }));
+    expect((await tick('stocks', s2, T0 + 8 * MIN)).reason).toMatch(/незавершённых заданий BigQuery/);
   });
 
   it('откат тоже ждёт задания BigQuery Cloud Run', async () => {
@@ -694,9 +699,102 @@ describe('дополнения владельца: задания BigQuery, по
     expect(ads).toContain('`region-eu`.INFORMATION_SCHEMA.JOBS_BY_PROJECT');
     expect(ads).toContain("state != 'DONE'");
     expect(ads).toContain("destination_table.dataset_id = 'wb_raw'");
-    expect(ads).toContain("STARTS_WITH(destination_table.table_id, 'RAW_WB_ADV_')");
+    expect(ads).toContain("'RAW_WB_ADV_COSTS_RUNS'");
+    expect(ads).not.toContain('STARTS_WITH');
+    expect(ads).not.toContain('RAW_WB_ADV_SEARCH_CLUSTERS');
     expect(ads).toContain("statement_type = 'SCRIPT'");
+    expect(ads).toContain("job_type IN ('LOAD', 'COPY') OR statement_type IN ('INSERT', 'UPDATE', 'DELETE', 'MERGE'");
     expect(ads).not.toMatch(/user_email\s*(=|IN)/);
+    // INGEST_RUNS общий у statistics и ads — дренаж одного потока не ловит работу другого.
+    expect(st.exclusiveTables('ads')).not.toContain('INGEST_RUNS');
+    expect(st.exclusiveTables('statistics')).toEqual(['RAW_WB_ORDERS', 'RAW_WB_SALES_RETURNS']);
     expect(st.jobsSql('finance')).toContain("'FINANCE_REPORT_LOADS'");
+    // Регулярка SCRIPT: только DML в таблицу потока; shadow …__CR и чтение — не совпадают.
+    const re = new RegExp(/r'\(\?i\)(.*)'\)\)\)$/s.exec(st.jobsSql('statistics'))![1]!.replace(/\\\\/g, '\\'), 'i');
+    expect(re.test('MERGE `p.wb_raw.RAW_WB_ORDERS` T USING x')).toBe(true);
+    expect(re.test('INSERT INTO `p.wb_raw.RAW_WB_SALES_RETURNS` (a) VALUES (1)')).toBe(true);
+    expect(re.test('INSERT INTO `p.wb_raw.RAW_WB_ORDERS__CR` (a) VALUES (1)')).toBe(false);
+    expect(re.test('SELECT * FROM `p.wb_raw.RAW_WB_ORDERS`')).toBe(false);
+    expect(st.gateEvidenceSql('ads')).toContain("r'WRITER_GATE[:]AS[:]ads[:]v1'");
+    expect(st.gateEvidenceSql('ads')).not.toContain('WRITER_GATE:AS');
+  });
+});
+
+describe('ревью #426: resolve, мёртвые прогоны, запас gate→журнал, писатель без gate, доказательство gate', () => {
+  it('STARTED, начатый задолго до fence (убит лимитом) — мёртвый, не UNKNOWN_OUTCOME', async () => {
+    const store = fencedStocks();
+    store.watermark.stocks = '2026-11-16';
+    store.legacy.push({ stream: 'stocks', journal: 'WB_STOCKS_SNAPSHOTS', id: 'old', startMs: T0 - 3 * H, status: 'STARTED', shared: false });
+    const r = await tick('stocks', store, T0 + 8 * MIN);
+    expect(r).toMatchObject({ to: 'CLOUD_ACTIVE' });
+    expect(store.log[0]!.evidence).toMatchObject({ detail: { deadStartedBeforeFence: [expect.objectContaining({ id: 'old' })] } });
+  });
+
+  it('прогон, прошедший gate до fence и записавший журнал сразу после (запас) — не нарушение; позже запаса — STOP', async () => {
+    const ok = new MemCutoverStore(seedRow('stocks', { owner: 'NONE', state: 'CLOUD_FENCED', epoch: 4, revision: 7, fencedAtMs: T0 }));
+    ok.cloud.push({ stream: 'stocks', id: 'inflight', loader: 'stocks', startMs: T0 + 90_000, status: 'ERROR', logicalPeriod: '2026-11-16', errorCode: 'WRITER_EPOCH_CHANGED' });
+    expect(await tick('stocks', ok, T0 + 40 * MIN)).toMatchObject({ to: 'LEGACY_ACTIVE' });
+    const bad = new MemCutoverStore(seedRow('stocks', { owner: 'NONE', state: 'CLOUD_FENCED', epoch: 4, revision: 7, fencedAtMs: T0 }));
+    bad.cloud.push({ stream: 'stocks', id: 'late', loader: 'stocks', startMs: T0 + 4 * MIN, status: 'COMPLETE', logicalPeriod: '2026-11-16', errorCode: '' });
+    expect(await tick('stocks', bad, T0 + 40 * MIN)).toMatchObject({ to: 'STOP', attention: CUTOVER_STOP });
+  });
+
+  it('resolve: выход из STOP/UNKNOWN_OUTCOME с причиной оператора и новым отсчётом дренажа', async () => {
+    const store = fencedStocks();
+    store.watermark.stocks = '2026-11-16';
+    store.legacy.push({ stream: 'stocks', journal: 'WB_STOCKS_SNAPSHOTS', id: 'rogue', startMs: T0 + 5 * MIN, status: 'COMPLETE', shared: false });
+    expect(await tick('stocks', store, T0 + 8 * MIN)).toMatchObject({ to: 'STOP' });
+    expect(await act('resolve', 'stocks', store, T0 + H)).toMatchObject({ outcome: 'REFUSED' }); // без причины
+    expect(await act('resolve', 'stocks', store, T0 + H, { operatorReason: 'разобрано: ручной запуск из редактора, данные сверены' })).toMatchObject({ outcome: 'REFUSED' }); // без цели
+    const r = await act('resolve', 'stocks', store, T0 + H, { operatorReason: 'разобрано: ручной запуск из редактора, данные сверены', resolveTo: 'LEGACY_FENCED' });
+    expect(r).toMatchObject({ outcome: 'TRANSITION', to: 'LEGACY_FENCED', owner: 'NONE', epoch: 2 });
+    expect(store.rows.get('stocks')).toMatchObject({ fencedAtMs: T0 + H, checksSinceMs: T0 + H });
+    expect(store.log.at(-1)!.reason).toBe('resolve: разобрано: ручной запуск из редактора, данные сверены');
+    expect(await tick('stocks', store, T0 + H + 8 * MIN)).toMatchObject({ to: 'CLOUD_ACTIVE', epoch: 3 });
+  });
+
+  it('владелец не CLOUD_RUN, а prod-прогон Cloud Run есть → BLOCKED (писатель не под gate); снять — resolve', async () => {
+    const store = qualifiedStocks({ checksSinceMs: T0 - DAY });
+    store.cloud.push({ stream: 'stocks', id: 'old-image', loader: 'stocks', startMs: T0 - H, status: 'COMPLETE', logicalPeriod: '2026-11-16', errorCode: '' });
+    const r = await tick('stocks', store, T0, { autoFromEnv: true });
+    expect(r).toMatchObject({ to: 'BLOCKED', owner: 'APPS_SCRIPT', attention: 'CUTOVER_WRITER_NOT_GATED' });
+    expect(await tick('stocks', store, T0 + 15 * MIN)).toMatchObject({ outcome: 'NOOP', from: 'BLOCKED' });
+    expect(await act('resolve', 'stocks', store, T0 + 2 * H, { operatorReason: 'образ без gate заменён, прогон признан' })).toMatchObject({ to: 'SHADOW_VALIDATING' });
+    expect(await tick('stocks', store, T0 + 2 * H + MIN)).toMatchObject({ to: 'QUALIFIED' });
+  });
+
+  it('перед fence: нет чтений строки владения Apps Script или Cloud Run за 24 ч → fence не ставится', async () => {
+    for (const ev of [{ appsScript: 0, cloudRun: 5 }, { appsScript: 5, cloudRun: 0 }]) {
+      const store = qualifiedStocks();
+      store.evidence = ev;
+      const r = await act('fence', 'stocks', store, T0);
+      expect(r.outcome).toBe('NOOP');
+      expect(r.reason).toMatch(/нет доказательства gate/);
+    }
+  });
+
+  it('временный ERROR, закрытый COMPLETE повтором того же периода, — не ROLLBACK_REQUIRED', async () => {
+    const s = new MemCutoverStore(seedRow('ads', { owner: 'CLOUD_RUN', state: 'CLOUD_ACTIVE', epoch: 3, revision: 4, fencedAtMs: T0 - 10 * MIN, activeSinceMs: T0, legacyWatermark: '2026-11-15' }));
+    s.cloud.push({ stream: 'ads', id: 'e', loader: 'ads', startMs: T0 + H, status: 'ERROR', logicalPeriod: '2026-11-16', errorCode: 'TRANSIENT_INFRA' });
+    s.cloud.push({ stream: 'ads', id: 'c', loader: 'ads', startMs: T0 + 2 * H, status: 'COMPLETE', logicalPeriod: '2026-11-16', errorCode: '' });
+    expect(await tick('ads', s, T0 + 3 * H)).toMatchObject({ to: 'MONITORING' });
+  });
+
+  it('проверки состояний Apps Script — раз в час на плановом tick (экономия BigQuery)', async () => {
+    const store = new MemCutoverStore(seedRow('stocks'));
+    store.passDays('stocks', STOCKS_GROUPS, '2026-11-15', 5);
+    expect(await tick('stocks', store, T0, { hourlyChecks: false })).toMatchObject({ outcome: 'NOOP' });
+    expect(await tick('stocks', store, T0, { hourlyChecks: true })).toMatchObject({ to: 'SHADOW_VALIDATING' });
+  });
+
+  it('граница «до первого прогона» — начало секунды старта (load_id несёт секунды)', async () => {
+    const LEGACY = '{"orders":"2026-11-16 09:31:05","sales":"2026-11-16T09:22:40"}';
+    const s = new MemCutoverStore(seedRow('statistics', { owner: 'CLOUD_RUN', state: 'CLOUD_ACTIVE', epoch: 3, revision: 4, fencedAtMs: T0 - 10 * MIN, activeSinceMs: T0, legacyWatermark: LEGACY }));
+    s.watermark.statistics = '{"orders":"2026-11-16 15:41:00","sales":"2026-11-16T09:22:40"}';
+    const seen: number[] = [];
+    s.seenBefore = (b) => { seen.push(b); return LEGACY; };
+    s.cloud.push({ stream: 'statistics', id: 'o1', loader: 'orders', startMs: T0 + 2 * H + 700, status: 'COMPLETE', logicalPeriod: '2026-11-15', errorCode: '' });
+    expect(await tick('statistics', s, T0 + 3 * H)).toMatchObject({ to: 'MONITORING' });
+    expect(seen).toEqual([T0 + 2 * H]);
   });
 });

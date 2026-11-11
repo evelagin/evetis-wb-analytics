@@ -10,7 +10,9 @@
 -- существующих НЕ трогает (повторный прогон не откатывает владение).
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 
--- Seed остатков (M1). Остатки переключаются утверждённой процедурой MIG1B (снятие триггера + resume
+-- Seed остатков (M1). Gate остатков по умолчанию ВЫКЛЮЧЕН в обоих писателях (WB_WRITER_GATE_STOCKS /
+-- WRITER_GATE_STOCKS): строка stocks ни на что не влияет, пока поток не переведён под gate отдельным решением.
+-- Остатки переключаются утверждённой процедурой MIG1B (снятие триггера + resume
 -- Scheduler), не координатором. ПЕРЕД применением выставьте stocks_owner по факту:
 --   MIG1B ещё не выполнен (пишет Apps Script)          → 'APPS_SCRIPT' (по умолчанию);
 --   MIG1B выполнен (триггер снят, wb-stocks-prod ENABLED) → 'CLOUD_RUN'.
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS `wb_ops.INGEST_WRITER_OWNERSHIP` (
   auto_cutover_enabled BOOL DEFAULT FALSE NOT NULL OPTIONS (description = 'tick сам ставит fence QUALIFIED → LEGACY_FENCED; иначе — только командой fence'),
   fenced_at TIMESTAMP OPTIONS (description = 'Момент последнего fence (owner → NONE): от него отсчитывается дренаж'),
   active_since TIMESTAMP OPTIONS (description = 'Начало окна мониторинга Cloud Run (активация или повторный мониторинг)'),
+  checks_since TIMESTAMP OPTIONS (description = 'Начало окна проверок «писатель без права» (смена владельца или resolve оператора)'),
   changed_at TIMESTAMP NOT NULL,
   changed_by STRING,
   reason STRING
@@ -47,9 +50,9 @@ CREATE TABLE IF NOT EXISTS `wb_ops.INGEST_CUTOVER_LOG` (
   source_watermark STRING OPTIONS (description = 'Точная отметка перехода (legacy при активации, cloud при возврате)'),
   reason STRING,
   evidence JSON OPTIONS (description = 'Доказательства: квалификация, окно, дренаж (прогоны, задания BigQuery), циклы'),
-  at TIMESTAMP NOT NULL
+  transition_at TIMESTAMP NOT NULL
 )
-PARTITION BY DATE(at)
+PARTITION BY DATE(transition_at)
 CLUSTER BY stream
 OPTIONS (description = 'Этап C: журнал переходов владения писателей WB. Только добавление.');
 
@@ -61,11 +64,11 @@ CREATE TABLE IF NOT EXISTS `wb_ops.INGEST_QUALIFICATION` (
   verdict STRING NOT NULL OPTIONS (description = 'PASS | FAIL | DRIFT_EXPLAINED | MISSING'),
   details JSON,
   image_digest STRING OPTIONS (description = 'Образ shadow, на котором получен вердикт'),
-  at TIMESTAMP NOT NULL
+  verdict_at TIMESTAMP NOT NULL
 )
 PARTITION BY business_date
 CLUSTER BY stream, check_group
-OPTIONS (description = 'Этап C: вердикты гейта квалификации. Последняя строка (дата, группа) по at заменяет прежние.');
+OPTIONS (description = 'Этап C: вердикты гейта квалификации. Последняя строка (дата, группа) по verdict_at заменяет прежние.');
 
 -- 4) Seed: по строке на поток. Существующие строки НЕ меняются. stocks_owner — см. DECLARE в начале скрипта.
 ASSERT stocks_owner IN ('APPS_SCRIPT', 'CLOUD_RUN') AS 'stocks_owner: APPS_SCRIPT или CLOUD_RUN';
@@ -79,8 +82,8 @@ USING (
 ) S
 ON T.stream = S.stream
 WHEN NOT MATCHED THEN
-  INSERT (stream, owner, state, epoch, revision, auto_cutover_enabled, changed_at, changed_by, reason)
-  VALUES (S.stream, S.owner, S.state, 1, 0, FALSE, CURRENT_TIMESTAMP(), 'seed:sql/ops/ingest_writer_ownership.sql',
+  INSERT (stream, owner, state, epoch, revision, auto_cutover_enabled, checks_since, changed_at, changed_by, reason)
+  VALUES (S.stream, S.owner, S.state, 1, 0, FALSE, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), 'seed:sql/ops/ingest_writer_ownership.sql',
           'начальное состояние этапа C');
 
 -- 5) Проверка seed: ровно 6 потоков, по одной строке, epoch ≥ 1.

@@ -4,7 +4,9 @@
  * и без строки LOADER_RUNS (registry.ts controlPlane) — конкурентность решает CAS в таблице владения.
  *
  * env:
- *   CUTOVER_ACTION  tick | status | fence | activate | rollback (по умолчанию tick — так зовёт Scheduler);
+ *   CUTOVER_ACTION  tick | status | fence | activate | rollback | resolve (по умолчанию tick — так зовёт Scheduler);
+ *   CUTOVER_REASON  resolve: причина оператора (обязательна, ≥ 10 символов, пишется в журнал переходов);
+ *   CUTOVER_RESOLVE_TO  resolve из STOP/UNKNOWN_OUTCOME: LEGACY_FENCED (дренаж к Cloud Run) | CLOUD_FENCED (к Apps Script);
  *   CUTOVER_STREAM  поток; пусто — все потоки (только tick/status: команды требуют явный поток);
  *   CUTOVER_AUTO_STREAMS  потоки через запятую, для которых tick сам ставит fence (иначе — колонка
  *                   auto_cutover_enabled; по умолчанию ни один);
@@ -21,7 +23,7 @@ import type { LoaderContext, LoaderResult } from '../types.js';
 import { DEFAULT_OWNERSHIP_DATASET, STREAMS, isStream, type Stream } from '../../ownership/streams.js';
 import { ACTIONS, step, type Action, type StepResult } from './machine.js';
 import { LEGACY_DRAIN_MIN } from './profiles.js';
-import { BqCutoverStore, type CutoverStore } from './store.js';
+import { BqCutoverStore, type CutoverStore, type State } from './store.js';
 
 export const CUTOVER_CONFIG = 'CUTOVER_CONFIG';
 export const CUTOVER_ATTENTION = 'CUTOVER_ATTENTION';
@@ -47,7 +49,12 @@ export interface CutoverEnv {
   legacyDrainMin: number;
   opsDataset: string;
   includeStocks: boolean;
+  operatorReason: string;
+  resolveTo?: State;
 }
+
+/** Период Scheduler ingest-cutover-tick (мин): тяжёлые проверки — на первом tick часа. */
+export const TICK_PERIOD_MIN = 15;
 
 export function parseCutoverEnv(env: Record<string, string | undefined>): CutoverEnv {
   const action = (env.CUTOVER_ACTION ?? '').trim() || 'tick';
@@ -64,6 +71,10 @@ export function parseCutoverEnv(env: Record<string, string | undefined>): Cutove
     if (!isStream(s)) throw new LoaderError(`CUTOVER_AUTO_STREAMS: неизвестный поток '${s}'`, CUTOVER_CONFIG);
     autoStreams.add(s);
   }
+  const resolveTo = (env.CUTOVER_RESOLVE_TO ?? '').trim();
+  if (resolveTo && resolveTo !== 'LEGACY_FENCED' && resolveTo !== 'CLOUD_FENCED') {
+    throw new LoaderError(`CUTOVER_RESOLVE_TO '${resolveTo}' — допустимы LEGACY_FENCED, CLOUD_FENCED`, CUTOVER_CONFIG);
+  }
   const drainRaw = (env.CUTOVER_LEGACY_DRAIN_MIN ?? '').trim();
   const drain = drainRaw ? Number(drainRaw) : LEGACY_DRAIN_MIN;
   if (!Number.isInteger(drain) || drain < LEGACY_DRAIN_MIN || drain > 120) {
@@ -76,6 +87,8 @@ export function parseCutoverEnv(env: Record<string, string | undefined>): Cutove
     legacyDrainMin: drain,
     opsDataset: (env.WRITER_OWNERSHIP_DATASET ?? '').trim() || DEFAULT_OWNERSHIP_DATASET,
     includeStocks: (env.CUTOVER_INCLUDE_STOCKS ?? '').trim() === '1',
+    operatorReason: (env.CUTOVER_REASON ?? '').trim(),
+    ...(resolveTo ? { resolveTo: resolveTo as State } : {}),
   };
 }
 
@@ -92,6 +105,9 @@ export function makeCutoverLoader(rt: CutoverRuntime = defaultCutoverRuntime) {
         r = await step(stream, ce.action, {
           store, nowMs: rt.now(), runId: ctx.runId, changedBy: `cutover:${ce.action}:${config.executionId || 'local'}`,
           autoFromEnv: ce.autoStreams.has(stream), legacyDrainMin: ce.legacyDrainMin, includeUncoordinated: ce.includeStocks,
+          operatorReason: ce.operatorReason, ...(ce.resolveTo ? { resolveTo: ce.resolveTo } : {}),
+          // Плановый tick: квалификация и «Cloud Run без права» в состояниях Apps Script — раз в час.
+          hourlyChecks: ce.action !== 'tick' || new Date(rt.now()).getUTCMinutes() < TICK_PERIOD_MIN,
         });
       } catch (e) {
         failures.push(`${stream}: ${e instanceof Error ? e.message : String(e)}`);

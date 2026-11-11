@@ -41,7 +41,8 @@ var WB_WRITER_GATE_OWNERS_ = ['APPS_SCRIPT', 'CLOUD_RUN', 'NONE'];
 var WB_WRITER_STREAM_TABLES_ = {
   stocks: { exact: ['RAW_WB_STOCKS', 'RAW_WB_STOCKS_T5', 'WB_STOCKS_SNAPSHOTS'], prefixes: [] },
   statistics: { exact: ['RAW_WB_ORDERS', 'RAW_WB_SALES_RETURNS', 'INGEST_RUNS'], prefixes: [] },
-  ads: { exact: ['INGEST_RUNS'], prefixes: ['RAW_WB_ADV_'] },
+  // Ровно таблицы M3. RAW_WB_ADV_SEARCH_CLUSTERS не переносится — остаётся за Apps Script, gate её не трогает.
+  ads: { exact: ['INGEST_RUNS', 'RAW_WB_ADV_CAMPAIGNS', 'RAW_WB_ADV_CAMPAIGN_STATS', 'RAW_WB_ADV_BOOSTER_STATS', 'RAW_WB_ADV_COSTS', 'RAW_WB_ADV_COSTS_RUNS', 'RAW_WB_ADV_QUERY_BIDS', 'RAW_WB_ADV_QUERY_BIDS_RUNS', 'RAW_WB_ADV_QUERY_STATS', 'RAW_WB_ADV_QUERY_STATS_RUNS'], prefixes: [] },
   finance: { exact: ['RAW_WB_FINANCE', 'FINANCE_LOADER_RUNS', 'FINANCE_REPORT_LOADS', 'FINANCE_WEEK_STATUS', 'FINANCE_WEEK_RECON'], prefixes: [] },
   supplies: { exact: ['RAW_WB_SUPPLIES', 'RAW_WB_SUPPLIES_GOODS'], prefixes: [] },
   ref: { exact: ['REF_SKU_MASTER_DATA', 'REF_ACTIVE_VERSION', 'REF_SYNC_RUNS', 'REF_SYNC_TABLE_LOG', 'REF_SKU_MASTER'], prefixes: [] }
@@ -49,6 +50,29 @@ var WB_WRITER_STREAM_TABLES_ = {
 
 /** Поколение владения, под которым идёт ЭТО исполнение: { stream: epoch }. Заполняет wbWriterGate_. */
 var WB_WRITER_GATE_CTX_ = {};
+
+/**
+ * Потоки, у которых gate ВЫКЛЮЧЕН по умолчанию. Остатки (M1) до приёмки координатора переключаются ручной
+ * процедурой MIG1B (снятие триггера + resume Scheduler) — gate не должен ей мешать. Включение — Script
+ * Property WB_WRITER_GATE_STOCKS = '1' вместе с WRITER_GATE_STOCKS=1 у wb-stocks-prod (док §8).
+ */
+var WB_WRITER_GATE_OPT_IN_ = { stocks: 'WB_WRITER_GATE_STOCKS' };
+
+/**
+ * Журналы прогонов: закрыть СВОЮ строку (UPDATE/MERGE — статус, исход) прогон, открывший её под владением,
+ * может и после потери владения: это исход, а не новые данные. Без этого строка осталась бы STARTED навсегда.
+ * Новые строки журналов (INSERT/load) и данные — под проверкой.
+ */
+var WB_WRITER_JOURNAL_TABLES_ = ['INGEST_RUNS', 'FINANCE_LOADER_RUNS', 'WB_STOCKS_SNAPSHOTS', 'REF_SYNC_RUNS'];
+
+/** Метка запроса gate в INFORMATION_SCHEMA.JOBS: координатор по ней доказывает, что Apps Script под gate. */
+var WB_WRITER_GATE_MARK_VERSION_ = 'v1';
+
+function wbWriterGateEnabled_(stream) {
+  var key = WB_WRITER_GATE_OPT_IN_[stream];
+  if (!key) return true;
+  return PropertiesService.getScriptProperties().getProperty(key) === '1';
+}
 
 // ───────────────────────────────────────────────────────────────
 // Точка входа
@@ -62,6 +86,7 @@ function wbWriterGate_(stream) {
   var row;
   try {
     if (!WB_WRITER_STREAM_TABLES_[stream]) throw new Error('неизвестный поток ' + stream);
+    if (!wbWriterGateEnabled_(stream)) return { allowed: true, result: null };   // gate потока выключен (M1)
     row = wbWriterGateRead_(stream);
   } catch (e) {
     var m = String((e && e.message) || e);
@@ -87,7 +112,8 @@ function wbWriterGate_(stream) {
 function wbWriterGateRead_(stream) {
   var c = getBqConfig_();
   var res = BigQuery.Jobs.query({
-    query: 'SELECT owner, CAST(epoch AS STRING) AS epoch FROM `' + c.projectId + '.' + WB_WRITER_GATE_DATASET_ + '.' +
+    query: '/* WRITER_GATE:AS:' + stream + ':' + WB_WRITER_GATE_MARK_VERSION_ + ' */ ' +
+      'SELECT owner, CAST(epoch AS STRING) AS epoch FROM `' + c.projectId + '.' + WB_WRITER_GATE_DATASET_ + '.' +
       WB_WRITER_GATE_TABLE_ + '` WHERE stream = @s',
     useLegacySql: false, location: c.location, parameterMode: 'NAMED',
     queryParameters: [{ name: 's', parameterType: { type: 'STRING' }, parameterValue: { value: stream } }],
@@ -156,21 +182,22 @@ function wbWriterStreamsOfTable_(tableId) {
   for (var s in WB_WRITER_STREAM_TABLES_) {
     var d = WB_WRITER_STREAM_TABLES_[s];
     var hit = d.exact.indexOf(tableId) >= 0;
-    for (var i = 0; !hit && i < d.prefixes.length; i++) hit = tableId.indexOf(d.prefixes[i]) === 0;
+    for (var i = 0; !hit && i < d.prefixes.length; i++) hit = tableId.indexOf(d.prefixes[i]) === 0 && !/__CR$/.test(tableId);
     if (hit) out.push(s);
   }
   return out;
 }
 
-var WB_WRITER_WRITE_RE_ = /\b(?:INSERT\s+(?:INTO\s+)?|UPDATE\s+|MERGE\s+(?:INTO\s+)?|DELETE\s+(?:FROM\s+)?|TRUNCATE\s+TABLE\s+|CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?|DROP\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+EXISTS\s+)?|ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?)`?([A-Za-z0-9_.\-]+)`?/gi;
+var WB_WRITER_WRITE_RE_ = /\b(INSERT\s+(?:INTO\s+)?|UPDATE\s+|MERGE\s+(?:INTO\s+)?|DELETE\s+(?:FROM\s+)?|TRUNCATE\s+TABLE\s+|CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?|DROP\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+EXISTS\s+)?|ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?)`?([A-Za-z0-9_.\-]+)`?/gi;
 
-/** Цели записи в тексте SQL: [{dataset, table}]. Пусто — запрос только читает. */
+/** Цели записи в тексте SQL: [{dataset, table, verb}]. Пусто — запрос только читает. */
 function wbWriterTargetsOfSql_(sql) {
   var out = [], m;
   var re = new RegExp(WB_WRITER_WRITE_RE_.source, 'gi');
   while ((m = re.exec(String(sql || ''))) !== null) {
-    var parts = m[1].split('.');
-    out.push({ dataset: parts.length >= 2 ? parts[parts.length - 2] : '', table: parts[parts.length - 1] });
+    var parts = m[2].split('.');
+    out.push({ dataset: parts.length >= 2 ? parts[parts.length - 2] : '', table: parts[parts.length - 1],
+      verb: m[1].replace(/\s.*$/, '').toUpperCase() });
   }
   return out;
 }
@@ -189,7 +216,10 @@ function wbWriterGuard_(targets, what) {
   for (var i = 0; i < targets.length; i++) {
     var t = targets[i];
     if (t.dataset && t.dataset !== c.datasetId) continue;
-    var owners = wbWriterStreamsOfTable_(t.table);
+    var owners = wbWriterStreamsOfTable_(t.table).filter(wbWriterGateEnabled_);
+    // Закрытие своей строки журнала прогоном, открывшим её под владением (UPDATE/MERGE, есть поколение входа).
+    var ctxOwners = owners.filter(function (s) { return WB_WRITER_GATE_CTX_[s] !== undefined; });
+    if ((t.verb === 'UPDATE' || t.verb === 'MERGE') && WB_WRITER_JOURNAL_TABLES_.indexOf(t.table) >= 0 && ctxOwners.length) continue;
     var withCtx = owners.filter(function (s) { return WB_WRITER_GATE_CTX_[s] !== undefined; });
     var check = withCtx.length ? withCtx : owners;
     for (var j = 0; j < check.length; j++) streams[check[j]] = true;
@@ -253,6 +283,7 @@ function wbBqTablesPatch_(body, projectId, datasetId, tableId) {
 function wbWriterGateStatus() {
   var out = {};
   for (var s in WB_WRITER_STREAM_TABLES_) {
+    if (!wbWriterGateEnabled_(s)) { out[s] = 'gate выключен (' + WB_WRITER_GATE_OPT_IN_[s] + ' ≠ 1) — Apps Script пишет без проверки'; continue; }
     try {
       var r = wbWriterGateRead_(s);
       out[s] = r.owner + ' / epoch ' + r.epoch + (r.owner === 'APPS_SCRIPT' ? ' — Apps Script пишет' : ' — Apps Script НЕ пишет');

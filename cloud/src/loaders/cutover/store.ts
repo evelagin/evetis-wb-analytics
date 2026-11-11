@@ -32,6 +32,8 @@ export interface OwnershipRow {
   autoCutoverEnabled: boolean;
   fencedAtMs: number | null;
   activeSinceMs: number | null;
+  /** Начало окна проверок «писатель без права» (смена владельца или resolve оператора). */
+  checksSinceMs: number | null;
   changedAtMs: number;
   changedBy: string;
   reason: string;
@@ -41,7 +43,7 @@ export interface CasExpect { stream: Stream; epoch: number; state: State; revisi
 export interface CasNext {
   owner: Owner; state: State; epoch: number; revision: number;
   legacyWatermark: string | null; cloudWatermark: string | null;
-  fencedAtMs: number | null; activeSinceMs: number | null;
+  fencedAtMs: number | null; activeSinceMs: number | null; checksSinceMs: number | null;
   changedBy: string; reason: string;
 }
 export interface CutoverLogEntry {
@@ -104,6 +106,11 @@ export interface CutoverStore {
    * ровно то состояние, которое прочитал первый прогон Cloud Run. JSON {orders, sales} в форме хранения.
    */
   statsWatermarkBefore(beforeMs: number): Promise<string | null>;
+  /**
+   * Доказательство, что оба писателя под gate: число выполненных запросов gate по потоку с fromMs
+   * (метка WRITER_GATE:AS:<поток>:v1 — Apps Script от учётной записи владельца; WRITER_GATE:CR:<поток>:v1 — SA Cloud Run).
+   */
+  gateEvidence(stream: Stream, fromMs: number): Promise<{ appsScript: number; cloudRun: number }>;
 }
 
 // ── BigQuery ──────────────────────────────────────────────────────────────────────────────────
@@ -131,6 +138,7 @@ export class BqCutoverStore implements CutoverStore {
     const rows = await this.q<Record<string, unknown>>(
       `SELECT stream, owner, state, epoch, revision, legacy_watermark, cloud_watermark, auto_cutover_enabled,
               UNIX_MILLIS(fenced_at) AS fenced_at_ms, UNIX_MILLIS(active_since) AS active_since_ms,
+              UNIX_MILLIS(checks_since) AS checks_since_ms,
               UNIX_MILLIS(changed_at) AS changed_at_ms, changed_by, reason
        FROM ${this.ops(OWNERSHIP_TABLE)} WHERE stream = @stream`,
       { stream }, { stream: 'STRING' },
@@ -152,12 +160,12 @@ BEGIN
   WHEN MATCHED AND T.epoch = @epoch AND T.state = @from_state AND T.revision = @revision THEN UPDATE SET
     owner = @owner, state = @to_state, epoch = @new_epoch, revision = @new_revision,
     legacy_watermark = @legacy_wm, cloud_watermark = @cloud_wm,
-    fenced_at = TIMESTAMP(@fenced_at), active_since = TIMESTAMP(@active_since),
+    fenced_at = TIMESTAMP(@fenced_at), active_since = TIMESTAMP(@active_since), checks_since = TIMESTAMP(@checks_since),
     changed_at = CURRENT_TIMESTAMP(), changed_by = @changed_by, reason = @reason;
   SET affected = @@row_count;
   IF affected = 1 THEN
     INSERT INTO ${this.ops(CUTOVER_LOG_TABLE)}
-      (transition_id, stream, from_state, to_state, epoch, run_id, source_watermark, reason, evidence, at)
+      (transition_id, stream, from_state, to_state, epoch, run_id, source_watermark, reason, evidence, transition_at)
     VALUES (@transition_id, @stream, @from_state, @to_state, @new_epoch, @run_id, @source_wm, @reason,
             PARSE_JSON(@evidence), CURRENT_TIMESTAMP());
   END IF;
@@ -168,7 +176,7 @@ END`;
       stream: expect.stream, epoch: expect.epoch, from_state: expect.state, revision: expect.revision,
       owner: next.owner, to_state: next.state, new_epoch: next.epoch, new_revision: next.revision,
       legacy_wm: next.legacyWatermark, cloud_wm: next.cloudWatermark,
-      fenced_at: iso(next.fencedAtMs), active_since: iso(next.activeSinceMs),
+      fenced_at: iso(next.fencedAtMs), active_since: iso(next.activeSinceMs), checks_since: iso(next.checksSinceMs),
       changed_by: next.changedBy, reason: next.reason.slice(0, 1000),
       transition_id: log.transitionId, run_id: log.runId, source_wm: log.sourceWatermark,
       evidence: JSON.stringify(log.evidence ?? {}),
@@ -176,7 +184,7 @@ END`;
     const types: Record<string, string> = {
       stream: 'STRING', epoch: 'INT64', from_state: 'STRING', revision: 'INT64', owner: 'STRING', to_state: 'STRING',
       new_epoch: 'INT64', new_revision: 'INT64', legacy_wm: 'STRING', cloud_wm: 'STRING', fenced_at: 'STRING',
-      active_since: 'STRING', changed_by: 'STRING', reason: 'STRING', transition_id: 'STRING', run_id: 'STRING',
+      active_since: 'STRING', checks_since: 'STRING', changed_by: 'STRING', reason: 'STRING', transition_id: 'STRING', run_id: 'STRING',
       source_wm: 'STRING', evidence: 'STRING',
     };
     try {
@@ -192,7 +200,7 @@ END`;
   async qualification(stream: Stream, sinceDate: string): Promise<QualRow[]> {
     const rows = await this.q<Record<string, unknown>>(
       `SELECT CAST(business_date AS STRING) AS bd, check_group, verdict, IFNULL(image_digest, '') AS image_digest,
-              UNIX_MILLIS(at) AS at_ms
+              UNIX_MILLIS(verdict_at) AS at_ms
        FROM ${this.ops(QUALIFICATION_TABLE)} WHERE stream = @stream AND business_date >= DATE(@since)`,
       { stream, since: sinceDate }, { stream: 'STRING', since: 'STRING' },
     );
@@ -285,21 +293,48 @@ END`;
     }));
   }
 
+  /** Таблицы потока, которые не делит ни один другой поток (INGEST_RUNS общий — его дренаж видит по loader_name). */
+  exclusiveTables(stream: Stream): string[] {
+    const others = new Set(Object.values(PROFILES).filter((p) => p.stream !== stream).flatMap((p) => [...p.writeTables.exact]));
+    return PROFILES[stream].writeTables.exact.filter((t) => !others.has(t));
+  }
+
+  private region(): string {
+    return `region-${this.bq.location.toLowerCase()}`;
+  }
+
+  /**
+   * Незавершённые ЗАПИСЫВАЮЩИЕ задания в таблицы потока: LOAD/COPY или DML/DDL с destination — таблица потока;
+   * либо SCRIPT, в тексте которого DML в таблицу потока. Читающие скрипты (паритет, ручные SELECT) не в счёт.
+   * Shadow-таблицы `…__CR` не совпадают: имя сравнивается целиком, с границей слова.
+   */
   jobsSql(stream: Stream): string {
-    const t = PROFILES[stream].writeTables;
-    const region = `region-${this.bq.location.toLowerCase()}`;
-    const exact = t.exact.map((x) => `'${x}'`).join(', ');
-    const dest = [
-      exact ? `destination_table.table_id IN (${exact})` : 'FALSE',
-      ...t.prefixes.map((p) => `STARTS_WITH(destination_table.table_id, '${p}')`),
-    ].join(' OR ');
-    const names = [...t.exact, ...t.prefixes.map((p) => `${p}[A-Za-z0-9_]*`)].join('|');
+    const tables = this.exclusiveTables(stream);
+    const list = tables.map((x) => `'${x}'`).join(', ');
+    const names = tables.join('|');
     return `SELECT job_id, user_email, UNIX_MILLIS(creation_time) AS created_ms, state,
        IFNULL(destination_table.table_id, '') AS dest, IFNULL(statement_type, job_type) AS stmt
-FROM \`${region}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+FROM \`${this.region()}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
 WHERE creation_time >= TIMESTAMP(@from_ts) AND state != 'DONE'
-  AND ((destination_table.dataset_id = '${this.rawDataset}' AND (${dest}))
-       OR (statement_type = 'SCRIPT' AND REGEXP_CONTAINS(query, r'(?:^|[^A-Za-z0-9_])(?:${names})(?:[^A-Za-z0-9_]|$)')))`;
+  AND ((destination_table.dataset_id = '${this.rawDataset}' AND destination_table.table_id IN (${list})
+        AND (job_type IN ('LOAD', 'COPY') OR statement_type IN ('INSERT', 'UPDATE', 'DELETE', 'MERGE', 'TRUNCATE_TABLE',
+             'CREATE_TABLE', 'CREATE_TABLE_AS_SELECT', 'CREATE_VIEW', 'ALTER_TABLE', 'DROP_TABLE')))
+    OR (statement_type = 'SCRIPT' AND REGEXP_CONTAINS(query,
+        r'(?i)(?:INSERT\\s+(?:INTO\\s+)?|UPDATE\\s+|MERGE\\s+(?:INTO\\s+)?|DELETE\\s+(?:FROM\\s+)?|TRUNCATE\\s+TABLE\\s+)\`?(?:[A-Za-z0-9_-]+\\.)?(?:${this.rawDataset}\\.)(?:${names})\`?(?:[^A-Za-z0-9_]|$)')))`;
+  }
+
+  gateEvidenceSql(stream: Stream): string {
+    // Метка в тексте шаблона разбита классом символов [:]: собственный запрос координатора её не содержит.
+    return `SELECT
+  COUNTIF(REGEXP_CONTAINS(query, r'WRITER_GATE[:]AS[:]${stream}[:]v1') AND NOT ENDS_WITH(user_email, 'gserviceaccount.com')) AS as_n,
+  COUNTIF(REGEXP_CONTAINS(query, r'WRITER_GATE[:]CR[:]${stream}[:]v1') AND ENDS_WITH(user_email, 'gserviceaccount.com')) AS cr_n
+FROM \`${this.region()}\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+WHERE creation_time >= TIMESTAMP(@from_ts) AND job_type = 'QUERY' AND state = 'DONE' AND error_result IS NULL`;
+  }
+
+  async gateEvidence(stream: Stream, fromMs: number): Promise<{ appsScript: number; cloudRun: number }> {
+    const rows = await this.q<{ as_n?: unknown; cr_n?: unknown }>(this.gateEvidenceSql(stream), { from_ts: new Date(fromMs).toISOString() }, { from_ts: 'STRING' });
+    return { appsScript: Number(rows[0]?.as_n ?? 0), cloudRun: Number(rows[0]?.cr_n ?? 0) };
   }
 
   async pendingWriteJobs(stream: Stream, fromMs: number): Promise<PendingJob[]> {
@@ -340,9 +375,9 @@ WHERE creation_time >= TIMESTAMP(@from_ts) AND state != 'DONE'
              FROM ${this.raw('RAW_WB_SALES_RETURNS')} WHERE source_api = 'WB_API_SALES') AS sales)) AS wm`;
       case 'ads':
         return `SELECT MAX(lp) AS wm FROM (
-          SELECT logical_period AS lp FROM ${this.raw('INGEST_RUNS')} WHERE loader_name = 'ads' AND status = 'COMPLETE'
+          SELECT CAST(logical_period AS STRING) AS lp FROM ${this.raw('INGEST_RUNS')} WHERE loader_name = 'ads' AND status = 'COMPLETE'
           UNION ALL
-          SELECT logical_period FROM ${this.raw('LOADER_RUNS')} WHERE environment = 'prod' AND loader_name = 'ads' AND status = 'COMPLETE')`;
+          SELECT CAST(logical_period AS STRING) FROM ${this.raw('LOADER_RUNS')} WHERE environment = 'prod' AND loader_name = 'ads' AND status = 'COMPLETE')`;
       case 'finance':
         return `SELECT CAST(MAX(DATE(SAFE_CAST(started_at AS TIMESTAMP), 'Europe/Moscow')) AS STRING) AS wm
           FROM ${this.raw('FINANCE_LOADER_RUNS')} WHERE status NOT IN ('RUNNING', 'STARTED', 'ERROR')`;
@@ -439,6 +474,7 @@ export function parseRow(r: Record<string, unknown>): OwnershipRow {
     autoCutoverEnabled: r.auto_cutover_enabled === true,
     fencedAtMs: num(r.fenced_at_ms),
     activeSinceMs: num(r.active_since_ms),
+    checksSinceMs: num(r.checks_since_ms),
     changedAtMs: Number(r.changed_at_ms ?? 0),
     changedBy: String(r.changed_by ?? ''),
     reason: String(r.reason ?? ''),

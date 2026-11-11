@@ -177,7 +177,9 @@ export const PROFILES: Readonly<Record<Stream, StreamProfile>> = Object.freeze({
   ads: {
     stream: 'ads',
     coordinated: true,
-    writeTables: { exact: ['INGEST_RUNS'], prefixes: ['RAW_WB_ADV_'] },
+    // Ровно 9 таблиц, которые пишет M3 (ads/targets.ts). RAW_WB_ADV_SEARCH_CLUSTERS НЕ переносится:
+    // кластеры остаются за Apps Script и после cutover рекламы (gate их не отсекает).
+    writeTables: { exact: ['INGEST_RUNS', 'RAW_WB_ADV_CAMPAIGNS', 'RAW_WB_ADV_CAMPAIGN_STATS', 'RAW_WB_ADV_BOOSTER_STATS', 'RAW_WB_ADV_COSTS', 'RAW_WB_ADV_COSTS_RUNS', 'RAW_WB_ADV_QUERY_BIDS', 'RAW_WB_ADV_QUERY_BIDS_RUNS', 'RAW_WB_ADV_QUERY_STATS', 'RAW_WB_ADV_QUERY_STATS_RUNS'], prefixes: [] },
     cloudLoaders: ['ads', 'ads-query', 'ads-costs-audit'],
     // §B.2: расходы EXACT все 5 суток; недельный аудит ADSAUDIT_ — обязателен в окне 7 суток.
     qualification: {

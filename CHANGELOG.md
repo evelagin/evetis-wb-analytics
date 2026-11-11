@@ -20,6 +20,11 @@
 - Terraform `ingest_cutover.tf` под `cutover_coordinator_enabled` (default false): SA `sa-ingest-cutover`, Job
   `ingest-cutover-prod` (hello), Scheduler `ingest-cutover-tick` (PAUSED), чтение строки владения prod-SA писателей.
   `deploy-prod.yml`: режим `only_job=ingest-cutover` (вне `all`).
+- Ревью #426: колонки `INGEST_CUTOVER_LOG.transition_at`, `INGEST_QUALIFICATION.verdict_at` (вместо
+  зарезервированного `at`), новая `INGEST_WRITER_OWNERSHIP.checks_since`. Команда `resolve`; мёртвые STARTED не
+  блокируют; дренаж — только записывающие задания и только свои таблицы; доказательство «оба писателя под gate»
+  перед fence; gate остатков выключен по умолчанию; предпроверка `deploy-prod`; dry-run всего SQL
+  (`tools/bq_dryrun_cutover_sql.py`).
 
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 

@@ -56,7 +56,7 @@ interface World {
  * Песочница. registry(stream, readNo) — что вернёт чтение реестра владения (последовательность для
  * сценариев «сменилось посреди исполнения»).
  */
-function makeWorld(mode: 'gated' | 'original', registry: (stream: string, n: number) => Registry): World {
+function makeWorld(mode: 'gated' | 'original', registry: (stream: string, n: number) => Registry, opts: { stocksGate?: boolean } = {}): World {
   const trace: string[] = [];
   const writes: string[] = [];
   const gateDepth = { n: 0 };
@@ -140,12 +140,18 @@ function makeWorld(mode: 'gated' | 'original', registry: (stream: string, n: num
   // Маркер C0 финансов и watermark'и — валидны: точки входа доходят до записи.
   props.set('WB_FIN_DAILY_C0_MARKER', String(sb.FIN_DAILY_C0_VERSION_ ?? ''));
   if (typeof sb.FIN_DAILY_C0_MARKER_PROP_ === 'string') props.set(sb.FIN_DAILY_C0_MARKER_PROP_, String(sb.FIN_DAILY_C0_VERSION_));
+  // Gate остатков (M1) по умолчанию выключен; здесь он включён — проверяется сам механизм. Отдельный тест — без него.
+  if (opts.stocksGate !== false) props.set('WB_WRITER_GATE_STOCKS', '1');
   for (const k of ['WB_ORDERS_BQ_PROP_', 'WB_SALES_BQ_PROP_', 'WB_ADS_BQ_PROP_', 'WB_STOCKS_BQ_SINK_PROP_']) props.set(String(sb[k]), '1');
   props.set(String(sb.WB_ORDERS_WATERMARK_PROP_), '2026-11-16T09:31:05');
   props.set(String(sb.WB_SALES_WATERMARK_PROP_), '2026-11-16T09:22:40');
   w.sb = sb;
   return w;
 }
+
+/** Закрытие СВОЕЙ строки журнала (UPDATE/MERGE) прогоном, открывшим её под владением, — исход, а не данные. */
+const JOURNAL_FINALIZE = /^bq\.query\.write (?:UPDATE|MERGE) `[^`]*\.(?:INGEST_RUNS|FINANCE_LOADER_RUNS|WB_STOCKS_SNAPSHOTS|REF_SYNC_RUNS)`/;
+const dataWrites = (w: World) => w.writes.filter((x) => x.startsWith('bq.') && !x.endsWith('[gate]') && !JOURNAL_FINALIZE.test(x));
 
 const ENTRIES: Array<[string, string, unknown[]]> = [
   ['runWbStocksSnapshot', 'stocks', []],
@@ -249,7 +255,9 @@ describe('Apps Script: перед каждой записью — повторн
       // Первое чтение (gate) — Apps Script, все последующие (перед каждой записью) — уже NONE.
       const w = makeWorld('gated', (_s, n) => (n === 1 ? { owner: 'APPS_SCRIPT', epoch: 1 } : { owner: 'NONE', epoch: 2 }));
       call(w, fn, args);
-      expect(w.writes.filter((x) => x.startsWith('bq.') && !x.endsWith('[gate]')), fn).toEqual([]);
+      expect(dataWrites(w), fn).toEqual([]);
+      // Закрыть свою строку журнала прогон может (иначе она осталась бы STARTED навсегда) — и только её.
+      for (const x of w.writes.filter((y) => JOURNAL_FINALIZE.test(y))) expect(x, fn).toMatch(/SET status|MERGE/);
     }
   });
 
@@ -257,7 +265,7 @@ describe('Apps Script: перед каждой записью — повторн
     for (const [fn, , args] of ENTRIES) {
       const w = makeWorld('gated', (_s, n) => ({ owner: 'APPS_SCRIPT', epoch: n === 1 ? 1 : 5 }));
       call(w, fn, args);
-      expect(w.writes.filter((x) => x.startsWith('bq.') && !x.endsWith('[gate]')), fn).toEqual([]);
+      expect(dataWrites(w), fn).toEqual([]);
     }
   });
 
@@ -344,11 +352,11 @@ describe('Apps Script: перед каждой записью — повторн
     const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 1 }));
     const t = w.sb.wbWriterTargetsOfSql_ as (s: string) => Array<{ dataset: string; table: string }>;
     expect(t('SELECT * FROM `p.wb_raw.RAW_WB_ORDERS`')).toEqual([]);
-    expect(t('INSERT INTO `p.wb_raw.INGEST_RUNS` (a) VALUES (1)')).toEqual([{ dataset: 'wb_raw', table: 'INGEST_RUNS' }]);
-    expect(t('MERGE `p.wb_raw.FINANCE_LOADER_RUNS` t USING (SELECT 1) s ON t.a=s.a')).toEqual([{ dataset: 'wb_raw', table: 'FINANCE_LOADER_RUNS' }]);
+    expect(t('INSERT INTO `p.wb_raw.INGEST_RUNS` (a) VALUES (1)')).toEqual([{ dataset: 'wb_raw', table: 'INGEST_RUNS', verb: 'INSERT' }]);
+    expect(t('MERGE `p.wb_raw.FINANCE_LOADER_RUNS` t USING (SELECT 1) s ON t.a=s.a')).toEqual([{ dataset: 'wb_raw', table: 'FINANCE_LOADER_RUNS', verb: 'MERGE' }]);
     expect(t("SELECT last_update FROM x WHERE note = 'deleted'")).toEqual([]);
-    expect(t('CREATE OR REPLACE VIEW `p.wb_raw.V_X` AS SELECT 1')).toEqual([{ dataset: 'wb_raw', table: 'V_X' }]);
-    expect(t('DELETE FROM `p.wb_ops.OTHER` WHERE TRUE')).toEqual([{ dataset: 'wb_ops', table: 'OTHER' }]);
+    expect(t('CREATE OR REPLACE VIEW `p.wb_raw.V_X` AS SELECT 1')).toEqual([{ dataset: 'wb_raw', table: 'V_X', verb: 'CREATE' }]);
+    expect(t('DELETE FROM `p.wb_ops.OTHER` WHERE TRUE')).toEqual([{ dataset: 'wb_ops', table: 'OTHER', verb: 'DELETE' }]);
   });
 });
 
@@ -397,7 +405,7 @@ describe('одновременные писатели на одном реест
     sleep: async () => {},
     makeOwnershipReader: (): OwnershipReader => ({ read: async () => { const r = reg(); if (r.fail) throw new Error('недоступен'); return { owner: r.owner, epoch: r.epoch, state: 'X' }; } }),
   });
-  const env = { GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', LOG_LEVEL: 'error', ENVIRONMENT: 'prod', GIT_SHA: 'sha' };
+  const env = { GCP_PROJECT_ID: 'p', BQ_RAW_DATASET: 'wb_raw', LOG_LEVEL: 'error', ENVIRONMENT: 'prod', GIT_SHA: 'sha', WRITER_GATE_STOCKS: '1' };
 
   for (const owner of ['APPS_SCRIPT', 'CLOUD_RUN', 'NONE'] as const) {
     it(`owner = ${owner}: пишет не больше одного писателя`, async () => {
@@ -464,5 +472,51 @@ describe('wbWriterGateStatus — только чтение', () => {
     expect(out.statistics).toMatch(/APPS_SCRIPT \/ epoch 2 — Apps Script пишет/);
     expect(out.ads).toMatch(/НЕДОСТУПНО/);
     expect(w.writes).toEqual([]);
+  });
+});
+
+
+describe('ревью #426: остатки, журналы, метки, запрещённые формы SQL', () => {
+  it('остатки (M1): без WB_WRITER_GATE_STOCKS gate не читает реестр и не мешает ручной процедуре', () => {
+    const w = makeWorld('gated', () => ({ owner: 'CLOUD_RUN', epoch: 3 }), { stocksGate: false });
+    const r = call(w, 'runWbStocksSnapshot', []);
+    expect(w.ownerReads).toBe(0);
+    expect(r.value).not.toMatchObject({ status: 'SKIPPED_FENCED' });
+    expect(w.writes.some((x) => x.startsWith('bq.'))).toBe(true);
+    const st = (w.sb.wbWriterGateStatus as () => Record<string, string>)();
+    expect(st.stocks).toMatch(/gate выключен/);
+  });
+
+  it('новая строка журнала (INSERT) после потери владения — запрещена; закрытие своей (UPDATE) — разрешено только с поколением входа', () => {
+    const fq = (t: string) => `\`test-proj.wb_raw.${t}\``;
+    const w = makeWorld('gated', (_s, n) => (n === 1 ? { owner: 'APPS_SCRIPT', epoch: 1 } : { owner: 'NONE', epoch: 2 }));
+    expect((w.sb.wbWriterGate_ as (s: string) => { allowed: boolean })('statistics').allowed).toBe(true);
+    const q = w.sb.ingestRunQuery_ as (s: string, p: unknown[]) => unknown;
+    expect(() => q(`INSERT INTO ${fq('INGEST_RUNS')} (run_id) VALUES ('x')`, [])).toThrow(/WRITER_NOT_OWNER/);
+    expect(() => q(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id='x'`, [])).not.toThrow();
+    // Без точки входа (ручной путь) закрыть «чужую» строку нельзя.
+    const m = makeWorld('gated', () => ({ owner: 'NONE', epoch: 2 }));
+    expect(() => (m.sb.ingestRunQuery_ as (s: string, p: unknown[]) => unknown)(`UPDATE ${fq('INGEST_RUNS')} SET status="ERROR" WHERE run_id='x'`, [])).toThrow(/WRITER_NOT_OWNER/);
+  });
+
+  it('запрос gate Apps Script несёт метку WRITER_GATE:AS:<поток>:v1 (доказательство для координатора)', () => {
+    const seen: string[] = [];
+    const w = makeWorld('gated', () => ({ owner: 'APPS_SCRIPT', epoch: 1 }));
+    const jobs = (w.sb.BigQuery as { Jobs: { query: (r: { query: string }) => unknown } }).Jobs;
+    const base = jobs.query;
+    jobs.query = (r: { query: string }) => { seen.push(r.query); return base(r); };
+    (w.sb.wbWriterGate_ as (s: string) => unknown)('finance');
+    expect(seen[0]).toMatch(/^\/\* WRITER_GATE:AS:finance:v1 \*\/ SELECT owner, CAST\(epoch AS STRING\) AS epoch FROM/);
+  });
+
+  it('в путях потоков нет форм записи мимо обёрток: copy-задания, LOAD DATA, EXECUTE IMMEDIATE, CALL', () => {
+    const outside = new Set(['WriterGate.gs', 'UnitkaR3Ingest.gs', 'Wbmarkingkizloader.gs']);
+    const bad: string[] = [];
+    for (const f of files) {
+      if (outside.has(f)) continue;
+      const code = source(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (/\bEXECUTE\s+IMMEDIATE\b|\bLOAD\s+DATA\b|['"`]\s*CALL\s|\bcopy\s*:\s*\{|\bextract\s*:\s*\{/i.test(code)) bad.push(f);
+    }
+    expect(bad).toEqual([]);
   });
 });

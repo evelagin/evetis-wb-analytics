@@ -13,7 +13,7 @@
  *
  * Этап C (OWNER ACK 11.11.2026) — writer-ownership gate. При ENVIRONMENT=prod загрузчик потока
  * (ownership/streams.ts: stocks, orders, sales, sales-reconcile, ads, ads-query, ads-costs-audit, finance,
- * finance-backfill, supplies, ref-sync) ДО lease и ДО handler читает владельца потока из
+ * finance-backfill, supplies, ref-sync; остатки — только при WRITER_GATE_STOCKS=1) ДО lease и ДО handler читает владельца потока из
  * wb_ops.INGEST_WRITER_OWNERSHIP:
  *   CLOUD_RUN → прогон идёт, epoch запоминается; перед COMPLETE в LOADER_RUNS — повторная проверка
  *               (WRITER_EPOCH_CHANGED → COMPLETE не пишется, строка закрывается ERROR);
@@ -32,7 +32,7 @@ import { BqManifestStore, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
 import type { ManifestKey, AcquireParams, ManifestStore } from './bq/runManifest.js';
 import type { LoaderContext, LoaderResult } from './loaders/types.js';
 import { classifyFailure, fatalRecord, type FailureClass } from './failure.js';
-import { streamOfLoader, DEFAULT_OWNERSHIP_DATASET } from './ownership/streams.js';
+import { gatedStreamOfLoader, DEFAULT_OWNERSHIP_DATASET } from './ownership/streams.js';
 import {
   BqOwnershipReader, checkWriterGate, makeWriterFence, WRITER_GATE_UNAVAILABLE, WRITER_NOT_OWNER,
   type GateDecision, type OwnershipReader, type WriterFence,
@@ -168,7 +168,7 @@ export async function runCli(
   // Этап C: writer-ownership gate — только prod и только загрузчики потоков; ДО DRY_RUN, lease и handler.
   // Неправообладатель не пишет ничего: ни данных, ни строки LOADER_RUNS (штатный skip, exit 0).
   let writerFence: WriterFence | undefined;
-  const stream = config.environment === 'prod' ? streamOfLoader(loaderName) : undefined;
+  const stream = config.environment === 'prod' ? gatedStreamOfLoader(loaderName, env) : undefined;
   if (stream) {
     let reader: OwnershipReader | undefined;
     let decision: GateDecision;

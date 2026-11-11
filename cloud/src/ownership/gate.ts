@@ -43,7 +43,8 @@ export class BqOwnershipReader implements OwnershipReader {
 
   async read(stream: Stream): Promise<OwnershipSnapshot | null> {
     const rows = await this.bq.query<{ owner?: unknown; epoch?: unknown; state?: unknown }>(
-      `SELECT owner, epoch, state FROM \`${this.bq.projectId}.${this.dataset}.${OWNERSHIP_TABLE}\` WHERE stream = @stream`,
+      // Метка — для координатора: по INFORMATION_SCHEMA.JOBS он доказывает, что prod-писатели под gate.
+      `/* WRITER_GATE:CR:${stream}:v1 */ SELECT owner, epoch, state FROM \`${this.bq.projectId}.${this.dataset}.${OWNERSHIP_TABLE}\` WHERE stream = @stream`,
       { stream },
       { stream: 'STRING' },
       { jobTimeoutMs: OWNERSHIP_READ_TIMEOUT_MS },
