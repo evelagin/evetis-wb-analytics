@@ -1,5 +1,19 @@
 # CHANGELOG.md
 
+## 2026-11-09 — Heldi: оповещения без лавины и с темой «Heldi», свежесть по 6 группам (поток E, НЕ применено)
+
+Замер 09.11 (только чтение): за STOP `eca0335a` политика STOP открыла 58 инцидентов и 58 писем (окно 10 мин, разрывы
+строк STOPPED до 133 мин); первое письмо дошло 05.11 22:04:49Z с темой «… on __missing__» во вкладку «Оповещения».
+`infra/tenant-monitoring`: окно STOP 10 мин → 3 ч; «нет завершений» 30 → 60 мин (25 ложных открытий за 30.10–05.11 → 0);
+свежесть — группы catalog, stocks, prices, finance, orders, ads (`expected_entities` → `freshness_groups`, один инцидент
+на группу), удержание 30 мин → 3 ч (сертификаты приходят раз в 23,6–24,5 ч); `documentation.subject` «Heldi …» у всех
+политик; имя политики H2 ≤ 100 байт. Ожидаемый консолидированный plan (#385 + #383): 18 to add, 5 to change, 0 to destroy.
+Дополнение 09.11 (A2, PR #404): `durable.tf` — 4 лог-метрики (`heldi_current_entity_status` с меткой на каждую из 8
+сущностей, `heldi_full_leaf_stop`, `heldi_full_local_stop_systemic`, `heldi_source_disappeared`) и 6 политик (UNKNOWN и
+PARTIAL CURRENT, WAITING_READ_RETRY подряд, локальный STOP листа, FULL закрыт, SOURCE_DISAPPEARED), выключены до
+выпуска #404 (`durable_daily_alerts`). Консолидированный plan: 28 to add, 5 to change, 0 to destroy; включение после
+#404 — 0 add / 7 change.
+
 ## 2026-11-09 — Heldi: реестр арендатора = установленный релиз контроллера + запрет отката контроллера планом (НЕ применено)
 
 Скрытая угроза (поток D, разобрано потоком E): `tenants/client_001/tenant.json` закреплял релиз `ba9d3d04`
@@ -139,6 +153,20 @@ Targeted apply #368 (run 39508087569) создал 7 лог-метрик и 4 he
 Изменение — только имена политики и условия `unitka_writer_config`. Новый тест: display_name всех политик и условий
 во всём `infra/terraform` (с подставленными переменными) ≤ 100 байт. Метрики, heartbeat-политики, три PromQL-запроса
 и пять прежних политик не меняются. Ожидаемый targeted plan — `4 to add, 0 to change, 0 to destroy`, все выключены.
+
+## 2026-10-27 — Heldi: облачное наблюдение контроллера (поток E, НЕ применено)
+
+Замена локального `observe_loop` (25.10 умер от протухшего gcloud-токена). Регламент — `docs/ops/HELDI_CLOUD_WATCH.md`.
+- `tools/heldi_watch/health.py` — Cloud Run Job `heldi-health-eval` (слой 2), только чтение: неразрешённые STOP через
+  `stop_acceptance`, CURRENT_CERT сегодняшних суток к 09:00 МСК, Scheduler, длительность и падения исполнений,
+  продвижение FULL. Вывод HEALTH (только при смене состояния) и HEARTBEAT; паузы и записи нет.
+  Образ — `FROM` точного образа контроллера (`tools/heldi_watch/Dockerfile`).
+- `infra/tenant-monitoring/watch.tf`: H2 (Traceback в stderr контроллера), H3 (тишина 20 мин, включается вторым apply),
+  SA `sa-heldi-watch` / `sa-heldi-watch-wake`, пользовательские роли `heldiWatchRead`, `heldiWatchData` (условие IAM на
+  ozon_raw/ref/tenant_ops/tenant_locks), `heldiWatchWake`; задание, Scheduler на паузе, 3 политики наблюдателя.
+  Только новые ресурсы; H1 STOP — существующая `controller_stopped`. Колонки и витрины не меняются.
+- CI: `tools/tests/test_tenancy_heldi_watch.py`, `infra/tenant-monitoring/tests/watch.tftest.hcl`, сборка образа
+  наблюдателя поверх CI-образа контроллера и проверка отказа без своей личности (`--network=none`).
 
 ## 2026-10-21 — PR-Mig1c: остатки WB в Cloud Run — T5, контроль T5/T6, детектор доступности (shadow, НЕ развёрнуто)
 

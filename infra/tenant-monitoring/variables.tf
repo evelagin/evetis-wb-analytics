@@ -36,17 +36,102 @@ variable "freshness_enabled" {
   default     = false
 }
 
-# Сущности, которые текущий контур обязан сертифицировать каждые сутки МСК
-# (tools/tenancy/current_policy.py ORDER). Реклама и FBO останутся в инциденте,
-# пока их загрузка не восстановлена: это правда о данных, а не ложная тревога.
-variable "expected_entities" {
-  description = "Сущности суточного контура, свежесть которых проверяется."
-  type        = list(string)
-  default = ["catalog", "stocks", "prices", "finance_accrual",
-  "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"]
+# Группы сущностей суточного контура МСК (tools/tenancy/current_policy.py ORDER), свежесть которых
+# проверяется: один инцидент на группу. Реклама и заказы (FBO) останутся в инциденте, пока их
+# загрузка не восстановлена: это правда о данных, а не ложная тревога (одно письмо на открытие).
+variable "freshness_groups" {
+  description = "Группа → сущности суточного контура (catalog, stocks, prices, finance, orders, ads)."
+  type        = map(list(string))
+  default = {
+    catalog = ["catalog"]
+    stocks  = ["stocks"]
+    prices  = ["prices"]
+    finance = ["finance_accrual"]
+    orders  = ["fbo_postings"]
+    ads     = ["ads_campaigns", "ads_expense_daily", "ads_sku_daily"]
+  }
   validation {
-    condition = length(var.expected_entities) > 0 && alltrue([for e in var.expected_entities : contains(
-    ["catalog", "stocks", "prices", "finance_accrual", "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"], e)])
-    error_message = "Только сущности суточного контура (current_policy.ORDER)."
+    condition = length(var.freshness_groups) > 0 && alltrue([for g, es in var.freshness_groups : can(regex("^[a-z_]+$", g)) && length(es) > 0 && alltrue([for e in es : contains(
+    ["catalog", "stocks", "prices", "finance_accrual", "ads_campaigns", "ads_expense_daily", "ads_sku_daily", "fbo_postings"], e)])])
+    error_message = "Только сущности суточного контура (current_policy.ORDER), непустые группы."
+  }
+}
+
+# Push-уведомления приложения Google Cloud (решение владельца 27.10: push + email).
+# Канал создаёт само приложение после входа владельца и выбора проекта mpa-t-client-001
+# (docs.cloud.google.com/monitoring/support/notification-options, «Google Cloud console Mobile App»);
+# API/Terraform его не создают. Здесь — только имя уже существующего канала.
+# null — как до 27.10: STOP и проверка доставки уходят только на почту.
+variable "owner_push_channel" {
+  description = "Канал мобильного приложения Google Cloud владельца (projects/<project>/notificationChannels/<id>)."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.owner_push_channel == null || can(regex("^projects/${var.project_id}/notificationChannels/[0-9]+$", var.owner_push_channel))
+    error_message = "Нужно полное имя канала уведомлений этого же проекта арендатора."
+  }
+}
+# ── Облачное наблюдение Heldi (watch.tf) ──
+variable "region" {
+  description = "Регион задания наблюдателя (как у контроллера)."
+  type        = string
+  default     = "europe-west1"
+  validation {
+    condition     = var.region == "europe-west1"
+    error_message = "Наблюдатель живёт рядом с контроллером: europe-west1."
+  }
+}
+
+# Образ собирается FROM образа живого контроллера (tools/heldi_watch/Dockerfile), только по digest.
+# null — слой 2 не создаётся (остаются сигналы слоя 1).
+variable "watch_image" {
+  description = "Образ heldi-health-eval по digest."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.watch_image == null || can(regex("^europe-west1-docker\\.pkg\\.dev/mpa-platform/mpa-runtime/heldi-health-eval@sha256:[0-9a-f]{64}$", var.watch_image))
+    error_message = "Только неизменяемый образ heldi-health-eval@sha256 из mpa-runtime; тег запрещён."
+  }
+}
+
+# Второй apply после ручного доверенного прогона: Scheduler снимается с паузы, включается сторож.
+variable "watch_active" {
+  description = "Регулярная оценка heldi-health-eval и сторож пульса."
+  type        = bool
+  default     = false
+}
+
+# Второй apply не раньше чем через 20 мин после создания метрики heldi_controller_status.
+variable "silence_alerts_enabled" {
+  description = "Включить политику H3 «контроллер молчит 20 мин»."
+  type        = bool
+  default     = false
+}
+
+# ── Локальные состояния A2 (durable.tf) ──
+# Включать только после выпуска образа #404 (durable daily): до него этих полей в логах нет.
+variable "durable_daily_alerts" {
+  description = "Включить политики локальных состояний A2: UNKNOWN/PARTIAL CURRENT, WAITING_READ_RETRY подряд, локальные STOP листьев FULL, SOURCE_DISAPPEARED."
+  type        = bool
+  default     = false
+}
+
+variable "hold_wakes" {
+  description = "Сколько пробуждений за 90 мин сущность держится UNKNOWN (без COMPLETE) до тревоги."
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.hold_wakes >= 3 && var.hold_wakes <= 20
+    error_message = "От 3 до 20."
+  }
+}
+
+variable "read_retry_streak" {
+  description = "Сколько WAITING_READ_RETRY за 90 мин без единого решения до тревоги."
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.read_retry_streak >= 3 && var.read_retry_streak <= 20
+    error_message = "От 3 до 20."
   }
 }

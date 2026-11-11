@@ -1,0 +1,52 @@
+# heldi-health-eval: Cloud Build image of the Heldi watch. OWNER ACK only (docs/ops/HELDI_CLOUD_WATCH.md §4, §7).
+# Context = exactly tools/heldi_watch of the reviewed commit (git archive), base = the live controller image by digest.
+# The image is deployed only by the digest this build prints (Terraform var.watch_image), never by tag.
+substitutions:
+  _CONTROLLER_IMAGE: ''          # europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:<64 hex>
+  _CONTROLLER_SOURCE_SHA: ''     # CONTROLLER_SOURCE_SHA of that live controller (40 hex)
+  _WATCH_SOURCE_SHA: ''          # commit whose tools/heldi_watch is built (40 hex)
+steps:
+  - id: pinned-inputs
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        [[ "${_CONTROLLER_IMAGE}" =~ ^europe-west1-docker\.pkg\.dev/mpa-platform/mpa-runtime/tenant-backfill-controller@sha256:[0-9a-f]{64}$ ]]
+        [[ "${_CONTROLLER_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+        [[ "${_WATCH_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+        test "$$(find . -type f | grep -v '^./tools/heldi_watch/' | wc -l)" = 0
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: [build, --build-arg, 'CONTROLLER_IMAGE=${_CONTROLLER_IMAGE}',
+           --label, 'org.opencontainers.image.revision=${_WATCH_SOURCE_SHA}',
+           --label, 'evetis.controller.source=${_CONTROLLER_SOURCE_SHA}',
+           -f, tools/heldi_watch/Dockerfile,
+           -t, 'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/heldi-health-eval:${_WATCH_SOURCE_SHA}', .]
+  - id: same-controller-code
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        got=$$(docker run --rm --network=none --entrypoint=cat europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/heldi-health-eval:${_WATCH_SOURCE_SHA} /app/CONTROLLER_SOURCE_SHA)
+        test "$$got" = "${_CONTROLLER_SOURCE_SHA}"
+  - id: fails-closed-without-identity
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        set +e
+        docker run --rm --network=none europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/heldi-health-eval:${_WATCH_SOURCE_SHA} > /workspace/watch.out
+        rc=$$?
+        set -e
+        cat /workspace/watch.out
+        test "$$rc" = 3
+        grep -q '"heldi_watch": "UNAVAILABLE"' /workspace/watch.out
+images:
+  - 'europe-west1-docker.pkg.dev/mpa-platform/mpa-runtime/heldi-health-eval:${_WATCH_SOURCE_SHA}'
+options:
+  logging: CLOUD_LOGGING_ONLY
+  sourceProvenanceHash: [SHA256]
+timeout: 900s
