@@ -376,7 +376,8 @@ def test_no_secrets_in_dro1_files():
 def test_terraform_wires_detector_and_policies_to_existing_channel():
     tf = TF_FILE.read_text(encoding="utf-8")
     assert 'resource "google_bigquery_dataset" "evetis_health"' in tf
-    assert "sp_evaluate_data_health" in tf and '"*/30 * * * *"' in tf
+    # 2026-11-10 (BQ_COST_AUDIT §9 п.3): каждые 6 ч со сдвигом сетки; было */30.
+    assert "sp_evaluate_data_health" in tf and '"0 4,10,16,22 * * *"' in tf
     assert "google_monitoring_notification_channel.unitka_email" in tf
     assert 'resource "google_monitoring_notification_channel"' not in tf  # канал не новый
     assert "google_project_iam_member" not in tf                          # только права на датасеты
@@ -396,4 +397,6 @@ def test_scheduler_is_enabled_after_gate_c():
     assert "ignore_changes" not in block  # состоянием паузы владеет Terraform, а не ручной resume
     assert '"Europe/Moscow"' in block
     assert "google_service_account.ops_health.email" in block  # личность — sa-ops-health
-    assert '"*/30 * * * *"' in block
+    assert '"0 4,10,16,22 * * *"' in block
+    # Окно сторожа пульса — больше шага детектора (6 ч), иначе тревога срабатывает между прогонами.
+    assert 'duration = "25200s"' in tf and "7 часов" in tf
