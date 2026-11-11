@@ -134,10 +134,12 @@ import {
 }
 
 # ── Cloud Scheduler ─────────────────────────────────────────────────────────
+# Live с 2026-10-09 — ежечасно 08–23 МСК (userUpdateTime Scheduler 2026-10-09T13:27Z); расхождение с Git
+# отмечено в docs/ops/UNITKA_ALERTS_ENABLE_2026-11.md. Код приведён к live, чтобы apply не сокращал опрос.
 resource "google_cloud_scheduler_job" "wb_comms_poll" {
   name             = "evetis-wb-poll"
   region           = var.region
-  schedule         = "0 8,11,14,17,20 * * *"
+  schedule         = "0 8-23 * * *"
   time_zone        = "Europe/Moscow"
   attempt_deadline = "180s"
 

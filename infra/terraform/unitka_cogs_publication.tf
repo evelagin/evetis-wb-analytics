@@ -80,7 +80,7 @@ resource "google_bigquery_table_iam_member" "unitka_cogs_pub_write" {
 resource "google_cloud_scheduler_job" "unitka_cogs_publication" {
   name      = "unitka-cogs-publication"
   region    = var.region
-  schedule  = "50 7-23 * * *"
+  schedule  = "50 9 * * *" # BQ cost 2026-11-10: раз в сутки перед Юниткой 10:00 (было ежечасно 07–23)
   time_zone = "Europe/Moscow"
 
   paused = false
