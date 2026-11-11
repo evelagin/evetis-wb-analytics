@@ -1,0 +1,19 @@
+attemptDeadline: 320s
+httpTarget:
+  body: eyJjb25maWd1cmF0aW9uIjp7ImxhYmVscyI6eyJldmV0aXMtam9iIjoiZXhlY3V0aXZlLXYyLWxheWVyIn0sInF1ZXJ5Ijp7InF1ZXJ5IjoiQ0FMTCBgd2JfbWFydC5zcF9idWlsZF9leGVjdXRpdmVfdjJfZGFpbHlgKCdzY2hlZHVsZXInKSIsInVzZUxlZ2FjeVNxbCI6ZmFsc2V9fX0=
+  headers:
+    Content-Type: application/json
+    User-Agent: Google-Cloud-Scheduler
+  httpMethod: POST
+  oauthToken:
+    scope: https://www.googleapis.com/auth/bigquery
+    serviceAccountEmail: sa-exec-v2-layer@project-fa311fc0-4d87-4781-986.iam.gserviceaccount.com
+  uri: https://bigquery.googleapis.com/bigquery/v2/projects/project-fa311fc0-4d87-4781-986/jobs
+lastAttemptTime: '2026-11-10T06:10:03.552933Z'
+name: projects/project-fa311fc0-4d87-4781-986/locations/europe-west1/jobs/executive-v2-layer-build
+schedule: 10 7-23 * * *
+scheduleTime: '2026-11-10T07:10:02.530415Z'
+state: ENABLED
+status: {}
+timeZone: Europe/Moscow
+userUpdateTime: '2026-10-09T11:06:33.833390Z'
