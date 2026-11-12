@@ -1,5 +1,31 @@
 # CHANGELOG.md
 
+## 2026-11-10 — M3: реклама WB в Cloud Run — загрузчики `ads` и `ads-costs-audit` (НЕ применено)
+
+Перенос `runWbAdsDaily` + `runWbAdsDailyCatchUp` и недельного аудита расходов из Apps Script.
+Design & code only: Terraform не применялся, Job не запускался, Apps Script не менялся, WB API не вызывался.
+- `cloud/src/loaders/ads/*` — `ads`: campaigns → costs (D−14…D−1) → fullstats (D−7…D−1); хвост Ads-3 + Ads-2 —
+  отдельный загрузчик `ads-query` (свой Job и `loader_name`), чтобы журнал `ads` закрывался до хвоста, как в эталоне.
+  Дедлайн обработчика: после него вызовы WB и их повторы не начинаются, исход пишется до таймаута Job'а.
+  Семантика, колонки и строки — как в Apps Script (replay-тест исполняет сам `runWbAdsDaily()` из `.gs`).
+  Журнал — `LOADER_RUNS`, `loader_name='ads'`, `logical_period` = D−1 МСК: гейт витрины видит его через
+  `V_INGEST_HEARTBEAT`. Итог OK/STALE → COMPLETE, PARTIAL/ERROR → ERROR `ADS_PARTIAL`/`ADS_ERROR`.
+- Схема RAW **не меняется**; новые таблицы — только теневые `RAW_WB_ADV_*__CR` (9 шт., зеркало живых схем).
+  Вью не создаются и не меняются; `wbAdsBqCreateViews()` не воспроизведена.
+- `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
+  `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
+- `infra/terraform/wb_ads_loader.tf` — свои SA `sa-wb-ads-{shadow,prod}`; Job'ы и Scheduler'ы `wb-ads`, `wb-ads-query`,
+  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Флаги по общей схеме M2–M5 (#423): весь shadow-контур —
+  под `var.m3_shadow_enabled`, весь prod-контур — под `var.m3_prod_enabled` (оба bool, default false; infra.yml ←
+  переменные репозитория `M3_SHADOW_ENABLED` / `M3_PROD_ENABLED`). Файл новый — в `origin/main` ни одного его ресурса нет.
+  Workflows: выкат prod — общий режим `deploy-prod.yml` `only_job=wb-ads` (#423), образ shadow — `deploy-shadow.yml`
+  (guarded), loader в scheduler-control.
+- Токен (общий `cloud/src/http/wbToken.ts`, #423) во всех трёх режимах до первого вызова WB: истёкший → `WB_ADS_TOKEN_EXPIRED`,
+  пустой → `WB_ADS_AUTH`, < 14 суток → warn `WB_TOKEN_EXPIRING_SOON`; HTTP 401/403 → `WB_ADS_AUTH` без повторов, источники
+  его не глотают. `DRY_RUN` — ровно `=== '1'`, как `cli.ts`. Тесты — `cloud/test/ads_token.test.ts`.
+- `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
+- Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
+
 ## 2026-11-10 — M2: заказы, продажи и ночная сверка продаж WB в Cloud Run (код, НЕ применено)
 
 Перенос `runWbOrdersIncremental`, `runWbSalesIncremental`, `runWbSalesNightReconcile` (Apps Script) в загрузчики

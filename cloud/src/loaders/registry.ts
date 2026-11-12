@@ -29,6 +29,8 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
+
 import { ordersLoader, salesLoader, salesReconcileLoader } from './statistics/index.js';
 import { statsSlot } from './statistics/common.js';
 
@@ -131,6 +133,17 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // M3 (перенос из Apps Script runWbAdsDaily + catch-up): имя 'ads' = INGEST_RUNS.loader_name — на него
+  // завязан freshness-гейт витрины (mart/bq.ts REQUIRED_LOADERS). Период D−1 МСК, как rng.to эталона.
+  // retryTransient НЕТ: повтор — следующим окном Scheduler (catch-up), с новым run_id и новым снапшотом.
+  ads: { handler: (ctx) => adsLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: хвост runWbAdsDaily (Ads-3 ставки + Ads-2 query stats) — свой loader_name, чтобы журнал 'ads'
+  // закрывался до хвоста (в эталоне ingestFinalizeByStatus_ шёл раньше Ads-3). Стартует после 'ads' того же D−1.
+  'ads-query': { handler: (ctx) => adsQueryLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: недельный аудит расходов ADSAUDIT_ (loadWbAdsCostsAudit). Отдельное имя: не «последняя попытка» 'ads'.
+  // Период — сегодня МСК: окно D−46…D−8 считается от сегодняшней даты, как wbAdsCostsRangeBack_.
+  'ads-costs-audit': { handler: (ctx) => adsCostsAuditLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now) },
+
   // M2 (перенос из Apps Script): заказы, продажи и ночная сверка продаж — statistics-api WB.
   // Имена 'orders'/'sales' = loader_name INGEST_RUNS: на них завязан гейт витрины (mart/bq.ts).
   // Повтор безопасен: watermark из таблицы + граничные ключи не дают дубля (statistics/index.ts).
