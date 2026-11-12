@@ -259,19 +259,20 @@ def _steps():
 
 
 def test_only_job_input_defaults_to_all():
+    # Состав режимов и охват каждого — tools/tests/test_deploy_prod_scope.py (общий PR защит выката).
     text, _ = _steps()
     block = text[text.index("      only_job:"):text.index("permissions:")]
-    assert 'default: "all"' in block and 'options: ["all", "wb-stocks-prod"]' in block
+    assert 'default: "all"' in block and '"wb-stocks-prod"' in block
 
 
 def test_default_mode_steps_unchanged_and_guarded():
     _, steps = _steps()
     deploy_all = [n for n, c, r in steps if "gcloud run jobs update" in r and c == "inputs.only_job == 'all'"]
     assert len(deploy_all) == 9
-    # ни один прежний шаг не работает в целевом режиме
+    # ни один прежний шаг не работает в режиме wb-stocks-prod
     for n, c, r in steps:
         if "gcloud run jobs update" in r and "wb-stocks-prod:" not in n:
-            assert c == "inputs.only_job == 'all'", n
+            assert c and "'wb-stocks-prod'" not in c, n
 
 
 def test_stocks_mode_touches_only_wb_stocks_prod_and_never_runs_or_schedules():
