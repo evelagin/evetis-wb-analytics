@@ -29,6 +29,8 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { ordersLoader, salesLoader, salesReconcileLoader } from './statistics/index.js';
+import { statsSlot } from './statistics/common.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -56,6 +58,20 @@ export interface LoaderSpec {
     changedDuringBuildCode: string;
   };
 }
+
+/**
+ * M2: guard загрузчиков statistics-api. Период — закрытые сутки D-1 МСК, как ingestClosedDayMsk_ у
+ * Apps Script: именно эту строку ждёт гейт витрины (V_INGEST_HEARTBEAT, LATEST-ATTEMPT). Но Apps Script
+ * пишет INGEST_RUNS КАЖДЫМ запуском (раз в 6 ч), а guard по одному периоду пропустил бы все запуски
+ * суток после первого COMPLETE. Поэтому «версией источника» служит часовой слот МСК: COMPLETE блокирует
+ * только повтор в том же часу; следующий слот — новый прогон того же D-1 (механизм source-aware guard
+ * витрины, cli.ts/runManifest.ts без изменений). Слот пишется в LOADER_RUNS.source_watermark.
+ */
+const STATS_SLOT_GUARD: NonNullable<LoaderSpec['sourceWatermark']> = {
+  probe: async () => statsSlot(),
+  probeFailureCode: 'STATS_SLOT_PROBE_FAILED',
+  changedDuringBuildCode: 'STATS_SLOT_CHANGED_DURING_RUN',
+};
 
 export const LOADERS: Record<string, LoaderSpec> = {
   noop: { handler: noopLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
@@ -115,6 +131,13 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // M2 (перенос из Apps Script): заказы, продажи и ночная сверка продаж — statistics-api WB.
+  // Имена 'orders'/'sales' = loader_name INGEST_RUNS: на них завязан гейт витрины (mart/bq.ts).
+  // Повтор безопасен: watermark из таблицы + граничные ключи не дают дубля (statistics/index.ts).
+  orders: { handler: (ctx) => ordersLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+  sales: { handler: (ctx) => salesLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+  // Сверка в INGEST_RUNS не писала; своё имя, чтобы её ERROR не стал LATEST-ATTEMPT для 'sales' в гейте.
+  'sales-reconcile': { handler: (ctx) => salesReconcileLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {
