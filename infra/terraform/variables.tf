@@ -55,6 +55,23 @@ variable "unitka_alert_email" {
   default     = ""
 }
 
+# M4 (финансы WB): единая схема включения контуров потоков M2–M5 (F4, #423) — ровно m4_shadow_enabled и
+# m4_prod_enabled, bool, default false. Значения ставит infra.yml из GitHub Variables M4_{SHADOW,PROD}_ENABLED
+# ('true' → true, не задана → false). По умолчанию нецелевой apply infra.yml не создаёт ни одного ресурса потока.
+variable "m4_shadow_enabled" {
+  description = "M4: создать shadow-контур финансов WB (5 таблиц __CR, sa-wb-finance-shadow, wb-finance-shadow, invoker, Scheduler). По ACK SHADOW потока (runbook §4)."
+  type        = bool
+  default     = false
+}
+
+# prod-контур wb-finance-prod (SA, права на боевые таблицы финансов, Job, invoker, Scheduler, алерт) — только на
+# cutover. Включение — docs/ops/MIG_FINANCE_RUNBOOK.md §5 (вечер cutover, отдельный ACK).
+variable "m4_prod_enabled" {
+  description = "M4: создать prod-контур финансов WB (wb-finance-prod). Только на cutover по ACK."
+  type        = bool
+  default     = false
+}
+
 # M2: стартовый watermark пустых теневых таблиц RAW_WB_ORDERS__CR / RAW_WB_SALES_RETURNS__CR
 # (форма API 'YYYY-MM-DDTHH:mm:ss'). Действует только в shadow и только пока в __CR нет API-строк;
 # после первой записи загрузчик берёт MAX(last_change_date) самой __CR. Значение задаёт владелец
