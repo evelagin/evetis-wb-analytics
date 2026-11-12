@@ -36,7 +36,12 @@ jobs:
       ONLY_JOB: ${{ inputs.only_job }}
       CONFIRM_ALL: ${{ inputs.confirm_all }}
     steps:
-      # Первый шаг, ДО выдачи токена sa-deployer: режим all без фразы подтверждения не идёт дальше.
+      # checkout ПЕРВЫМ шагом: actions/checkout очищает рабочий каталог и удалил бы файл учётных
+      # данных, который google-github-actions/auth кладёт туда же (инцидент 12.11.2026, PR #427).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # Затем, ДО выдачи токена sa-deployer: режим all без фразы подтверждения не идёт дальше.
       - name: "Guard: режим all — только с фразой подтверждения"
         run: |
           if [ "$ONLY_JOB" = "all" ] && [ "$CONFIRM_ALL" != "PROMOTE-ALL-PROD" ]; then
@@ -63,9 +68,6 @@ jobs:
           echo "digest ok: $DIGEST"
           # digest должен существовать в реестре
           gcloud artifacts docker images describe "$DIGEST" >/dev/null
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
       - name: "Охват выката: снимок всех Job'ов ДО (tools/deploy_scope_check.py)"
         id: scope_before
         run: |

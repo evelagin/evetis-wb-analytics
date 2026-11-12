@@ -152,13 +152,13 @@ run_attempts AS (
     FROM ads_query_stats_runs
   UNION ALL
   SELECT 'ads', run_id, started_at, completed_at, status
-    FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS` WHERE loader_name = 'ads'
+    FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_INGEST_HEARTBEAT` WHERE loader_name = 'ads'
   UNION ALL
   SELECT 'orders', run_id, started_at, completed_at, status
-    FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS` WHERE loader_name = 'orders'
+    FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_INGEST_HEARTBEAT` WHERE loader_name = 'orders'
   UNION ALL
   SELECT 'sales', run_id, started_at, completed_at, status
-    FROM `project-fa311fc0-4d87-4781-986.wb_raw.INGEST_RUNS` WHERE loader_name = 'sales'
+    FROM `project-fa311fc0-4d87-4781-986.wb_raw.V_INGEST_HEARTBEAT` WHERE loader_name = 'sales'
   UNION ALL
   -- 🔴 Остатки: журнал БОЕВОГО загрузчика (Apps Script), инвариант 11.
   --    Грейн строки = снимок, `snapshot_id` уникален (39/39 на 19.08.2026), NULL нет.
