@@ -174,9 +174,16 @@ describe('реестр: source-aware guard только у mart', () => {
     expect(LOADERS.mart.sourceWatermark!.probeFailureCode).toBe('MART_SOURCE_WATERMARK_PROBE_FAILED');
     expect(LOADERS.mart.sourceWatermark!.changedDuringBuildCode).toBe('MART_SOURCE_CHANGED_DURING_BUILD');
   });
-  it('у всех прочих загрузчиков (включая Ozon) его нет', () => {
+  // M2: загрузчики statistics-api используют тот же механизм со «слотом» вместо версии источника
+  // (registry.ts, STATS_SLOT_GUARD). Они пишут wb_raw.LOADER_RUNS, где колонка source_watermark есть.
+  it('у всех прочих загрузчиков (включая Ozon) его нет, кроме слотового guard M2', () => {
+    const STATS = new Set(['orders', 'sales', 'sales-reconcile']);
     for (const [name, spec] of Object.entries(LOADERS)) {
       if (name === 'mart') continue;
+      if (STATS.has(name)) {
+        expect(spec.sourceWatermark!.probeFailureCode, name).toBe('STATS_SLOT_PROBE_FAILED');
+        continue;
+      }
       expect(spec.sourceWatermark, name).toBeUndefined();
     }
   });
