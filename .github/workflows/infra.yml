@@ -34,6 +34,10 @@ env:
   # поведение прежнее (политики нет), а как только владелец её задаст — apply создаст
   # канал и обе политики, без правки кода.
   TF_VAR_unitka_alert_email: ${{ vars.UNITKA_ALERT_EMAIL }}
+  # M3 (реклама WB): prod-контур (sa-wb-ads-prod, IAM на боевые RAW_WB_ADV_*, Job'ы, Scheduler'ы, алерт)
+  # создаётся ТОЛЬКО при переменной репозитория M3_PROD_ENABLED=true — её ставит владелец на OWNER ACK
+  # M3-CUTOVER (docs/ops/MIG_ADS_RUNBOOK.md §7.3). Не задана → false → prod-ресурсов в плане нет.
+  TF_VAR_m3_prod_enabled: ${{ vars.M3_PROD_ENABLED == 'true' }}
 
 jobs:
   preflight:

@@ -11,9 +11,9 @@ on:
         description: "SHA коммита, из которого собран этот образ (из summary deploy-shadow)"
         required: true
       only_job:
-        description: "Mig1b-0: all — прежний промоушен во все prod-Job'ы; wb-stocks-prod — ТОЛЬКО этот Job, с боевым env остатков и readback (остальные не трогаются)"
+        description: "all — промоушен во все prod-Job'ы; wb-stocks-prod — ТОЛЬКО остатки (Mig1b-0); wb-statistics / wb-ads / wb-finance / wb-supplies-ref — ТОЛЬКО Job'ы своего потока миграции (cutover по своему ACK)"
         type: choice
-        options: ["all", "wb-stocks-prod"]
+        options: ["all", "wb-stocks-prod", "wb-statistics", "wb-ads", "wb-finance", "wb-supplies-ref"]
         default: "all"
 
 permissions:
@@ -178,6 +178,66 @@ jobs:
           else
             echo "::warning title=wb-promo-prod::Job ещё не создан Terraform'ом — шаг пропущен"
           fi
+      - name: Deploy wb-orders-prod + wb-sales-prod + wb-sales-reconcile-prod (тот же digest)
+        # M2 (заказы/продажи/сверка). Job'ов нет, пока Terraform не применён с m2_prod_enabled=true — шаг только
+        # предупреждает. Боевые имена таблиц выставлены Terraform на CREATE; загрузчик сам отказывает при другом
+        # контуре (statistics/targets.ts). Scheduler не включается.
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-statistics'
+        run: |
+          for JOB in wb-orders-prod wb-sales-prod wb-sales-reconcile-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: Deploy wb-finance-prod (тот же digest)
+        # M4 (финансы). Job'а нет, пока Terraform не применён с finance_prod_enabled=true. Scheduler не включается.
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-finance'
+        run: |
+          if gcloud run jobs describe wb-finance-prod --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update wb-finance-prod \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${DIGEST}" \
+              --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+          else
+            echo "::warning title=wb-finance-prod::Job ещё не создан Terraform'ом — шаг пропущен"
+          fi
+      - name: Deploy wb-ads-prod + wb-ads-query-prod + wb-ads-costs-audit-prod (тот же digest)
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-ads'
+        # M3 (реклама). Тот же образ, dispatch args[0]=ads / ads-query / ads-costs-audit. Job'ов нет, пока
+        # Terraform не применён с m3_prod_enabled=true — шаг тогда только предупреждает. Пропуск оставил бы Job на
+        # bootstrap hello (урок PR-1). Боевые имена RAW_WB_ADV_* выставлены Terraform на CREATE; загрузчик
+        # сам отказывает при любом другом контуре. Шаг НЕ включает Scheduler (оба PAUSED до OWNER ACK M3).
+        run: |
+          for JOB in wb-ads-prod wb-ads-query-prod wb-ads-costs-audit-prod; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=$JOB::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: Deploy wb-supplies-prod и ref-sync-prod (тот же digest)
+        if: inputs.only_job == 'all' || inputs.only_job == 'wb-supplies-ref'
+        # M5: Job'ы создаёт Terraform; расписания — PAUSED до cutover (снятие триггеров Apps Script).
+        # Без этого шага Job остался бы на bootstrap hello, который выходит с 0 и ничего не грузит.
+        run: |
+          for JOB in wb-supplies-prod ref-sync-prod; do
+            if gcloud run jobs describe "${JOB}" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "${JOB}" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${DIGEST}" \
+                --update-env-vars IMAGE_DIGEST="${DIGEST}",GIT_SHA="${SOURCE_GIT_SHA}"
+            else
+              echo "::warning title=${JOB}::Job ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy wb-funnel-prod (отдельным шагом — у него свой секрет)
         if: inputs.only_job == 'all'
         # UNITKA 2.0 R6/R7. Воронка ходит в WB под ОТДЕЛЬНЫМ токеном WB_TOKEN_REPORTS
