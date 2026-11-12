@@ -68,6 +68,11 @@
       "semantic_class": "GENERIC_DERIVED"
     },
     {
+      "dataset": "ozon_mart",
+      "name": "FACT_OZON_ACCRUAL_DAILY",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
       "dataset": "tenant_ops",
       "name": "V_TENANT_STATE_CURRENT",
       "semantic_class": "GENERIC_DERIVED"
@@ -170,6 +175,21 @@
     {
       "dataset": "tenant_ops",
       "name": "V_TENANT_STATE_AUDIT",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "store_pnl_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "return_logistics_daily",
+      "semantic_class": "GENERIC_DERIVED"
+    },
+    {
+      "dataset": "analytics_share",
+      "name": "stock_daily",
       "semantic_class": "GENERIC_DERIVED"
     }
   ]

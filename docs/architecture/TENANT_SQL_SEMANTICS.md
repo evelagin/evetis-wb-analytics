@@ -39,6 +39,7 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `ozon_mart.FACT_OZON_SALES_DAILY` | GENERIC_DERIVED | сутки заказа × SKU | заказы и их текущий исход; пустая цена или количество — сумма NULL |
 | `ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY` | GENERIC_DERIVED | сутки заказа × SKU (доставленные) | выручка продавца, комиссия и расходы со знаком Ozon, себестоимость с покрытием; результат только при полных данных |
 | `ozon_mart.FACT_OZON_STORE_COSTS_DAILY` | GENERIC_DERIVED | сутки начисления × класс × уровень × SKU | все начисления вне экономики доставленных: магазин, товар, недоставленные и незагруженные отправления |
+| `ozon_mart.FACT_OZON_ACCRUAL_DAILY` | GENERIC_DERIVED | сутки начисления × вид строки × уровень × SKU | все начисления: выручка и комиссия продажи экономических блоков + классы начислений; результат магазина по дате начисления (неизвестная выручка — NULL, не 0) |
 | `tenant_ops.V_TENANT_STATE_CURRENT` | GENERIC_DERIVED | арендатор | событие автомата с наибольшим `seq` (не последнее по времени, T5); `journal_status` OK / GAP / DUPLICATE / NO_SEQ |
 | `tenant_ops.V_SELLER_BINDING_STATUS` | GENERIC_DERIVED | API | BOUND / UNBOUND / MISMATCH / NOT_OBSERVED / INVALID_BINDING |
 | `tenant_ops.V_ENTITY_COVERAGE` | GENERIC_DERIVED | сущность | дни по статусам полноты |
@@ -57,6 +58,9 @@ P1–P8: `tools/tenancy/sql_package.py`.
 | `analytics_share.price_history` | MARKETPLACE_FACT | дата снимка × offer_id | цены продавца со дня первого снимка |
 | `analytics_share.profitability_daily` | GENERIC_DERIVED | сутки заказа × SKU | вклад до/после себестоимости; только при полных начислениях с суток заказа |
 | `analytics_share.store_costs_daily` | GENERIC_DERIVED | сутки × класс × уровень | начисления вне доставленных заказов (магазин, отмены, вне истории) |
+| `analytics_share.store_pnl_daily` | GENERIC_DERIVED | сутки начисления × вид строки × уровень | результат магазина до себестоимости по дате начисления (все начисления) |
+| `analytics_share.return_logistics_daily` | GENERIC_DERIVED | сутки начисления × SKU × уровень | обратная логистика: признак возврата после выкупа / невыкупа (не число возвратов) |
+| `analytics_share.stock_daily` | GENERIC_DERIVED | снимок × SKU | история остатков FBO по снимкам (без реконструкции дней без снимка) |
 | `analytics_share.data_coverage` | GENERIC_DERIVED | сущность × сутки | полнота: «ноль» против «нет данных» |
 | `analytics_share.inventory_cover` | GENERIC_DERIVED | SKU (последний снимок) | запас в днях: остаток ÷ чистые заказы за 14 полных суток; статусы остатков и скорости (T6) |
 | `analytics_share.data_freshness` | GENERIC_DERIVED | сущность | свежесть: последние полные сутки, отставание, дни по статусам за 30 суток; неоценённая сущность — UNKNOWN (T6) |
