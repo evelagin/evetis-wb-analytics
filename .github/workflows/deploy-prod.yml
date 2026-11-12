@@ -30,6 +30,12 @@ jobs:
       DIGEST: ${{ inputs.image_digest }}
       SOURCE_GIT_SHA: ${{ inputs.source_git_sha }}
     steps:
+      # checkout ПЕРВЫМ шагом: actions/checkout очищает рабочий каталог и удалил бы файл учётных
+      # данных, который google-github-actions/auth кладёт туда же (инцидент 12.11.2026: pre-check
+      # wb-stocks-prod упал на «Failed to load credential file» — fail-closed, ни один Job не изменён).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
@@ -194,10 +200,6 @@ jobs:
       # таблицы остатков. НЕ запускает Job, НЕ трогает Scheduler (у sa-deployer нет Scheduler Admin),
       # НЕ меняет args (их владелец — Terraform). Readback валит выкат, если изменился любой другой Job.
       # Порядок применения — docs/ops/MIG1B0_STOCKS_PROD_PREP.md, только по OWNER ACK MIG1B.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: inputs.only_job == 'wb-stocks-prod'
-        with:
-          persist-credentials: false
       - name: "wb-stocks-prod: pre-check — digest = образ wb-stocks-shadow, происхождение образа, контур prod; снимок всех Job'ов"
         if: inputs.only_job == 'wb-stocks-prod'
         run: |
