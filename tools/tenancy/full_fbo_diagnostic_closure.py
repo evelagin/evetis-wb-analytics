@@ -225,6 +225,12 @@ def automatic(b,doc,receipt):
     if len(rows)!=1:return None
     diag=parse(rows[0]['evidence_json']).get('fbo_window_validation',{})
     if diag.get('validation_class') not in CLASSES:return None
+    # The owner paused the tick during this wake (STOP bf7d1370 class): decline BEFORE the local STOP. The cloud
+    # observation below requires the tick ENABLED, so a STOP written now could not be closed and would stay a root
+    # STOP. Nothing is written; the receipt stays open and the first wake after resume repeats this exact path.
+    o=b.c['orchestration'];base,_=BF.resources(b.c);ss=b.request('GET',BF.SCHED_API+'/'+base+'/jobs?pageSize=100')
+    tick=[z for z in ss.get('jobs',[]) if z['name'].rsplit('/',1)[-1]==o['scheduler']['name']]
+    if len(tick)==1 and BF.owner_paused_tick(o,tick[0]):BF.dedicated_scheduler(o,tick[0],dispatch=True)
     records=b.store.history(m['hash']);item=next(r['payload'] for r in records if r['kind']=='CHUNK_PLAN' and r['sequence']==b.index)
     sh=b.store.history(item['shard_root']);rc=next(r for r in sh if r['kind']=='DISPATCH_RECEIPT' and r['payload']['receipt']==receipt)
     intent=next(r for r in sh if r['kind']=='DISPATCH_INTENT' and r['sequence']==rc['sequence'])

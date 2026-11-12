@@ -153,12 +153,12 @@ def evidence_readers_check():
         assert CI.ledger(SimpleNamespace(c={},tables=None))==(rows,False) and seen
     day='2026-10-23';p={'hash':'a'*64}
     def items(*specs):return {e:{'shard':'s-'+e} for e,_ in specs}
-    from tools.tenancy import finance_catchup as FC
-    def run(specs,catchup=()):
+    from tools.tenancy import finance_catchup as FC, fbo_refresh as FBR, ads_catchup as AC
+    def run(specs,catchup=(),refresh=()):
         hist={'s-'+e:h for e,h in specs}
         b=SimpleNamespace(store=SimpleNamespace(history=lambda shard,**k:hist[shard]))
         with patched(CUR,'policy',lambda _b:p),patched(CUR,'cycles',lambda _b,_p:{day:{}}),patched(CUR,'plans',lambda _b,_p,_d:([],items(*specs))),\
-             patched(FC,'receipts',lambda _b,_p:list(catchup)):
+             patched(FC,'receipts',lambda _b,_p:list(catchup)),patched(FBR,'receipts',lambda _b,_p:list(refresh)),patched(AC,'receipts',lambda _b,_p:[]):
             return CI.current_receipt(b,'bf-cur',346)
     def series(run_id='bf-cur',g=346,reconciled=False):
         h=[rec('s','DISPATCH_INTENT',1,{}),rec('s','DISPATCH_RECEIPT',1,{'receipt':{'run_id':run_id,'lease_generation':g}})]
@@ -172,6 +172,8 @@ def evidence_readers_check():
     assert run([],catchup=[held]) is True                                            # open finance catch-up day holds it
     assert run([('catalog',series())],catchup=[held]) is False                       # never two holders
     assert run([],catchup=[dict(held,lease_generation=345)]) is False
+    assert run([],refresh=[held]) is True                                            # open owner FBO refresh unit holds it
+    assert run([],catchup=[held],refresh=[held]) is False                            # never two holders
     return 'PASS'
 
 
@@ -197,27 +199,44 @@ def gate_check():
 
 
 def wake_check():
-    """Admitted mode: CURRENT only; no FULL drain, leaf or dispatch, no T5 repair; result names the local STOP."""
+    """Admitted mode. S4: no FULL drain, leaf or dispatch, no T5 repair while the local STOPs are systemic
+    (more than MAX_LOCAL_FULL_LEAVES). A2: up to that bound only the stopped leaves are skipped and FULL
+    continues in priority order; the T5 repair stays off and CURRENT still runs first."""
     from tools.tenancy import full_controller as H,full_fbo_diagnostic_closure as LQ,controller_cadence as CC,current_controller as CUR,recent_priority as RP
-    m,plans=leaves();calls=[]
+    from tools.tenancy import durable_daily as DD
+    m,plans=leaves();calls=[];leafs=[]
     base=SimpleNamespace(store=SimpleNamespace(history=lambda root:[rec(m['hash'],'FULL_MANIFEST',0,m),leaf_stop(m,465)]))
     def forbidden(name):
         def f(*a,**k):raise AssertionError(name+' in admitted mode')
         return f
-    def run(admission,current):
-        with patched(H,'only_manifest',lambda r:m),patched(H,'Backend',lambda b,mm:SimpleNamespace(clock=lambda:NOW,store=base.store)),\
+    systemic=list(range(10,11+DD.MAX_LOCAL_FULL_LEAVES))
+    def run(admission,current,*,open_queue=False):
+        full=SimpleNamespace(clock=lambda:NOW,store=base.store,state=lambda doc:{'progress':{}})
+        def leaf(b,mm,i,item,records,**k):
+            leafs.append(i);return {'status':'DISPATCHED','source_dispatches':1,'index':i},b
+        queue=dict(load=(lambda *a:None) if open_queue else forbidden('FULL queue'),
+                   leaf=leaf if open_queue else forbidden('leaf_wake'))
+        with patched(H,'only_manifest',lambda r:m),patched(H,'Backend',lambda b,mm:full),\
              patched(H,'verify_authority',lambda *a:None),patched(CC,'acquire',lambda b:None),patched(H,'historical_gate',lambda *a:(None,admission)),\
              patched(H,'completed',lambda *a:{}),patched(H,'reconstruct_plans',lambda *a:plans),patched(H,'repair_t5_completions',lambda *a:calls.append('repair')),\
-             patched(CUR,'wake',lambda *a:current),patched(RP,'load',forbidden('FULL queue')),patched(H,'leaf_wake',forbidden('leaf_wake')),patched(H,'_dispatch',forbidden('dispatch')):
-            return H.wake(base,m['hash'])[0]
+             patched(CUR,'wake',lambda *a:current),patched(CUR,'catalog_current',lambda *a:{'catalog':'certified'}),\
+             patched(RP,'load',queue['load']),patched(RP,'ordered',lambda *a:[465,10]),\
+             patched(H,'leaf_wake',queue['leaf']),patched(H,'_dispatch',forbidden('dispatch')):
+            return H.wake(base,m['hash'])[0],full
+    many={'admitted':True,'local_full_leaves':systemic}
+    assert run(many,None)[0]=={'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP','local_full_leaves':systemic} and not calls
+    assert run(many,{'status':'DISPATCHED','source_dispatches':1})[0]=={'status':'DISPATCHED','source_dispatches':1} and not calls
     adm={'admitted':True,'local_full_leaves':[465]}
-    assert run(adm,None)=={'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP','local_full_leaves':[465]} and not calls
-    assert run(adm,{'status':'DISPATCHED','source_dispatches':1})=={'status':'DISPATCHED','source_dispatches':1} and not calls
+    assert run(adm,{'status':'DISPATCHED','source_dispatches':1},open_queue=True)[0]=={'status':'DISPATCHED','source_dispatches':1} and not leafs   # CURRENT first
+    result,full=run(adm,None,open_queue=True)
+    assert result=={'status':'DISPATCHED','source_dispatches':1,'index':10} and leafs==[10] and not calls,(result,leafs)   # 465 skipped, never re-dispatched
+    assert full.local_full_leaves==[465]
     return 'PASS'
 
 
 def selection_check():
     from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
+    from tools.tenancy import ads_catchup as AC,current_ads as ADS,fbo_refresh as FBR
     day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
     def item(e):return {'day':day.isoformat(),'policy_hash':p['hash'],'plan':{'ack_hash':e,'runtime_plan':{'entity':e,'from':'2026-10-22'}},'shard':'s-'+e}
     def run(certified=(),partial=(),pending=None):
@@ -233,7 +252,9 @@ def selection_check():
         with patched(CUR,'policy',lambda b:p),patched(CC,'ensure',lambda b:None),patched(RP,'pending_receipts',lambda *a:[]),\
              patched(CUR,'cycles',lambda b,pp:{day.isoformat():{}}),patched(CUR,'plans',lambda b,pp,d:(records,items)),\
              patched(CUR,'validate_certificate',lambda *a:a[3]),patched(CUR,'Backend',lambda *a:None),patched(CUR,'source_tick',tick),\
-             patched(DIAG,'queued',lambda b:None),patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
+             patched(DIAG,'queued',lambda b:None),patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None),\
+             patched(AC,'scan',lambda *a,**k:{'authorities':[],'pending':[],'next':None,'halted':None}),patched(ADS,'qualified',lambda b:False),\
+             patched(FBR,'scan',lambda *a:{'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
             result=CUR.wake(base,[],{},{},set())
         assert result is None if not pending else result['status']=='WAITING'
         return ticks
@@ -251,6 +272,7 @@ def diagnostic_token_check():
     No BFDQUEUE/BFDA read, no BFDC claim, no RunJob/source POST and no new STOP; CURRENT continues.
     Without a local STOP the queue is consulted exactly as before."""
     from tools.tenancy import current_controller as CUR,current_policy as P,controller_cadence as CC,recent_priority as RP,fbo_diagnostic_owner as DIAG,finance_catchup as FC
+    from tools.tenancy import ads_catchup as AC,current_ads as ADS,fbo_refresh as FBR
     from tools.tenancy import full_controller as H,stop_acceptance as SA,full_leaf_recovery as FL,full_first_receipt_recovery as FRR
     day=NOW.astimezone(BF.B.MSK).date();p={'hash':'a'*64,'first_day':'2026-10-14','fbo_contract_hash':None}
     writes=[];reads=[];ticks=[]
@@ -270,7 +292,9 @@ def diagnostic_token_check():
              patched(CUR,'source_tick',lambda b,pp,d,it:ticks.append(it['plan']['runtime_plan']['entity']) or {'status':'WAITING','source_dispatches':0}),\
              patched(DIAG,'policy',lambda *a,**k:(_ for _ in ()).throw(AssertionError('diagnostic permission read'))),\
              patched(DIAG,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('diagnostic dispatched'))),\
-             patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None):
+             patched(FC,'scan',lambda *a:{'pending':[]}),patched(FC,'wake',lambda *a:None),\
+             patched(AC,'scan',lambda *a,**k:{'authorities':[],'pending':[],'next':None,'halted':None}),patched(ADS,'qualified',lambda b:False),\
+             patched(FBR,'scan',lambda *a:{'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
             try:result=CUR.wake(base,[],{},{},set())
             except AssertionError as e:result={'refused':str(e)}
         return result,commits

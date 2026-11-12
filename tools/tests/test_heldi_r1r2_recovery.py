@@ -17,6 +17,14 @@ from tools.tenancy.heldi_r1r2_image_check import sample_r1, sample_r2, check
 from pipelines.ozon.runtime import full_resume as FR
 
 
+@pytest.fixture(scope='module', autouse=True)
+def _historical_runtime():
+    """Frozen production incident: replay it with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        yield
+
+
 class Crash(Exception):
     pass
 

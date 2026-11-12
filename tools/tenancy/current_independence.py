@@ -104,7 +104,7 @@ def lease_state(b,rows):
 
 def current_receipt(b,run_id,generation):
     """True when the held lease belongs to the receipted, not yet reconciled run of exactly one CURRENT
-    shard or owner finance catch-up shard (both drained first by the CURRENT wake)."""
+    shard or owner finance/ads catch-up shard (all drained first by the CURRENT wake)."""
     from datetime import date
     from tools.tenancy import current_controller as CURRENT
     p=CURRENT.policy(b)
@@ -122,8 +122,13 @@ def current_receipt(b,run_id,generation):
             rc=receipt[0]['payload']['receipt']
             if rc.get('run_id')==run_id and rc.get('lease_generation')==generation:found+=1
     # An open owner finance catch-up day is drained by the same CURRENT wake before new work.
-    from tools.tenancy import finance_catchup as FC
+    from tools.tenancy import finance_catchup as FC,ads_catchup as AC
     found+=sum(1 for rc in FC.receipts(b,p) if rc.get('run_id')==run_id and rc.get('lease_generation')==generation)
+    # An open owner ads catch-up day likewise (current_ads; drained by the same wake).
+    found+=sum(1 for rc in AC.receipts(b,p) if rc.get('run_id')==run_id and rc.get('lease_generation')==generation)
+    # An open owner FBO refresh unit likewise.
+    from tools.tenancy import fbo_refresh as FBR
+    found+=sum(1 for rc in FBR.receipts(b,p) if rc.get('run_id')==run_id and rc.get('lease_generation')==generation)
     return found==1
 
 

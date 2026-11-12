@@ -60,10 +60,34 @@ def document(p, day, entity, *, make_plan=None):
     return make_plan(p['tenant'],entity,w['from_date'],w['to_date'],generation(p,day,entity),
         p['created_at'],today=day,max_units=20,window_days=1)
 
-def validate_document(p, day, doc, *, make_plan=None):
+def original_runtime(p, doc):
+    """The same plan pinned to the policy's ORIGINAL runtime pair (succession read-back only).
+
+    Plans elected before an owner runtime succession carry the original runtime image and
+    implementation hash. Business scope, budgets and namespace are unchanged; only the
+    runtime pin is re-derived, then plan_id and ack_hash are recomputed exactly as made.
+    """
+    rp={k:v for k,v in doc['runtime_plan'].items() if k!='plan_id'}
+    rp['implementation_hash']=p['runtime_implementation_hash'];rp['plan_id']=D.digest(rp)
+    out={k:v for k,v in doc.items() if k!='ack_hash'}
+    out.update(runtime_plan=rp,image=p['runtime_image']);out['ack_hash']=D.digest(out)
+    return out
+
+def validate_document(p, day, doc, *, make_plan=None, historical=True):
+    """Live plan, or (read-back only) the same plan pinned to the original runtime pair.
+
+    Without a runtime succession both forms are identical. A historical-pair plan is never
+    accepted for dispatch (historical=False): it may only be read, certified or drained.
+    """
     entity=doc.get('runtime_plan',{}).get('entity') if isinstance(doc,dict) else None
-    if document(p,day,entity,make_plan=make_plan)!=doc:fail('current plan/window/budget differs')
-    return True
+    expected=document(p,day,entity,make_plan=make_plan)
+    if expected==doc:return True
+    # Only a plan actually pinned to the policy's original runtime (and differing from the live one)
+    # is re-derived; without a succession the two pins are equal and nothing else is accepted.
+    pin=doc.get('runtime_plan',{}).get('implementation_hash') if isinstance(doc,dict) else None
+    if (historical and pin==p['runtime_implementation_hash']!=expected['runtime_plan'].get('implementation_hash')
+            and original_runtime(p,expected)==doc):return True
+    fail('current plan/window/budget differs')
 
 def eligible(p, certificates, *, pending_entities=()):
     """P0 independent work before P1; unknown FBO never stalls Seller snapshots.

@@ -220,7 +220,7 @@ def test_wake_budget_release_requires_its_in_image_proof():
     from tools.tenancy import orchestration_contract as O, tenant_backfill as BF
     release = installed_release()
     with_flag = dict(release, controller_wake_budget_version=1)
-    c = BF.target('client_001')
+    c = O.historical_contract(BF.target('client_001'), release)   # the installed release with its own runtime pair
     settings = dict(release=release['source_sha'], root_hash='bb3ceca51ec5add6fe6fa3af8ec3720fbb5d9b07054b84e26d6bbfd6c8824222', scheduler_state='PAUSED')
     with pytest.raises(ValueError, match='gates not PASS'):
         O.block(c, settings, BF.REPO, with_flag)                       # flag without the adapter proof
@@ -431,6 +431,11 @@ def test_current_entity_loop_ends_on_a_budget_handoff(monkeypatch):
     monkeypatch.setattr(CUR, 'source_tick', lambda b, p, d, item: ticks.append(item) or WB.handoff('DISPATCH'))
     from tools.tenancy import finance_catchup as FC                                              # no owner catch-up scope
     monkeypatch.setattr(FC, 'scan', lambda *a: {'pending': []}); monkeypatch.setattr(FC, 'wake', lambda *a: None)
+    from tools.tenancy import ads_catchup as AC, current_ads as ADS                                # no ads scope, ads not in CURRENT
+    monkeypatch.setattr(AC, 'scan', lambda *a, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None})
+    monkeypatch.setattr(ADS, 'qualified', lambda b: False)
+    from tools.tenancy import fbo_refresh as FBR                                                 # no owner FBO refresh scope
+    monkeypatch.setattr(FBR, 'scan', lambda *a: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]})
     base = SimpleNamespace(clock=lambda: NOW, store=SimpleNamespace(history=lambda *a, **k: []), state=lambda doc: {'progress': {}})
     result = CUR.wake(base, [], {}, {}, set())
     assert result['basis'] == 'WAKE_BUDGET_DISPATCH' and len(ticks) == 1

@@ -279,6 +279,7 @@ def scope_check():
 def order_check():
     """CURRENT.wake: open catch-up drained first; new catch-up work only after today's CURRENT."""
     from tools.tenancy import controller_cadence as CC, recent_priority as RP, fbo_diagnostic_owner as DIAG
+    from tools.tenancy import ads_catchup as AC, current_ads as ADS, fbo_refresh as FBR
     c, m, p, a = fixture(); day = NOW.astimezone(K.MSK).date()
     def item(e): return {'day': day.isoformat(), 'policy_hash': p['hash'], 'plan': {'ack_hash': e, 'runtime_plan': {'entity': e, 'from': '2026-10-24'}}, 'shard': 's-' + e}
     def run(*, certified=(), partial=(), current_pending=None, catchup=None):
@@ -294,7 +295,9 @@ def order_check():
              patched(CUR, 'validate_certificate', lambda *x: x[3]), patched(CUR, 'Backend', lambda *x: None), \
              patched(CUR, 'source_tick', lambda b, pp, d, it: calls.append(it['plan']['runtime_plan']['entity']) or {'status': 'WAITING', 'source_dispatches': 0}), \
              patched(DIAG, 'queued', lambda b: None), patched(FC, 'scan', lambda b, pp, fin: seen.append(fin) or scope), \
-             patched(FC, 'Backend', lambda *x: None), patched(FC, 'tick', lambda b, aa, d, it: calls.append('catchup:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}):
+             patched(FC, 'Backend', lambda *x: None), patched(FC, 'tick', lambda b, aa, d, it: calls.append('catchup:' + d.isoformat()) or {'status': 'DISPATCHED', 'source_dispatches': 1}), \
+             patched(AC, 'scan', lambda *x, **k: {'authorities': [], 'pending': [], 'next': None, 'halted': None}), patched(ADS, 'qualified', lambda b: False), \
+             patched(FBR, 'scan', lambda b, pp: {'authorities':[],'pending':[],'next':None,'halted':None,'complete':0,'partial':[],'receipts':[],'dispatches_today':0,'today_daily':None,'today_incidents':[]}):
             result = CUR.wake(base, [], {}, {}, set())
         return calls, result, seen
     open_scope = {'authorities': ['a'], 'pending': [(a, date(2026, 10, 8), {'plan': {}})], 'next': None, 'halted': None}
@@ -321,6 +324,7 @@ def release_check():
     from tools.tenancy.validation import parse_tenant_json
     rel = parse_tenant_json((BF.REPO / 'infra/tenant/releases/backfill/2253a311871fb4a3b9e4644d5c5de9f18d37a407.json').read_text())
     settings = {'release': rel['source_sha'], 'root_hash': env['BACKFILL_ROOT_HASH'], 'scheduler_state': 'ENABLED'}
+    c = O.historical_contract(c, rel)   # the registered release is checked with its own runtime pair
     ok = dict(rel, finance_catchup_version=1, verification=dict(rel['verification'], finance_catchup_adapter='PASS'))
     assert O.block(c, settings, BF.REPO, release=ok)['job']['env']['CURRENT_DATA_MODE'] == K.TYPE
     for bad in (dict(ok, finance_catchup_version=2), dict(ok, finance_catchup_version=True),

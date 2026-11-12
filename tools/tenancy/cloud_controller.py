@@ -357,17 +357,23 @@ def bounded_wake(root, backend, *, decision_complete=None):
         if any(r['kind']=='FULL_MANIFEST' for r in records):
             from tools.tenancy import full_controller as FH
             result,full_backend=FH.wake(backend,root)
+            # Owner FBO refresh status/incidents on the JSON stdout line (stream E metric and alert).
+            from tools.tenancy import fbo_refresh as FBR
+            FBR.annotate(result,getattr(full_backend,'fbo_refresh_summary',None))
             # The source decision and its durable bookkeeping are complete.
             # Read-only reporting can outlive the platform deadline; retain the
             # canonical control closure before starting that observation.
             if decision_complete is not None:decision_complete(result)
+            activity=getattr(backend,'wake_activity',{})
+            if activity.get('current_entities'):result['current_entities']=dict(sorted(activity['current_entities'].items()))
+            if activity.get('current_holds'):result['current_holds']=list(activity['current_holds'])
             from tools.tenancy import wake_budget as WB
             budget=WB.of(backend)
             if budget is not None and not budget.report_allowed():
                 # Reporting is diagnostic only: never let it reach the platform kill.
                 result['progress']={'omitted':'WAKE_BUDGET'}
                 return result
-            with gate('MONITORING_WATERMARK'):result['progress']=FH.monitoring(full_backend,root,result)
+            result['progress']=report(lambda:FH.monitoring(full_backend,root,result))
             return result
     started=backend.clock()
     result=T.Tick(root,backend.store,backend,backend.clock).run()
@@ -380,12 +386,26 @@ def bounded_wake(root, backend, *, decision_complete=None):
     return result
 
 
-def close_decision(backend,result):
-    from tools.tenancy import controller_cadence as CC
+def close_decision(backend,result,*,pause=None):
+    from tools.tenancy import controller_cadence as CC, durable_daily as DD, wake_budget as WB
     if getattr(backend,'wake_activity',{}).get('diagnostic_active'):return
     closure=dict(result,status='MONITORING') if result['status'] in CC.WAITS else dict(result)
     closure['source_dispatches']=getattr(backend,'wake_activity',{}).get('dispatch_attempts',result.get('source_dispatches',0))
-    with gate('CONTROL_CLOSURE'):CC.close(backend,closure)
+    def attempt():
+        with gate('CONTROL_CLOSURE'):CC.close(backend,closure)
+    # A2: a transient read while closing this wake's own claim is a bounded in-wake retry (same
+    # claim, first closure canonical, no source effect); only its exhaustion reaches the caller.
+    DD.retry_transient(attempt,budget=WB.of(backend) if backend is not None else None,pause=pause,
+                       activity=getattr(backend,'wake_activity',None))
+
+
+def report(run):
+    """Read-only progress after the closed decision. A2: a transient read omits it — the decision is
+    already durably closed, so a lost diagnostic read is never a failed wake (mgqsp, 2026-11-05)."""
+    try:
+        with gate('MONITORING_WATERMARK'):return run()
+    except A.TransientReadError:
+        return {'omitted':'TRANSIENT_READ'}
 
 
 def known_unclosed_incident(backend,root,error,payload):
@@ -432,7 +452,7 @@ def main(argv=None):
             backend.decision_complete=lambda result:close_decision(backend,result)
             result=bounded_wake(root,backend)
             if 'progress' not in result and budget.report_allowed():
-                with gate('MONITORING_WATERMARK'):result['progress']=backend.monitoring(root,result)
+                result['progress']=report(lambda:backend.monitoring(root,result))
         except SourceDispatchPaused:
             result={'status':'QUIESCENT_PAUSED','source_dispatches':0};rc=0
         except OverlapWait as wait:
@@ -449,6 +469,8 @@ def main(argv=None):
             # A lost closure read after a bounded result is a typed terminal
             # STOP, never an untyped one (Heldi STOP 8ad33cc6, 2026-10-22).
             raise GateFailure('CONTROL_CLOSURE','CLOUD_METADATA') from None
+        retries=getattr(backend,'wake_activity',{}).get('closure_read_retries')
+        if retries:result['closure_read_retries']=retries
         print(json.dumps(result,sort_keys=True))
         return rc if rc is not None else (0 if result['status']!='STOPPED' else 2)
     except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError) as error:
@@ -480,7 +502,7 @@ def main(argv=None):
                 pass # Failure to publish STOP cannot authorize another dispatch.
             try:
                 if not getattr(backend,'wake_activity',{}).get('diagnostic_active'):
-                    CC.close(backend,{'status':'STOPPED','source_dispatches':getattr(backend,'wake_activity',{}).get('dispatch_attempts',0)})
+                    CC.close(backend,{'status':'STOPPED','source_dispatches':getattr(backend,'wake_activity',{}).get('dispatch_attempts',0)},fallback=True)
             except (BF.B.EvidenceError,BF.TT.TableError,ValueError,KeyError,TypeError,IndexError,OSError):pass
         print(json.dumps({'status':'STOPPED','reason':'CONTROLLER_GATE_OR_EVIDENCE_FAILURE',**({'diagnostic':diagnostic} if diagnostic else {})}))
         return 2
