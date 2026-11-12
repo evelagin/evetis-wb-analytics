@@ -47,6 +47,21 @@ jobs:
           gcloud run jobs update wb-stocks-shadow \
             --region ${{ vars.GCP_REGION }} \
             --image "${{ steps.push.outputs.digest }}"
+      - name: Deploy M2 statistics shadow Jobs (тот же digest)
+        # M2: wb-orders-shadow / wb-sales-shadow / wb-sales-reconcile-shadow (infra/terraform/wb_statistics_loaders.tf).
+        # Пишут только в __CR (контур проверяет и код). До первого apply Job'ов нет — шаг пропускается.
+        run: |
+          for JOB in wb-orders-shadow wb-sales-shadow wb-sales-reconcile-shadow; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              # Только образ, как у wb-stocks-shadow: env shadow-Job'а принадлежит Terraform (без ignore_changes),
+              # --update-env-vars дал бы дрейф в plan.
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${{ steps.push.outputs.digest }}"
+            else
+              echo "$JOB ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy unitka-engine-shadow (тот же digest)
         # UNITKA ENGINE v1 (Stage E1): shadow-контур Engine живёт на том же образе.
         # Job создаёт Terraform (infra/terraform/unitka_engine.tf); до первого apply шага нет —
