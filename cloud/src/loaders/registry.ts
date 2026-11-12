@@ -29,6 +29,15 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { ordersLoader, salesLoader, salesReconcileLoader } from './statistics/index.js';
+import { statsSlot } from './statistics/common.js';
+
+import { adsLoader, adsQueryLoader, adsCostsAuditLoader } from './ads/index.js';
+
+import { financeLoader, financeBackfillLoader } from './finance/index.js';
+
+import { suppliesLoader } from './supplies/index.js';
+import { refSyncLoader } from './refsync/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -56,6 +65,20 @@ export interface LoaderSpec {
     changedDuringBuildCode: string;
   };
 }
+
+/**
+ * M2: guard загрузчиков statistics-api. Период — закрытые сутки D-1 МСК, как ingestClosedDayMsk_ у
+ * Apps Script: именно эту строку ждёт гейт витрины (V_INGEST_HEARTBEAT, LATEST-ATTEMPT). Но Apps Script
+ * пишет INGEST_RUNS КАЖДЫМ запуском (раз в 6 ч), а guard по одному периоду пропустил бы все запуски
+ * суток после первого COMPLETE. Поэтому «версией источника» служит часовой слот МСК: COMPLETE блокирует
+ * только повтор в том же часу; следующий слот — новый прогон того же D-1 (механизм source-aware guard
+ * витрины, cli.ts/runManifest.ts без изменений). Слот пишется в LOADER_RUNS.source_watermark.
+ */
+const STATS_SLOT_GUARD: NonNullable<LoaderSpec['sourceWatermark']> = {
+  probe: async () => statsSlot(),
+  probeFailureCode: 'STATS_SLOT_PROBE_FAILED',
+  changedDuringBuildCode: 'STATS_SLOT_CHANGED_DURING_RUN',
+};
 
 export const LOADERS: Record<string, LoaderSpec> = {
   noop: { handler: noopLoader, logicalPeriod: (now) => dailyPeriodMoscow(now) },
@@ -115,6 +138,40 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // M2 (перенос из Apps Script): заказы, продажи и ночная сверка продаж — statistics-api WB.
+  // Имена 'orders'/'sales' = loader_name INGEST_RUNS: на них завязан гейт витрины (mart/bq.ts).
+  // Повтор безопасен: watermark из таблицы + граничные ключи не дают дубля (statistics/index.ts).
+  orders: { handler: (ctx) => ordersLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+  sales: { handler: (ctx) => salesLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+  // Сверка в INGEST_RUNS не писала; своё имя, чтобы её ERROR не стал LATEST-ATTEMPT для 'sales' в гейте.
+  'sales-reconcile': { handler: (ctx) => salesReconcileLoader(ctx), logicalPeriod: (now) => d1Moscow(now), retryTransient: true, sourceWatermark: STATS_SLOT_GUARD },
+
+  // M3 (перенос из Apps Script runWbAdsDaily + catch-up): имя 'ads' = INGEST_RUNS.loader_name — на него
+  // завязан freshness-гейт витрины (mart/bq.ts REQUIRED_LOADERS). Период D−1 МСК, как rng.to эталона.
+  // retryTransient НЕТ: повтор — следующим окном Scheduler (catch-up), с новым run_id и новым снапшотом.
+  ads: { handler: (ctx) => adsLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: хвост runWbAdsDaily (Ads-3 ставки + Ads-2 query stats) — свой loader_name, чтобы журнал 'ads'
+  // закрывался до хвоста (в эталоне ingestFinalizeByStatus_ шёл раньше Ads-3). Стартует после 'ads' того же D−1.
+  'ads-query': { handler: (ctx) => adsQueryLoader(ctx), logicalPeriod: (now) => d1Moscow(now) },
+  // M3: недельный аудит расходов ADSAUDIT_ (loadWbAdsCostsAudit). Отдельное имя: не «последняя попытка» 'ads'.
+  // Период — сегодня МСК: окно D−46…D−8 считается от сегодняшней даты, как wbAdsCostsRangeBack_.
+  'ads-costs-audit': { handler: (ctx) => adsCostsAuditLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now) },
+
+  // M4 (перенос runWbFinanceDaily из Apps Script): финансовые отчёты WB DAILY/WEEKLY. Период — часовой слот МСК:
+  // три слота в сутки (07:30/12:30/18:30) — три независимых прогона, как три триггера Apps Script; повтор в том же
+  // часе после COMPLETE не нужен (следующий слот дочитает очередь). shadow → только __CR (finance/targets.ts).
+  finance: { handler: (ctx) => financeLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+  // M4: ручная регистрация WEEKLY-отчётов периода (wbFinDeepBackfillRegister). Без расписания; грузят обычные тики.
+  'finance-backfill': { handler: (ctx) => financeBackfillLoader(ctx), logicalPeriod: (now) => unitkaSlot(now) },
+
+  // M5 (перенос из Apps Script runWbSuppliesDaily): снимок поставок WB, один COMPLETE за сутки МСК.
+  // run_id данных уникален на попытку (DL_yyyyMMdd_HHmmss), каждая порция — один load job с
+  // детерминированным jobId → повтор после транзиентного отказа добавляет новый снимок, не дубль.
+  supplies: { handler: (ctx) => suppliesLoader(ctx), logicalPeriod: (now) => dailyPeriodMoscow(now), retryTransient: true },
+  // M5 (перенос из Apps Script runRefSync): версия REF_SKU_MASTER из листа SKU_MASTER. Период —
+  // часовой слот МСК: ручной прогон после правки листа не упирается в COMPLETE суточного.
+  // Повтор безопасен: новая попытка — новая версия, указатель переключается одной DML.
+  'ref-sync': { handler: (ctx) => refSyncLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), retryTransient: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

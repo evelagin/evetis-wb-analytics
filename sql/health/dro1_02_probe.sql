@@ -30,7 +30,7 @@ clock AS (
 runs_raw AS (
   SELECT CASE loader_name WHEN 'ads' THEN 'ads_daily' ELSE loader_name END AS pipeline_id,
          started_at, completed_at AS finished_at, status AS raw_status, error_code, logical_period AS period
-  FROM `wb_raw.INGEST_RUNS`, clock
+  FROM `wb_raw.V_INGEST_HEARTBEAT`, clock
   WHERE loader_name IN ('orders', 'sales', 'ads') AND started_at BETWEEN win_ts AND as_of
   UNION ALL
   SELECT 'finance', started_at, finished_at, status, CAST(NULL AS STRING), CAST(NULL AS DATE)

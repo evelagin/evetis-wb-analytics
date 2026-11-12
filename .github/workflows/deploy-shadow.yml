@@ -47,6 +47,37 @@ jobs:
           gcloud run jobs update wb-stocks-shadow \
             --region ${{ vars.GCP_REGION }} \
             --image "${{ steps.push.outputs.digest }}"
+      - name: Deploy M2 statistics shadow Jobs (тот же digest)
+        # M2: wb-orders-shadow / wb-sales-shadow / wb-sales-reconcile-shadow (infra/terraform/wb_statistics_loaders.tf).
+        # Пишут только в __CR (контур проверяет и код). До первого apply Job'ов нет — шаг пропускается.
+        run: |
+          for JOB in wb-orders-shadow wb-sales-shadow wb-sales-reconcile-shadow; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              # Только образ, как у wb-stocks-shadow: env shadow-Job'а принадлежит Terraform (без ignore_changes),
+              # --update-env-vars дал бы дрейф в plan.
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${{ steps.push.outputs.digest }}"
+            else
+              echo "$JOB ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: Deploy wb-supplies-shadow и ref-sync-shadow (тот же digest)
+        # M5: перенос поставок и REF Sync из Apps Script. Job'ы создаёт Terraform
+        # (wb_supplies_loader.tf, ref_sync_loader.tf); до первого apply шаг пропускается.
+        # Пишут только в __CR — контур проверяется в коде до записи (targets.ts).
+        # Только образ: env этих Job'ов принадлежит Terraform (не в ignore_changes), поэтому
+        # --update-env-vars здесь дал бы вечный дрейф plan. Как у wb-stocks-shadow.
+        run: |
+          for JOB in wb-supplies-shadow ref-sync-shadow; do
+            if gcloud run jobs describe "${JOB}" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "${JOB}" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${{ steps.push.outputs.digest }}"
+            else
+              echo "${JOB} ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
       - name: Deploy unitka-engine-shadow (тот же digest)
         # UNITKA ENGINE v1 (Stage E1): shadow-контур Engine живёт на том же образе.
         # Job создаёт Terraform (infra/terraform/unitka_engine.tf); до первого apply шага нет —
@@ -64,4 +95,30 @@ jobs:
               --update-env-vars IMAGE_DIGEST="${{ steps.push.outputs.digest }}",GIT_SHA="${GITHUB_SHA}",UNITKA_INTEGRITY_MODE=observe
           else
             echo "unitka-engine-shadow ещё не создан Terraform'ом — шаг пропущен"
+          fi
+      - name: Deploy wb-ads-shadow + wb-ads-query-shadow + wb-ads-costs-audit-shadow (тот же digest)
+        # M3 (реклама): shadow пишет только RAW_WB_ADV_*__CR (контур проверяет сам загрузчик,
+        # cloud/src/loaders/ads/targets.ts). env — Terraform (infra/terraform/wb_ads_loader.tf), здесь ТОЛЬКО образ:
+        # env не трогаем, иначе plan вечно предлагал бы его вернуть (у shadow env не в ignore_changes).
+        # До первого infra apply Job'ов нет — шаг предупреждает и не валит деплой остальных.
+        run: |
+          for JOB in wb-ads-shadow wb-ads-query-shadow wb-ads-costs-audit-shadow; do
+            if gcloud run jobs describe "$JOB" --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+              gcloud run jobs update "$JOB" \
+                --region ${{ vars.GCP_REGION }} \
+                --image "${{ steps.push.outputs.digest }}"
+            else
+              echo "$JOB ещё не создан Terraform'ом — шаг пропущен"
+            fi
+          done
+      - name: Deploy wb-finance-shadow (тот же digest)
+        # M4: shadow-контур финансов WB (пишет только __CR). Job создаёт Terraform (wb_finance_loader.tf);
+        # до первого apply шага нет — отсутствие Job'а не валит деплой остальных shadow.
+        run: |
+          if gcloud run jobs describe wb-finance-shadow --region ${{ vars.GCP_REGION }} >/dev/null 2>&1; then
+            gcloud run jobs update wb-finance-shadow \
+              --region ${{ vars.GCP_REGION }} \
+              --image "${{ steps.push.outputs.digest }}"
+          else
+            echo "wb-finance-shadow ещё не создан Terraform'ом — шаг пропущен"
           fi

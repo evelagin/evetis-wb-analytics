@@ -1,5 +1,144 @@
 # CHANGELOG.md
 
+## 2026-11-10 — Миграция Apps Script → Cloud Run: потребители журнала загрузок читают V_INGEST_HEARTBEAT (Draft, не применено)
+
+После переключения заказов, продаж и рекламы на Cloud Run их прогоны пишутся в `wb_raw.LOADER_RUNS`, а не в
+`wb_raw.INGEST_RUNS`. Детекторы и витрина свежести читали `INGEST_RUNS` напрямую и подняли бы ложную тревогу
+«нет прогонов». Источник заменён на `V_INGEST_HEARTBEAT` (= INGEST_RUNS ∪ LOADER_RUNS prod):
+- `sql/health/dro1_02_probe.sql` (`evetis_health.TVF_PIPELINE_PROBE`);
+- `sql/mart/dashboard_layer_v1.sql` (`wb_mart.V_DATA_FRESHNESS`: слои ads, orders, sales);
+- `sql/ops/phase2_health/d2_health_ext_procedure.sql` (`wb_ops.sp_evaluate_health_ext`);
+- `sql/health/dro1_01_contract.sql` — только текст источника в контракте.
+До переключения результат не меняется: в `LOADER_RUNS` prod строк `orders`/`sales`/`ads` нет (проверено 10.11).
+Живые тела трёх объектов сверены с Git до правки — совпадают. Журнал отказов `V_RUN_FAILURE_LEDGER` уже читает
+`LOADER_RUNS` отдельно и не меняется. Тест-предохранитель `tools/tests/test_ingest_heartbeat_consumers.py`.
+
+## 2026-11-10 — M2: заказы, продажи и ночная сверка продаж WB в Cloud Run (код, НЕ применено)
+
+Перенос `runWbOrdersIncremental`, `runWbSalesIncremental`, `runWbSalesNightReconcile` (Apps Script) в загрузчики
+`orders`, `sales`, `sales-reconcile` (`cloud/src/loaders/statistics/*`) с той же семантикой: watermark по
+`last_change_date`, граничный дедуп (`srid|row_hash` у заказов, `sale_id|md5(raw_json)` у продаж), fail-closed,
+at-least-once, привязка SKU при загрузке. Runbook: `docs/ops/MIG_M2_STATISTICS_RUNBOOK.md`.
+- **Схема боевых таблиц не меняется.** `RAW_WB_ORDERS` и `RAW_WB_SALES_RETURNS` пишутся теми же колонками и в той же
+  форме, что Apps Script (доказано replay-паритетом с исполняемым `.gs`, `cloud/test/statistics_apps_script_parity.test.ts`).
+- Новые теневые таблицы `RAW_WB_ORDERS__CR`, `RAW_WB_SALES_RETURNS__CR` — зеркало живых схем (порядок колонок,
+  партиция, кластер); Job/Scheduler `wb-orders|wb-sales|wb-sales-reconcile-{shadow,prod}`, все расписания на паузе
+  (`infra/terraform/wb_statistics_loaders.tf`). Права — поресурсно.
+- `LOADER_RUNS`: `loader_name` = `orders`/`sales` (гейт витрины), `sales-reconcile`; `logical_period` = D-1 МСК;
+  в `source_watermark` — часовой слот МСК (повтор в том же часу пропускается, следующий слот — новый прогон D-1).
+  `cli.ts`/`runManifest.ts` не менялись; тесты «source-aware guard только у mart» дополнены исключением для M2.
+- Отличия от Apps Script (watermark из таблицы, один load job, пауза 61 с между страницами, справочник SKU из
+  `REF_SKU_MASTER`, нет общего cooldown продаж и сверки) — runbook §3.
+- Сверка паритета: `sql/mig_m2_statistics_parity.sql` (только SELECT; самопроверка prod↔prod — EXACT).
+- `scheduler-control.yml`: загрузчики `wb-orders`, `wb-sales`, `wb-sales-reconcile`; `deploy-shadow.yml` обновляет образ
+  трёх shadow-Job, если они созданы.
+- Ревью #420: watermark = MAX строк инкремента (`ORD_INC_*`/`SALE_INC_*`) — ночная сверка и ручной импорт периода
+  его не двигают, как у Apps Script; свои SA `sa-wb-statistics-{shadow,prod}`; весь prod-контур — только при
+  `m2_prod_enabled=true` (по умолчанию false); таймауты `wb-sales*` 900 с, `wb-orders` 3600 с; `DRY_RUN` разбирается
+  как в `cli.ts`.
+- После общего PR #423 (влит merge-коммитом): **F4** — второй флаг `m2_shadow_enabled` (bool, default false); под ним
+  весь shadow-контур этого PR (SA, его права и доступ к секрету, `RAW_WB_ORDERS__CR`/`RAW_WB_SALES_RETURNS__CR` и запись
+  в них, 3 Job, 3 invoker, 3 Scheduler); data секрета — только при включённом контуре; wiring — только общий `infra.yml`
+  (`vars.M2_{SHADOW,PROD}_ENABLED == 'true'`). Ресурсы из `main` не менялись. **F5** — срок токена проверяется до
+  BigQuery и WB API (`WB_STATS_TOKEN_EXPIRED`, warn `WB_TOKEN_EXPIRING_SOON`); 401/403 → `WB_STATS_AUTH` (детерминированный,
+  без повтора) вместо `ORDERS_PARTIAL`/`SALES_ERROR`. Схема колонок не менялась. Тесты: `cloud/test/statistics_token.test.ts`,
+  `cloud/test/statistics_tf.test.ts`. Выкат prod — режим `only_job=wb-statistics` общего `deploy-prod.yml`.
+
+## 2026-11-10 — M3: реклама WB в Cloud Run — загрузчики `ads` и `ads-costs-audit` (НЕ применено)
+
+Перенос `runWbAdsDaily` + `runWbAdsDailyCatchUp` и недельного аудита расходов из Apps Script.
+Design & code only: Terraform не применялся, Job не запускался, Apps Script не менялся, WB API не вызывался.
+- `cloud/src/loaders/ads/*` — `ads`: campaigns → costs (D−14…D−1) → fullstats (D−7…D−1); хвост Ads-3 + Ads-2 —
+  отдельный загрузчик `ads-query` (свой Job и `loader_name`), чтобы журнал `ads` закрывался до хвоста, как в эталоне.
+  Дедлайн обработчика: после него вызовы WB и их повторы не начинаются, исход пишется до таймаута Job'а.
+  Семантика, колонки и строки — как в Apps Script (replay-тест исполняет сам `runWbAdsDaily()` из `.gs`).
+  Журнал — `LOADER_RUNS`, `loader_name='ads'`, `logical_period` = D−1 МСК: гейт витрины видит его через
+  `V_INGEST_HEARTBEAT`. Итог OK/STALE → COMPLETE, PARTIAL/ERROR → ERROR `ADS_PARTIAL`/`ADS_ERROR`.
+- Схема RAW **не меняется**; новые таблицы — только теневые `RAW_WB_ADV_*__CR` (9 шт., зеркало живых схем).
+  Вью не создаются и не меняются; `wbAdsBqCreateViews()` не воспроизведена.
+- `ads-costs-audit` (ADSAUDIT_, D−46…D−8) — отдельный Job и Scheduler; в prod отказывает без
+  `ADS_COSTS_AUDIT_ENABLED=1` (включать только после snapshot v2, PR #370).
+- `infra/terraform/wb_ads_loader.tf` — свои SA `sa-wb-ads-{shadow,prod}`; Job'ы и Scheduler'ы `wb-ads`, `wb-ads-query`,
+  `wb-ads-costs-audit` (все PAUSED), табличный IAM, алерт. Флаги по общей схеме M2–M5 (#423): весь shadow-контур —
+  под `var.m3_shadow_enabled`, весь prod-контур — под `var.m3_prod_enabled` (оба bool, default false; infra.yml ←
+  переменные репозитория `M3_SHADOW_ENABLED` / `M3_PROD_ENABLED`). Файл новый — в `origin/main` ни одного его ресурса нет.
+  Workflows: выкат prod — общий режим `deploy-prod.yml` `only_job=wb-ads` (#423), образ shadow — `deploy-shadow.yml`
+  (guarded), loader в scheduler-control.
+- Токен (общий `cloud/src/http/wbToken.ts`, #423) во всех трёх режимах до первого вызова WB: истёкший → `WB_ADS_TOKEN_EXPIRED`,
+  пустой → `WB_ADS_AUTH`, < 14 суток → warn `WB_TOKEN_EXPIRING_SOON`; HTTP 401/403 → `WB_ADS_AUTH` без повторов, источники
+  его не глотают. `DRY_RUN` — ровно `=== '1'`, как `cli.ts`. Тесты — `cloud/test/ads_token.test.ts`.
+- `sql/mig_ads_parity.sql` — сверка Apps Script ↔ `__CR` по дням (EXACT / DATA_DRIFT / SOURCE_GAP / FAIL).
+- Runbook: `docs/ops/MIG_ADS_RUNBOOK.md`.
+
+## 2026-11-10 — M4: финансовые отчёты WB в Cloud Run (shadow-готовность, НЕ применено)
+
+Перенос `runWbFinanceDaily` (`apps-script/ingestion/Wbfinancedaily.gs`, PR-Fin1 v1.3.1 + PR-A #91) в Cloud Run.
+Схема и семантика RAW/манифеста не меняются: те же `RAW_WB_FINANCE`, `FINANCE_LOADER_RUNS`, `FINANCE_REPORT_LOADS`,
+`FINANCE_WEEK_STATUS`, `FINANCE_WEEK_RECON`, те же 54 поля маппера, jobId, статусы и fail-closed проверки.
+- `cloud/src/loaders/finance/` — loader `finance` (тик DAILY/WEEKLY: очередь, discovery, orphan guard, post-load,
+  финализация недель + RECON) и `finance-backfill` (регистрация WEEKLY периода). Контур проверяется до любого I/O
+  (`FINANCE_TARGET_MISMATCH`): shadow → только свои `__CR`, prod → только боевые таблицы и cutover 2026-07-13.
+- Отличия от Apps Script (lease вместо ScriptLock, повтор 429/5xx через пейсер 61 с, бюджет 20 мин, финализация недели
+  сразу после WEEKLY, маркер `_C` в run_id) — `docs/ops/MIG_FINANCE_RUNBOOK.md` §3.
+- `infra/terraform/wb_finance_loader.tf`: 5 таблиц `__CR` (зеркало схем), `wb-finance-shadow`/`wb-finance-prod`, IAM
+  ровно на эти таблицы, Scheduler (оба PAUSED), алерт prod. `deploy-shadow.yml` — guarded-шаг; `scheduler-control.yml` —
+  loader `wb-finance`. `deploy-prod.yml` в PR потока не меняется (шаг `wb-finance-prod` — в общей ветке #423).
+- `sql/mig_finance_parity.sql` — сверка Apps Script ↔ `__CR` по отчётам (EXACT / DATA_DRIFT / FAIL), недели, журналы.
+- Колонки таблиц не меняются; новые таблицы — только теневые `__CR`.
+- Ревью PR #418: взаимоисключение `finance` ↔ `finance-backfill` (`mutex.ts`); снимок финальных недель до очереди,
+  финализация после очереди и в шаге 6 с пересчётом RECON (итог как у Apps Script); резерв таймаута HTTP и хвоста
+  BigQuery в бюджете и проверка «budget + timeout + 5 мин < 30 мин» (`FINANCE_CONFIG_INVALID`); свои SA
+  `sa-wb-finance-shadow/prod`; весь prod-контур — под флагом (по умолчанию false).
+- После #423 (общие защиты выката): F4 — флаги потока по единой схеме `m4_shadow_enabled` / `m4_prod_enabled`
+  (bool, default false; `finance_prod_enabled` переименован в `m4_prod_enabled`), весь shadow-контур
+  (5 `__CR`, SA и его права, Job, invoker, Scheduler) — под `m4_shadow_enabled`; ресурсы из main не меняются.
+  F5 — срок `WB_TOKEN_FINANCE` проверяется до первого запроса (`WB_FINANCE_TOKEN_EXPIRED`), 401/403 Finance API —
+  детерминированный `WB_FINANCE_AUTH` без повторов; значение токена в ошибку и лог не попадает.
+
+## 2026-11-10 — M5: поставки WB и REF Sync в Cloud Run (Draft, НЕ применено)
+
+Перенос `runWbSuppliesDaily` и `runRefSync` из Apps Script, этап M5 плана PR #415.
+Колонки боевых таблиц не меняются: загрузчики пишут ту же схему, а shadow пишет в её копии `__CR`.
+
+**Диагноз 100 % отказов поставок.** С 31.10 в `JOBS_BY_PROJECT` нет ни одного задания загрузчика,
+даже первого SELECT watermark. Значит, прогон падает на токене или на списке WB. В те же минуты
+статистика и реклама получили `401 token is expired`, 02.11 их токены заменили, а
+`WB_TOKEN_SUPPLIES` в Script Properties — нет. Доказательства — `docs/ops/MIG_SUPPLIES_REF_RUNBOOK.md` §1.
+
+- `cloud/src/loaders/supplies/*` — loader `supplies`.
+  - Та же нормализация, `row_hash` и выбор объектов §7.3.
+  - Watermark берётся из целевой шапки; дополнительная причина перечитки «в RAW не завершён»
+    закрывает простой 31.10 → cutover дольше окна 14 суток. На cutover — обязательная сверка prod ↔ `__CR` (QUERY 4).
+  - Запись порциями: goods → header (commit-marker), load job с детерминированным jobId, без DML.
+  - Срок токена проверяется по `exp` общим `assertWbTokenUsable` (`cloud/src/http/wbToken.ts`, #423);
+    при 401/403 — `WB_SUPPLIES_AUTH` из общего `wbAuthError`.
+  - Бюджет 20 мин → `SUPPLIES_PARTIAL`.
+  - Контур проверяется до WB и записи.
+- `cloud/src/loaders/refsync/*` — loader `ref-sync`.
+  - Лист `SKU_MASTER` книги «Evetis аналитика 2.0» читается со scope readonly.
+  - Тот же all-or-nothing: DATA → валидация → MERGE указателя → журналы `REF_SYNC_*` → retention 10.
+  - DDL в runtime нет.
+- `registry.ts` — два новых имени; общий `config.ts` не тронут: параметры читаются в модулях загрузчиков.
+- Terraform (не применён; всё под флагами `m5_shadow_enabled` / `m5_prod_enabled`, по умолчанию false, `m5_variables.tf`):
+  - `infra/terraform/wb_supplies_loader.tf` — SA `sa-wb-supplies-{shadow,prod}`, таблицы `__CR`, Job и Scheduler
+    shadow/prod (PAUSED), табличный IAM (включая `LOADER_RUNS`), доступ к секрету `WB_TOKEN_SUPPLIES`
+    (секрет создаёт владелец; data-источник читается только при включённом флаге);
+  - `infra/terraform/ref_sync_loader.tf` — SA `sa-ref-sync-{shadow,prod}`, таблицы `REF_*__CR`,
+    Job и Scheduler (PAUSED), табличный IAM (включая `LOADER_RUNS`).
+- `deploy-shadow.yml` — шаги для новых Job'ов с проверкой существования; `deploy-prod.yml` — режим
+  `only_job=wb-supplies-ref` общей ветки #423 (собственный шаг потока удалён при merge).
+- `scheduler-control.yml` — опции `wb-supplies` и `ref-sync`.
+- `sql/mig_supplies_parity.sql`, `sql/mig_ref_parity.sql` — только SELECT, вердикт EXACT / DATA_DRIFT / FAIL / NO_RUN.
+- Тесты: `cloud/test/supplies_normalize.test.ts`, `supplies_loader.test.ts`, `refsync.test.ts`; фикстуры синтетические.
+- После общих защит #423 (merge-коммитом, без rebase):
+  - F4: флаги `m5_{shadow,prod}_enabled` включаются GitHub Variables `M5_SHADOW_ENABLED` / `M5_PROD_ENABLED`
+    (`infra.yml`), default в `m5_variables.tf` остаётся false; ранбук S1/S4 переписан под переменные.
+  - F5: удалены дубли `tokenExpiryMs` (`supplies/wbApi.ts`) и `WB_TOKEN_EXPIRY_WARN_DAYS` (`supplies/constants.ts`).
+    Коды прежние: `WB_SUPPLIES_TOKEN_EXPIRED`, `WB_SUPPLIES_AUTH`, `WB_TOKEN_EXPIRING_SOON`. Имя секрета в тексте
+    ошибки — из env контура; тело ответа WB в `WB_SUPPLIES_HTTP` чистится `redactTokenLike`.
+  - `ref-sync` токен WB не использует (читает Sheets под ADC runtime-SA) — проверка срока к нему не применима.
+  - F3: поток не разбирает `DRY_RUN` сам — только `cli.ts` (`=== '1'`).
+
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 
 `docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.
