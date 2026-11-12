@@ -175,7 +175,7 @@ function wbStocksBqEnsureRaw_() {
   }
   var fields = wbStocksRawFields_().slice();
   fields.push({ name: '_snapshot_date', type: 'DATE' });
-  BigQuery.Tables.insert({
+  wbBqTablesInsert_({
     tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_STOCKS_RAW_TABLE_ },
     schema: { fields: fields },
     timePartitioning: { type: 'DAY', field: '_snapshot_date' },
@@ -198,7 +198,7 @@ function wbStocksBqEnsureT5_() {
   }
   var fields = wbStocksT5RawFields_().slice();
   fields.push({ name: '_snapshot_date', type: 'DATE' });
-  BigQuery.Tables.insert({
+  wbBqTablesInsert_({
     tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_STOCKS_T5_TABLE_ },
     schema: { fields: fields },
     timePartitioning: { type: 'DAY', field: '_snapshot_date' },
@@ -232,7 +232,7 @@ function wbStocksBqEnsureManifest_() {
   } catch (e) {
     if (!wbStocksBqIsNotFound_(e)) throw new Error('Не удалось проверить ' + WB_STOCKS_MANIFEST_TABLE_ + ': ' + ((e && e.message) || e));
   }
-  BigQuery.Tables.insert({
+  wbBqTablesInsert_({
     tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_STOCKS_MANIFEST_TABLE_ },
     schema: { fields: wbStocksManifestFields_() }
   }, c.projectId, c.datasetId);
@@ -264,7 +264,7 @@ function wbStocksBqEnsureColumns_(tableId, wantFields) {
   }
   if (!added.length) return [];
 
-  BigQuery.Tables.patch({ schema: { fields: cur } }, c.projectId, c.datasetId, tableId);
+  wbBqTablesPatch_({ schema: { fields: cur } }, c.projectId, c.datasetId, tableId);
   console.log('✅ ' + tableId + ': добавлены колонки — ' + added.join(', '));
   return added;
 }
@@ -313,7 +313,7 @@ function wbStocksBqLoadDeterministic_(tableId, rows, jobId) {
   while (!submitted) {
     attempt++;
     try {
-      var ins = BigQuery.Jobs.insert(job, c.projectId, blob);
+      var ins = wbBqJobsInsert_(job, c.projectId, blob);
       jobLocation = (ins.jobReference && ins.jobReference.location) || c.location;
       submitted = true;
     } catch (e) {
@@ -373,7 +373,7 @@ function wbStocksBqJobExists_(jobId, jobLocation) {
  */
 function wbStocksBqDml_(sql) {
   var c = getBqConfig_();
-  var res = BigQuery.Jobs.query({ query: sql, useLegacySql: false, location: c.location, timeoutMs: 30000 }, c.projectId);
+  var res = wbBqJobsQuery_({ query: sql, useLegacySql: false, location: c.location, timeoutMs: 30000 }, c.projectId);
   var jobId = res.jobReference && res.jobReference.jobId;
   var jobLocation = (res.jobReference && res.jobReference.location) || c.location;
 

@@ -1,0 +1,2 @@
+# Этап C: сюда deploy-shadow копирует sql/mig_*_parity.sql потоков перед сборкой образа (загрузчик qualify).
+# Файлов нет — qualify пропускает поток с MISSING_PARITY_SQL. Сами файлы в git здесь не хранятся.

@@ -6,6 +6,7 @@ import { classifyFailure, fatalRecord, TRANSIENT_INFRA, SHEETS_API_TRANSIENT, FA
 import { BqManifestStore, type ManifestStore, type AcquireParams, type FinalizePatch } from '../src/bq/runManifest.js';
 import { POST_LOCK_RETRY_MAX_ELAPSED_MS, FINALIZE_RETRY_DELAY_MS } from '../src/cli.js';
 import type { BqClient } from '../src/bq/client.js';
+import { CLOUD_RUN_OWNER } from './ownership_fixture.js';
 
 /**
  * Инцидент 2026-10-06 (unitka-engine-prod-zbfk7): прогон упал ДО lease на транзиентной ошибке
@@ -62,7 +63,7 @@ const alertMatches = (r: Record<string, unknown>) => r.severity === 'ERROR' && t
 
 function deps(store: ManifestStore, handler: CliDeps['runHandler']) {
   const sleeps: number[] = [];
-  const d: CliDeps = { makeStore: () => store, runHandler: handler, nowMs: () => 0, sleep: async (ms) => { sleeps.push(ms); } };
+  const d: CliDeps = { makeStore: () => store, runHandler: handler, nowMs: () => 0, sleep: async (ms) => { sleeps.push(ms); }, makeOwnershipReader: CLOUD_RUN_OWNER };
   return { d, sleeps };
 }
 

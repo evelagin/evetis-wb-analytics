@@ -71,7 +71,7 @@ function refFqn_(tableId) {
 /** Выполняет SQL (SELECT/DML/DDL), ждёт завершения, кидает при ошибке. Возвращает ответ. */
 function refSql_(sql) {
   var c = getBqConfig_();
-  var res = BigQuery.Jobs.query(
+  var res = wbBqJobsQuery_(
     { query: sql, useLegacySql: false, location: c.location, timeoutMs: 55000 }, c.projectId);
   var jobId = res.jobReference ? res.jobReference.jobId : null;
   var tries = 0;
@@ -121,7 +121,7 @@ function refEnsureTable_(tableId, schema, clusterFields) {
   catch (e) {
     var body = { tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: tableId }, schema: schema };
     if (clusterFields) body.clustering = { fields: clusterFields };
-    BigQuery.Tables.insert(body, c.projectId, c.datasetId);
+    wbBqTablesInsert_(body, c.projectId, c.datasetId);
     console.log('✅ Таблица создана: ' + tableId);
     return true;
   }
@@ -321,6 +321,7 @@ function runRefSync() {
     console.log('REF Sync: SKIPPED_LOCKED (активен другой запуск)');
     return { status: 'SKIPPED_LOCKED' };
   }
+  var wgate = wbWriterGate_('ref', 'runRefSync'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
   try {
     refSyncCore_(r);
   } catch (e) {

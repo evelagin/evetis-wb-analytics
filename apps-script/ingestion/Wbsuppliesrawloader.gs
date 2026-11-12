@@ -256,7 +256,7 @@ function wbSuppliesEnsureTables() {
     try { BigQuery.Tables.get(c.projectId, c.datasetId, d.id); }
     catch (e) { exists = false; }
     if (exists) { wbsLog_('таблица уже есть: ' + d.id); continue; }
-    BigQuery.Tables.insert({
+    wbBqTablesInsert_({
       tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: d.id },
       schema: { fields: d.schema },
       timePartitioning: { type: 'DAY', field: d.part }
@@ -411,7 +411,7 @@ function wbsGoodsRow_(g, o, entityKey, runId, snapshotTs) {
  */
 function wbsExecDml_(sql) {
   var c = getBqConfig_();
-  var ins = BigQuery.Jobs.insert({
+  var ins = wbBqJobsInsert_({
     jobReference: { projectId: c.projectId, location: c.location },
     configuration: { query: { query: sql, useLegacySql: false } }
   }, c.projectId);
@@ -571,6 +571,7 @@ function runWbSuppliesDaily() {
   var t0 = new Date().getTime();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) { wbsLog_('SKIPPED_LOCKED'); return; }
+  var wgate = wbWriterGate_('supplies', 'runWbSuppliesDaily'); if (!wgate.allowed) { lock.releaseLock(); return wgate.result; }  // этап C: WriterGate.gs
 
   try {
     var c = getBqConfig_();

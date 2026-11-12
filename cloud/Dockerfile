@@ -16,6 +16,8 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+# Этап C: SQL паритета потоков для загрузчика qualify (deploy-shadow копирует sql/mig_*_parity.sql в parity-sql/).
+COPY parity-sql ./parity-sql
 # Cloud Run Job переопределяет args: ["<loader>"]. По умолчанию — noop (foundation).
 ENTRYPOINT ["node", "dist/cli.js"]
 CMD ["noop"]

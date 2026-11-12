@@ -10,6 +10,16 @@
  *   handler витрины создаёт реальный MartBq и публикует production wb_mart В ОБХОД lease. В сухом
  *   прогоне проверяем только регистрацию/период/контекст и выходим OK. Ядро вынесено в runCli()
  *   с инъекцией зависимостей — чтобы тестами доказать, что в DRY_RUN acquire и handler НЕ зовутся.
+ *
+ * Этап C (OWNER ACK 11.11.2026) — writer-ownership gate. При ENVIRONMENT=prod загрузчик потока
+ * (ownership/streams.ts: stocks, orders, sales, sales-reconcile, ads, ads-query, ads-costs-audit, finance,
+ * finance-backfill, supplies, ref-sync; остатки — только при WRITER_GATE_STOCKS=1) ДО lease и ДО handler читает владельца потока из
+ * wb_ops.INGEST_WRITER_OWNERSHIP:
+ *   CLOUD_RUN → прогон идёт, epoch запоминается; перед COMPLETE в LOADER_RUNS — повторная проверка
+ *               (WRITER_EPOCH_CHANGED → COMPLETE не пишется, строка закрывается ERROR);
+ *   иначе     → writer_fenced / WRITER_NOT_OWNER, exit 0: ни данных, ни строки LOADER_RUNS;
+ *   отказ     → WRITER_GATE_UNAVAILABLE, exit 1 (fail-closed).
+ * Shadow gate не проверяет: он пишет только __CR (targets.ts потоков).
  */
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +32,11 @@ import { BqManifestStore, DEFAULT_STALE_STARTED_MS } from './bq/runManifest.js';
 import type { ManifestKey, AcquireParams, ManifestStore } from './bq/runManifest.js';
 import type { LoaderContext, LoaderResult } from './loaders/types.js';
 import { classifyFailure, fatalRecord, type FailureClass } from './failure.js';
+import { gatedStreamOfLoader, DEFAULT_OWNERSHIP_DATASET } from './ownership/streams.js';
+import {
+  BqOwnershipReader, checkWriterGate, gateMark, makeWriterFence, recheckMark, WRITER_GATE_UNAVAILABLE, WRITER_NOT_OWNER,
+  type GateDecision, type OwnershipReader, type WriterFence,
+} from './ownership/gate.js';
 
 /** Пауза перед повтором захвата lease (до lease ничего не исполнялось — повтор безопасен всегда). */
 export const PRE_LOCK_RETRY_DELAY_MS = 30_000;
@@ -40,6 +55,13 @@ export interface CliDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Зонд версии источника; по умолчанию spec.sourceWatermark.probe. Зовётся только при его наличии. */
   probeWatermark?: (spec: LoaderSpec, config: Config) => Promise<string>;
+  /** Чтение владельца потока (этап C); по умолчанию — BigQuery, датасет WRITER_OWNERSHIP_DATASET. */
+  makeOwnershipReader?: (config: Config, env: NodeJS.ProcessEnv) => OwnershipReader;
+}
+
+export function defaultOwnershipReader(config: Config, env: NodeJS.ProcessEnv): OwnershipReader {
+  const dataset = (env.WRITER_OWNERSHIP_DATASET ?? '').trim() || DEFAULT_OWNERSHIP_DATASET;
+  return new BqOwnershipReader(new BqClient(config.projectId, config.bqLocation), dataset);
 }
 
 const defaultDeps: CliDeps = {
@@ -143,6 +165,33 @@ export async function runCli(
     return EXIT_ERROR;
   }
 
+  // Этап C: writer-ownership gate — только prod и только загрузчики потоков; ДО DRY_RUN, lease и handler.
+  // Неправообладатель не пишет ничего: ни данных, ни строки LOADER_RUNS (штатный skip, exit 0).
+  let writerFence: WriterFence | undefined;
+  const stream = config.environment === 'prod' ? gatedStreamOfLoader(loaderName, env) : undefined;
+  if (stream) {
+    let reader: OwnershipReader | undefined;
+    let decision: GateDecision;
+    try {
+      reader = (deps.makeOwnershipReader ?? defaultOwnershipReader)(config, env);
+      decision = await checkWriterGate(reader, stream, gateMark(stream, loaderName));
+    } catch (e) {
+      decision = { kind: 'UNAVAILABLE', stream, error: e instanceof Error ? e.message : String(e) };
+    }
+    if (decision.kind === 'UNAVAILABLE' || !reader) {
+      const error = decision.kind === 'UNAVAILABLE' ? decision.error : 'нет читателя владения';
+      logger.error('writer_gate_unavailable', { code: WRITER_GATE_UNAVAILABLE, stream, error, decision: 'fail_closed_no_write' });
+      return EXIT_ERROR;
+    }
+    if (decision.kind === 'FENCED') {
+      // info, не error: штатный skip неправообладателя — не алерт (алерты смотрят severity>=ERROR).
+      logger.info('writer_fenced', { code: WRITER_NOT_OWNER, stream, owner: decision.owner, epoch: decision.epoch, state: decision.state });
+      return EXIT_OK;
+    }
+    writerFence = makeWriterFence(reader, stream, decision.epoch, recheckMark(stream, loaderName));
+    logger.info('writer_gate_allow', { stream, epoch: decision.epoch, state: decision.state });
+  }
+
   // Логический период = политика загрузчика (mart → D-1 МСК; stocks/noop → сегодня МСК).
   // run_id и targetDate вычисляются ОДИН раз; handler их не пересчитывает.
   // Инвариант контракта LoaderContext: targetDate === logicalPeriod (см. types.ts).
@@ -153,7 +202,9 @@ export async function runCli(
   const execId = config.executionId || `local-${randomUUID()}`;
   const runId = `${config.environment}:${loaderName}:${logicalPeriod}:${config.gitSha}:${execId}`;
   const startedMs = deps.nowMs();
-  const ctxBase: LoaderContext = { config, logger, logicalPeriod, runId, targetDate: logicalPeriod };
+  const ctxBase: LoaderContext = {
+    config, logger, logicalPeriod, runId, targetDate: logicalPeriod, ...(writerFence ? { writerFence } : {}),
+  };
 
   // Локальный/CI прогон каркаса без облака.
   if (env.DRY_RUN === '1') {
@@ -174,6 +225,19 @@ export async function runCli(
     logger.error('loader_failed', { code: c.code, category: c.category, stage, message });
     return EXIT_ERROR;
   };
+
+  // Этап C: загрузчик плоскости управления (координатор cutover) — без lease и без строки LOADER_RUNS.
+  // Конкурентность решает сам (compare-and-swap по epoch/state/revision в таблице владения); права на
+  // LOADER_RUNS его SA не получает.
+  if (spec.controlPlane) {
+    try {
+      const res = await deps.runHandler(spec, ctxBase);
+      logger.info('loader_complete', { rowsFetched: res.rowsFetched, rowsLoaded: res.rowsLoaded, controlPlane: true });
+      return EXIT_OK;
+    } catch (e) {
+      return failed('handler', classifyFailure(e), e instanceof Error ? e.message : String(e));
+    }
+  }
 
   let store: ManifestStore;
   try {
@@ -272,6 +336,23 @@ export async function runCli(
         continue;
       }
       return failed('handler', c, message);
+    }
+    // Этап C: перед COMPLETE — повторная проверка владельца и epoch. Сменился во время прогона → COMPLETE не
+    // пишем (не объявляем прогон чужой эпохи успешным); свою строку lease закрываем ERROR с тем же кодом —
+    // это исход, а не данные: координатор при дренаже видит завершённую попытку, а не «STARTED без исхода».
+    if (writerFence) {
+      try {
+        await writerFence.assertEpoch('pre_complete');
+      } catch (e) {
+        const c = classifyFailure(e);
+        const message = e instanceof Error ? e.message : String(e);
+        try {
+          await store.finalize(key, lock.runId, { status: 'ERROR', errorCode: c.code, errorMessage: message });
+        } catch (fe) {
+          logger.warn('finalize_failed', { status: 'ERROR', code: classifyFailure(fe).code, error: fe instanceof Error ? fe.message : String(fe) });
+        }
+        return failed('pre_complete', c, message);
+      }
     }
     // Работа выполнена; закрываем журнал. Handler НЕ перезапускаем — повторяем только UPDATE (идемпотентен).
     // Загрузчик с sourceWatermark: в тот же UPDATE — версия, подтверждённая повторным зондом (или NULL).

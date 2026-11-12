@@ -1,0 +1,85 @@
+# Этап C, ревью #426 (повторное): весь SQL координатора, gate, qualify и DDL через парсер BigQuery — ТОЛЬКО dryRun (ничего не исполнялось).
+# Код: ветка mig/cutover-coordinator с правками повторного ревью (следующий коммит после c62846ac); выгрузка cloud/scripts/emit_cutover_sql.ts
+# (QUALIFY_SQL_DIR = sql/mig_*_parity.sql из веток origin/mig/m2-statistics, m3-ads, m4-finance, m5-supplies-ref); запуск tools/bq_dryrun_cutover_sql.py, 11.11.2026.
+# Режимы: FULL — как есть; CTE — wb_ops.INGEST_* заменены производной таблицей той же схемы; SCRIPT — синтаксис; PROXY — выражения DML как SELECT; bytes — оценка dry-run.
+# qualify.parity.*: таблиц __CR в GCP ещё нет (shadow потоков не включён) — подтверждён синтаксис, семантика — после включения shadow.
+OK   CTE    store.read: SELECT bytes=0
+OK   SCRIPT store.cas: синтаксис OK; таблицы ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_ops.INGEST_WRITER_OWNERSHIP was not found in location EU) — семантика в PROXY
+OK   PROXY  store.cas#proxy1: SELECT bytes=0
+OK   PROXY  store.cas#proxy2: SELECT bytes=0
+OK   CTE    store.qualification: SELECT bytes=0
+OK   FULL   store.legacyRuns.stocks: SELECT bytes=6799
+OK   FULL   store.cloudRuns.stocks: SELECT bytes=0
+OK   FULL   store.currentWatermark.stocks: SELECT bytes=2716
+OK   FULL   store.writeJobs.stocks: SELECT bytes=0
+OK   FULL   store.gateEvidence.stocks: SELECT bytes=0
+OK   CTE    gate.reader.stocks: SELECT bytes=0
+OK   CTE    gate.recheck.stocks: SELECT bytes=0
+OK   FULL   store.legacyRuns.statistics: SELECT bytes=376707
+OK   FULL   store.cloudRuns.statistics: SELECT bytes=0
+OK   FULL   store.currentWatermark.statistics: SELECT bytes=905365
+OK   FULL   store.writeJobs.statistics: SELECT bytes=0
+OK   FULL   store.gateEvidence.statistics: SELECT bytes=0
+OK   CTE    gate.reader.statistics: SELECT bytes=0
+OK   CTE    gate.recheck.statistics: SELECT bytes=0
+OK   FULL   store.legacyRuns.ads: SELECT bytes=3062
+OK   FULL   store.cloudRuns.ads: SELECT bytes=0
+OK   FULL   store.currentWatermark.ads: SELECT bytes=350530
+OK   FULL   store.writeJobs.ads: SELECT bytes=0
+OK   FULL   store.gateEvidence.ads: SELECT bytes=0
+OK   CTE    gate.reader.ads: SELECT bytes=0
+OK   CTE    gate.recheck.ads: SELECT bytes=0
+OK   FULL   store.legacyRuns.finance: SELECT bytes=15802
+OK   FULL   store.cloudRuns.finance: SELECT bytes=0
+OK   FULL   store.currentWatermark.finance: SELECT bytes=5460
+OK   FULL   store.writeJobs.finance: SELECT bytes=0
+OK   FULL   store.gateEvidence.finance: SELECT bytes=0
+OK   CTE    gate.reader.finance: SELECT bytes=0
+OK   CTE    gate.recheck.finance: SELECT bytes=0
+OK   FULL   store.legacyRuns.supplies: SELECT bytes=0
+OK   FULL   store.cloudRuns.supplies: SELECT bytes=0
+OK   FULL   store.currentWatermark.supplies: SELECT bytes=10104
+OK   FULL   store.writeJobs.supplies: SELECT bytes=0
+OK   FULL   store.gateEvidence.supplies: SELECT bytes=0
+OK   CTE    gate.reader.supplies: SELECT bytes=0
+OK   CTE    gate.recheck.supplies: SELECT bytes=0
+OK   FULL   store.legacyRuns.ref: SELECT bytes=5424
+OK   FULL   store.cloudRuns.ref: SELECT bytes=0
+OK   FULL   store.currentWatermark.ref: SELECT bytes=41
+OK   FULL   store.writeJobs.ref: SELECT bytes=0
+OK   FULL   store.gateEvidence.ref: SELECT bytes=0
+OK   CTE    gate.reader.ref: SELECT bytes=0
+OK   CTE    gate.recheck.ref: SELECT bytes=0
+OK   FULL   store.continuityViolations: SELECT bytes=688368
+OK   FULL   store.statsWatermarkBefore: SELECT bytes=905365
+OK   FULL   store.duplicates.stocks: SELECT bytes=2716
+OK   FULL   store.downstreamAlive.mart: SELECT bytes=0
+OK   FULL   store.downstreamAlive.ref_active: SELECT bytes=41
+OK   SCRIPT gate.ownershipAssertSql: SCRIPT bytes=0
+OK   CTE    gate.ownershipAssertSql: ASSERT bytes=0
+OK   CTE    apps_script.gate: SELECT bytes=0
+OK   FULL   apps_script.resync_statistics: SELECT bytes=905365
+OK   FULL   qualify.shadowRuns.statistics: SELECT bytes=323718
+OK   FULL   qualify.shadowRuns.ads: SELECT bytes=323718
+OK   FULL   qualify.shadowRuns.finance: SELECT bytes=323718
+OK   FULL   qualify.shadowRuns.supplies: SELECT bytes=323718
+OK   FULL   qualify.shadowRuns.ref: SELECT bytes=323718
+OK   SCRIPT qualify.insert: синтаксис OK; таблицы ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_ops.INGEST_QUALIFICATION was not found in location EU) — семантика в PROXY
+OK   PROXY  qualify.insert#proxy1: SELECT bytes=0
+OK   FULL   qualify.parity.statistics.query1: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.RAW_WB_ORDERS__CR was not found in location EU)
+OK   FULL   qualify.parity.ads.query1: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.RAW_WB_ADV_BOOSTER_STATS__CR was not found in location EU)
+OK   FULL   qualify.parity.finance.query1: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.FINANCE_REPORT_LOADS__CR was not found in location EU)
+OK   FULL   qualify.parity.finance.query3: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.FINANCE_WEEK_RECON__CR was not found in location EU)
+OK   FULL   qualify.parity.supplies.query1: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.RAW_WB_SUPPLIES_GOODS__CR was not found in location EU)
+OK   FULL   qualify.parity.ref.query1: синтаксис OK; shadow-таблиц ещё нет (Not found: Table project-fa311fc0-4d87-4781-986:wb_raw.REF_SKU_MASTER_DATA__CR was not found in location EU)
+OK   SCRIPT ddl.file: SCRIPT bytes=0
+OK   FULL   ddl.create.INGEST_WRITER_OWNERSHIP: CREATE_TABLE bytes=0
+OK   FULL   ddl.create.INGEST_CUTOVER_LOG: CREATE_TABLE bytes=0
+OK   FULL   ddl.create.INGEST_QUALIFICATION: CREATE_TABLE bytes=0
+OK   PROXY  ddl.seed#proxy1: SELECT bytes=0
+OK   CTE    ddl.assert1: ASSERT bytes=0
+OK   CTE    ddl.assert2: ASSERT bytes=0
+OK   CTE    ddl.assert3: ASSERT bytes=0
+OK   CTE    ddl.assert4: ASSERT bytes=0
+итого: все OK
+exit=0

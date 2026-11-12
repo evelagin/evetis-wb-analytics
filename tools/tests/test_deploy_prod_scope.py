@@ -173,6 +173,7 @@ def test_scope_check_runs_in_every_mode_and_after_failures():
 def _fleet(image=OLD):
     names = sorted(scope.allowed("all")) + [
         "wb-stocks-shadow", "wb-orders-shadow", "heldi-controller", "ozon-postings-prod", "unitka-web",
+        "ingest-cutover-prod", "ingest-qualify-prod",
     ]
     return [job(n, image, gen=3) for n in names]
 
@@ -261,3 +262,93 @@ def test_cli_exit_codes(tmp_path):
     cmd = [sys.executable, str(REPO / "tools/deploy_scope_check.py"), "check", "wb-stocks-prod", str(b)]
     assert subprocess.run(cmd + [str(ok), D], capture_output=True).returncode == 0
     assert subprocess.run(cmd + [str(bad), D], capture_output=True).returncode == 1
+
+
+# ── этап C: режим ingest-cutover (плоскость управления, вне all) ───────────────────────────────
+
+def test_ingest_cutover_mode_is_exactly_the_coordinator():
+    assert scope.allowed("ingest-cutover") == {"ingest-cutover-prod", "ingest-qualify-prod"}
+    assert _touched(_steps(), "ingest-cutover") == {"ingest-cutover-prod", "ingest-qualify-prod"}
+
+
+def test_all_mode_never_touches_the_coordinator():
+    assert not {"ingest-cutover-prod", "ingest-qualify-prod"} & scope.allowed("all")
+    assert not {"ingest-cutover-prod", "ingest-qualify-prod"} & _touched(_steps(), "all")
+    before = _fleet()
+    problems = scope.check("all", before, _promote(before, scope.allowed("all") | {"ingest-cutover-prod"}), D)
+    assert any("ingest-cutover-prod" in p and "вне режима" in p for p in problems)
+
+
+def test_no_stream_mode_touches_the_coordinator_and_vice_versa():
+    for mode in scope.STREAM_JOBS:
+        assert "ingest-cutover-prod" not in _touched(_steps(), mode), mode
+    before = _fleet()
+    for other in sorted(scope.allowed("all")):
+        after = _promote(before, {"ingest-cutover-prod", other})
+        assert any(other in p and "вне режима" in p for p in scope.check("ingest-cutover", before, after, D)), other
+
+
+def test_ingest_cutover_guard_and_absent_job():
+    run = _steps()[0][2]
+    script = "\n".join(line[10:] if line.startswith("          ") else line for line in run.splitlines())
+    rc = subprocess.run(["bash", "-c", script], env={"ONLY_JOB": "ingest-cutover", "CONFIRM_ALL": "", "PATH": "/usr/bin:/bin"},
+                        capture_output=True).returncode
+    assert rc == 0
+    before = [j for j in _fleet() if j["metadata"]["name"] not in ("ingest-cutover-prod", "ingest-qualify-prod")]
+    assert scope.check("ingest-cutover", before, before, D) == []
+
+
+# ── этап C, ревью #426 (M5): предпроверка gate владения до выката ─────────────────────────────
+
+import writer_gate_deploy_check as wg  # noqa: E402
+
+ROWS = [{"stream": s, "owner": "APPS_SCRIPT", "epoch": "1"} for s in wg.STREAMS]
+POLICY_OK = {"bindings": [{"role": "roles/bigquery.dataViewer", "members": [
+    "serviceAccount:sa-wb-statistics-prod@p.iam.gserviceaccount.com", "serviceAccount:sa-loaders-prod@p.iam.gserviceaccount.com"]}]}
+
+
+def _gated_fleet(stocks_gate="1"):
+    from test_mig1b0_stocks_prod import job as j
+    return [
+        j("wb-orders-prod", OLD, 2, ["orders"], {"ENVIRONMENT": "prod"}, sa="sa-wb-statistics-prod@p.iam.gserviceaccount.com"),
+        j("wb-stocks-prod", OLD, 5, ["stocks"], {"ENVIRONMENT": "prod", "WRITER_GATE_STOCKS": stocks_gate}, sa="sa-loaders-prod@p.iam.gserviceaccount.com"),
+        j("wb-mart-prod", OLD, 7, ["mart"], {"ENVIRONMENT": "prod"}, sa="sa-loaders-prod@p.iam.gserviceaccount.com"),
+    ]
+
+
+def test_precheck_step_runs_in_every_mode_before_any_update():
+    steps = _steps()
+    pre = [i for i, s in enumerate(steps) if "writer_gate_deploy_check.py check" in s[2]]
+    assert len(pre) == 1 and steps[pre[0]][1] is None
+    first_update = min(i for i, s in enumerate(steps) if "gcloud run jobs update" in s[2])
+    scope_before = min(i for i, s in enumerate(steps) if "> scope_before.json" in s[2])
+    assert scope_before < pre[0] < first_update
+    run = steps[pre[0]][2]
+    assert "bq head" in run and "bq get-iam-policy" in run and "writer_gate_deploy_check.py needs" in run
+
+
+def test_precheck_scope_and_verdicts():
+    fleet = _gated_fleet()
+    assert set(wg.gated_jobs("wb-statistics", fleet)) == {"wb-orders-prod"}
+    assert set(wg.gated_jobs("all", fleet)) == {"wb-orders-prod", "wb-stocks-prod"}
+    assert wg.gated_jobs("wb-stocks-prod", _gated_fleet(stocks_gate="")) == {}  # M1: gate остатков выключен
+    assert wg.gated_jobs("ingest-cutover", fleet) == {}
+    assert wg.check("all", fleet, ROWS, POLICY_OK) == []
+    assert any("потоки" in p for p in wg.check("all", fleet, ROWS[:5], POLICY_OK))
+    assert any("не читает" in p for p in wg.check("wb-statistics", fleet, ROWS, {"bindings": []}))
+    bad = [dict(r) for r in ROWS]
+    bad[0]["owner"] = "BOTH"
+    assert any("owner" in p for p in wg.check("wb-statistics", fleet, bad, POLICY_OK))
+
+
+def test_precheck_cli(tmp_path):
+    f, rws, pol = tmp_path / "jobs.json", tmp_path / "rows.json", tmp_path / "pol.json"
+    f.write_text(json.dumps(_gated_fleet()))
+    rws.write_text(json.dumps(ROWS))
+    pol.write_text(json.dumps({"bindings": []}))
+    cmd = [sys.executable, str(REPO / "tools/writer_gate_deploy_check.py")]
+    assert subprocess.run(cmd + ["needs", "wb-statistics", str(f)], capture_output=True, text=True).stdout.strip() == "yes"
+    assert subprocess.run(cmd + ["needs", "ingest-cutover", str(f)], capture_output=True, text=True).stdout.strip() == "no"
+    assert subprocess.run(cmd + ["check", "wb-statistics", str(f), str(rws), str(pol)], capture_output=True).returncode == 1
+    pol.write_text(json.dumps(POLICY_OK))
+    assert subprocess.run(cmd + ["check", "wb-statistics", str(f), str(rws), str(pol)], capture_output=True).returncode == 0

@@ -99,7 +99,7 @@ function wbOrdersBqEnsureTable_(headers) {
   if (!table) {
     var fields = headers.map(function (h) { return { name: h, type: 'STRING', mode: 'NULLABLE' }; });
     fields.push({ name: '_order_date', type: 'DATE', mode: 'NULLABLE' });
-    BigQuery.Tables.insert({
+    wbBqTablesInsert_({
       tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: WB_ORDERS_BQ_TABLE_ },
       schema: { fields: fields },
       timePartitioning: { type: 'DAY', field: '_order_date' },
@@ -141,7 +141,7 @@ function wbOrdersBqEnsureTable_(headers) {
       'Пересоздайте таблицу (patch партицию не добавляет).');
   }
   if (missing.length) {
-    BigQuery.Tables.patch({ schema: { fields: existing.concat(missing) } },
+    wbBqTablesPatch_({ schema: { fields: existing.concat(missing) } },
       c.projectId, c.datasetId, WB_ORDERS_BQ_TABLE_);
     console.log('  RAW_WB_ORDERS: добавлены колонки → ' + missing.map(function (m) { return m.name; }).join(', '));
   }

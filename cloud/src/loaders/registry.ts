@@ -29,6 +29,8 @@ import { ozonLcdMigrationLoader } from './unitka/ozon/lcd_migration_loader.js';
 import { ozonCpoOrdersLoader } from './ozon_cpo/index.js';
 import { unitkaStorePnlLoader } from './unitka/storepnl/index.js';
 import { ozonStorePnlLoader } from './unitka/ozonstorepnl/index.js';
+import { cutoverLoader } from './cutover/index.js';
+import { qualifyLoader } from './qualify/index.js';
 
 export interface LoaderSpec {
   handler: LoaderHandler;
@@ -55,6 +57,11 @@ export interface LoaderSpec {
     /** WARNING: версия после сборки ≠ версии до неё → COMPLETE пишется без версии (NULL). */
     changedDuringBuildCode: string;
   };
+  /**
+   * Этап C: загрузчик плоскости управления (координатор cutover). cli.ts НЕ берёт lease и НЕ пишет
+   * LOADER_RUNS: конкурентность — CAS в wb_ops.INGEST_WRITER_OWNERSHIP, прав на LOADER_RUNS у его SA нет.
+   */
+  controlPlane?: boolean;
 }
 
 export const LOADERS: Record<string, LoaderSpec> = {
@@ -115,6 +122,12 @@ export const LOADERS: Record<string, LoaderSpec> = {
   // OZON_STORE_PNL_PUBLISH=1 Sheets не открывается (план, QA и гейты — в журнал). Запись идемпотентна (NOOP по отпечатку, ручные
   // правки → отказ), атомарна — повтор транзиентного отказа в том же слоте безопасен.
   'ozon-store-pnl': { handler: (ctx) => ozonStorePnlLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, retryTransient: true },
+  // Этап C (OWNER ACK 11.11.2026): координатор переключения писателей WB Apps Script ↔ Cloud Run. Job
+  // ingest-cutover-prod, CUTOVER_ACTION/CUTOVER_STREAM в env. Только prod; без lease и LOADER_RUNS.
+  cutover: { handler: (ctx) => cutoverLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, controlPlane: true },
+  // Этап C: писатель wb_ops.INGEST_QUALIFICATION — паритет shadow ↔ prod по файлам sql/mig_*_parity.sql потоков.
+  // Job ingest-qualify-prod. Только prod; без lease и LOADER_RUNS; пишет только таблицу квалификации.
+  qualify: { handler: (ctx) => qualifyLoader(ctx), logicalPeriod: (now) => unitkaSlot(now), prodOnly: true, controlPlane: true },
 };
 
 export function resolveLoader(name: string): LoaderSpec | undefined {

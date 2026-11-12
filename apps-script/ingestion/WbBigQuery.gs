@@ -154,7 +154,7 @@ function bqEnsureFinanceTable_() {
     BigQuery.Tables.get(c.projectId, c.datasetId, BQ_TABLE_FINANCE_);
     return false; // уже есть
   } catch (e) {
-    BigQuery.Tables.insert(
+    wbBqTablesInsert_(
       {
         tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: BQ_TABLE_FINANCE_ },
         schema: bqFinanceSchema_(),
@@ -203,7 +203,7 @@ function bqLoadRows_(tableId, rows) {
     }
   };
 
-  var ins = BigQuery.Jobs.insert(job, c.projectId, blob);
+  var ins = wbBqJobsInsert_(job, c.projectId, blob);
   var jobId = ins.jobReference.jobId;
   var jobLocation = ins.jobReference.location || c.location;
 
@@ -226,7 +226,7 @@ function bqLoadRows_(tableId, rows) {
 /** Выполняет SELECT и возвращает {rows, totalRows}. */
 function bqQuery_(sql) {
   var c = getBqConfig_();
-  var res = BigQuery.Jobs.query(
+  var res = wbBqJobsQuery_(
     { query: sql, useLegacySql: false, location: c.location }, c.projectId
   );
   return { rows: res.rows || [], totalRows: res.totalRows };
@@ -253,8 +253,8 @@ function bqSelfTest() {
 
   var testTable = '_selftest';
   // Пересоздаём тестовую таблицу с нуля
-  try { BigQuery.Tables.remove(c.projectId, c.datasetId, testTable); } catch (e) {}
-  BigQuery.Tables.insert(
+  try { wbBqTablesRemove_(c.projectId, c.datasetId, testTable); } catch (e) {}
+  wbBqTablesInsert_(
     {
       tableReference: { projectId: c.projectId, datasetId: c.datasetId, tableId: testTable },
       schema: { fields: [
@@ -277,7 +277,7 @@ function bqSelfTest() {
   var cnt = q.rows.length ? q.rows[0].f[0].v : '?';
   console.log('COUNT(*) из BigQuery: ' + cnt);
 
-  try { BigQuery.Tables.remove(c.projectId, c.datasetId, testTable); } catch (e) {}
+  try { wbBqTablesRemove_(c.projectId, c.datasetId, testTable); } catch (e) {}
 
   if (String(cnt) === '2') {
     console.log('✅ SELF-TEST OK: доступ, создание, загрузка и чтение работают.');
