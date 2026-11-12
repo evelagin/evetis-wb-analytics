@@ -133,7 +133,7 @@ def test_guard_all_runs_first_and_before_any_token():
     assert name.startswith("Guard") and cond is None
     assert '[ "$ONLY_JOB" = "all" ]' in run and scope.CONFIRM_ALL_PHRASE in run and "exit 1" in run
     text = WF.read_text(encoding="utf-8")
-    assert text.index("Guard:") < text.index("google-github-actions/auth")
+    assert text.index("Guard:") < text.index("uses: google-github-actions/auth@")
     assert "CONFIRM_ALL: ${{ inputs.confirm_all }}" in text and "ONLY_JOB: ${{ inputs.only_job }}" in text
 
 
