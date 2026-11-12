@@ -126,7 +126,10 @@ def test_mutation_stream_step_leaking_into_stocks_is_caught():
 
 def test_guard_all_runs_first_and_before_any_token():
     steps = _steps()
-    name, cond, run = steps[0]
+    gi = next(i for i, s in enumerate(steps) if s[0].startswith("Guard"))
+    # до guard — только checkout (он не выдаёт токен; стоит первым, иначе удалит файл учётных данных auth)
+    assert all("actions/checkout@" in s[0] for s in steps[:gi]), steps[:gi]
+    name, cond, run = steps[gi]
     assert name.startswith("Guard") and cond is None
     assert '[ "$ONLY_JOB" = "all" ]' in run and scope.CONFIRM_ALL_PHRASE in run and "exit 1" in run
     text = WF.read_text(encoding="utf-8")
@@ -135,7 +138,7 @@ def test_guard_all_runs_first_and_before_any_token():
 
 
 def test_guard_logic_in_shell():
-    run = _steps()[0][2]
+    run = next(s for s in _steps() if s[0].startswith("Guard"))[2]
     script = "\n".join(line[10:] if line.startswith("          ") else line for line in run.splitlines())
     def rc(mode, confirm):
         return subprocess.run(["bash", "-c", script], env={"ONLY_JOB": mode, "CONFIRM_ALL": confirm, "PATH": "/usr/bin:/bin"},
