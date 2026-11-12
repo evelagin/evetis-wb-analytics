@@ -25,6 +25,19 @@
   F5 — срок `WB_TOKEN_FINANCE` проверяется до первого запроса (`WB_FINANCE_TOKEN_EXPIRED`), 401/403 Finance API —
   детерминированный `WB_FINANCE_AUTH` без повторов; значение токена в ошибку и лог не попадает.
 
+## 2026-11-10 — Миграция Apps Script → Cloud Run: потребители журнала загрузок читают V_INGEST_HEARTBEAT (Draft, не применено)
+
+После переключения заказов, продаж и рекламы на Cloud Run их прогоны пишутся в `wb_raw.LOADER_RUNS`, а не в
+`wb_raw.INGEST_RUNS`. Детекторы и витрина свежести читали `INGEST_RUNS` напрямую и подняли бы ложную тревогу
+«нет прогонов». Источник заменён на `V_INGEST_HEARTBEAT` (= INGEST_RUNS ∪ LOADER_RUNS prod):
+- `sql/health/dro1_02_probe.sql` (`evetis_health.TVF_PIPELINE_PROBE`);
+- `sql/mart/dashboard_layer_v1.sql` (`wb_mart.V_DATA_FRESHNESS`: слои ads, orders, sales);
+- `sql/ops/phase2_health/d2_health_ext_procedure.sql` (`wb_ops.sp_evaluate_health_ext`);
+- `sql/health/dro1_01_contract.sql` — только текст источника в контракте.
+До переключения результат не меняется: в `LOADER_RUNS` prod строк `orders`/`sales`/`ads` нет (проверено 10.11).
+Живые тела трёх объектов сверены с Git до правки — совпадают. Журнал отказов `V_RUN_FAILURE_LEDGER` уже читает
+`LOADER_RUNS` отдельно и не меняется. Тест-предохранитель `tools/tests/test_ingest_heartbeat_consumers.py`.
+
 ## 2026-10-26 — Mig1b-0: подготовка боевого контура остатков WB (Draft, НЕ применено)
 
 `docs/ops/MIG1B0_STOCKS_PROD_PREP.md`. Исходники без эффекта на production: Terraform, DRO-1 SQL и деплой — ручные, по OWNER ACK MIG1B.
