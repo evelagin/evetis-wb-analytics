@@ -338,3 +338,20 @@ def test_terraform_prod_sa_writes_exactly_three_stock_tables():
     }
     for name in stock:
         assert 'role       = "roles/bigquery.dataEditor"' in _block(text, "google_bigquery_table_iam_member", name)
+
+
+def test_checkout_precedes_gcp_auth_in_every_workflow_job():
+    """Инцидент 12.11.2026: actions/checkout после google-github-actions/auth очистил рабочий каталог вместе
+    с файлом учётных данных — gcloud в pre-check wb-stocks-prod не авторизовался (fail-closed, Job не изменён)."""
+    for wf in sorted((REPO / ".github/workflows").glob("*.yml")):
+        text = wf.read_text(encoding="utf-8")
+        if "\njobs:" not in text:
+            continue
+        body = text.split("\njobs:", 1)[1]
+        # job'ы — ключи с отступом 2 под jobs:
+        for chunk in re.split(r"\n  (?=[A-Za-z0-9_-]+:\s*\n)", "\n" + body)[1:]:
+            name = chunk.split(":", 1)[0]
+            co = [m.start() for m in re.finditer(r"uses:\s*actions/checkout@", chunk)]
+            au = [m.start() for m in re.finditer(r"uses:\s*google-github-actions/auth@", chunk)]
+            if co and au:
+                assert max(co) < min(au), f"{wf.name}/{name}: checkout после auth удалит файл учётных данных"
