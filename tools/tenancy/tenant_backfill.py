@@ -319,7 +319,12 @@ def select(c, sql, parameters, request=None):
         if result.get("jobComplete"):
             break
         result = request("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
-    if not result.get("jobComplete") or result.get("errors") or result.get("pageToken"):
+    if not result.get("jobComplete") or result.get("errors"):
+        # A2: an unfinished query or a BigQuery backend/rate error is a typed transient read (a
+        # later wake repeats the SELECT); any other failure stays evidence (fail-closed).
+        from tools.tenancy.durable_daily import query_failure
+        raise query_failure(result)
+    if result.get("pageToken"):
         raise B.EvidenceError("bounded verification query incomplete/failed")
     fields = result.get("schema",{}).get("fields",[])
     return [{f["name"]: TT._cast(f,col.get("v")) for f,col in zip(fields,row["f"])} for row in result.get("rows",[])]
