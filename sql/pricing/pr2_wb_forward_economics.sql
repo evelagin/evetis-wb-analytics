@@ -44,7 +44,7 @@ CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_raw.V_WB_TARIFFS_CURRE
 SELECT tariff_kind, entity_key, entity_name, parent_key, parent_name, metric, value_num, value_raw, is_parsed, effective_next, effective_till_max, observed_at, observation_date, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, HOUR) AS tariff_age_hours, CASE WHEN TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, HOUR) <= 36 THEN 'FRESH' WHEN TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), observed_at, HOUR) <= 96 THEN 'DELAYED' ELSE 'STALE' END AS tariff_freshness FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_TARIFFS` QUALIFY ROW_NUMBER() OVER (PARTITION BY tariff_kind, entity_key, metric ORDER BY observed_at DESC) = 1;
 
 -- ── V_WB_SKU_COST_INPUTS ───────────────────────────────────────────────
--- SHA-256 тела: 17f2445b1f08f3edd5789e5ef060914b99715c3ee905a6fceb00f6f73268733e
+-- SHA-256 тела: b89a41a16ed1635dab5aadbbfd036f02ffa26d48c3cea249555ea8addcc98875 (WB_FE_V1.1, развёрнуто 13.11.2026)
 -- Длина тела: 5462
 CREATE OR REPLACE VIEW `project-fa311fc0-4d87-4781-986.wb_mart.V_WB_SKU_COST_INPUTS` AS
 WITH px AS (
