@@ -28,7 +28,8 @@
 --   Эквайринг:  окно 45 суток, доля acquiring_fee / retail_price_withdisc_rub
 --               BASE = p50 · CONSERVATIVE = p75 · STRESS = p90
 --   Логистика:  окно 90 суток, БАЗА = Σлогистика / Σпродажи (нагрузка на
---               проданную единицу — включает невыкуп),
+--               проданную единицу — включает невыкуп; с V1.1 без возвратов
+--               продавцу «(К продавцу)» и экспортной услуги),
 --               CONSERVATIVE = БАЗА × (p75/mean построчного распределения),
 --               STRESS       = БАЗА × (p90/mean)
 --
@@ -73,7 +74,13 @@ acq AS (
           AND SAFE_CAST(retail_price_withdisc_rub AS FLOAT64) > 0)
   WHERE acq_ratio IS NOT NULL
 ),
-log_rows AS (SELECT internal_sku, logistics_amount FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_FINANCE` WHERE finance_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND internal_sku IS NOT NULL AND logistics_amount IS NOT NULL AND logistics_amount != 0),
+-- WB_FE_V1.1 (13.11.2026): в нагрузку на продажу идёт только логистика покупателя. Возвраты продавцу
+-- («Возврат неопознанного товара (К продавцу)», «Возврат брака (К продавцу)» и любые «(К продавцу)»)
+-- и «Услуга сопровождения экспортных операций» — разовые расходы магазина, не цена единицы
+-- (поставка 41788803: 111 строк × 255 ₽ = 28 305 ₽ за 90 дн легли на кремы как «Доставка»).
+-- Тип строки — bonusTypeName из сырого отчёта по rrd_id; строки без сырого источника сохраняются.
+fin_bonus AS (SELECT CAST(rrd_id AS STRING) AS rrd, JSON_VALUE(raw_json, '$.bonusTypeName') AS bonus_type_name FROM `project-fa311fc0-4d87-4781-986.wb_raw.RAW_WB_FINANCE` WHERE _rr_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 100 DAY) QUALIFY ROW_NUMBER() OVER (PARTITION BY CAST(rrd_id AS STRING) ORDER BY loaded_at DESC) = 1),
+log_rows AS (SELECT f.internal_sku, f.logistics_amount FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_FINANCE` f LEFT JOIN fin_bonus b ON b.rrd = CAST(f.rrd_id AS STRING) WHERE f.finance_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND f.internal_sku IS NOT NULL AND f.logistics_amount IS NOT NULL AND f.logistics_amount != 0 AND NOT (IFNULL(b.bonus_type_name, '') LIKE '%(К продавцу)%' OR IFNULL(b.bonus_type_name, '') = 'Услуга сопровождения экспортных операций')),
 sales_cnt AS (SELECT internal_sku, COUNT(*) AS sales_n FROM `project-fa311fc0-4d87-4781-986.wb_mart.FACT_FINANCE` WHERE finance_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND internal_sku IS NOT NULL AND supplier_oper_name='Продажа' GROUP BY 1),
 log_stat AS (
   SELECT internal_sku, COUNT(*) AS logistics_events_n, ROUND(SUM(logistics_amount),2) AS logistics_total_rub,
