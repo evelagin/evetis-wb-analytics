@@ -994,7 +994,8 @@ def _ads_sku_rows_legacy(run_id, ts, d0, d1):
                             "проверить формат отчёта", batch_size=len(batch),
                             window=f"{d0}..{d1}")
                 continue
-            pairs = [(n.split("_")[0], t) for n, t in zip(names, files)]
+            # имя файла «<id>_….csv» или «<id>.csv»: кампания — ведущие цифры
+            pairs = [((re.match(r"^(\d+)", n) or re.match(r"(.*)", n)).group(1), t) for n, t in zip(names, files)]
         elif len(batch) == 1:
             # Партия из ОДНОЙ кампании приходит text/csv (TECH_DEBT P2-6).
             pairs = [(str(batch[0]), raw.decode("utf-8-sig"))]
