@@ -167,12 +167,52 @@ def test_ads_silent_skips(entities, captured_merges, monkeypatch, scenario, kwar
     assert captured_merges == []
 
 
-def test_single_campaign_csv_is_still_lost_without_flag(entities, captured_merges, monkeypatch,
-                                                        lenient):
-    """P2-6 без флага — прежнее поведение EVETIS: CSV одной кампании не разбирается (пусто)."""
+def test_single_campaign_csv_is_parsed_without_flag(entities, captured_merges, monkeypatch,
+                                                    lenient):
+    """P2-6 (16.11.2026): CSV партии из одной кампании разбирается и в нестрогом пути."""
     _perf(monkeypatch, entities, report=(200, REPORT_CSV))
     entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
+    rows = captured_merges[-1][1]
+    assert [(r["campaign_id"], r["sku"], r["date"]) for r in rows] == [("111", "500", "2026-09-01")]
+
+
+CAMPAIGNS_CPC_CPO = json.dumps({"list": [
+    {"id": "111", "advObjectType": "SKU"},
+    {"id": "222", "advObjectType": "ALL_SKU_PROMO"},
+    {"id": "333", "advObjectType": "SEARCH_PROMO"}], "total": "3"})
+EXPENSE_CPC_CPO = "ID;Название;Расход\n111;CPC;10,00\n222;CPO все;5,00\n333;CPO выбранные;1,00\n"
+
+
+def test_cpo_campaigns_are_not_batched_without_flag(entities, captured_merges, monkeypatch,
+                                                     lenient):
+    """16.11.2026: CPO в одной партии с CPC превращал ответ в CSV и партия терялась.
+
+    Оплата за заказ строк SKU не даёт — в отчёт по SKU не заказывается; CPC-кампания одна в
+    партии, её CSV разбирается.
+    """
+    posted = []
+    _perf(monkeypatch, entities, campaign=(200, CAMPAIGNS_CPC_CPO),
+          expense=(200, EXPENSE_CPC_CPO), report=(200, REPORT_CSV))
+    real_post = entities.perf_post
+    monkeypatch.setattr(entities, "perf_post",
+                        lambda path, body: (posted.append(body["campaigns"]), real_post(path, body))[1])
+    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
+    assert posted == [["111"]]
+    assert [r["campaign_id"] for r in captured_merges[-1][1]] == ["111"]
+
+
+def test_multi_campaign_non_zip_is_logged_and_skipped(entities, captured_merges, monkeypatch,
+                                                       lenient):
+    campaigns = json.dumps({"list": [{"id": "111", "advObjectType": "SKU"},
+                                     {"id": "112", "advObjectType": "SKU"}], "total": "2"})
+    expense = "ID;Название;Расход\n111;A;10,00\n112;B;3,00\n"
+    events = []
+    monkeypatch.setattr(entities, "log", lambda **kw: events.append(kw))
+    _perf(monkeypatch, entities, campaign=(200, campaigns), expense=(200, expense),
+          report=(200, REPORT_CSV))
+    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
     assert captured_merges[-1][1] == []
+    assert any(e.get("event") == "ads_sku_batch_not_zip" for e in events)
 
 
 # Строгий режим T5 больше не отвергает длинное окно и CSV одной кампании, а исправляет их:
