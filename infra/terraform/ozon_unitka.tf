@@ -179,6 +179,7 @@ resource "google_bigquery_dataset_iam_member" "ozon_unitka_read_ref" {
 resource "google_monitoring_alert_policy" "ozon_unitka_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "OZON Unitka: прогон завершился ошибкой"
+  enabled      = false # 16.11.2026 OWNER: шум — тот же класс, что unitka_engine_failed; аварии ловят unitka_platform_failed и «LCD Ozon не сдвигался 25 ч»
   combiner     = "OR"
 
   conditions {

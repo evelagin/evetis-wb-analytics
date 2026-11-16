@@ -129,6 +129,7 @@ resource "google_cloud_scheduler_job" "wb_stocks_prod" {
 resource "google_monitoring_alert_policy" "scheduler_attempt_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "Cloud Scheduler: вызов по расписанию не состоялся"
+  enabled      = false # 16.11.2026 OWNER: шум — срабатывает на разовые 5xx/таймауты целей (WB API), которые закрывает повтор; пропуск данных ловят DRO-1 и LCD-алерты
   combiner     = "OR"
 
   conditions {
