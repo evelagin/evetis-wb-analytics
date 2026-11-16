@@ -173,6 +173,7 @@ resource "google_monitoring_alert_policy" "dro_detector_watchdog" {
 resource "google_monitoring_alert_policy" "dro_detector_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "DRO-1: детектор здоровья данных упал"
+  enabled      = false # 16.11.2026 OWNER: шум — дублирует dro_detector_watchdog (нет пульса детектора)
   combiner     = "OR"
 
   conditions {
@@ -216,6 +217,7 @@ resource "google_monitoring_alert_policy" "dro_detector_failed" {
 resource "google_monitoring_alert_policy" "dro_alert_batch" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "DRO-1: данные EVETIS — сбой, потеря или восстановление"
+  enabled      = false # 16.11.2026 OWNER: шум — открытие/напоминание/восстановление по каждому источнику каждые 6 ч; итог дня — в дайджесте dro_digest
   combiner     = "OR"
 
   conditions {

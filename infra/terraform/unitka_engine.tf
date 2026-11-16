@@ -376,6 +376,7 @@ resource "google_monitoring_notification_channel" "unitka_email" {
 resource "google_monitoring_alert_policy" "unitka_engine_failed" {
   count        = var.unitka_alert_email == "" ? 0 : 1
   display_name = "UNITKA Engine: прогон завершился ошибкой"
+  enabled      = false # 16.11.2026 OWNER: шум — ложные письма: срабатывает на служебные сигналы сверки при успешном прогоне; аварии ловят unitka_platform_failed и «LCD не сдвигался 25 ч»
   combiner     = "OR"
 
   conditions {
