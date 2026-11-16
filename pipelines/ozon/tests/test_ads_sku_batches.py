@@ -100,3 +100,12 @@ def test_multi_campaign_non_zip_is_logged_and_skipped(entities, captured_merges,
     entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
     assert captured_merges[-1][1] == []
     assert any(e.get("event") == "ads_sku_batch_not_zip" for e in events)
+
+
+def test_zip_file_named_only_by_campaign_id(entities, captured_merges, monkeypatch):
+    posted = []
+    _perf(monkeypatch, entities, [{"id": "111", "advObjectType": "SKU"}, {"id": "112", "advObjectType": "SKU"}],
+          "ID;Название;Расход\n111;A;10,00\n112;B;3,00\n",
+          _zip({"111.csv": REPORT_CSV, "112.csv": REPORT_CSV.replace("111", "112")}), posted)
+    entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
+    assert sorted(r["campaign_id"] for r in captured_merges[-1][1]) == ["111", "112"]

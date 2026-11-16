@@ -550,7 +550,8 @@ def ads_sku_daily(run_id, ts, frm, to):
             except (zipfile.BadZipFile, UnicodeDecodeError):
                 log(event="ads_sku_batch_bad_zip", window=f"{d0}..{d1}", campaigns=batch)
                 continue
-            pairs = [(n.split("_")[0], t) for n, t in zip(names, files)]
+            # имя файла «<id>_….csv» или «<id>.csv»: кампания — ведущие цифры
+            pairs = [((re.match(r"^(\d+)", n) or re.match(r"(.*)", n)).group(1), t) for n, t in zip(names, files)]
         elif len(batch) == 1:
             # Партия из ОДНОЙ кампании приходит text/csv (TECH_DEBT P2-6).
             pairs = [(str(batch[0]), raw.decode("utf-8-sig"))]
