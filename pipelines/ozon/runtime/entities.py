@@ -912,7 +912,9 @@ def ads_sku_daily(run_id, ts, frm, to):
 
 
 def _ads_sku_rows_legacy(run_id, ts, d0, d1):
-    """Прежний путь EVETIS — без изменений поведения (дифференциальный тест T2)."""
+    """Прежний путь EVETIS (дифференциальный тест T2), с двумя правками 16.11.2026:
+    кампании «оплата за заказ» и баннеры не попадают в партии, а CSV партии из одной
+    кампании загружается (TECH_DEBT P2-6)."""
     # Окно отчёта — от d0T00:00Z до d1T00:00Z, то есть (d1 - d0) суток. Длиннее
     # PERFORMANCE_REPORT_MAX_DAYS Ozon молча отдаёт ноль строк. Окно здесь НЕ
     # дробится: границы — UTC-моменты, а сутки отчёта московские, и любое
@@ -930,7 +932,13 @@ def _ads_sku_rows_legacy(run_id, ts, d0, d1):
     if code != 200:
         _strict_cap("ads_sku_daily", "список кампаний не получен, периметр пуст",
                     "повторить прогон; проверить доступ Performance API", http=code)
-    ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
+    registry = _campaign_list(txt) if code == 200 else []
+    # Оплата за заказ и баннеры отчёта по SKU не дают (замер 2026-09-28, как в строгом
+    # пути). В партии они занимали место CPC-кампании: 16.11.2026 партия «CPC + оплата за
+    # заказ» вернулась не ZIP-архивом, и расход крема для рук за 15.11 потерялся.
+    ids = [c["id"] for c in registry if c.get("advObjectType") not in NO_SKU_REPORT_ADV_TYPES]
+    skipped_types = sorted(str(c["id"]) for c in registry
+                           if c.get("advObjectType") in NO_SKU_REPORT_ADV_TYPES)
     # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
     active = set()
     c2, t2 = perf_get(f"/api/client/statistics/expense?dateFrom={d0}&dateTo={d1}")
@@ -942,6 +950,10 @@ def _ads_sku_rows_legacy(run_id, ts, d0, d1):
         _strict_cap("ads_sku_daily", "расход кампаний за окно не получен, периметр пуст",
                     "повторить прогон", http=c2, window=f"{d0}..{d1}")
     ids = [i for i in ids if i in active]
+    skipped_active = [i for i in skipped_types if i in active]
+    if skipped_active:
+        log(event="ads_sku_not_applicable", window=f"{d0}..{d1}", campaigns=skipped_active,
+            reason="оплата за заказ / баннеры: отчёт по SKU не формируется")
     rows = []
     for i in range(0, len(ids), 10):
         batch = ids[i:i + 10]
@@ -970,22 +982,26 @@ def _ads_sku_rows_legacy(run_id, ts, d0, d1):
             _strict_cap("ads_sku_daily", "отчёт не скачан", "повторить прогон",
                         http=c4, batch_size=len(batch), window=f"{d0}..{d1}")
             continue
-        try:
-            z = zipfile.ZipFile(io.BytesIO(blob.encode("utf-8", "surrogateescape")))
+        raw = blob.encode("utf-8", "surrogateescape")
+        if raw[:2] == b"PK":
+            z = zipfile.ZipFile(io.BytesIO(raw))
             files = [z.read(n).decode("utf-8-sig") for n in z.namelist()]
             names = z.namelist()
-        except Exception:
+        elif len(batch) == 1:
             # Партия из ОДНОЙ кампании приходит text/csv, а не ZIP (документация
-            # /api/client/statistics/report). Такая партия сейчас теряется молча —
-            # это известный дефект, исправление меняет поведение EVETIS
-            # (docs/architecture/TECH_DEBT.md, P2-6).
-            _strict_cap("ads_sku_daily", "отчёт не разобран как ZIP-архив",
-                        "если в партии одна кампания, ответ — CSV (известный дефект); "
-                        "до исправления такая партия не загружается",
-                        batch_size=len(batch), window=f"{d0}..{d1}")
+            # /api/client/statistics/report; TECH_DEBT P2-6, исправлено 16.11.2026).
+            files = [raw.decode("utf-8-sig")]
+            names = [f"{batch[0]}.csv"]
+        else:
+            # Несколько кампаний и не ZIP — формат неизвестен: партия не грузится, но
+            # это видно в журнале (раньше пропадало молча при статусе OK).
+            log(event="ads_sku_batch_not_zip", window=f"{d0}..{d1}", campaigns=batch)
+            _strict_cap("ads_sku_daily", "отчёт по нескольким кампаниям пришёл не ZIP-архивом",
+                        "проверить формат отчёта", batch_size=len(batch), window=f"{d0}..{d1}")
             continue
         for name, txt2 in zip(names, files):
-            cid = name.split("_")[0]
+            m = _CAMPAIGN_FILE_RE.match(name)       # «<id>_….csv» и «<id>.csv» — одна кампания
+            cid = m.group(1) if m else name.split("_")[0]
             lines = txt2.splitlines()
             for r in _csv_rows("\n".join(lines[1:])):
                 sku = (r.get("sku") or "").strip()

@@ -167,12 +167,15 @@ def test_ads_silent_skips(entities, captured_merges, monkeypatch, scenario, kwar
     assert captured_merges == []
 
 
-def test_single_campaign_csv_is_still_lost_without_flag(entities, captured_merges, monkeypatch,
-                                                        lenient):
-    """P2-6 без флага — прежнее поведение EVETIS: CSV одной кампании не разбирается (пусто)."""
+def test_single_campaign_csv_is_loaded_without_flag(entities, captured_merges, monkeypatch,
+                                                    lenient):
+    """P2-6 исправлен и без флага (16.11.2026): CSV одной кампании загружается.
+
+    До исправления партия молча пропадала: 16.11.2026 так потерялся расход крема для рук.
+    """
     _perf(monkeypatch, entities, report=(200, REPORT_CSV))
     entities.ads_sku_daily("rt-x", "ts", "2026-09-01", "2026-09-02")
-    assert captured_merges[-1][1] == []
+    assert captured_merges[-1][1], "строки одиночной кампании записаны"
 
 
 # Строгий режим T5 больше не отвергает длинное окно и CSV одной кампании, а исправляет их:
