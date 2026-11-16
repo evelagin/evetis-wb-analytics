@@ -495,14 +495,26 @@ def ads_expense_daily(run_id, ts, frm, to):
     return merge_rows("RAW_OZON_ADS_EXPENSE_DAILY", rows, ["date", "campaign_id"], run_id)
 
 
+# Кампании без строк SKU в асинхронном отчёте: оплата за заказ и баннеры (замер EVETIS 28.09).
+NO_SKU_REPORT_ADV_TYPES = frozenset({"SEARCH_PROMO", "ALL_SKU_PROMO", "BANNER", "VIDEO_BANNER"})
+
+
 def ads_sku_daily(run_id, ts, frm, to):
     """Асинхронный отчёт — единственный доказанный источник расхода по SKU.
 
     Периметр берётся из ВСЕХ кампаний с активностью в окне, а не только RUNNING.
+
+    P2-6 (16.11.2026, крем для рук 15.11): партии больше не теряются молча.
+    * Оплата за заказ и баннеры в отчёт по SKU не заказываются: строк SKU у них не бывает,
+      а соседство с ними меняло формат ответа — 16.11 партия [CPC «крем руки» + CPO «все
+      товары»] пришла не ZIP-архивом и пропала.
+    * Ответ не ZIP-архивом для партии из одной кампании — CSV этой кампании, он разбирается.
+    * Не ZIP-архив для нескольких кампаний или битый ZIP — событие в журнале и пропуск.
     """
     code, txt = perf_get("/api/client/campaign")
     # Ветка code != 200 → пустой периметр оставлена как была (OPEN QUESTION R1).
-    ids = [c["id"] for c in _campaign_list(txt)] if code == 200 else []
+    camps = _campaign_list(txt) if code == 200 else []
+    ids = [c["id"] for c in camps if c.get("advObjectType") not in NO_SKU_REPORT_ADV_TYPES]
     # оставляем только кампании с расходом в окне — иначе отчёт не сформируется
     active = set()
     d0, d1 = date.fromisoformat(str(frm)), date.fromisoformat(str(to))
@@ -529,14 +541,24 @@ def ads_sku_daily(run_id, ts, frm, to):
         c4, blob = perf_get(f"/api/client/statistics/report?UUID={uuid}", raw_text=True)
         if c4 != 200:
             continue
-        try:
-            z = zipfile.ZipFile(io.BytesIO(blob.encode("utf-8", "surrogateescape")))
-            files = [z.read(n).decode("utf-8-sig") for n in z.namelist()]
-            names = z.namelist()
-        except Exception:
+        raw = blob.encode("utf-8", "surrogateescape")
+        if raw[:2] == b"PK":
+            try:
+                z = zipfile.ZipFile(io.BytesIO(raw))
+                names = z.namelist()
+                files = [z.read(n).decode("utf-8-sig") for n in names]
+            except (zipfile.BadZipFile, UnicodeDecodeError):
+                log(event="ads_sku_batch_bad_zip", window=f"{d0}..{d1}", campaigns=batch)
+                continue
+            pairs = [(n.split("_")[0], t) for n, t in zip(names, files)]
+        elif len(batch) == 1:
+            # Партия из ОДНОЙ кампании приходит text/csv (TECH_DEBT P2-6).
+            pairs = [(str(batch[0]), raw.decode("utf-8-sig"))]
+        else:
+            log(event="ads_sku_batch_not_zip", window=f"{d0}..{d1}", campaigns=batch,
+                reason="ответ по нескольким кампаниям не ZIP-архив: кампания файла неизвестна")
             continue
-        for name, txt2 in zip(names, files):
-            cid = name.split("_")[0]
+        for cid, txt2 in pairs:
             lines = txt2.splitlines()
             for r in _csv_rows("\n".join(lines[1:])):
                 sku = (r.get("sku") or "").strip()
