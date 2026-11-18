@@ -11554,19 +11554,19 @@
       "object_name": "V_OZON_FINANCE_OPERATION_MAP",
       "object_type": "VIEW",
       "canonical_path": "sql/current/ozon_mart/V_OZON_FINANCE_OPERATION_MAP.sql",
-      "sync_state": "pending_deploy",
+      "sync_state": "captured_live",
       "dependencies": [],
       "external_dependencies": [],
       "dependency_level": 0,
-      "capture_main_sha": "a7108ab80bde302f91887c4954ceff6f705d483d",
-      "captured_at": "2026-10-15T10:13:57Z",
+      "capture_main_sha": "ba15981a8268f617371097230c9097b67d7c49c2",
+      "captured_at": "2026-10-16T06:21:55Z",
       "provenance": {
-        "source": "D3 Ozon Store P&L: развёрнуто 2026-10-15 из main a7108ab (tools/ozon_store_pnl_deploy.py --apply, readback MATCH); read-only снятие tools/verify_current_sql_live.py (metadata) — PENDING_DEPLOYED_MATCH",
+        "source": "D3 Ozon Store P&L: развёрнуто 2026-10-15 из main a7108ab (tools/ozon_store_pnl_deploy.py --apply); тип 29 expected_sign ANY (PR #353) — точечный CREATE OR REPLACE одной вью из main ba15981 2026-10-16, readback тела MATCH; read-only снятие tools/verify_current_sql_live.py (metadata) — PENDING_DEPLOYED_MATCH",
         "historical_migration": null,
         "preflight_parity": "DEPLOYED_AND_READBACK_MATCH",
         "superseded_historical_definitions": []
       },
-      "live_body_sha256_at_capture": "96a14d4865025868895fd2e1f8ca493c7043253e0c60af47a520e80dabc10d46",
+      "live_body_sha256_at_capture": "24133a674a09395ffd23778dcbc40b1440c98449893c1b6d6a0c8e1073d227a9",
       "live_schema_sha256_at_capture": "0e55004ca92a31a53ea11f5eee4010e7464e8e2a599f5b7563b0f06d3413c0ad",
       "live_description_sha256_at_capture": "45bf73d2d051d0b06bc310e311fafb37a6727bb21648fbee4ca7e5ddd065bfe5",
       "live_schema_at_capture": [
@@ -11628,7 +11628,7 @@
       "canonical_body_sha256": "f4376958be146b91029633f943b91a1fd5a780b09b0e3caa3affa70c0d17da00",
       "canonical_description_sha256": "45bf73d2d051d0b06bc310e311fafb37a6727bb21648fbee4ca7e5ddd065bfe5",
       "canonical_schema_sha256": "0e55004ca92a31a53ea11f5eee4010e7464e8e2a599f5b7563b0f06d3413c0ad",
-      "canonical_schema_verification": "unverified",
+      "canonical_schema_verification": "bigquery_verified",
       "canonical_column_count": 9,
       "canonical_schema": [
         {

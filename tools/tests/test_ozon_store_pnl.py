@@ -96,8 +96,10 @@ def test_no_wall_clock_and_no_wb(name):
     assert ".WB_" not in b and "`WB_" not in b
 
 
-# 2026-10-16: карта операций изменена Git-first (тип 29 → ANY) и ждёт развёртывания; снимок 15.10 сохранён.
-D3_PENDING = {"V_OZON_FINANCE_OPERATION_MAP"}
+# Объекты D3 в pending_deploy (Git-first, ещё не развёрнуты). Пусто: тип 29 → ANY развёрнут и снят 2026-10-16.
+D3_PENDING: set = set()
+# Последнее снятие R2C: по умолчанию — развёртывание D3 15.10 (a7108ab); карта операций — 16.10 (ba15981, PR #353).
+D3_CAPTURE_SHA = {"V_OZON_FINANCE_OPERATION_MAP": "ba15981a8268f617371097230c9097b67d7c49c2"}
 
 
 @pytest.mark.parametrize("name", [n for n in D3 if n not in D3_PENDING])
@@ -105,7 +107,7 @@ def test_manifest_entry_is_captured_live_after_deploy(name):
     # Развёрнуто 2026-10-15 из main a7108ab, readback MATCH, снятие R2C — PENDING_DEPLOYED_MATCH.
     o = next(o for o in MANIFEST["objects"] if o["object_name"] == name)
     assert o["sync_state"] == "captured_live" and o["canonical_schema_verification"] == "bigquery_verified"
-    assert o["capture_main_sha"] == "a7108ab80bde302f91887c4954ceff6f705d483d"
+    assert o["capture_main_sha"] == D3_CAPTURE_SHA.get(name, "a7108ab80bde302f91887c4954ceff6f705d483d")
     assert (o["live_body_sha256_at_capture"], o["live_schema_sha256_at_capture"], o["live_description_sha256_at_capture"]) == (
         o["canonical_body_sha256"], o["canonical_schema_sha256"], o["canonical_description_sha256"])
     assert o["live_schema_at_capture"] == o["canonical_schema"]
