@@ -7,6 +7,9 @@
 -- не ноль.
 -- Возвраты покупателей платформа пока не моделирует (сторно возврата не загружается): доставленное
 -- отправление с расходами обратной логистики — признак возврата, и результат строки NULL.
+-- *_accrued_rub — начислено на дату данных по ВСЕМ доставленным отправлениям строки, включая
+-- нерассчитанные (известная часть; поздние начисления придут позже). Колонки без «accrued»
+-- по-прежнему NULL, пока хоть одно отправление строки не рассчитано.
 -- Себестоимость — только из справочника продавца на дату заказа; ровно один действующий
 -- интервал, иначе (нет или пересекаются) — нет себестоимости. Никаких умолчаний.
 CREATE OR REPLACE VIEW `__tenant__.ozon_mart.FACT_OZON_SKU_ECONOMICS_DAILY`
@@ -66,7 +69,13 @@ agg AS (
     COUNTIF(x.is_settled) AS settled_postings,
     COUNTIF(NOT x.has_cogs) AS lines_without_cogs,
     COUNTIF(x.has_cogs) AS lines_with_cogs,
-    SUM(x.product_cogs_rub) AS product_cogs_sum_rub
+    SUM(x.product_cogs_rub) AS product_cogs_sum_rub,
+    SUM(x.commission_rub) AS commission_accrued_rub,
+    SUM(x.logistics_rub) AS logistics_accrued_rub,
+    SUM(x.acquiring_rub) AS acquiring_accrued_rub,
+    SUM(x.return_logistics_rub) AS return_logistics_accrued_rub,
+    SUM(x.promotion_rub) AS promotion_accrued_rub,
+    SUM(x.other_costs_rub) AS other_costs_accrued_rub
   FROM costed x
   GROUP BY x.order_date_msk, x.sku
 ),
@@ -87,5 +96,7 @@ SELECT j.order_date_msk, j.sku, j.internal_sku, j.delivered_postings, j.delivere
   IF(j.result_ok, j.result_sum_rub, NULL) AS contribution_pre_cogs_rub,
   IF(j.lines_without_cogs = 0, j.product_cogs_sum_rub, NULL) AS product_cogs_rub,
   IF(j.lines_without_cogs = 0, 'COMPLETE', IF(j.lines_with_cogs = 0, 'NOT_AVAILABLE', 'PARTIAL')) AS cogs_coverage,
-  IF(j.result_ok AND j.lines_without_cogs = 0, j.result_sum_rub - j.product_cogs_sum_rub, NULL) AS contribution_after_cogs_rub
+  IF(j.result_ok AND j.lines_without_cogs = 0, j.result_sum_rub - j.product_cogs_sum_rub, NULL) AS contribution_after_cogs_rub,
+  j.settled_postings, j.commission_accrued_rub, j.logistics_accrued_rub, j.acquiring_accrued_rub,
+  j.return_logistics_accrued_rub, j.promotion_accrued_rub, j.other_costs_accrued_rub
 FROM judged j;

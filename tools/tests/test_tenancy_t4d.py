@@ -56,7 +56,7 @@ def _run(ds, name, tables):
 # ═══════════════════════════════════════ контракт ↔ SQL
 def test_contract_describes_exactly_the_share_views():
     assert sorted(CONTRACT["objects"]) == _share_names()
-    assert len(_share_names()) == 11
+    assert len(_share_names()) == 14
 
 
 @pytest.mark.parametrize("name", sorted(CONTRACT["objects"]))
@@ -218,7 +218,7 @@ def test_share_renders_identically_for_client_002(tmp_path, monkeypatch):
     a = SP.render("client_001", tmp_path / "a")
     b = SP.render("client_002", tmp_path / "b")
     share_a = [o for o in a["objects"] if o["dataset"] == "analytics_share"]
-    assert len(share_a) == 11
+    assert len(share_a) == 14
     for o in share_a:
         ta = (tmp_path / "a" / "analytics_share" / f"{o['name']}.sql").read_text(encoding="utf-8")
         tb = (tmp_path / "b" / "analytics_share" / f"{o['name']}.sql").read_text(encoding="utf-8")
@@ -292,9 +292,11 @@ def test_coverage_tie_prefers_the_worse_status(statuses, winner):
 ECON = ["order_date_msk", "sku", "internal_sku", "delivered_units", "seller_revenue_rub", "commission_rub",
         "logistics_rub", "acquiring_rub", "return_logistics_rub", "promotion_rub", "other_costs_rub",
         "unclassified_rub", "unsettled_postings", "postings_with_return_costs", "contribution_pre_cogs_rub",
-        "product_cogs_rub", "contribution_after_cogs_rub", "revenue_basis", "taxonomy_status", "cogs_coverage"]
+        "product_cogs_rub", "contribution_after_cogs_rub", "revenue_basis", "taxonomy_status", "cogs_coverage",
+        "delivered_postings", "settled_postings", "commission_accrued_rub", "logistics_accrued_rub", "acquiring_accrued_rub",
+        "return_logistics_accrued_rub", "promotion_accrued_rub", "other_costs_accrued_rub"]
 ECON_ROW = ("2026-01-05", "S1", "A1", 1, 1000, -300, -100, -15, 0, 0, 0, 0, 0, 0, 585, 200, 385,
-            "SETTLED", "CLASSIFIED", "COMPLETE")
+            "SETTLED", "CLASSIFIED", "COMPLETE", 1, 1, -300, -100, -15, 0, 0, 0)
 
 
 @pytest.mark.parametrize("window,status,pre,after", [
