@@ -100,7 +100,25 @@ variable "contract" {
       authorized_views = list(object({ viewer_key = string, source_key = string }))
       query_role       = object({ role_id = string, permissions = list(string) })
     }))
+    # РНП владельца: READER на analytics_share ровно sa-rnp-web (tools/tenancy/rnp_access.py). null — не выдан.
+    rnp_access = optional(object({
+      mode             = string
+      dataset_key      = string
+      service_account  = string
+      authorized_views = list(object({ viewer_key = string, source_key = string }))
+    }))
   })
+
+  validation {
+    condition = var.contract.rnp_access == null || (
+      var.contract.rnp_access.mode == "OWNER_RNP_SERVICE"
+      && var.contract.rnp_access.dataset_key == "analytics_share"
+      && var.contract.rnp_access.service_account == "sa-rnp-web@${var.contract.project_id}.iam.gserviceaccount.com"
+      && alltrue([for e in var.contract.rnp_access.authorized_views : contains(keys(var.contract.datasets), e.viewer_key) && contains(keys(var.contract.datasets), e.source_key) && e.viewer_key != e.source_key])
+      && alltrue([for e in var.contract.rnp_access.authorized_views : e.source_key != "analytics_share" && e.source_key != "tenant_locks"])
+    )
+    error_message = "РНП: только READER на analytics_share учётке sa-rnp-web@<проект арендатора> (список арендаторов — tools/tenancy/rnp_access.py); авторизованные вью только из внутренних датасетов-источников (не tenant_locks)."
+  }
 
   validation {
     condition = var.contract.client_access == null || (

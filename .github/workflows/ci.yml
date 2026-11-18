@@ -103,7 +103,7 @@ jobs:
       - name: validate tenant registry
         run: python tools/tenancy/registry.py validate
       - name: tenancy tests
-        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py tools/tests/test_tenancy_sql_deployer.py
+        run: python -m pytest -q tools/tests/test_tenancy.py tools/tests/test_tenancy_hardening.py tools/tests/test_tenancy_t32.py tools/tests/test_tenancy_t32_remediation.py tools/tests/test_tenancy_sql_deployer.py tools/tests/test_tenancy_t6_client_access.py tools/tests/test_tenancy_rnp_access.py
       - name: bounded pilot coordinator and failed-attempt recovery (offline)
         run: python -m pytest -q tools/tests/test_tenant_backfill.py tools/tests/test_campaign_persistence.py tools/tests/test_current_recon_owner.py tools/tests/test_performance_dispatch_guard.py
       - name: terraform plan guard (offline)

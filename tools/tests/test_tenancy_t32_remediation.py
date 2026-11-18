@@ -46,6 +46,18 @@ def _rc(addr, rtype, after, unknown=None, actions=("create",), module=None):
     return rc
 
 
+def _rnp_acl(contract, key):
+    """РНП владельца (tools/tenancy/rnp_access.py): READER учётки сайта и рёбра VIEWS, если включено в реестре."""
+    ra = contract.get("rnp_access")
+    if not ra:
+        return []
+    p = contract["project_id"]
+    out = [_acl("READER", user_by_email=ra["service_account"])] if key == ra["dataset_key"] else []
+    return out + [_acl("", dataset=[{"dataset": [{"project_id": p, "dataset_id": contract["datasets"][e["viewer_key"]]}],
+                                     "target_types": ["VIEWS"]}])
+                  for e in ra["authorized_views"] if e["source_key"] == key]
+
+
 def _plan_for(contract, number=NUMBER):
     p, o, region = contract["project_id"], contract["marketplaces"]["ozon"], contract["region"]
     rt = f"{o['service_accounts']['runtime']}@{p}.iam.gserviceaccount.com"
@@ -66,7 +78,8 @@ def _plan_for(contract, number=NUMBER):
                                    condition=[dict(g["condition"], location="")] if g["condition"] else [])
                               for g in dep["grants"] if g["dataset_key"] == k]
                            + [_acl(g["role"], user_by_email=ctl["email"])
-                              for g in ctl["grants"] if g["dataset_key"] == k]},
+                              for g in ctl["grants"] if g["dataset_key"] == k]
+                           + _rnp_acl(contract, k)},
                 {"etag": True, "id": True, "access": [{}, {}]})
             for k, ds in contract["datasets"].items()]
     # T4.1: SA деплоера SQL в корне (не в модуле площадки).
@@ -372,6 +385,13 @@ def test_dataset_acl_in_expected_plan_excludes_provisioner_and_scheduler(contrac
     ctl = f"sa-tenant-control@{P1}.iam.gserviceaccount.com"
     c_src, c_app, c_lease = (f"{r}mpaSqlSourceRead", "user_by_email", ctl, None), \
         (f"{r}mpaTenantControlAppend", "user_by_email", ctl, None), (f"{r}mpaTenantControlLease", "user_by_email", ctl, None)
+    rnp = {k: set() for k in want}
+    if contract.get("rnp_access"):                                  # РНП владельца (rnp_access.py): READER + рёбра VIEWS
+        ra = contract["rnp_access"]
+        rnp[ra["dataset_key"]].add(("READER", "user_by_email", ra["service_account"], None))
+        for e in ra["authorized_views"]:
+            rnp[e["source_key"]].add((PS.AUTHORIZED_VIEWS, "dataset", f"{P1}.{e['viewer_key']}", None))
+    want = {k: v - rnp[k] for k, v in want.items()}
     assert want == {"ozon_raw": owners | {("WRITER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src, c_src},
                     "ref": owners | {("READER", "user_by_email", f"sa-ozon-runtime@{P1}.iam.gserviceaccount.com", None), src, c_src},
                     # T4: внутренние слои и клиентский слой — без runtime и без клиента.

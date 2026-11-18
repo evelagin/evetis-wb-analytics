@@ -191,6 +191,7 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
     from tools.tenancy import control_identity as CI
     from tools.tenancy import sql_identity as SI
     from tools.tenancy import client_access as CA
+    from tools.tenancy import rnp_access as RA
 
     tid, db = doc["tenant_id"], doc["data_boundary"]
     if db["kind"] != "dedicated_project" or doc["config_authority"] != "TENANT_REGISTRY":
@@ -258,6 +259,8 @@ def _terraform_contract(doc: dict, repo: Path = REPO) -> dict:
                                      ozon.get("seller_inventory_model", "STRICT_CAPABILITY_V2")) if ozon["enabled"] else None,
         # T6: клиентский доступ только к analytics_share (None, пока bi_access.mode != ANALYTICS_SHARE_VIEWER).
         "client_access": CA.contract_block(doc, dict(sorted(db["datasets"].items()))),
+        # РНП владельца: READER на analytics_share ровно sa-rnp-web (None, пока rnp_access не OWNER_RNP_SERVICE).
+        "rnp_access": RA.contract_block(doc, project_id, dict(sorted(db["datasets"].items()))),
     }
 
     if "historical_orchestration" in doc:
