@@ -33,6 +33,11 @@ class Budget:
     def allows(self, seconds):
         return self.remaining() - CLOSE_RESERVE_SECONDS >= seconds
 
+    def retry_allowed(self, delay):
+        # A2: one more closure attempt after `delay` must still leave the whole closure reserve
+        # (attempt + STOP fallback + exit) before the platform kill; otherwise fail closed now.
+        return self.remaining() - delay >= CLOSE_RESERVE_SECONDS
+
     def report_allowed(self):
         # Reporting runs after the closure: only process exit must still fit.
         return self.remaining() - 60 >= REPORT_SECONDS

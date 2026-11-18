@@ -389,16 +389,36 @@ def runtime(backend,doc,x,job_name):
     return True
 
 
-def close(backend,result):
+def close(backend,result,*,fallback=False):
     claim=getattr(backend,'wake_claim',None)
     if claim is None:return
+    name=names(claim['root'],claim['generation'])[1];ds=backend.c['datasets']['tenant_locks']
+    if getattr(backend,'closure_attempted',False):
+        # A2 (Heldi STOP 8ad33cc6, eca0335a): a prior attempt of THIS wake may have created the
+        # closure and lost only a later read. The first closure of this exact claim is canonical:
+        # accepted on its exact bytes/digest (closed()), never rewritten with another status.
+        if backend.tables.get_table(ds,name) is not None:
+            if not closed(backend,claim):fail('controller closure readback missing')
+            backend.wake_claim=None;return
+        if getattr(backend,'closure_post_unknown',False) and not fallback:
+            # A create POST with an unknown outcome is resolved by readback only; the bounded retry
+            # never repeats it. Only the pre-existing STOP fallback still closes the claim STOPPED.
+            fail('controller closure outcome unknown; never repeat')
+    backend.closure_attempted=True
     ensure(backend)
     status=result['status'];count=result.get('source_dispatches',0)
     if status not in STATUSES or type(count) is not int or count not in (0,1):fail('unknown controller terminal result')
     value=sealed(dict(version=1,claim_hash=claim['hash'],status=status,source_dispatches=count,closed_at=backend.clock().isoformat()))
-    name=names(claim['root'],claim['generation'])[1];ds=backend.c['datasets']['tenant_locks']
     expected=({'kind':'controller_close','root':claim['root'][:16]},D.encoded(value))
-    if not backend.tables.create_marker(ds,name,*expected) and backend.tables.get_table(ds,name)!=expected:
+    try:created=backend.tables.create_marker(ds,name,*expected)
+    except BF.TT.TableError as error:
+        from tools.tenancy.cloud_access import TransientReadError
+        if isinstance(error,TransientReadError):raise   # delegated-token read failed: nothing was sent
+        # Unknown outcome of the create-only POST: readback once; a repeat is never sent.
+        backend.closure_post_unknown=True
+        if backend.tables.get_table(ds,name)!=expected:raise
+        created=True
+    if not created and backend.tables.get_table(ds,name)!=expected:
         fail('controller closure conflict')
     if not closed(backend,claim):fail('controller closure readback missing')
     backend.wake_claim=None

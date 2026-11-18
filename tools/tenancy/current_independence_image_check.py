@@ -197,22 +197,38 @@ def gate_check():
 
 
 def wake_check():
-    """Admitted mode: CURRENT only; no FULL drain, leaf or dispatch, no T5 repair; result names the local STOP."""
+    """Admitted mode. S4: no FULL drain, leaf or dispatch, no T5 repair while the local STOPs are systemic
+    (more than MAX_LOCAL_FULL_LEAVES). A2: up to that bound only the stopped leaves are skipped and FULL
+    continues in priority order; the T5 repair stays off and CURRENT still runs first."""
     from tools.tenancy import full_controller as H,full_fbo_diagnostic_closure as LQ,controller_cadence as CC,current_controller as CUR,recent_priority as RP
-    m,plans=leaves();calls=[]
+    from tools.tenancy import durable_daily as DD
+    m,plans=leaves();calls=[];leafs=[]
     base=SimpleNamespace(store=SimpleNamespace(history=lambda root:[rec(m['hash'],'FULL_MANIFEST',0,m),leaf_stop(m,465)]))
     def forbidden(name):
         def f(*a,**k):raise AssertionError(name+' in admitted mode')
         return f
-    def run(admission,current):
-        with patched(H,'only_manifest',lambda r:m),patched(H,'Backend',lambda b,mm:SimpleNamespace(clock=lambda:NOW,store=base.store)),\
+    systemic=list(range(10,11+DD.MAX_LOCAL_FULL_LEAVES))
+    def run(admission,current,*,open_queue=False):
+        full=SimpleNamespace(clock=lambda:NOW,store=base.store,state=lambda doc:{'progress':{}})
+        def leaf(b,mm,i,item,records,**k):
+            leafs.append(i);return {'status':'DISPATCHED','source_dispatches':1,'index':i},b
+        queue=dict(load=(lambda *a:None) if open_queue else forbidden('FULL queue'),
+                   leaf=leaf if open_queue else forbidden('leaf_wake'))
+        with patched(H,'only_manifest',lambda r:m),patched(H,'Backend',lambda b,mm:full),\
              patched(H,'verify_authority',lambda *a:None),patched(CC,'acquire',lambda b:None),patched(H,'historical_gate',lambda *a:(None,admission)),\
              patched(H,'completed',lambda *a:{}),patched(H,'reconstruct_plans',lambda *a:plans),patched(H,'repair_t5_completions',lambda *a:calls.append('repair')),\
-             patched(CUR,'wake',lambda *a:current),patched(RP,'load',forbidden('FULL queue')),patched(H,'leaf_wake',forbidden('leaf_wake')),patched(H,'_dispatch',forbidden('dispatch')):
-            return H.wake(base,m['hash'])[0]
+             patched(CUR,'wake',lambda *a:current),patched(CUR,'catalog_current',lambda *a:{'catalog':'certified'}),\
+             patched(RP,'load',queue['load']),patched(RP,'ordered',lambda *a:[465,10]),\
+             patched(H,'leaf_wake',queue['leaf']),patched(H,'_dispatch',forbidden('dispatch')):
+            return H.wake(base,m['hash'])[0],full
+    many={'admitted':True,'local_full_leaves':systemic}
+    assert run(many,None)[0]=={'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP','local_full_leaves':systemic} and not calls
+    assert run(many,{'status':'DISPATCHED','source_dispatches':1})[0]=={'status':'DISPATCHED','source_dispatches':1} and not calls
     adm={'admitted':True,'local_full_leaves':[465]}
-    assert run(adm,None)=={'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP','local_full_leaves':[465]} and not calls
-    assert run(adm,{'status':'DISPATCHED','source_dispatches':1})=={'status':'DISPATCHED','source_dispatches':1} and not calls
+    assert run(adm,{'status':'DISPATCHED','source_dispatches':1},open_queue=True)[0]=={'status':'DISPATCHED','source_dispatches':1} and not leafs   # CURRENT first
+    result,full=run(adm,None,open_queue=True)
+    assert result=={'status':'DISPATCHED','source_dispatches':1,'index':10} and leafs==[10] and not calls,(result,leafs)   # 465 skipped, never re-dispatched
+    assert full.local_full_leaves==[465]
     return 'PASS'
 
 
