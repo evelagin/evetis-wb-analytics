@@ -44,4 +44,32 @@
    При включении сразу откроются инциденты по сущностям, которые сейчас действительно не обновляются:
    ads_campaigns, ads_expense_daily, ads_sku_daily, fbo_postings.
 
+## Push в приложении Google Cloud (решение владельца 27.10)
+
+STOP и проверка доставки уходят на почту и push приложения Google Cloud. Остальные политики шлют только почту.
+
+Канал push нельзя создать через API или Terraform. Его создаёт само приложение: после установки и выбора проекта
+через несколько минут канал появляется в разделе «Mobile Devices» страницы Notification channels. Источник:
+docs.cloud.google.com/monitoring/support/notification-options, раздел «Google Cloud console Mobile App». Встроенного
+теста канала в Cloud Monitoring нет — доставку проверяет политика «проверка доставки».
+
+1. Владелец на телефоне: установить «Google Cloud» из App Store или Google Play, войти той учётной записью, под которой
+   работает с mpa-t-client-001, выбрать проект mpa-t-client-001 и разрешить уведомления приложению.
+2. Через несколько минут прочитать имя канала (только чтение):
+   `curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" https://monitoring.googleapis.com/v3/projects/mpa-t-client-001/notificationChannels`
+   Нужна новая запись не типа `email`, с именем устройства или пользователя. Её `name` — `projects/mpa-t-client-001/notificationChannels/<id>`.
+3. Применить план с этим каналом:
+
+   ```text
+   terraform plan … -var owner_push_channel=<name> -out=push.plan
+   terraform apply push.plan
+   ```
+
+   Ожидается 0 to add, 2 to change, 0 to destroy: `notification_channels` у политик STOP и проверки доставки.
+4. Проверка доставки — шаг 4 «Порядка включения» выше: письмо и push с тем же `test_id`. Push доказан только подтверждением
+   владельца.
+
+Откат push: тот же plan/apply без `-var owner_push_channel` (2 to change обратно). Канал устройства удаляется
+отдельно в консоли, если он больше не нужен.
+
 Откат: `terraform destroy` этого корня. Загрузку данных, контроллер и расписания он не затрагивает.

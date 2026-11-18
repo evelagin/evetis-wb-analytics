@@ -70,3 +70,30 @@ run "reject_unknown_entity" {
   variables { expected_entities = ["supplies"] }
   expect_failures = [var.expected_entities]
 }
+
+run "push_channel_is_absent_by_default" {
+  command = plan
+  assert {
+    condition     = length(google_monitoring_alert_policy.controller_stopped.notification_channels) == 1 && length(google_monitoring_alert_policy.delivery_test.notification_channels) == 1
+    error_message = "Без owner_push_channel STOP и проверка доставки — только почта, как до 27.10."
+  }
+}
+
+run "push_channel_added_only_to_stop_and_delivery_test" {
+  command = plan
+  variables { owner_push_channel = "projects/mpa-t-client-001/notificationChannels/123456789" }
+  assert {
+    condition     = contains(google_monitoring_alert_policy.controller_stopped.notification_channels, "projects/mpa-t-client-001/notificationChannels/123456789") && length(google_monitoring_alert_policy.controller_stopped.notification_channels) == 2 && contains(google_monitoring_alert_policy.delivery_test.notification_channels, "projects/mpa-t-client-001/notificationChannels/123456789")
+    error_message = "Push добавляется к STOP и к проверке доставки, почта остаётся."
+  }
+  assert {
+    condition     = alltrue([for p in [google_monitoring_alert_policy.tick_attempt_failed, google_monitoring_alert_policy.controller_completions, google_monitoring_alert_policy.data_freshness] : length(p.notification_channels) == 1])
+    error_message = "Остальные политики не меняются."
+  }
+}
+
+run "reject_push_channel_of_another_project" {
+  command = plan
+  variables { owner_push_channel = "projects/mpa-t-client-002/notificationChannels/123456789" }
+  expect_failures = [var.owner_push_channel]
+}
