@@ -1,0 +1,1228 @@
+{
+ "_comment": "Redacted replay of the 2026-11-09 read-only probe of /v1/returns/list (Heldi, return_schema FBO, 5 Seller requests). Change moments are the observed ones; ids are synthetic and keep the source order relation; evidence RETURNS_SHA256SUMS 2233e517... kept outside Git.",
+ "day_window": {
+  "time_from": "2026-11-01T00:00:00Z",
+  "time_to": "2026-11-02T00:00:00Z"
+ },
+ "day_items": [
+  {
+   "id": 1000027,
+   "change_moment": "2026-11-01T00:07:24.130212Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000070,
+   "change_moment": "2026-11-01T00:42:05.250936Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000069,
+   "change_moment": "2026-11-01T00:42:18.058416Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000022,
+   "change_moment": "2026-11-01T00:44:40.057752Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000109,
+   "change_moment": "2026-11-01T01:07:11.393432Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000068,
+   "change_moment": "2026-11-01T01:28:09.094243Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000017,
+   "change_moment": "2026-11-01T02:03:57.266707Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000110,
+   "change_moment": "2026-11-01T02:05:40.893Z",
+   "type": "Cancellation",
+   "status": "WaitingShipment"
+  },
+  {
+   "id": 1000031,
+   "change_moment": "2026-11-01T02:15:07.905869Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000005,
+   "change_moment": "2026-11-01T02:57:42.575072Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000077,
+   "change_moment": "2026-11-01T02:59:56.055867Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000066,
+   "change_moment": "2026-11-01T03:06:39.178806Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000075,
+   "change_moment": "2026-11-01T03:16:07.736790Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000074,
+   "change_moment": "2026-11-01T03:20:36.850884Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000111,
+   "change_moment": "2026-11-01T03:37:26.055662Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000060,
+   "change_moment": "2026-11-01T03:52:55.521748Z",
+   "type": "Cancellation",
+   "status": "WriteOff"
+  },
+  {
+   "id": 1000059,
+   "change_moment": "2026-11-01T03:53:05.673956Z",
+   "type": "Cancellation",
+   "status": "WriteOff"
+  },
+  {
+   "id": 1000080,
+   "change_moment": "2026-11-01T04:03:28.388327Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000081,
+   "change_moment": "2026-11-01T04:10:52.084635Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000112,
+   "change_moment": "2026-11-01T04:12:42.755632Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000078,
+   "change_moment": "2026-11-01T04:12:53.047711Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000044,
+   "change_moment": "2026-11-01T04:14:29.849444Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000045,
+   "change_moment": "2026-11-01T04:14:42.427045Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000079,
+   "change_moment": "2026-11-01T04:32:28.301978Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000002,
+   "change_moment": "2026-11-01T04:50:42.579276Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000083,
+   "change_moment": "2026-11-01T05:01:46.564306Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000115,
+   "change_moment": "2026-11-01T05:13:13.678705Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000116,
+   "change_moment": "2026-11-01T05:30:23.506041Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000029,
+   "change_moment": "2026-11-01T05:39:08.168582Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000054,
+   "change_moment": "2026-11-01T05:40:46.036512Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000047,
+   "change_moment": "2026-11-01T05:49:46.214054Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000020,
+   "change_moment": "2026-11-01T05:51:28.596779Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000096,
+   "change_moment": "2026-11-01T05:52:11.067563Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000107,
+   "change_moment": "2026-11-01T05:59:08.610688Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000098,
+   "change_moment": "2026-11-01T05:59:14.303929Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000092,
+   "change_moment": "2026-11-01T06:00:21.990560Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000094,
+   "change_moment": "2026-11-01T06:03:02.752946Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000090,
+   "change_moment": "2026-11-01T06:03:03.180385Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000091,
+   "change_moment": "2026-11-01T06:04:09.897038Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000100,
+   "change_moment": "2026-11-01T06:04:47.222140Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000099,
+   "change_moment": "2026-11-01T06:07:15.189793Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000076,
+   "change_moment": "2026-11-01T06:07:32.797917Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000117,
+   "change_moment": "2026-11-01T06:11:28.103506Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000119,
+   "change_moment": "2026-11-01T06:12:01.994760Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000097,
+   "change_moment": "2026-11-01T06:13:17.847886Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000093,
+   "change_moment": "2026-11-01T06:13:25.529725Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000089,
+   "change_moment": "2026-11-01T06:15:05.283388Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000071,
+   "change_moment": "2026-11-01T06:17:46.437760Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000102,
+   "change_moment": "2026-11-01T06:20:27.768503Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000088,
+   "change_moment": "2026-11-01T06:21:05.862072Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000032,
+   "change_moment": "2026-11-01T06:32:44.850844Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000103,
+   "change_moment": "2026-11-01T06:33:24.452159Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000085,
+   "change_moment": "2026-11-01T06:34:59.812930Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000095,
+   "change_moment": "2026-11-01T06:35:10.980018Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000086,
+   "change_moment": "2026-11-01T06:36:42.326583Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000121,
+   "change_moment": "2026-11-01T06:38:13.823450Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000043,
+   "change_moment": "2026-11-01T06:39:08.127491Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000064,
+   "change_moment": "2026-11-01T06:41:13.359701Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000104,
+   "change_moment": "2026-11-01T06:48:22.021840Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000123,
+   "change_moment": "2026-11-01T06:52:02.090877Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000124,
+   "change_moment": "2026-11-01T06:53:10.459148Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000122,
+   "change_moment": "2026-11-01T06:55:40.938127Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000000,
+   "change_moment": "2026-11-01T06:58:44.290341Z",
+   "type": "Cancellation",
+   "status": "WriteOff"
+  },
+  {
+   "id": 1000001,
+   "change_moment": "2026-11-01T06:58:44.290341Z",
+   "type": "Cancellation",
+   "status": "WriteOff"
+  },
+  {
+   "id": 1000028,
+   "change_moment": "2026-11-01T07:02:41.241Z",
+   "type": "Cancellation",
+   "status": "MovingToOzon"
+  },
+  {
+   "id": 1000084,
+   "change_moment": "2026-11-01T07:13:53.375758Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000025,
+   "change_moment": "2026-11-01T07:36:23.774283Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000114,
+   "change_moment": "2026-11-01T07:47:48.921628Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000113,
+   "change_moment": "2026-11-01T07:50:47.725418Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000101,
+   "change_moment": "2026-11-01T08:00:36.998259Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000026,
+   "change_moment": "2026-11-01T08:07:02.953803Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000126,
+   "change_moment": "2026-11-01T08:20:15.374359Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000128,
+   "change_moment": "2026-11-01T08:37:21.383107Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000030,
+   "change_moment": "2026-11-01T08:44:39.806702Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000042,
+   "change_moment": "2026-11-01T08:49:11.729972Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000134,
+   "change_moment": "2026-11-01T08:52:22.533138Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000013,
+   "change_moment": "2026-11-01T08:54:36.305124Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000135,
+   "change_moment": "2026-11-01T08:58:28.248926Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000129,
+   "change_moment": "2026-11-01T09:02:29.104016Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000132,
+   "change_moment": "2026-11-01T09:02:30.531254Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000136,
+   "change_moment": "2026-11-01T09:02:50.734079Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000131,
+   "change_moment": "2026-11-01T09:06:56.793164Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000133,
+   "change_moment": "2026-11-01T09:07:08.790749Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000039,
+   "change_moment": "2026-11-01T09:08:54.497844Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000127,
+   "change_moment": "2026-11-01T09:09:13.950962Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000003,
+   "change_moment": "2026-11-01T09:15:22.290313Z",
+   "type": "Cancellation",
+   "status": "PotentiallyLost"
+  },
+  {
+   "id": 1000130,
+   "change_moment": "2026-11-01T09:16:04.213238Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000139,
+   "change_moment": "2026-11-01T09:26:26.284434Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000118,
+   "change_moment": "2026-11-01T09:33:12.786372Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000082,
+   "change_moment": "2026-11-01T09:48:50.453477Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000019,
+   "change_moment": "2026-11-01T09:59:47.727087Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000016,
+   "change_moment": "2026-11-01T10:01:48.004460Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000021,
+   "change_moment": "2026-11-01T10:02:27.525728Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000007,
+   "change_moment": "2026-11-01T10:02:33.507550Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000009,
+   "change_moment": "2026-11-01T10:02:33.507550Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000142,
+   "change_moment": "2026-11-01T10:26:58.474056Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000067,
+   "change_moment": "2026-11-01T10:30:38.737320Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000143,
+   "change_moment": "2026-11-01T10:48:14.541647Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000145,
+   "change_moment": "2026-11-01T11:07:28.300001Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000146,
+   "change_moment": "2026-11-01T11:12:38.159957Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000015,
+   "change_moment": "2026-11-01T11:13:42.162575Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000008,
+   "change_moment": "2026-11-01T11:25:54.173298Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000046,
+   "change_moment": "2026-11-01T11:26:06.251174Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000138,
+   "change_moment": "2026-11-01T11:31:06.425463Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000137,
+   "change_moment": "2026-11-01T11:31:20.844481Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000149,
+   "change_moment": "2026-11-01T11:58:32.701406Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000063,
+   "change_moment": "2026-11-01T12:01:11.332486Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000012,
+   "change_moment": "2026-11-01T12:04:05.168307Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000148,
+   "change_moment": "2026-11-01T12:13:01.838989Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000058,
+   "change_moment": "2026-11-01T12:14:09.241438Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000150,
+   "change_moment": "2026-11-01T12:21:30.897517Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000152,
+   "change_moment": "2026-11-01T12:22:59.030961Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000151,
+   "change_moment": "2026-11-01T12:25:31.566962Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000105,
+   "change_moment": "2026-11-01T12:26:24.625430Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000040,
+   "change_moment": "2026-11-01T12:45:44.677207Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000153,
+   "change_moment": "2026-11-01T12:58:59.748943Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000014,
+   "change_moment": "2026-11-01T13:02:14.504857Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000011,
+   "change_moment": "2026-11-01T13:02:22.529018Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000141,
+   "change_moment": "2026-11-01T13:02:39.424817Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000055,
+   "change_moment": "2026-11-01T13:03:34.790563Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000065,
+   "change_moment": "2026-11-01T13:06:31.321955Z",
+   "type": "Cancellation",
+   "status": "WriteOff"
+  },
+  {
+   "id": 1000061,
+   "change_moment": "2026-11-01T13:22:15.054909Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000072,
+   "change_moment": "2026-11-01T13:23:36.327215Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000120,
+   "change_moment": "2026-11-01T13:26:50.127759Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000155,
+   "change_moment": "2026-11-01T13:53:23.543507Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000154,
+   "change_moment": "2026-11-01T13:57:27.582287Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000140,
+   "change_moment": "2026-11-01T14:05:08.496667Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000006,
+   "change_moment": "2026-11-01T14:07:30.735972Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000156,
+   "change_moment": "2026-11-01T14:16:25.888020Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000041,
+   "change_moment": "2026-11-01T14:22:50.492392Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000161,
+   "change_moment": "2026-11-01T14:30:22.567661Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000087,
+   "change_moment": "2026-11-01T14:37:52.948115Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000024,
+   "change_moment": "2026-11-01T14:52:15.754604Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000163,
+   "change_moment": "2026-11-01T14:53:41.878866Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000164,
+   "change_moment": "2026-11-01T14:53:59.298589Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000162,
+   "change_moment": "2026-11-01T15:00:37.900201Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000165,
+   "change_moment": "2026-11-01T15:09:21.030095Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000056,
+   "change_moment": "2026-11-01T15:13:10.330208Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000168,
+   "change_moment": "2026-11-01T15:17:44.788254Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000038,
+   "change_moment": "2026-11-01T15:29:36.671244Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000147,
+   "change_moment": "2026-11-01T15:39:25.884835Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000073,
+   "change_moment": "2026-11-01T15:46:24.821873Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000048,
+   "change_moment": "2026-11-01T15:55:16.666683Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000049,
+   "change_moment": "2026-11-01T15:55:16.666683Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000050,
+   "change_moment": "2026-11-01T15:55:16.666683Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000051,
+   "change_moment": "2026-11-01T15:55:16.666683Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000034,
+   "change_moment": "2026-11-01T15:57:24.842147Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000035,
+   "change_moment": "2026-11-01T15:57:24.842147Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000036,
+   "change_moment": "2026-11-01T15:57:24.842147Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000171,
+   "change_moment": "2026-11-01T15:58:25.568826Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000106,
+   "change_moment": "2026-11-01T15:59:58.380429Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000172,
+   "change_moment": "2026-11-01T16:05:18.222728Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000173,
+   "change_moment": "2026-11-01T16:06:16.072877Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000175,
+   "change_moment": "2026-11-01T16:19:28.492968Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000174,
+   "change_moment": "2026-11-01T16:21:32.680042Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000176,
+   "change_moment": "2026-11-01T16:46:57.318164Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000169,
+   "change_moment": "2026-11-01T16:57:44.560956Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000170,
+   "change_moment": "2026-11-01T16:58:00.782048Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000125,
+   "change_moment": "2026-11-01T17:06:27.893807Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000177,
+   "change_moment": "2026-11-01T17:11:54.997017Z",
+   "type": "Cancellation",
+   "status": "MovingToOzon"
+  },
+  {
+   "id": 1000178,
+   "change_moment": "2026-11-01T17:32:47.028668Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000144,
+   "change_moment": "2026-11-01T17:50:42.472880Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000057,
+   "change_moment": "2026-11-01T18:21:46.713731Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000023,
+   "change_moment": "2026-11-01T19:08:11.896024Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000179,
+   "change_moment": "2026-11-01T19:17:56.958500Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000167,
+   "change_moment": "2026-11-01T19:34:31.476121Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000010,
+   "change_moment": "2026-11-01T20:13:16.225269Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000033,
+   "change_moment": "2026-11-01T20:18:46.057314Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000053,
+   "change_moment": "2026-11-01T20:22:08.194458Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000108,
+   "change_moment": "2026-11-01T20:34:54.946882Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000062,
+   "change_moment": "2026-11-01T20:35:12.047091Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000004,
+   "change_moment": "2026-11-01T20:42:08.449884Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000052,
+   "change_moment": "2026-11-01T21:26:36.471909Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000180,
+   "change_moment": "2026-11-01T22:54:44.274570Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000160,
+   "change_moment": "2026-11-01T22:58:23.561026Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000158,
+   "change_moment": "2026-11-01T22:59:05.793296Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000157,
+   "change_moment": "2026-11-01T22:59:44.664806Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000159,
+   "change_moment": "2026-11-01T23:14:23.994501Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000166,
+   "change_moment": "2026-11-01T23:29:52.079576Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000018,
+   "change_moment": "2026-11-01T23:39:06.930910Z",
+   "type": "Cancellation",
+   "status": "ReturnedToOzon"
+  },
+  {
+   "id": 1000037,
+   "change_moment": "2026-11-01T23:56:27.847535Z",
+   "type": "Cancellation",
+   "status": "Utilizing"
+  }
+ ],
+ "observations": [
+  {
+   "label": "R1_limit500",
+   "limit": 500,
+   "last_id": "0",
+   "http": 200,
+   "count": 181,
+   "has_next": false
+  },
+  {
+   "label": "R2_page1_limit50",
+   "limit": 50,
+   "last_id": "0",
+   "http": 200,
+   "count": 50,
+   "has_next": true,
+   "equals_day_slice": [
+    0,
+    50
+   ]
+  },
+  {
+   "label": "R3_page2_last_id",
+   "limit": 50,
+   "last_id": "id of day_items[49]",
+   "http": 200,
+   "count": 50,
+   "has_next": true,
+   "equals_day_slice": [
+    50,
+    100
+   ]
+  },
+  {
+   "label": "R4_from_exact",
+   "time_from": "2026-11-01T11:13:42.162575Z",
+   "time_to": "2026-11-01T11:13:43.162575Z",
+   "http": 200,
+   "count": 1,
+   "present_day_index": 100
+  },
+  {
+   "label": "R5_from_plus_1us",
+   "time_from": "2026-11-01T11:13:42.162576Z",
+   "time_to": "2026-11-01T11:13:43.162575Z",
+   "http": 200,
+   "count": 0
+  }
+ ],
+ "return_shape": {
+  "id": 1000001,
+  "company_id": 1,
+  "return_reason_name": "synthetic reason",
+  "type": "Cancellation",
+  "schema": "Fbo",
+  "order_id": 1,
+  "order_number": "SYN-ORDER",
+  "place": {
+   "id": 2,
+   "name": "SYN-PLACE",
+   "address": ""
+  },
+  "target_place": {
+   "id": 0,
+   "name": "SYN-TARGET",
+   "address": ""
+  },
+  "storage": {
+   "sum": {
+    "currency_code": "",
+    "price": 0
+   },
+   "tariffication_first_date": null,
+   "tariffication_start_date": null,
+   "arrived_moment": null,
+   "days": 0,
+   "utilization_sum": {
+    "currency_code": "",
+    "price": 0
+   },
+   "utilization_forecast_date": null
+  },
+  "product": {
+   "sku": 1000001,
+   "offer_id": "SYN-OFFER",
+   "name": "synthetic",
+   "price": {
+    "currency_code": "RUB",
+    "price": 2620
+   },
+   "price_without_commission": {
+    "currency_code": "",
+    "price": 0
+   },
+   "commission_percent": 0,
+   "commission": {
+    "currency_code": "",
+    "price": 0
+   },
+   "quantity": 1
+  },
+  "logistic": {
+   "technical_return_moment": null,
+   "final_moment": "2026-11-01T00:07:24.130212Z",
+   "cancelled_with_compensation_moment": null,
+   "return_date": "2026-10-29T13:07:00.103Z",
+   "barcode": ""
+  },
+  "visual": {
+   "status": {
+    "id": 34,
+    "display_name": "На складе Ozon",
+    "sys_name": "ReturnedToOzon"
+   },
+   "change_moment": "2026-11-01T00:07:24.130212Z"
+  },
+  "exemplars": [
+   {
+    "id": 1,
+    "exemplar_id": 1
+   }
+  ],
+  "additional_info": {
+   "is_opened": false,
+   "is_super_econom": false
+  },
+  "clearing_id": 1,
+  "posting_number": "SYN-ORDER-1",
+  "return_clearing_id": 0,
+  "source_id": 1,
+  "compensation_status": null,
+  "courier_delivery": null
+ }
+}

@@ -192,7 +192,7 @@ def execution_inventory(request, job_name):
     raise B.EvidenceError('Run execution retained inventory exceeds reviewed read budget')
 
 
-def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False):
+def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observation=False, dispatch=False):
     if backend is not None:
         from tools.tenancy.full_leaf_recovery import SourceFreeObservation
         if isinstance(backend,SourceFreeObservation) and backend.current_execution is None:
@@ -297,12 +297,37 @@ def preflight(c, doc, now, backend=None, *, allow_active=False, owner_observatio
     if any(names[n].get("state") != "PAUSED" for n in ordinary_names):
         raise B.EvidenceError("pilot requires every Scheduler PAUSED")
     if orchestration:
-        schedule=names[orchestration['scheduler']['name']]
-        target=schedule.get('httpTarget') or {}
-        token=target.get('oauthToken') or {}
-        if not CC.schedule_allowed(orchestration,schedule.get('schedule')) or schedule.get('timeZone')!=orchestration['scheduler']['time_zone'] or target.get('body') not in (None,'','e30=') or schedule.get('state')!=orchestration['scheduler']['state'] or target.get('uri')!=orchestration['scheduler']['uri'] or target.get('httpMethod')!='POST' or token.get('serviceAccountEmail')!=orchestration['accounts']['wake']['email'] or token.get('scope')!='https://www.googleapis.com/auth/cloud-platform':
-            raise B.EvidenceError('historical Scheduler target/identity/state drift')
+        dedicated_scheduler(orchestration,names[orchestration['scheduler']['name']],dispatch=dispatch)
     return tables, ledger
+
+
+def dedicated_scheduler(orchestration, schedule, *, dispatch=False):
+    """The dedicated tick must match the exact descriptor: schedule, time zone, target, body, identity, scope and state.
+
+    Heldi STOP bf7d1370 (2026-10-28): the owner paused the tick while a wake ran. When ONLY the state differs, and
+    it is the owner's pause (live PAUSED, descriptor ENABLED), reads and reconciliation stay valid and a new source
+    dispatch is declined as a typed quiescent pause (SourceDispatchPaused: no lease, intent or Run POST; the wake
+    closes its claim QUIESCENT_PAUSED with 0 dispatches). Any other drift stays an evidence failure (STOP).
+    """
+    from tools.tenancy import controller_cadence as CC
+    target=schedule.get('httpTarget') or {}
+    token=target.get('oauthToken') or {}
+    if not CC.schedule_allowed(orchestration,schedule.get('schedule')) or schedule.get('timeZone')!=orchestration['scheduler']['time_zone'] or target.get('body') not in (None,'','e30=') or target.get('uri')!=orchestration['scheduler']['uri'] or target.get('httpMethod')!='POST' or token.get('serviceAccountEmail')!=orchestration['accounts']['wake']['email'] or token.get('scope')!='https://www.googleapis.com/auth/cloud-platform':
+        raise B.EvidenceError('historical Scheduler target/identity/state drift')
+    if owner_paused_tick(orchestration,schedule):
+        if dispatch:
+            from tools.tenancy.cloud_tick import SourceDispatchPaused
+            raise SourceDispatchPaused('dedicated tick paused by the owner during this wake')
+        return 'OWNER_PAUSED'
+    if schedule.get('state')!=orchestration['scheduler']['state']:
+        raise B.EvidenceError('historical Scheduler target/identity/state drift')
+    return 'EXACT'
+
+
+def owner_paused_tick(orchestration, schedule):
+    """True only for the owner's pause of the dedicated tick: live PAUSED where the exact descriptor expects ENABLED.
+    Every other state mismatch (and every target/identity/schedule/time-zone drift) stays an evidence failure."""
+    return orchestration['scheduler']['state']=='ENABLED' and schedule.get('state')=='PAUSED'
 
 
 def select(c, sql, parameters, request=None):
@@ -319,7 +344,12 @@ def select(c, sql, parameters, request=None):
         if result.get("jobComplete"):
             break
         result = request("GET", f"{TT.BQ}/projects/{c['project_id']}/queries/{ref['jobId']}?location=EU&timeoutMs=10000")
-    if not result.get("jobComplete") or result.get("errors") or result.get("pageToken"):
+    if not result.get("jobComplete") or result.get("errors"):
+        # A2: an unfinished query or a BigQuery backend/rate error is a typed transient read (a
+        # later wake repeats the SELECT); any other failure stays evidence (fail-closed).
+        from tools.tenancy.durable_daily import query_failure
+        raise query_failure(result)
+    if result.get("pageToken"):
         raise B.EvidenceError("bounded verification query incomplete/failed")
     fields = result.get("schema",{}).get("fields",[])
     return [{f["name"]: TT._cast(f,col.get("v")) for f,col in zip(fields,row["f"])} for row in result.get("rows",[])]
@@ -371,7 +401,7 @@ def start(doc, ack_hash, *, backend=None, on_prepared=None, on_receipt=None):
     observation=doc['runtime_plan'].get('observation_date')
     if observation and observation!=str(now.astimezone(B.MSK).date()):
         raise B.EvidenceError('snapshot observation day stale; freeze a fresh dated plan')
-    tables, ledger = preflight(c,doc,now,backend=backend) if backend is not None else preflight(c,doc,now)
+    tables, ledger = preflight(c,doc,now,backend=backend,dispatch=True) if backend is not None else preflight(c,doc,now,dispatch=True)
     request = backend.append_request if backend is not None else TT._req
     p=doc["runtime_plan"]; cid=B.digest(["BOUNDED_PILOT_EXCLUSIVE",c["project_id"]])[:16]
     from tools.tenancy.controller_diagnostics import gate,write_boundary,WRITES
@@ -591,17 +621,34 @@ def source_detail(detail):
     return {k:v for k,v in detail.items() if k not in {"transport_requests","transport_retries"}}
 
 
-def verify_coverage(doc,ack_hash, *, backend=None):
-    return _verify_coverage(doc,ack_hash,backend=backend,source_only=False)
+def verify_coverage(doc,ack_hash, *, backend=None,fbo_run_verdict=False):
+    return _verify_coverage(doc,ack_hash,backend=backend,source_only=False,fbo_run_verdict=fbo_run_verdict)
 
 
-def verify_persistence(doc,ack_hash, *, backend):
+def verify_persistence(doc,ack_hash, *, backend,fbo_run_verdict=False):
     """Accept only source accounting; current Catalog/DQ remains a completion gate.
 
     Midnight cannot undo durably persisted source effects. This proof never
     publishes coverage/DQ or claims that current-day SKU linkage is accepted.
     """
-    return _verify_coverage(doc,ack_hash,backend=backend,source_only=True)
+    return _verify_coverage(doc,ack_hash,backend=backend,source_only=True,fbo_run_verdict=fbo_run_verdict)
+
+
+FBO_SOURCE_DISAPPEARED="SOURCE_DISAPPEARED"
+
+
+def fbo_day_verdict(rows_n,keys_n,run_rows,expected):
+    """Per-run FBO day verdict (OWNER_FBO_REFRESH_V1, design A2 §8).
+
+    MERGE rewrites ingestion_run_id on every matched row, so run_rows proves source ⊆ RAW for this
+    plan's runs. COMPLETE: run_rows = expected = rows = keys. SOURCE_DISAPPEARED: the source is proved
+    in RAW, no duplicate keys, but older rows the source no longer returns remain (nothing is deleted)
+    → a local PARTIAL. Anything else is unproven persistence and stays fail-closed (None).
+    """
+    if any(type(v) is not int or v<0 for v in (rows_n,keys_n,run_rows,expected)) or rows_n!=keys_n or run_rows!=expected:
+        return None
+    if rows_n==expected:return "COMPLETE"
+    return FBO_SOURCE_DISAPPEARED if rows_n>run_rows else None
 
 
 def rejected_campaign_prefix(details, state):
@@ -651,7 +698,7 @@ def rejected_campaign_prefix(details, state):
             and state["requests"] == requests and state["pages"] == requests - len(details))
 
 
-def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
+def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False,fbo_run_verdict=False):
     """Read-back business grain plus source accounting; then append existing scoped evidence.
 
     API traversal completion is separate from economic DQ/finality. A partial pilot cannot
@@ -680,7 +727,9 @@ def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
     latest=reader(c,f"SELECT DISTINCT evidence_json FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND backfill_sequence = @seq",dict(params,seq=("INT64",max(details))))
     if len(latest)!=1:raise B.EvidenceError("latest source state ambiguous")
     state=parse_tenant_json(latest[0]["evidence_json"])["state"];B.validate(p,state)
-    mapping={"fbo_postings":("RAW_OZON_POSTINGS_FBO","posting_number,sku","order_date BETWEEN DATE_SUB(@day,INTERVAL 1 DAY) AND @day AND DATE(TIMESTAMP(created_at),'Europe/Moscow') = @day"),
+    # FBO windows own postings by in_process_at (B.FBO_TRANSPORT_CONTRACT); created_at may precede it
+    # by days, so the read-back uses the same basis and no created_at partition bound.
+    mapping={"fbo_postings":("RAW_OZON_POSTINGS_FBO","posting_number,sku","DATE(in_process_at,'Europe/Moscow') = @day"),
         "finance_accrual":("RAW_OZON_FINANCE_ACCRUAL","accrual_id,type_id,sku","event_date = @day"),
         "ads_expense_daily":("RAW_OZON_ADS_EXPENSE_DAILY","date,campaign_id","date = @day"),
         "ads_sku_daily":("RAW_OZON_ADS_SKU_DAILY","date,campaign_id,sku","date = @day")}
@@ -695,14 +744,22 @@ def _verify_coverage(doc,ack_hash, *, backend=None,source_only=False):
             else:complete=state["progress"]["next_day"]>day
             if complete:
                 out=reader(c,f"SELECT COUNT(*) AS rows_n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({keys}))) AS keys_n FROM `{c['project_id']}.ozon_raw.{table}` WHERE {predicate}",{"day":("DATE",day)})[0]
-                n=out["rows_n"];k=out["keys_n"]
-                if n!=k or n!=expected.get(day,0):
+                n=out["rows_n"];k=out["keys_n"];extra=0
+                if fbo_run_verdict and p["entity"]=="fbo_postings" and n==k and n!=expected.get(day,0):
+                    # Owner FBO refresh only: rows rewritten by this plan's own runs (MERGE sets their run id).
+                    run_n=reader(c,f"SELECT COUNT(*) AS run_rows FROM `{c['project_id']}.ozon_raw.{table}` WHERE {predicate} AND ingestion_run_id IN (SELECT REGEXP_REPLACE(ingestion_run_id, r'-u[0-9]+$', '') FROM `{journal}` WHERE started_at >= @origin AND backfill_plan_id = @pid AND entity = @entity AND status = 'OK')",
+                                 dict(params,day=("DATE",day)))[0]["run_rows"]
+                    if fbo_day_verdict(n,k,run_n,expected.get(day,0))!=FBO_SOURCE_DISAPPEARED:
+                        raise B.EvidenceError("PILOT_DATA_RECONCILIATION_FAILED: source/key/persisted counts differ")
+                    extra=n-run_n
+                elif n!=k or n!=expected.get(day,0):
                     raise B.EvidenceError("PILOT_DATA_RECONCILIATION_FAILED: source/key/persisted counts differ")
-                status="UNKNOWN" if day in limits else "COMPLETE"
-                reason="EMPTY_SOURCE_RETENTION_UNPROVEN" if day in limits else None
+                status="UNKNOWN" if day in limits else ("PARTIAL" if extra else "COMPLETE")
+                reason="EMPTY_SOURCE_RETENTION_UNPROVEN" if day in limits else (FBO_SOURCE_DISAPPEARED if extra else None)
                 coverage.append({"entity":p["entity"],"coverage_date":day,"status":status,"reason":reason,
                     "rows_loaded":n,"source_run_id":p["plan_id"],"evaluated_at":now.isoformat()})
                 item={"day":day,"rows":n,"keys":k,"coverage":status}
+                if extra:item.update(reason=FBO_SOURCE_DISAPPEARED,extra_rows=extra,run_rows=n-extra)
                 if not source_only and p["entity"] in {"fbo_postings","finance_accrual","ads_sku_daily"}:
                     # Current retained ALL+ARCHIVED identity only, never fabricate historic status.
                     link=reader(c,f"SELECT COUNTIF(r.sku IS NOT NULL) AS sku_rows, COUNTIF(r.sku IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `{c['project_id']}.ozon_raw.RAW_OZON_CATALOG` c WHERE c.snapshot_date = @snapshot AND c.sku = r.sku)) AS unresolved_sku_rows FROM `{c['project_id']}.ozon_raw.{table}` r WHERE {predicate}",

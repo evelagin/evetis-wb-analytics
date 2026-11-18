@@ -39,17 +39,19 @@ def test_secret_redacted_before_evidence_hash_or_truncation():
     assert secret not in str(d) and len(d['timestamp_value'])==1024 and d['timestamp_truncated']
     assert len(d['timestamp_sha256'])==64
 
-@pytest.mark.parametrize('value,category',[('2026-08-26T00:00:00+03:00','OUTSIDE_REQUESTED_INTERVAL'),
+# The engine checks in_process_at (the source filter field) against the closed request [a, b];
+# exactly b is deferred to the next window, so the first rejected instant is b + 1 us.
+@pytest.mark.parametrize('value,category',[('2026-08-26T00:00:00.000001+03:00','OUTSIDE_REQUESTED_INTERVAL'),
  ('2026-08-19T00:00:00','MISSING_TIMEZONE'),('invalid','INVALID_TIMESTAMP_FORMAT')])
 def test_failed_second_page_persists_diagnostic_without_merge_or_progress(monkeypatch,value,category):
     env=dict(BACKFILL_MODE=B.VERSION,BACKFILL_TARGET_PROJECT='synthetic-project',TENANT_BINDING_REQUIRED='1',
       STRICT_PAGE_CAPS='1',SINCE='2026-08-19',UNTIL='2026-08-25',BACKFILL_GENERATION='diagnostic',BACKFILL_ORIGIN='2026-10-11T00:00:00Z',BACKFILL_WINDOW_DAYS='7')
     p=B.plan(env,'fbo_postings','synthetic-project','ozon_raw','ref',date(2026,10,11));s=B.initial(p)
     monkeypatch.setattr(F,'resume',lambda _:deepcopy(s));monkeypatch.setattr(F,'internal_preflight',lambda _:None)
-    pages=iter([dict(postings=[dict(created_at=B.stamp(A),products=[dict(sku='SYNTHETIC')])],has_next=True,cursor='SYNTHETIC_CURSOR'),
-                dict(postings=[dict(created_at=value,products=[dict(sku='SYNTHETIC')])],has_next=False,cursor='')])
+    pages=iter([dict(postings=[dict(created_at=B.stamp(A),in_process_at=B.stamp(A),products=[dict(sku='SYNTHETIC')])],has_next=True,cursor='SYNTHETIC_CURSOR'),
+                dict(postings=[dict(created_at=B.stamp(A),in_process_at=value,products=[dict(sku='SYNTHETIC')])],has_next=False,cursor='')])
     monkeypatch.setattr(C,'seller_post',lambda *args:(200,next(pages)))
-    monkeypatch.setattr(F.E,'_fbo_rows',lambda *args:[{}])
+    monkeypatch.setattr(F.E,'_fbo_rows',lambda *args,**kw:[{}])
     calls=[]
     monkeypatch.setattr(C,'merge_rows',lambda *args,**kwargs:calls.append('MERGE'))
     monkeypatch.setattr(C,'record_run',lambda *args,**kwargs:calls.append('UNIT'))

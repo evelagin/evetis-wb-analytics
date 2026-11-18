@@ -56,7 +56,8 @@ def engine(p, state=None, **kw):
 
 
 def posting(number, instant):
-    return {"posting_number": number, "created_at": instant,
+    # The source filters by in_process_at (B.FBO_TRANSPORT_CONTRACT); created_at may be older.
+    return {"posting_number": number, "created_at": instant, "in_process_at": instant,
             "products": [{"sku": "synthetic-sku", "quantity": 1, "price": "100"}]}
 
 
@@ -101,7 +102,7 @@ def test_fbo_recursive_cap_split_and_leaf_proofs(harness, monkeypatch):
     values=env(BACKFILL_FBO_PAGE_CAP="1",BACKFILL_MIN_SECONDS="60")
     p=plan(values=values)
     def source(path,body):
-        a=datetime_ms(body["filter"]["since"]); b=datetime_ms(body["filter"]["to"])+1
+        a=datetime_ms(body["filter"]["since"]); b=datetime_ms(body["filter"]["to"]) # closed [a, b] request
         more=b-a>6*3600000
         return 200, {"postings":[posting(str(a),B.stamp(a))],"has_next":more,"cursor":"next" if more else ""}
     monkeypatch.setattr(C,"seller_post",source)

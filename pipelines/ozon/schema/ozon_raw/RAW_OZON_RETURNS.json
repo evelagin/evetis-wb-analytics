@@ -1,0 +1,213 @@
+{
+  "clustering": [
+    "return_id",
+    "posting_number"
+  ],
+  "schema": [
+    {
+      "mode": "REQUIRED",
+      "name": "return_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "posting_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "order_number",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_type",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_schema",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_reason_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "sku",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "offer_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "quantity",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "product_price_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "price_without_commission_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "commission_percent",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "commission_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "visual_status_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "visual_status_sys_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "visual_status_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "visual_change_moment",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_date",
+      "type": "DATE"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_moment",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "final_moment",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "technical_return_moment",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "cancelled_with_compensation_moment",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "place_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "place_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "target_place_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "target_place_name",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "storage_sum_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "storage_days",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "utilization_sum_rub",
+      "type": "NUMERIC"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "is_opened",
+      "type": "BOOLEAN"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "compensation_status",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "clearing_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "return_clearing_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_id",
+      "type": "INTEGER"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "extracted_at",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_event_time",
+      "type": "TIMESTAMP"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "source_endpoint",
+      "type": "STRING"
+    },
+    {
+      "mode": "REQUIRED",
+      "name": "ingestion_run_id",
+      "type": "STRING"
+    },
+    {
+      "mode": "NULLABLE",
+      "name": "source_payload_hash",
+      "type": "STRING"
+    }
+  ],
+  "table_id": "RAW_OZON_RETURNS",
+  "time_partitioning": {
+    "field": "return_date",
+    "type": "DAY"
+  }
+}

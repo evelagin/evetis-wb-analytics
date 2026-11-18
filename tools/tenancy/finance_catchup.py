@@ -29,7 +29,7 @@ Protocol (its own durable scope; nothing accepted is rewritten):
 """
 from datetime import date, timedelta
 from tools.tenancy import tenant_backfill as BF, durable_plan as D, current_contract as K
-from tools.tenancy import current_controller as CURRENT, full_controller as H
+from tools.tenancy import current_controller as CURRENT, full_controller as H, current_policy as P
 from tools.tenancy.validation import parse_tenant_json as parse
 
 TYPE = 'OWNER_FINANCE_CATCHUP_V1'
@@ -147,15 +147,20 @@ def document(a, day, *, make_plan=None):
         a['created_at'], today=created, max_units=20, window_days=1)
 
 
-def day_state(b, a, day):
-    """(plan item | None, certificate | None, partial | None) from the day's own durable root."""
+def day_state(b, a, day, policy=None):
+    """(plan item | None, certificate | None, partial | None) from the day's own durable root.
+
+    With `policy` (read-back only), a plan/PARTIAL elected under the policy's ORIGINAL runtime before an owner runtime
+    succession is also recognized (current_policy.original_runtime); scan() never dispatches such a day."""
     plans, certs, partials = [], [], []
+    live = document(a, day)
+    forms = [live] + ([P.original_runtime(policy, live)] if policy is not None else [])
     for r in b.store.history(root(a, day)):
         if r['kind'] not in KINDS or r['sequence'] != 0: fail('unknown catch-up day record')
         v = r['payload']
         if r['kind'] == 'CATCHUP_PLAN':
             if (set(v) != {'day', 'authority_hash', 'plan', 'shard'} or (v['day'], v['authority_hash']) != (day.isoformat(), a['hash'])
-                    or v['plan'] != document(a, day) or v['shard'] != shard(a, day, v['plan'])):
+                    or v['plan'] not in forms or v['shard'] != shard(a, day, v['plan'])):
                 fail('catch-up plan ownership differs')
             plans.append(v)
         elif r['kind'] == 'CATCHUP_CERT': certs.append(v)
@@ -169,7 +174,7 @@ def day_state(b, a, day):
             fail('catch-up certificate ownership differs')
     for v in partials:
         if (set(v) != PARTIAL_FIELDS or (v['day'], v['authority_hash'], v['status']) != (day.isoformat(), a['hash'], 'PARTIAL')
-                or v['reason'] not in REASONS or v['ack_hash'] != document(a, day)['ack_hash']):
+                or v['reason'] not in REASONS or v['ack_hash'] not in {f['ack_hash'] for f in forms}):
             fail('catch-up partial evidence differs')
     return item, (certs[0] if certs else None), (partials[0] if partials else None)
 
@@ -193,10 +198,13 @@ def scan(b, policy, current_finance=None):
     for a in chain:
         for text in a['days']:
             day = date.fromisoformat(text)
-            item, cert, partial = day_state(b, a, day)
+            item, cert, partial = day_state(b, a, day, policy)
             if cert is not None: out['complete'].append(text); continue
             if partial is not None:
                 out['partial'].append(text); out['halted'] = out['halted'] or 'PARTIAL_' + partial['reason']; continue
+            if item is not None and item['plan'] != document(a, day):
+                # Elected under the original runtime before an owner runtime succession: never dispatched again.
+                out['halted'] = out['halted'] or 'DAY_ELECTED_UNDER_ORIGINAL_RUNTIME'; continue
             if item is not None:
                 hs = b.store.history(item['shard'])
                 intents = [r['sequence'] for r in hs if r['kind'] == 'DISPATCH_INTENT']

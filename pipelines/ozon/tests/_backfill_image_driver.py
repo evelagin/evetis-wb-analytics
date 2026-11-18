@@ -65,9 +65,9 @@ def qualify():
         def postings(path,body):
             assert path=='/v3/posting/fbo/list'
             start=F.datetime.fromisoformat(body['filter']['since'].replace('Z','+00:00')).timestamp()*1000
-            end=F.datetime.fromisoformat(body['filter']['to'].replace('Z','+00:00')).timestamp()*1000+1
+            end=F.datetime.fromisoformat(body['filter']['to'].replace('Z','+00:00')).timestamp()*1000  # closed [a, b]
             more=end-start>6*3600000
-            return 200,{'postings':[{'posting_number':str(int(start)),'created_at':B.stamp(start),
+            return 200,{'postings':[{'posting_number':str(int(start)),'created_at':B.stamp(start),'in_process_at':B.stamp(start),
                 'products':[{'sku':'1','quantity':1,'price':'100'}]}],
                 'has_next':more,'cursor':'synthetic-next' if more else ''}
         C.seller_post=postings

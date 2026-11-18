@@ -138,6 +138,10 @@ jobs:
         run: python -m pytest -q tools/tests/test_current_independence.py tools/tests/test_pruned_executions.py
       - name: Heldi S4 CURRENT independence image check (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_independence_image_check
+      - name: Heldi CURRENT runtime succession (offline)
+        run: python -m pytest -q tools/tests/test_current_runtime_succession.py
+      - name: Heldi CURRENT runtime succession image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_runtime_succession_image_check
       - name: Heldi owner finance catch-up of missed accrual days (offline)
         run: python -m pytest -q tools/tests/test_finance_catchup.py
       - name: Heldi finance catch-up image check (network disabled)
@@ -146,6 +150,22 @@ jobs:
         run: python -m pytest -q tools/tests/test_control_closure_recovery.py
       - name: Heldi control-closure recovery image check (network disabled)
         run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.control_closure_image_check
+      - name: Heldi A2 durable daily contour — transient reads retry, local evidence stays local, RECENT_90 first (offline)
+        run: python -m pytest -q tools/tests/test_durable_daily.py
+      - name: Heldi A2 durable daily image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.durable_daily_image_check
+      - name: Heldi owner tick pause is a typed quiescent end (offline)
+        run: python -m pytest -q tools/tests/test_owner_pause.py
+      - name: Heldi owner tick pause image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.owner_pause_image_check
+      - name: Heldi ads in daily CURRENT and ads catch-up (offline)
+        run: python -m pytest -q tools/tests/test_current_ads.py
+      - name: Heldi ads in daily CURRENT image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.current_ads_image_check
+      - name: Heldi owner FBO refresh of the rolling 90 days (offline)
+        run: python -m pytest -q tools/tests/test_fbo_refresh.py
+      - name: Heldi owner FBO refresh image check (network disabled)
+        run: docker run --rm --network=none --entrypoint=python tenant-backfill-controller:ci -m tools.tenancy.fbo_refresh_image_check
       - name: ozon schema parity (offline)
         run: python tools/tenancy/ozon_schema_parity.py
 

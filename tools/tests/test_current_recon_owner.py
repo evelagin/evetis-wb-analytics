@@ -12,6 +12,14 @@ from tools.tenancy.validation import parse_tenant_json as parse
 
 from tools.tenancy.current_recon_image_check import setup, full_fixture, observed, NOW, OLD, NEW, ACK
 
+
+@pytest.fixture(scope='module', autouse=True)
+def _historical_runtime():
+    """Frozen production incident: replay it with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        yield
+
 def test_handoff_preserves_byte_exact_policy_and_every_current_plan_namespace():
     b, policy, handoff, release = setup(); before = deepcopy((b.c, policy, b.tables.values))
     accepted = C.policy(b)

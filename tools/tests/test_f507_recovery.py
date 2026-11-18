@@ -7,6 +7,14 @@ from tools.tenancy import full_controller as H, current_controller as C, control
 from tools.tenancy.f507_recovery_image_check import fixture, observed, ACK, NOW
 
 
+@pytest.fixture(scope='module', autouse=True)
+def _historical_runtime():
+    """Frozen production incident: replay it with the runtime it actually ran with."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        yield
+
+
 @pytest.fixture(scope='module')
 def certificate():
     with fixture() as (b, _): return observed(b)

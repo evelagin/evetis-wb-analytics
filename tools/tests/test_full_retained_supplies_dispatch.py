@@ -98,7 +98,7 @@ def test_start_overrides_equal_dispatch_expectation_end_to_end(monkeypatch):
         list_tables=lambda ds: [(f'L_{cid}_0284', {'owner': 'bf-old', 'until': '1'}, 1)],
         get_table=lambda ds, name: None,
         append=lambda ds, table, rows: appended.extend(rows))
-    monkeypatch.setattr(BF, 'preflight', lambda c, d, now, backend=None: (tables, []))
+    monkeypatch.setattr(BF, 'preflight', lambda c, d, now, backend=None, **k: (tables, []))
     intents = []
 
     class Backend:

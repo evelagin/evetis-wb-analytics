@@ -5,6 +5,14 @@ from tools.tenancy import control_closure_recovery as R, tenant_backfill as BF, 
 from tools.tenancy import control_closure_image_check as X
 
 
+@pytest.fixture(scope='module', autouse=True)
+def _historical_runtime():
+    """Frozen production incident: replay it with the runtime it actually ran with (runtime succession)."""
+    from tools.tenancy.runtime_history_fixture import historical_runtime
+    with historical_runtime():
+        yield
+
+
 def test_certificate_observed_validated_and_published_once():
     assert X.certificate_check() == 'PASS' and X.publish_check() == 'PASS'
 

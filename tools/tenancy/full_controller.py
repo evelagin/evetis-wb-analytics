@@ -15,6 +15,7 @@ from tools.tenancy import durable_plan as D, tenant_backfill as BF
 from tools.tenancy import pre_source_recovery as R
 from tools.tenancy.controller_diagnostics import gate, GateFailure
 from tools.tenancy import recent_priority as RP
+from tools.tenancy import durable_daily as DD
 PERFORMANCE = frozenset({'ads_campaigns','ads_expense_daily','ads_sku_daily'})
 
 KINDS = frozenset({'FULL_MANIFEST', 'CHUNK_PLAN', 'CHUNK_COMPLETE', 'FULL_COMPLETE', 'T5_PARENT_COMPLETE'})
@@ -535,9 +536,15 @@ def wake(base, root):
     current_result=CURRENT.wake(backend,records,reconstruct_plans(records,manifest,backend.clock()),done,quarantined)
     if current_result is not None:return current_result,backend
     if admission is not None:
-        # S4: a FULL-local historical STOP keeps the FULL queue closed; CURRENT has nothing left today.
-        return {'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP',
-                'local_full_leaves':admission['local_full_leaves']},backend
+        local=DD.full_continues(admission)
+        if local is None:
+            # S4: beyond MAX_LOCAL_FULL_LEAVES the FULL queue stays closed; CURRENT has nothing left today.
+            return {'status':'MONITORING','source_dispatches':0,'basis':'FULL_HISTORY_LOCAL_STOP',
+                    'local_full_leaves':admission['local_full_leaves']},backend
+        # A2: every shared authority is proven settled by the admission; only the stopped leaves are
+        # skipped (like a quarantine) and the rest of FULL continues in priority order.
+        quarantined=set(quarantined)|local
+        backend.local_full_leaves=sorted(local)
     if len(done)==len(manifest['programs']):
         backend.store.commit(root,'FULL_COMPLETE',0,{'source_complete':True,'persisted_reconciled':True,
             'completed_chunks':len(done),'total_chunks':len(manifest['programs']),'ready':'UNPROVEN_FINAL_DQ_REQUIRED'},backend.clock())
@@ -568,7 +575,9 @@ def wake(base, root):
     # Existing async scope always precedes any new report intent.
     reports=[i for i,p in plans.items() if i not in done and backend.state(p['plan'])['progress'].get('report')]
     if len(reports)>1:raise BF.B.EvidenceError('multiple full async scopes')
-    pending=[i for i in reports+[i for i in RP.ordered(manifest,done,overlay) if i not in reports] if i not in quarantined]
+    # A2: the rolling RECENT_90 window precedes older history; an in-flight async scope stays first.
+    order=DD.recent_first(manifest,RP.ordered(manifest,done,overlay),backend.clock().astimezone(BF.B.MSK).date())
+    pending=[i for i in reports+[i for i in order if i not in reports] if i not in quarantined]
     day=str(backend.clock().astimezone(BF.B.MSK).date())
     certs=[r['payload'] for r in records if r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day]
     catalog=next(i for i,p in enumerate(manifest['programs']) if p['entity']=='catalog')
@@ -697,7 +706,14 @@ def leaf_wake(backend,manifest,index,item,records,*,dependency=False,reconciled=
             from tools.tenancy import current_controller as CURRENT
             if not any(r['kind']=='SNAPSHOT_CERT' and r['payload'].get('day')==day for r in fresh) and CURRENT.catalog_current(backend,day) is None:
                 return {'status':'RECONCILED_BOUNDARY','source_dispatches':0,'index':index,'basis':'WAIT_CURRENT_CATALOG'},backend
-        proof=BF.verify_coverage(doc,doc['ack_hash'],backend=backend)
+        try:proof=BF.verify_coverage(doc,doc['ack_hash'],backend=backend)
+        except DD.LOCAL_ERRORS as error:
+            # A2: a completion proof of an already reconciled FULL leaf is leaf-local evidence. It takes
+            # the existing typed leaf class (S4-admissible) instead of an untyped global STOP. The
+            # Catalog dependency, a typed gate failure or any open authority keep the global path.
+            local=None if dependency or not DD.local_evidence(error) else DD.local_leaf_failure(history,index,shard)
+            if local is None:raise
+            raise local from None
         payload={'index':index,'shard_root':shard,'ack_hash':doc['ack_hash'],'state_hash':D.digest(state),
             'sequence':state['sequence'],'dispatch_attempts':sum(r['kind']=='DISPATCH_INTENT' for r in history),
             'reused_qualification':None,

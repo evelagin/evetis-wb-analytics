@@ -1,0 +1,217 @@
+{
+ "base_commit": "1a2b61a0793d41f08924a515663d0da2318e15cf",
+ "inputs": [
+  {
+   "additional_data": [],
+   "analytics_data": null,
+   "cancel_reason_id": 0,
+   "cancellation": null,
+   "created_at": "2026-09-15T14:49:54.441049Z",
+   "external_order": {
+    "is_external": false,
+    "platform_name": ""
+   },
+   "financial_data": {
+    "cluster_from": "synthetic-from",
+    "cluster_to": "synthetic-to",
+    "products": [
+     {
+      "actions": [
+       "synthetic action"
+      ],
+      "commission": {
+       "amount": 298.5,
+       "currency": "RUB",
+       "percent": 23
+      },
+      "old_price": 2500.0,
+      "payout": 1000.5,
+      "price": 1299,
+      "product_id": 1000001,
+      "total_discount_percent": 48,
+      "total_discount_value": 1201.0
+     }
+    ]
+   },
+   "in_process_at": "2026-09-15T14:50:34.257002Z",
+   "is_extra_packed": false,
+   "is_sealed": false,
+   "legal_info": null,
+   "order_id": 1,
+   "order_number": "SYN-SHAPE",
+   "posting_number": "SYN-SHAPE-1",
+   "products": [
+    {
+     "digital_codes": [],
+     "is_marketplace_buyout": false,
+     "name": "synthetic",
+     "offer_id": "SYN-OFFER",
+     "price": {
+      "amount": "1299.00",
+      "currency": "RUB"
+     },
+     "quantity": 1,
+     "sku": 1000001
+    }
+   ],
+   "status": "delivered",
+   "storage_type": "synthetic",
+   "substatus": "posting_received"
+  },
+  {
+   "additional_data": [],
+   "analytics_data": {
+    "city": "synthetic-city",
+    "warehouse_id": 77,
+    "warehouse_name": "synthetic-wh"
+   },
+   "cancel_reason_id": 0,
+   "cancellation": null,
+   "created_at": "2026-09-15T14:49:54.441049Z",
+   "external_order": {
+    "is_external": false,
+    "platform_name": ""
+   },
+   "financial_data": {
+    "cluster_from": "synthetic-from",
+    "cluster_to": "synthetic-to",
+    "products": [
+     {
+      "actions": [
+       "synthetic action"
+      ],
+      "commission_amount": 12.5,
+      "old_price": 2500.0,
+      "payout": 1000.5,
+      "price": 1299,
+      "product_id": 1000001,
+      "total_discount_percent": 48,
+      "total_discount_value": 1201.0
+     }
+    ]
+   },
+   "in_process_at": "2026-09-15T14:50:34.257002Z",
+   "is_extra_packed": false,
+   "is_sealed": false,
+   "legal_info": null,
+   "order_id": 1,
+   "order_number": "SYN-SHAPE",
+   "posting_number": "SYN-SHAPE-1",
+   "products": [
+    {
+     "digital_codes": [],
+     "is_marketplace_buyout": false,
+     "name": "synthetic",
+     "offer_id": "SYN-OFFER",
+     "price": {
+      "amount": "1299.00",
+      "currency": "RUB"
+     },
+     "quantity": 1,
+     "sku": 1000001
+    }
+   ],
+   "status": "delivered",
+   "storage_type": "synthetic",
+   "substatus": "posting_received"
+  },
+  {
+   "created_at": "2026-09-01T10:00:00Z",
+   "posting_number": "P1",
+   "products": [
+    {
+     "price": "10",
+     "quantity": 1,
+     "sku": 500
+    }
+   ]
+  }
+ ],
+ "rows": [
+  {
+   "actions": [
+    "synthetic action"
+   ],
+   "cancel_reason_id": 0,
+   "city": null,
+   "commission_amount_rub": null,
+   "created_at": "2026-09-15T14:49:54.441049Z",
+   "extracted_at": "2026-10-04T10:00:00+03:00",
+   "in_process_at": "2026-09-15T14:50:34.257002Z",
+   "ingestion_run_id": "rt-evetis-baseline",
+   "old_price_rub": 2500.0,
+   "order_date": "2026-09-15",
+   "order_id": 1,
+   "order_number": "SYN-SHAPE",
+   "payout_rub": 1000.5,
+   "posting_number": "SYN-SHAPE-1",
+   "price_rub": 1299.0,
+   "quantity": 1,
+   "sku": "1000001",
+   "source_endpoint": "POST /v3/posting/fbo/list",
+   "source_event_time": "2026-09-15T14:49:54.441049Z",
+   "source_payload_hash": "f0ee0a7d1508751ca7d29ee7b5f2c0d0",
+   "status": "delivered",
+   "substatus": "posting_received",
+   "total_discount_value_rub": 1201.0,
+   "warehouse_id": null,
+   "warehouse_name": null
+  },
+  {
+   "actions": [
+    "synthetic action"
+   ],
+   "cancel_reason_id": 0,
+   "city": "synthetic-city",
+   "commission_amount_rub": 12.5,
+   "created_at": "2026-09-15T14:49:54.441049Z",
+   "extracted_at": "2026-10-04T10:00:00+03:00",
+   "in_process_at": "2026-09-15T14:50:34.257002Z",
+   "ingestion_run_id": "rt-evetis-baseline",
+   "old_price_rub": 2500.0,
+   "order_date": "2026-09-15",
+   "order_id": 1,
+   "order_number": "SYN-SHAPE",
+   "payout_rub": 1000.5,
+   "posting_number": "SYN-SHAPE-1",
+   "price_rub": 1299.0,
+   "quantity": 1,
+   "sku": "1000001",
+   "source_endpoint": "POST /v3/posting/fbo/list",
+   "source_event_time": "2026-09-15T14:49:54.441049Z",
+   "source_payload_hash": "f0ee0a7d1508751ca7d29ee7b5f2c0d0",
+   "status": "delivered",
+   "substatus": "posting_received",
+   "total_discount_value_rub": 1201.0,
+   "warehouse_id": "77",
+   "warehouse_name": "synthetic-wh"
+  },
+  {
+   "actions": [],
+   "cancel_reason_id": null,
+   "city": null,
+   "commission_amount_rub": null,
+   "created_at": "2026-09-01T10:00:00Z",
+   "extracted_at": "2026-10-04T10:00:00+03:00",
+   "in_process_at": null,
+   "ingestion_run_id": "rt-evetis-baseline",
+   "old_price_rub": null,
+   "order_date": "2026-09-01",
+   "order_id": null,
+   "order_number": null,
+   "payout_rub": null,
+   "posting_number": "P1",
+   "price_rub": 10.0,
+   "quantity": 1,
+   "sku": "500",
+   "source_endpoint": "POST /v3/posting/fbo/list",
+   "source_event_time": "2026-09-01T10:00:00Z",
+   "source_payload_hash": "f3f85d2ffc81a3f33b0e6f8b78ddff59",
+   "status": null,
+   "substatus": null,
+   "total_discount_value_rub": null,
+   "warehouse_id": null,
+   "warehouse_name": null
+  }
+ ]
+}
