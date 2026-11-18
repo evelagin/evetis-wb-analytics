@@ -236,7 +236,10 @@ def main(argv=None):
             else:
                 res = fn(run_id, ts, frm, to)
             entity_status = "IN_PROGRESS" if backfill_plan and not res["evidence"]["complete"] else "OK"
+            # D1: предупреждение сущности (контроль денег, карантин начисления) — пометка в
+            # error_message при статусе OK; без предупреждения строка журнала прежняя.
             C.record_run(run_id, name, started, frm, to, res, entity_status,
+                         error=res.get("warning") if isinstance(res, dict) else None,
                          requests_n=C.STATS["requests"] - r0,
                          retries=C.STATS["retries"] - t0)
             ok += 1

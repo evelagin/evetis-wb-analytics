@@ -19,6 +19,7 @@ import glob
 import json
 import os
 from collections import Counter, defaultdict
+from decimal import Decimal
 
 import pytest
 
@@ -97,10 +98,16 @@ def test_sample_regression(entities, captured_merges, monkeypatch):
     assert keys == KEYS
     assert kw == {"on_duplicate_key": "reject"}
 
-    # эталон, снятый с кода 0abc4c4 на этой фикстуре: 29 строк, −1 508.97 ₽
-    assert len(rows) == 29
+    # эталон, снятый с кода 0abc4c4 на этой фикстуре: 29 строк, −1 508.97 ₽.
+    # D1 (2026-10-11): +1 строка — сторно реализации без services (начисление 900000025)
+    # раньше терялось целиком. amount_rub у неё 0, деньги — в колонках экономики.
+    assert len(rows) == 30
     assert len({C.merge_key(r, keys) for r in rows}) == len(rows)
     assert round(sum(r["amount_rub"] or 0 for r in rows), 2) == -1508.97
+    rev = [r for r in rows if r["type_id"] < 0]
+    assert [(r["accrual_id"], r["type_id"], r["seller_base_price_rub"], r["commission_rub"],
+             r["amount_rub"], r["quantity"]) for r in rev] == [
+        (900000025, -1, -1101.0, 451.41, 0.0, None)]
 
     # независимый контроль Ozon — по каждому начислению
     by_acc = defaultdict(float)
@@ -159,6 +166,9 @@ def test_same_key_different_amount_fails_closed(entities, captured_merges, monke
     acc = json.loads(json.dumps(acc))
     svc = acc["posting"]["products"][0]["delivery"]["services"]
     svc.append({"type_id": svc[0]["type_id"], "accrued": {"amount": -1.23, "currency": "RUB"}})
+    # деньги начисления согласованы с добавленной услугой: проверяется конфликт ключа,
+    # а не контроль денег суток (его проверяют тесты D1)
+    acc["total_amount"]["amount"] = str(Decimal(acc["total_amount"]["amount"]) - Decimal("1.23"))
     day = acc["date"][:10] if acc.get("date") else next(iter(s["days"]))
     table, rows, keys, kw = run(entities, captured_merges, monkeypatch,
                                 {day: [acc]}, s["accrual_types"], day, day)
@@ -189,8 +199,10 @@ def test_full_audit_archive(entities, captured_merges, monkeypatch):
 
     accruals = [a for acc in days.values() for a in acc]
     assert (len(days), len(accruals)) == (92, 1428)
-    assert len(rows) == 1702
-    assert len({C.merge_key(r, keys) for r in rows}) == 1702
+    # D1: +1 строка — сторно реализации без services (type_id −1), до D1 терялось
+    assert len(rows) == 1703
+    assert len({C.merge_key(r, keys) for r in rows}) == 1703
+    assert sum(1 for r in rows if r["type_id"] < 0) == 1
     assert round(sum(r["amount_rub"] or 0 for r in rows), 2) == -131192.33
     by_acc = defaultdict(float)
     for r in rows:
